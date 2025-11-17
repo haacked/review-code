@@ -1,0 +1,54 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+.directory
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+.classpath
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Cache directories
+.cache/
+*.cache
+
+# Test/temp files
+.notes/
+notes/
+tmp/
+temp/
+*.tmp
+
+# Environment files
+.env
+.env.local
+*.local
+
+# Build artifacts (if any get generated)
+dist/
+build/
+target/
+
+# Package manager files (not applicable here, but good to have)
+node_modules/
