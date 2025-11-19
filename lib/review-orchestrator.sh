@@ -1,0 +1,576 @@
+#!/usr/bin/env bash
+# review-orchestrator.sh - Orchestrates code review workflow
+#
+# Usage:
+#   review-orchestrator.sh [argument]
+#
+# Description:
+#   Handles all code review workflow orchestration:
+#   - Parses and validates arguments
+#   - Determines review mode
+#   - Gathers context and diff
+#   - Outputs structured JSON for Claude to invoke agents
+#
+# Output:
+#   JSON object with all context needed for Claude to invoke review agents
+
+# Source error helpers
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/helpers/error-helpers.sh
+source "$SCRIPT_DIR/helpers/error-helpers.sh"
+# shellcheck source=lib/helpers/debug-helpers.sh
+source "$SCRIPT_DIR/helpers/debug-helpers.sh"
+
+set -euo pipefail
+
+# Get the directory where this script lives
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Main orchestration function
+main() {
+    local arg="${1:-}"
+    local file_pattern="${2:-}"
+
+    # Initialize debug session (no-op if DEBUG not enabled)
+    # We'll update org/repo/mode after parsing
+    debug_init "${arg:-local}" "unknown" "unknown" "unknown"
+    debug_time "00-orchestrator" "start"
+    debug_save "00-input" "args.txt" "arg=$arg\nfile_pattern=$file_pattern"
+
+    # Step 1: Parse the argument to determine mode
+    debug_time "01-parse" "start"
+    local parse_result
+    parse_result=$("$SCRIPT_DIR/parse-review-arg.sh" "$arg" "$file_pattern" 2>&1) || {
+        echo "$parse_result" >&2
+        debug_save "01-parse" "error.txt" "$parse_result"
+        debug_finalize
+        exit 1
+    }
+    debug_save_json "01-parse" "output.json" <<< "$parse_result"
+    debug_time "01-parse" "end"
+
+    local mode
+    mode=$(echo "$parse_result" | jq -r '.mode')
+    local pattern
+    pattern=$(echo "$parse_result" | jq -r '.file_pattern // empty')
+
+    # Step 2: Handle different modes
+    case "$mode" in
+        "error")
+            local error_msg
+            error_msg=$(echo "$parse_result" | jq -r '.error')
+            echo "{\"status\":\"error\",\"message\":\"$error_msg\"}" >&2
+            exit 1
+            ;;
+        "ambiguous")
+            # Return ambiguity info for Claude to prompt user
+            echo "$parse_result" | jq '{
+                status: "ambiguous",
+                arg: .arg,
+                ref_type: .ref_type,
+                is_branch: .is_branch,
+                is_current: .is_current,
+                base_branch: .base_branch,
+                reason: .reason
+            }'
+            exit 0
+            ;;
+        "prompt")
+            # Return prompt info for Claude to ask user
+            echo "$parse_result" | jq '{
+                status: "prompt",
+                current_branch: .current_branch,
+                base_branch: .base_branch,
+                has_uncommitted: .has_uncommitted
+            }'
+            exit 0
+            ;;
+        "area")
+            local area
+            area=$(echo "$parse_result" | jq -r '.area')
+            handle_local_review "$area"
+            ;;
+        "pr")
+            local pr_number pr_url
+            pr_number=$(echo "$parse_result" | jq -r '.pr_number // empty')
+            pr_url=$(echo "$parse_result" | jq -r '.pr_url // empty')
+            if [ -n "$pr_url" ]; then
+                handle_pr_review "$pr_url"
+            else
+                handle_pr_review "$pr_number"
+            fi
+            ;;
+        "commit")
+            local commit
+            commit=$(echo "$parse_result" | jq -r '.commit')
+            handle_commit_review "$commit"
+            ;;
+        "branch")
+            local branch base_branch
+            branch=$(echo "$parse_result" | jq -r '.branch')
+            base_branch=$(echo "$parse_result" | jq -r '.base_branch')
+            handle_branch_review "$branch" "$base_branch"
+            ;;
+        "range")
+            local range
+            range=$(echo "$parse_result" | jq -r '.range')
+            handle_range_review "$range"
+            ;;
+        "local")
+            handle_local_review ""
+            ;;
+        *)
+            echo "{\"status\":\"error\",\"message\":\"Unknown mode: $mode\"}" >&2
+            exit 1
+            ;;
+    esac
+}
+
+# Common helper: Build review data from diff content
+# Args: $1 = mode, $2 = diff_content, $3 = git_context, $4 = file_path_identifier, $@ = mode-specific jq args
+# Returns: JSON output on stdout
+build_review_data() {
+    local mode="$1"
+    local diff_content="$2"
+    local git_context="$3"
+    local file_path_identifier="$4"
+    shift 4
+    # Remaining args are mode-specific jq --arg pairs
+
+    # Detect languages
+    local lang_info
+    lang_info=$(echo "$diff_content" | "$SCRIPT_DIR/code-language-detect.sh")
+
+    # Extract file metadata
+    local file_metadata
+    file_metadata=$(echo "$diff_content" | "$SCRIPT_DIR/pre-review-context.sh")
+
+    # Get review file path
+    local file_info
+    file_info=$("$SCRIPT_DIR/review-file-path.sh" "$file_path_identifier")
+
+    # Load review context
+    local org repo review_context
+    org=$(echo "$git_context" | jq -r '.org')
+    repo=$(echo "$git_context" | jq -r '.repo')
+    review_context=$(echo "$lang_info" | "$SCRIPT_DIR/load-review-context.sh" "$org" "$repo")
+
+    # Build summary for user confirmation
+    # Extract mode-specific fields to avoid passing large args to jq
+    local mode_fields
+    mode_fields=$(jq -n "$@" '$ARGS.named')
+    local summary
+    summary=$(build_summary "$mode" "$diff_content" "$git_context" "$mode_fields")
+
+    # Output JSON for Claude with mode-specific fields
+    debug_time "07-final-output" "start"
+    local final_output
+    final_output=$(jq -n \
+        --arg mode "$mode" \
+        --argjson git "$git_context" \
+        --arg diff "$diff_content" \
+        --argjson lang "$lang_info" \
+        --argjson meta "$file_metadata" \
+        --argjson file "$file_info" \
+        --arg context "$review_context" \
+        --argjson summary "$summary" \
+        "$@" \
+        '{
+            status: "ready",
+            mode: $mode,
+            git: $git,
+            diff: $diff,
+            languages: $lang,
+            file_metadata: $meta,
+            file_info: $file,
+            review_context: $context,
+            summary: $summary,
+            next_step: "gather_architectural_context"
+        } + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")))')
+    debug_save_json "07-final-output" "output.json" <<< "$final_output"
+    debug_time "07-final-output" "end"
+    debug_time "00-orchestrator" "end"
+    debug_finalize
+
+    echo "$final_output"
+}
+
+# Build a human-readable summary for user confirmation
+# Args: $1 = mode, $2 = diff_content, $3 = git_context, $4 = mode_fields (JSON string)
+build_summary() {
+    local mode="$1"
+    local diff_content="$2"
+    local git_context="$3"
+    local mode_fields="$4"
+
+    # Extract key info from git context
+    local org repo branch commit working_dir
+    org=$(echo "$git_context" | jq -r '.org')
+    repo=$(echo "$git_context" | jq -r '.repo')
+    branch=$(echo "$git_context" | jq -r '.branch // "unknown"')
+    commit=$(echo "$git_context" | jq -r '.commit // "unknown"')
+    working_dir=$(echo "$git_context" | jq -r '.working_dir // "unknown"')
+
+    # Calculate diff stats
+    local files_changed lines_added lines_removed
+    files_changed=$(echo "$diff_content" | grep -E '^diff --git' | wc -l | tr -d ' ')
+    lines_added=$(echo "$diff_content" | grep -E '^\+' | grep -v -E '^\+\+\+' | wc -l | tr -d ' ')
+    lines_removed=$(echo "$diff_content" | grep -E '^-' | grep -v -E '^---' | wc -l | tr -d ' ')
+
+    # Parse mode-specific fields (already in JSON format)
+    local parsed_args="$mode_fields"
+
+    # Build mode-specific summary
+    case "$mode" in
+        "branch")
+            local target_branch base_branch
+            target_branch=$(echo "$parsed_args" | jq -r '.mode_branch // "unknown"')
+            base_branch=$(echo "$parsed_args" | jq -r '.mode_base_branch // "unknown"')
+
+            # Count commits in branch
+            local commit_count
+            commit_count=$(git rev-list --count "${base_branch}..${target_branch}" 2>/dev/null || echo "unknown")
+
+            jq -n \
+                --arg mode "$mode" \
+                --arg org "$org" \
+                --arg repo "$repo" \
+                --arg branch "$target_branch" \
+                --arg base_branch "$base_branch" \
+                --arg commit "$commit" \
+                --arg working_dir "$working_dir" \
+                --arg files "$files_changed" \
+                --arg added "$lines_added" \
+                --arg removed "$lines_removed" \
+                --arg commits "$commit_count" \
+                '{
+                    mode: $mode,
+                    repository: "\($org)/\($repo)",
+                    branch: $branch,
+                    base_branch: $base_branch,
+                    commit: $commit,
+                    working_directory: $working_dir,
+                    comparison: "\($base_branch)..\($branch)",
+                    stats: {
+                        commits: $commits,
+                        files_changed: $files,
+                        lines_added: $added,
+                        lines_removed: $removed
+                    }
+                }'
+            ;;
+        "commit")
+            local target_commit
+            target_commit=$(echo "$parsed_args" | jq -r '.mode_commit // "unknown"')
+            jq -n \
+                --arg mode "$mode" \
+                --arg org "$org" \
+                --arg repo "$repo" \
+                --arg commit "$target_commit" \
+                --arg working_dir "$working_dir" \
+                --arg files "$files_changed" \
+                --arg added "$lines_added" \
+                --arg removed "$lines_removed" \
+                '{
+                    mode: $mode,
+                    repository: "\($org)/\($repo)",
+                    commit: $commit,
+                    working_directory: $working_dir,
+                    stats: {
+                        files_changed: $files,
+                        lines_added: $added,
+                        lines_removed: $removed
+                    }
+                }'
+            ;;
+        "range")
+            local target_range
+            target_range=$(echo "$parsed_args" | jq -r '.mode_range // "unknown"')
+
+            # Count commits in range
+            local commit_count
+            commit_count=$(git rev-list --count "${target_range}" 2>/dev/null || echo "unknown")
+
+            jq -n \
+                --arg mode "$mode" \
+                --arg org "$org" \
+                --arg repo "$repo" \
+                --arg range "$target_range" \
+                --arg working_dir "$working_dir" \
+                --arg files "$files_changed" \
+                --arg added "$lines_added" \
+                --arg removed "$lines_removed" \
+                --arg commits "$commit_count" \
+                '{
+                    mode: $mode,
+                    repository: "\($org)/\($repo)",
+                    range: $range,
+                    working_directory: $working_dir,
+                    stats: {
+                        commits: $commits,
+                        files_changed: $files,
+                        lines_added: $added,
+                        lines_removed: $removed
+                    }
+                }'
+            ;;
+        "local")
+            local area
+            area=$(echo "$parsed_args" | jq -r '.mode_area // "all"')
+            jq -n \
+                --arg mode "$mode" \
+                --arg org "$org" \
+                --arg repo "$repo" \
+                --arg branch "$branch" \
+                --arg working_dir "$working_dir" \
+                --arg area "$area" \
+                --arg files "$files_changed" \
+                --arg added "$lines_added" \
+                --arg removed "$lines_removed" \
+                '{
+                    mode: $mode,
+                    repository: "\($org)/\($repo)",
+                    branch: $branch,
+                    working_directory: $working_dir,
+                    review_area: $area,
+                    stats: {
+                        files_changed: $files,
+                        lines_added: $added,
+                        lines_removed: $removed
+                    }
+                }'
+            ;;
+        *)
+            jq -n \
+                --arg mode "$mode" \
+                --arg org "$org" \
+                --arg repo "$repo" \
+                --arg working_dir "$working_dir" \
+                --arg files "$files_changed" \
+                --arg added "$lines_added" \
+                --arg removed "$lines_removed" \
+                '{
+                    mode: $mode,
+                    repository: "\($org)/\($repo)",
+                    working_directory: $working_dir,
+                    stats: {
+                        files_changed: $files,
+                        lines_added: $added,
+                        lines_removed: $removed
+                    }
+                }'
+            ;;
+    esac
+}
+
+# Handle PR review
+handle_pr_review() {
+    local pr_identifier="$1"
+
+    # Fetch PR data
+    local pr_data
+    pr_data=$("$SCRIPT_DIR/pr-context.sh" "$pr_identifier")
+
+    local pr_number org repo head_ref
+    pr_number=$(echo "$pr_data" | jq -r '.number')
+    org=$(echo "$pr_data" | jq -r '.org')
+    repo=$(echo "$pr_data" | jq -r '.repo')
+    head_ref=$(echo "$pr_data" | jq -r '.head_ref')
+
+    # Determine if we can use the fast path (local git diff)
+    # Fast path conditions:
+    # 1. We're in a git repository
+    # 2. Current repo matches PR's repo
+    # 3. Current branch matches PR's head branch
+    local use_fast_path=false
+    if git rev-parse --git-dir > /dev/null 2>&1; then
+        # Source git helpers to get current repo info
+        source "$SCRIPT_DIR/helpers/git-helpers.sh"
+
+        # Check if current repo matches
+        local current_git_data
+        current_git_data=$(get_git_org_repo 2> /dev/null || echo "|")
+        local current_org="${current_git_data%|*}"
+        local current_repo="${current_git_data#*|}"
+        local current_branch
+        current_branch=$(git branch --show-current 2> /dev/null || echo "")
+
+        # Normalize org names to lowercase for comparison
+        current_org=$(echo "$current_org" | tr '[:upper:]' '[:lower:]')
+
+        if [ "$current_org" = "$org" ] && [ "$current_repo" = "$repo" ] && [ "$current_branch" = "$head_ref" ]; then
+            use_fast_path=true
+        fi
+    fi
+
+    # Get file path info (pass org/repo if not using fast path)
+    local file_info
+    if [ "$use_fast_path" = true ]; then
+        file_info=$("$SCRIPT_DIR/review-file-path.sh" "pr-$pr_number")
+    else
+        file_info=$("$SCRIPT_DIR/review-file-path.sh" --org "$org" --repo "$repo" "pr-$pr_number")
+    fi
+
+    # Extract file metadata from diff
+    local file_metadata
+    file_metadata=$(echo "$pr_data" | jq -r '.diff' | "$SCRIPT_DIR/pre-review-context.sh")
+
+    # Build summary for PR
+    local diff_content pr_title pr_url
+    diff_content=$(echo "$pr_data" | jq -r '.diff')
+    pr_title=$(echo "$pr_data" | jq -r '.title')
+    pr_url=$(echo "$pr_data" | jq -r '.url')
+
+    local files_changed lines_added lines_removed
+    files_changed=$(echo "$diff_content" | grep -E '^diff --git' | wc -l | tr -d ' ')
+    lines_added=$(echo "$diff_content" | grep -E '^\+' | grep -v -E '^\+\+\+' | wc -l | tr -d ' ')
+    lines_removed=$(echo "$diff_content" | grep -E '^-' | grep -v -E '^---' | wc -l | tr -d ' ')
+
+    local summary
+    summary=$(jq -n \
+        --arg mode "pr" \
+        --arg org "$org" \
+        --arg repo "$repo" \
+        --arg pr_number "$pr_number" \
+        --arg pr_title "$pr_title" \
+        --arg pr_url "$pr_url" \
+        --arg branch "$head_ref" \
+        --arg files "$files_changed" \
+        --arg added "$lines_added" \
+        --arg removed "$lines_removed" \
+        '{
+            mode: $mode,
+            repository: "\($org)/\($repo)",
+            pr_number: $pr_number,
+            pr_title: $pr_title,
+            pr_url: $pr_url,
+            branch: $branch,
+            stats: {
+                files_changed: $files,
+                lines_added: $added,
+                lines_removed: $removed
+            }
+        }')
+
+    # Output JSON for Claude
+    debug_time "07-final-output" "start"
+    local final_output
+    final_output=$(jq -n \
+        --argjson pr "$pr_data" \
+        --argjson file "$file_info" \
+        --argjson meta "$file_metadata" \
+        --argjson summary "$summary" \
+        '{
+            status: "ready",
+            mode: "pr",
+            pr: $pr,
+            file_info: $file,
+            file_metadata: $meta,
+            summary: $summary,
+            next_step: "gather_architectural_context"
+        }')
+    debug_save_json "07-final-output" "output.json" <<< "$final_output"
+    debug_time "07-final-output" "end"
+    debug_time "00-orchestrator" "end"
+    debug_finalize
+
+    echo "$final_output"
+}
+
+# Handle commit review
+handle_commit_review() {
+    local commit="$1"
+
+    # Get git context
+    local git_context
+    git_context=$("$SCRIPT_DIR/git-context.sh")
+
+    # Get diff for commit
+    local diff_content
+    if [ -n "$pattern" ]; then
+        diff_content=$("$SCRIPT_DIR/get-review-diff.sh" commit "$commit" "$pattern")
+    else
+        diff_content=$("$SCRIPT_DIR/get-review-diff.sh" commit "$commit")
+    fi
+
+    # Use common helper to build review data
+    build_review_data "commit" "$diff_content" "$git_context" "commit-$commit" \
+        --arg mode_commit "$commit"
+}
+
+# Handle branch review
+handle_branch_review() {
+    local branch="$1"
+    local base_branch="$2"
+
+    # Get git context
+    local git_context
+    git_context=$("$SCRIPT_DIR/git-context.sh")
+
+    # Get diff for branch
+    local diff_content
+    if [ -n "$pattern" ]; then
+        diff_content=$("$SCRIPT_DIR/get-review-diff.sh" branch "$branch" "$base_branch" "$pattern")
+    else
+        diff_content=$("$SCRIPT_DIR/get-review-diff.sh" branch "$branch" "$base_branch")
+    fi
+
+    # Use common helper to build review data
+    build_review_data "branch" "$diff_content" "$git_context" "branch-$branch" \
+        --arg mode_branch "$branch" \
+        --arg mode_base_branch "$base_branch"
+}
+
+# Handle range review
+handle_range_review() {
+    local range="$1"
+
+    # Get git context
+    local git_context
+    git_context=$("$SCRIPT_DIR/git-context.sh")
+
+    # Get diff for range
+    local diff_content
+    if [ -n "$pattern" ]; then
+        diff_content=$("$SCRIPT_DIR/get-review-diff.sh" range "$range" "$pattern")
+    else
+        diff_content=$("$SCRIPT_DIR/get-review-diff.sh" range "$range")
+    fi
+
+    # Use common helper to build review data
+    build_review_data "range" "$diff_content" "$git_context" "range-$range" \
+        --arg mode_range "$range"
+}
+
+# Handle local review (uncommitted changes)
+handle_local_review() {
+    local area="$1" # Optional: security, performance, etc. or empty for all
+
+    # Get git context
+    local git_context
+    git_context=$("$SCRIPT_DIR/git-context.sh")
+
+    # Get diff for local changes
+    local diff_content
+    if [ -n "$pattern" ]; then
+        diff_content=$("$SCRIPT_DIR/get-review-diff.sh" local "$pattern")
+    else
+        diff_content=$("$SCRIPT_DIR/git-diff-filter.sh" 2>&1)
+    fi
+
+    # Check if there are actually changes
+    if echo "$diff_content" | grep -q "^Error: No changes found"; then
+        echo "{\"status\":\"error\",\"message\":\"No changes found (no staged, unstaged, or branch changes)\"}" >&2
+        exit 1
+    fi
+
+    # Use common helper to build review data
+    if [ -n "$area" ]; then
+        build_review_data "local" "$diff_content" "$git_context" "" \
+            --arg mode_area "$area"
+    else
+        build_review_data "local" "$diff_content" "$git_context" ""
+    fi
+}
+
+main "$@"

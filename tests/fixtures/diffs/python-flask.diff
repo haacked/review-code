@@ -1,0 +1,31 @@
+diff --git a/api/app.py b/api/app.py
+new file mode 100644
+index 0000000..8c3a5f7
+--- /dev/null
++++ b/api/app.py
+@@ -0,0 +1,25 @@
++from flask import Flask, request, jsonify
++from flask_sqlalchemy import SQLAlchemy
++
++app = Flask(__name__)
++app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://localhost/mydb'
++db = SQLAlchemy(app)
++
++class User(db.Model):
++    id = db.Column(db.Integer, primary_key=True)
++    username = db.Column(db.String(80), unique=True, nullable=False)
++    email = db.Column(db.String(120), unique=True, nullable=False)
++
++@app.route('/api/users', methods=['GET'])
++def get_users():
++    users = User.query.all()
++    return jsonify([{'id': u.id, 'username': u.username, 'email': u.email} for u in users])
++
++@app.route('/api/users', methods=['POST'])
++def create_user():
++    data = request.get_json()
++    user = User(username=data['username'], email=data['email'])
++    db.session.add(user)
++    db.session.commit()
++    return jsonify({'id': user.id}), 201
++

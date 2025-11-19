@@ -1,0 +1,44 @@
+diff --git a/src/handlers.rs b/src/handlers.rs
+new file mode 100644
+index 0000000..a9c7d31
+--- /dev/null
++++ b/src/handlers.rs
+@@ -0,0 +1,38 @@
++use actix_web::{get, post, web, HttpResponse, Responder};
++use serde::{Deserialize, Serialize};
++use sqlx::PgPool;
++
++#[derive(Debug, Serialize, Deserialize)]
++pub struct User {
++    pub id: i32,
++    pub username: String,
++    pub email: String,
++}
++
++#[derive(Debug, Deserialize)]
++pub struct CreateUser {
++    pub username: String,
++    pub email: String,
++}
++
++#[get("/api/users")]
++pub async fn get_users(pool: web::Data<PgPool>) -> impl Responder {
++    let users = sqlx::query_as!(
++        User,
++        "SELECT id, username, email FROM users"
++    )
++    .fetch_all(pool.get_ref())
++    .await;
++
++    match users {
++        Ok(users) => HttpResponse::Ok().json(users),
++        Err(_) => HttpResponse::InternalServerError().finish(),
++    }
++}
++
++#[post("/api/users")]
++pub async fn create_user(
++    pool: web::Data<PgPool>,
++    user: web::Json<CreateUser>,
++) -> impl Responder {
++    let result = sqlx::query!(

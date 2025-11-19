@@ -1,0 +1,9 @@
+File with special characters for testing:
+
+Unicode: café, naïve, 日本語, 中文, 한국어, العربية, עברית
+Emoji: 🎉 🚀 ✅ ❌ 🔥 💯
+Symbols: @#$%^&*()_+-=[]{}|;':",./<>?
+Newlines and tabs:	test	here
+	indented
+
+Escaped chars: \n \t \r \\ \" \'

@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+#/ Usage: bin/lint [options]
+#/ Description: Lints shell scripts for quality and potential issues
+#/ Options:
+#/   -v, --verbose  Verbose output
+
+source bin/helpers/_utils.sh
+set_source_and_root_dir
+parse_common_args "$@"
+
+print_color blue "Linting shell scripts…"
+
+success_status=true
+
+# Check for shellcheck
+if ! command_exists shellcheck; then
+    fatal "shellcheck not found - install with: brew install shellcheck"
+fi
+
+# Find all shell scripts
+shell_files=(
+    bin/*
+    lib/*.sh
+    lib/helpers/*.sh
+    *.sh
+)
+
+actual_files=()
+for pattern in "${shell_files[@]}"; do
+    for file in $pattern; do
+        if [ -f "$file" ] && [[ ! "$file" =~ \.md$ ]]; then
+            # Skip non-shell files
+            if [[ "$file" == *.sh ]] || [[ -x "$file" ]] && head -1 "$file" | grep -q '^#!/.*bash'; then
+                actual_files+=("$file")
+            fi
+        fi
+    done
+done
+
+if [ ${#actual_files[@]} -eq 0 ]; then
+    warning "No shell scripts found to lint"
+    exit 0
+fi
+
+print_color blue "Found ${#actual_files[@]} shell scripts"
+
+# Run shellcheck with strict settings
+if ! run_command "shellcheck -x -o all ${actual_files[*]}" "Running shellcheck"; then
+    success_status=false
+fi
+
+if $success_status; then
+    success "Linting complete - no issues found"
+else
+    print_color red "✗ Linting found issues"
+    exit 1
+fi

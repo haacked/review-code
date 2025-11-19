@@ -1,0 +1,26 @@
+{
+  "number": 456,
+  "title": "Refactor entire codebase for TypeScript migration",
+  "body": "# Major Refactoring\n\nThis is a large PR that migrates the entire codebase from JavaScript to TypeScript.\n\n## Scope\n- 150+ files changed\n- Added type definitions for all modules\n- Updated build configuration\n- Migrated tests to TypeScript\n- Updated documentation\n\n## Breaking Changes\n- Node.js 16+ now required\n- Some API signatures changed for type safety\n\n## Performance\n- Build time increased by 15% due to type checking\n- Runtime performance unchanged",
+  "state": "open",
+  "user": {
+    "login": "senior-dev",
+    "id": 67890
+  },
+  "head": {
+    "ref": "refactor/typescript-migration",
+    "sha": "xyz789abc123"
+  },
+  "base": {
+    "ref": "main",
+    "sha": "def456ghi789"
+  },
+  "created_at": "2025-11-10T09:00:00Z",
+  "updated_at": "2025-11-19T15:45:00Z",
+  "merged_at": null,
+  "draft": false,
+  "commits": 47,
+  "additions": 15243,
+  "deletions": 8932,
+  "changed_files": 152
+}

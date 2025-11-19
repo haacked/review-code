@@ -1,0 +1,51 @@
+diff --git a/src/components/UserList.tsx b/src/components/UserList.tsx
+new file mode 100644
+index 0000000..d4f2c89
+--- /dev/null
++++ b/src/components/UserList.tsx
+@@ -0,0 +1,45 @@
++import React, { useState, useEffect } from 'react';
++import { User } from '../types';
++
++interface UserListProps {
++  apiUrl: string;
++}
++
++export const UserList: React.FC<UserListProps> = ({ apiUrl }) => {
++  const [users, setUsers] = useState<User[]>([]);
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState<string | null>(null);
++
++  useEffect(() => {
++    const fetchUsers = async () => {
++      try {
++        const response = await fetch(`${apiUrl}/users`);
++        if (!response.ok) {
++          throw new Error('Failed to fetch users');
++        }
++        const data = await response.json();
++        setUsers(data);
++      } catch (err) {
++        setError(err instanceof Error ? err.message : 'Unknown error');
++      } finally {
++        setLoading(false);
++      }
++    };
++
++    fetchUsers();
++  }, [apiUrl]);
++
++  if (loading) return <div>Loading...</div>;
++  if (error) return <div>Error: {error}</div>;
++
++  return (
++    <div className="user-list">
++      {users.map((user) => (
++        <div key={user.id} className="user-card">
++          <h3>{user.username}</h3>
++          <p>{user.email}</p>
++        </div>
++      ))}
++    </div>
++  );
++};

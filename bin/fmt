@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+#/ Usage: bin/fmt [options]
+#/ Description: Formats shell scripts according to project standards
+#/ Options:
+#/   -c, --check    Check formatting without making changes
+#/   -v, --verbose  Verbose output
+
+source bin/helpers/_utils.sh
+set_source_and_root_dir
+
+check=false
+
+while (("$#")); do
+    case "$1" in
+        -c | --check)
+            check=true
+            shift
+            ;;
+        -v | --verbose)
+            export VERBOSE=1
+            shift
+            ;;
+        -h | --help)
+            show_help
+            exit 0
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+if $check; then
+    print_color blue "Checking shell script formatting…"
+else
+    print_color blue "Formatting shell scripts…"
+fi
+
+success_status=true
+
+# Format shell scripts with shfmt if available
+if command_exists shfmt; then
+    files_to_format=(
+        "bin/"*
+        "lib/"*.sh
+        "lib/helpers/"*.sh
+        "*.sh"
+    )
+
+    cmd="shfmt -i 4 -bn -ci -sr"
+    if $check; then
+        cmd="$cmd -d"
+    else
+        cmd="$cmd -w"
+    fi
+
+    # Find all shell scripts (excluding markdown)
+    shell_files=()
+    for pattern in "${files_to_format[@]}"; do
+        for file in $pattern; do
+            if [ -f "$file" ] && [[ ! "$file" =~ \.md$ ]]; then
+                shell_files+=("$file")
+            fi
+        done
+    done
+
+    if [ ${#shell_files[@]} -gt 0 ]; then
+        if ! run_command "$cmd ${shell_files[*]}" "Formatting shell scripts with shfmt"; then
+            success_status=false
+        fi
+    fi
+else
+    warning "shfmt not found - install with: brew install shfmt"
+    success_status=false
+fi
+
+# Check for common shell script issues
+if $check; then
+    print_color blue "Checking for shellcheck issues…"
+    if command_exists shellcheck; then
+        if [ ${#shell_files[@]} -gt 0 ]; then
+            if ! run_command "shellcheck -x ${shell_files[*]} 2>/dev/null || true" "Running shellcheck"; then
+                warning "Some shellcheck warnings found (non-fatal)"
+            fi
+        fi
+    else
+        warning "shellcheck not found - install with: brew install shellcheck"
+    fi
+fi
+
+if $success_status; then
+    success "Formatting complete"
+else
+    if $check; then
+        print_color red "✗ Formatting issues found. Run 'bin/fmt' to fix."
+        exit 1
+    else
+        print_color red "✗ Some formatting failed"
+        exit 1
+    fi
+fi

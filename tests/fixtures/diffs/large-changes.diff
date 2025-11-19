@@ -1,0 +1,22 @@
+diff --git a/package-lock.json b/package-lock.json
+index abc123..def456 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -1,5000 +1,5200 @@
+ {
+   "name": "my-app",
+   "version": "1.0.0",
++  "lockfileVersion": 2,
+   "dependencies": {
++    "@types/react": {
++      "version": "18.0.0",
++      "resolved": "https://registry.npmjs.org/@types/react/-/react-18.0.0.tgz"
++    },
+     "react": {
+-      "version": "17.0.0",
+-      "resolved": "https://registry.npmjs.org/react/-/react-17.0.0.tgz"
++      "version": "18.0.0",
++      "resolved": "https://registry.npmjs.org/react/-/react-18.0.0.tgz"
+     }
+   }
+ }
