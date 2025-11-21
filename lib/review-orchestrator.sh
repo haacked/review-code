@@ -23,36 +23,81 @@ source "$SCRIPT_DIR/helpers/debug-helpers.sh"
 
 set -euo pipefail
 
-# Get the directory where this script lives
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 # Main orchestration function
 main() {
     local arg="${1:-}"
     local file_pattern="${2:-}"
 
-    # Initialize debug session (no-op if DEBUG not enabled)
-    # We'll update org/repo/mode after parsing
-    debug_init "${arg:-local}" "unknown" "unknown" "unknown"
-    debug_time "00-orchestrator" "start"
-    debug_save "00-input" "args.txt" "arg=$arg\nfile_pattern=$file_pattern"
-
-    # Step 1: Parse the argument to determine mode
-    debug_time "01-parse" "start"
+    # Step 1: Parse the argument to determine mode (before debug_init to get context)
     local parse_result
-    parse_result=$("$SCRIPT_DIR/parse-review-arg.sh" "$arg" "$file_pattern" 2>&1) || {
+    parse_result=$("$SCRIPT_DIR/parse-review-arg.sh" "$arg" "$file_pattern") || {
         echo "$parse_result" >&2
-        debug_save "01-parse" "error.txt" "$parse_result"
-        debug_finalize
         exit 1
     }
-    debug_save_json "01-parse" "output.json" <<< "$parse_result"
-    debug_time "01-parse" "end"
 
     local mode
     mode=$(echo "$parse_result" | jq -r '.mode')
     local pattern
     pattern=$(echo "$parse_result" | jq -r '.file_pattern // empty')
+
+    # Extract org/repo early for git-based modes
+    # Cache git org/repo to avoid redundant operations
+    local org="unknown" repo="unknown" identifier="${arg:-local}"
+    local git_data=""
+
+    # Source git helpers for all modes (needed for parse_pr_identifier)
+    source "$SCRIPT_DIR/helpers/git-helpers.sh"
+
+    # Get git org/repo once if we're in a git repository
+    if git rev-parse --git-dir > /dev/null 2>&1; then
+        git_data=$(get_git_org_repo 2> /dev/null || echo "unknown|unknown")
+    fi
+
+    case "$mode" in
+        "pr")
+            # For PR mode, use helper function to parse identifier
+            local pr_data
+            pr_data=$(parse_pr_identifier "$identifier")
+            org="${pr_data%%|*}"
+            repo=$(echo "$pr_data" | cut -d'|' -f2)
+            identifier="${pr_data##*|}"
+            ;;
+        "commit" | "branch" | "range" | "local" | "area")
+            # For git-based modes, use cached git org/repo
+            if [ -n "$git_data" ]; then
+                org="${git_data%|*}"
+                repo="${git_data#*|}"
+            fi
+            # Set identifier based on mode
+            case "$mode" in
+                "commit")
+                    identifier="commit-$(echo "$parse_result" | jq -r '.commit')"
+                    ;;
+                "branch")
+                    identifier="branch-$(echo "$parse_result" | jq -r '.branch')"
+                    ;;
+                "range")
+                    identifier="range-$(echo "$parse_result" | jq -r '.range' | tr '.' '-')"
+                    ;;
+                "area")
+                    identifier="area-$(echo "$parse_result" | jq -r '.area')"
+                    ;;
+                "local")
+                    identifier="local"
+                    ;;
+            esac
+            ;;
+    esac
+
+    # Initialize debug session with actual values (no-op if DEBUG not enabled)
+    debug_init "$identifier" "$org" "$repo" "$mode"
+    debug_time "00-orchestrator" "start"
+    debug_save "00-input" "args.txt" "arg=$arg\nfile_pattern=$file_pattern"
+
+    # Save parsed results
+    debug_time "01-parse" "start"
+    debug_save_json "01-parse" "output.json" <<< "$parse_result"
+    debug_time "01-parse" "end"
 
     # Step 2: Handle different modes
     case "$mode" in
@@ -229,7 +274,7 @@ build_summary() {
 
             # Count commits in branch
             local commit_count
-            commit_count=$(git rev-list --count "${base_branch}..${target_branch}" 2>/dev/null || echo "unknown")
+            commit_count=$(git rev-list --count "${base_branch}..${target_branch}" 2> /dev/null || echo "unknown")
 
             jq -n \
                 --arg mode "$mode" \
@@ -289,7 +334,7 @@ build_summary() {
 
             # Count commits in range
             local commit_count
-            commit_count=$(git rev-list --count "${target_range}" 2>/dev/null || echo "unknown")
+            commit_count=$(git rev-list --count "${target_range}" 2> /dev/null || echo "unknown")
 
             jq -n \
                 --arg mode "$mode" \
@@ -555,7 +600,7 @@ handle_local_review() {
     if [ -n "$pattern" ]; then
         diff_content=$("$SCRIPT_DIR/get-review-diff.sh" local "$pattern")
     else
-        diff_content=$("$SCRIPT_DIR/git-diff-filter.sh" 2>&1)
+        diff_content=$("$SCRIPT_DIR/get-review-diff.sh" local)
     fi
 
     # Check if there are actually changes

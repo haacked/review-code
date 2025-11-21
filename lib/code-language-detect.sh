@@ -136,17 +136,38 @@ frameworks_json=$(printf '%s\n' "${frameworks[@]}" | jq -R . | jq -s . || echo "
 extensions_json=$(printf '%s\n' "${extensions[@]}" | jq -R . | jq -s . || echo "[]")
 
 # Debug: Save detected patterns
-debug_save "03-language-detection" "detected-extensions.txt" "$(printf '%s\n' "${extensions[@]}")"
-debug_save "03-language-detection" "detected-languages.txt" "$(printf '%s\n' "${languages[@]}")"
-debug_save "03-language-detection" "detected-frameworks.txt" "$(printf '%s\n' "${frameworks[@]}")"
+# Use safe array handling pattern for set -u compatibility
+lang_count=0
+framework_count=0
+ext_count=0
+if [ -n "${languages[@]+"${languages[@]}"}" ]; then
+    lang_count="${#languages[@]}"
+    debug_save "03-language-detection" "detected-languages.txt" "$(printf '%s\n' "${languages[@]}")"
+else
+    debug_save "03-language-detection" "detected-languages.txt" "(no languages detected)"
+fi
+if [ -n "${frameworks[@]+"${frameworks[@]}"}" ]; then
+    framework_count="${#frameworks[@]}"
+    debug_save "03-language-detection" "detected-frameworks.txt" "$(printf '%s\n' "${frameworks[@]}")"
+else
+    debug_save "03-language-detection" "detected-frameworks.txt" "(no frameworks detected)"
+fi
+if [ -n "${extensions[@]+"${extensions[@]}"}" ]; then
+    ext_count="${#extensions[@]}"
+    debug_save "03-language-detection" "detected-extensions.txt" "$(printf '%s\n' "${extensions[@]}")"
+else
+    debug_save "03-language-detection" "detected-extensions.txt" "(no extensions detected)"
+fi
+
 debug_stats "03-language-detection" \
-    languages_count "${#languages[@]}" \
-    frameworks_count "${#frameworks[@]}" \
-    extensions_count "${#extensions[@]}" \
+    languages_count "$lang_count" \
+    frameworks_count "$framework_count" \
+    extensions_count "$ext_count" \
     has_frontend "$has_frontend"
 
 # Output JSON
-output=$(cat << EOF
+output=$(
+    cat << EOF
 {
     "languages": $languages_json,
     "frameworks": $frameworks_json,

@@ -58,7 +58,7 @@ if [ "${BASH_SOURCE[0]:-}" = "${0}" ]; then
             set -- "${@:1:$(($# - 1))}"
         fi
     fi
-    
+
     case "$mode" in
         "commit")
             commit="$1"
@@ -84,7 +84,7 @@ if [ "${BASH_SOURCE[0]:-}" = "${0}" ]; then
                 staged_diff=$(git diff --staged -U"$CONTEXT_LINES" --diff-filter=d -- "${EXCLUSIONS[@]}" "$file_pattern" 2> /dev/null || true)
                 # Then unstaged changes
                 unstaged_diff=$(git diff -U"$CONTEXT_LINES" --diff-filter=d -- "${EXCLUSIONS[@]}" "$file_pattern" 2> /dev/null || true)
-    
+
                 if [ -n "$staged_diff" ] && [ -n "$unstaged_diff" ]; then
                     diff_content="$staged_diff
     
@@ -101,10 +101,10 @@ if [ "${BASH_SOURCE[0]:-}" = "${0}" ]; then
             else
                 diff_type="local (uncommitted)"
                 # Use git-diff-filter.sh for local changes
-                diff_content=$("$SCRIPT_DIR/git-diff-filter.sh" 2>&1 | grep -v '^DIFF_TYPE:' || true)
+                diff_content=$("$SCRIPT_DIR/git-diff-filter.sh" 2> /dev/null || true)
             fi
             ;;
-    
+
         "branch-plus-uncommitted")
             branch="$1"
             base_branch="$2"
@@ -132,7 +132,7 @@ $unstaged_diff"
                     uncommitted_diff=""
                 fi
             else
-                uncommitted_diff=$("$SCRIPT_DIR/git-diff-filter.sh" 2>&1 | grep -v '^DIFF_TYPE:' || true)
+                uncommitted_diff=$("$SCRIPT_DIR/git-diff-filter.sh" 2> /dev/null || true)
             fi
 
             # Combine them
@@ -148,8 +148,8 @@ $uncommitted_diff"
             exit 1
             ;;
     esac
-    
-        # Output with diff type marker
-        echo "DIFF_TYPE: $diff_type"
-        echo "$diff_content"
+
+    # Output with diff type marker
+    echo "DIFF_TYPE: $diff_type"
+    echo "$diff_content"
 fi

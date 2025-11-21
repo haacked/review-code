@@ -1,4 +1,6 @@
-## Shell Script Best Practices
+# Shell Script Best Practices
+
+- Use idiomatic bash patterns and features whenever possible
 
 **Script safety:**
 
@@ -9,7 +11,8 @@
 
 **Shebang patterns:**
 
-- Use `#!/usr/bin/env bash` for scripts requiring bash 4.0+ features (associative arrays, `${var,,}`, etc.)
+- Use `#!/usr/bin/env bash` for scripts requiring bash 4.0+ features
+  (associative arrays, `${var,,}`, etc.)
 - Use `#!/bin/bash` for scripts compatible with older bash (3.2+)
 - Never use `#!/bin/sh` for bash-specific features
 - Avoid bashisms if targeting POSIX sh
@@ -43,7 +46,7 @@ if ! command -v jq >/dev/null 2>&1; then
     echo "Error: jq is required but not installed" >&2
     exit 1
 fi
-```text
+```bash
 
 ## Variable Handling
 
@@ -95,7 +98,7 @@ if [[ ! "$user_input" =~ ^[a-zA-Z0-9_-]+$ ]]; then
     echo "Invalid input" >&2
     exit 1
 fi
-```text
+```bash
 
 ## Arrays and Loops
 
@@ -106,7 +109,28 @@ files=("file1.txt" "file2.txt" "file with spaces.txt")
 for file in "${files[@]}"; do
     process "$file"
 done
-```text
+```bash
+
+**Safe empty array handling with `set -u`:**
+
+When using `set -u` (fail on unbound variables), checking array length on
+empty arrays will fail. Use this pattern:
+
+```bash
+# WRONG: Fails with "unbound variable" on empty arrays
+if [ "${#array[@]}" -gt 0 ]; then
+    echo "Has items"
+fi
+
+# CORRECT: Safe pattern for set -u
+if [ -n "${array[@]+"${array[@]}"}" ]; then
+    count="${#array[@]}"
+    echo "Has $count items"
+fi
+```bash
+
+This pattern uses parameter expansion with alternate value to safely test
+if an array has elements.
 
 **Reading files:**
 
@@ -114,13 +138,47 @@ done
 while IFS= read -r line; do
     process "$line"
 done < file.txt
-```text
+```bash
 
 **Anti-patterns:**
 
 - Parsing `ls` output
 - Using `for` with word splitting
 - Not preserving whitespace in loops
+- Checking `${#array[@]}` directly when using `set -u` with potentially empty arrays
+
+## Script Initialization and Ordering
+
+**Get context before initialization:**
+
+When scripts need external context (git repo, environment, etc.), gather it
+before initializing subsystems:
+
+```bash
+# WRONG: Initialize before getting context
+init_debug "unknown" "unknown"
+org=$(get_git_org)
+repo=$(get_git_repo)
+
+# CORRECT: Get context first, then initialize
+org=$(get_git_org)
+repo=$(get_git_repo)
+init_debug "$org" "$repo"
+```bash
+
+**Conditional sourcing:**
+
+Only source helper scripts when needed to avoid errors and improve performance:
+
+```bash
+# Check prerequisites before sourcing
+if git rev-parse --git-dir > /dev/null 2>&1; then
+    source "$SCRIPT_DIR/git-helpers.sh"
+    org=$(get_git_org_repo)
+else
+    org="unknown"
+fi
+```bash
 
 ## Functions
 
@@ -145,7 +203,7 @@ process_file() {
     # Process and output
     transform "$file" > "$output"
 }
-```text
+```bash
 
 ## Command Substitution
 
@@ -162,7 +220,7 @@ result=$(command) || {
     echo "Command failed" >&2
     exit 1
 }
-```text
+```bash
 
 ## Testing and Conditions
 
@@ -200,7 +258,57 @@ log_error() {
 log_info() {
     echo "INFO: $*"
 }
-```text
+```bash
+
+**Stream separation (stdout vs stderr):**
+
+Be careful when mixing streams. Avoid `2>&1` unless you specifically need
+both streams combined:
+
+```bash
+# WRONG: Mixes debug output into data stream
+result=$(command 2>&1)
+echo "$result" | jq .  # Fails if debug messages mixed in
+
+# CORRECT: Keep streams separate
+result=$(command 2>/dev/null)  # Suppress stderr
+result=$(command)  # Keep stderr separate (shows in console)
+
+# CORRECT: Capture stderr separately if needed
+result=$(command 2>"$error_file")
+```bash
+
+**When to use `2>&1`:**
+- Only when you need to capture/parse both stdout and stderr together
+- When redirecting all output to a log file
+- Not for data pipelines where stdout contains structured data (JSON, CSV, etc.)
+
+**Stderr handling policy:**
+
+Use consistent patterns for different scenarios:
+
+```bash
+# Pattern 1: Expected failures (e.g., checking git repo status)
+# Suppress stderr when failure is normal and expected
+git_data=$(get_git_org_repo 2>/dev/null || echo "unknown|unknown")
+
+# Pattern 2: Errors should be visible to user
+# No redirection - errors show in console for debugging
+parse_result=$("$SCRIPT_DIR/parse-review-arg.sh" "$arg" "$file_pattern")
+
+# Pattern 3: Optional data where failure is acceptable
+# Suppress stderr and provide empty fallback
+diff_content=$("$SCRIPT_DIR/git-diff-filter.sh" 2>/dev/null || echo "")
+
+# Pattern 4: Capture stderr for analysis
+# Redirect to file or variable (rare - only when you need to parse errors)
+stderr_output=$(command 2>&1 >/dev/null)
+```bash
+
+**Never:**
+- Mix stderr into stdout for data pipelines (breaks JSON/CSV parsing)
+- Silently swallow errors without fallback values
+- Use `2>&1` by default "just in case"
 
 ## Performance
 
@@ -214,11 +322,41 @@ log_info() {
 
 **Efficient patterns:**
 
-- `${var#pattern}` - remove prefix
-- `${var%pattern}` - remove suffix
-- `${var//pattern/replacement}` - replace all
+- `${var#pattern}` - remove shortest prefix match
+- `${var##pattern}` - remove longest prefix match
+- `${var%pattern}` - remove shortest suffix match
+- `${var%%pattern}` - remove longest suffix match
+- `${var//pattern/replacement}` - replace all occurrences
 - `${var,,}` - convert to lowercase (bash 4.0+)
 - `${var^^}` - convert to uppercase (bash 4.0+)
+
+**String splitting without external commands:**
+
+```bash
+# Split on delimiter (e.g., "org|repo")
+data="posthog|posthog-js"
+org="${data%|*}"      # Everything before last |
+repo="${data#*|}"     # Everything after first |
+
+# Better than: echo "$data" | cut -d'|' -f1
+```bash
+
+**Pattern matching for extraction:**
+
+```bash
+# Extract from URL paths
+url="https://github.com/org/repo/pull/123"
+
+# Use regex matching
+if [[ "$url" =~ ^https?://[^/]+/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+    org="${BASH_REMATCH[1]}"
+    repo="${BASH_REMATCH[2]}"
+    pr="${BASH_REMATCH[3]}"
+fi
+
+# Or use sed for substitution
+org=$(echo "$url" | sed -E 's|https?://[^/]+/([^/]+)/.*|\1|')
+```bash
 
 **Use associative arrays for O(1) lookups (bash 4.0+):**
 
@@ -235,7 +373,7 @@ for item in "${items[@]}"; do
     seen_languages[$item]=1
 done
 languages=("${!seen_languages[@]}")
-```text
+```bash
 
 ## Dependencies
 

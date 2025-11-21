@@ -2,6 +2,9 @@
 # Debug helpers for review-code
 # Provides utilities for capturing intermediate artifacts and command logs when DEBUG mode is enabled
 
+# Initialize DEBUG_SESSION_DIR to empty to prevent unbound variable errors with set -u
+export DEBUG_SESSION_DIR="${DEBUG_SESSION_DIR:-}"
+
 # Check if debug mode is enabled
 # Returns: 0 if enabled, 1 if disabled
 is_debug_enabled() {
@@ -24,12 +27,13 @@ debug_init() {
 
     # Use cache directory for debug artifacts
     local debug_base="${REVIEW_CODE_DEBUG_PATH:-$HOME/.cache/review-code/debug}"
-    export DEBUG_SESSION_DIR="${debug_base}/${org}-${repo}-${mode}-${identifier}-${timestamp}"
+    export DEBUG_SESSION_DIR="${debug_base}/${org}-${repo}-${identifier}-${timestamp}"
 
     mkdir -p "$DEBUG_SESSION_DIR"
+    chmod 700 "$DEBUG_SESSION_DIR" # Restrict to owner only for security
 
     # Create session metadata
-    cat > "$DEBUG_SESSION_DIR/session.json" <<EOF
+    cat > "$DEBUG_SESSION_DIR/session.json" << EOF
 {
   "identifier": "$identifier",
   "org": "$org",
@@ -49,6 +53,7 @@ EOF
 # Example: debug_save "01-diff-generation" "raw-diff.txt" "$diff"
 debug_save() {
     is_debug_enabled || return 0
+    [ -n "$DEBUG_SESSION_DIR" ] || return 0 # Skip if debug_init not called yet
 
     local stage="$1"
     local filename="$2"
@@ -64,6 +69,7 @@ debug_save() {
 # Example: debug_save_file "01-diff-generation" "raw-diff.txt" /tmp/diff.txt
 debug_save_file() {
     is_debug_enabled || return 0
+    [ -n "$DEBUG_SESSION_DIR" ] || return 0 # Skip if debug_init not called yet
 
     local stage="$1"
     local filename="$2"
@@ -79,6 +85,7 @@ debug_save_file() {
 # Example: echo '{"foo":"bar"}' | debug_save_json "02-metadata" "result.json"
 debug_save_json() {
     is_debug_enabled || return 0
+    [ -n "$DEBUG_SESSION_DIR" ] || return 0 # Skip if debug_init not called yet
 
     local stage="$1"
     local filename="$2"
@@ -87,10 +94,11 @@ debug_save_json() {
     mkdir -p "$stage_dir"
 
     # Try to format as JSON, but save raw content if jq fails
+    # Use mktemp with template in secure directory to prevent race conditions
     local temp_file
-    temp_file=$(mktemp)
+    temp_file=$(mktemp "$stage_dir/.tmp.XXXXXXXX")
     cat > "$temp_file"
-    jq '.' "$temp_file" > "$stage_dir/$filename" 2>/dev/null || cp "$temp_file" "$stage_dir/$filename"
+    jq '.' "$temp_file" > "$stage_dir/$filename" 2> /dev/null || cp "$temp_file" "$stage_dir/$filename"
     rm -f "$temp_file"
 }
 
@@ -100,6 +108,7 @@ debug_save_json() {
 # Example: debug_log_command "01-diff" "Generate diff" git diff main...HEAD
 debug_log_command() {
     is_debug_enabled || return 0
+    [ -n "$DEBUG_SESSION_DIR" ] || return 0 # Skip if debug_init not called yet
 
     local stage="$1"
     local description="$2"
@@ -137,6 +146,7 @@ debug_log_command() {
 #          debug_time "01-diff-generation" "end"
 debug_time() {
     is_debug_enabled || return 0
+    [ -n "$DEBUG_SESSION_DIR" ] || return 0 # Skip if debug_init not called yet
 
     local stage="$1"
     local event="$2"
@@ -158,6 +168,7 @@ debug_time() {
 # Example: debug_trace "02-metadata" "Detected Python file: src/main.py"
 debug_trace() {
     is_debug_enabled || return 0
+    [ -n "$DEBUG_SESSION_DIR" ] || return 0 # Skip if debug_init not called yet
 
     local stage="$1"
     local message="$2"
@@ -173,6 +184,7 @@ debug_trace() {
 # Example: debug_stats "01-diff" lines_before 1000 lines_after 200
 debug_stats() {
     is_debug_enabled || return 0
+    [ -n "$DEBUG_SESSION_DIR" ] || return 0 # Skip if debug_init not called yet
 
     local stage="$1"
     shift
@@ -196,6 +208,7 @@ debug_stats() {
 # Usage: debug_finalize
 debug_finalize() {
     is_debug_enabled || return 0
+    [ -n "$DEBUG_SESSION_DIR" ] || return 0 # Skip if debug_init not called yet
 
     local summary_file="$DEBUG_SESSION_DIR/README.md"
 
@@ -244,7 +257,7 @@ debug_finalize() {
 
             if [ "$raw_tokens" != "0" ]; then
                 local savings_pct
-                savings_pct=$(( tokens_saved * 100 / raw_tokens ))
+                savings_pct=$((tokens_saved * 100 / raw_tokens))
                 echo "  Raw diff tokens: ~$raw_tokens"
                 echo "  Filtered diff tokens: ~$filtered_tokens"
                 echo "  Tokens saved: ~$tokens_saved ($savings_pct%)"

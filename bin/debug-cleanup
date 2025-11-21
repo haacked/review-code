@@ -39,7 +39,7 @@ while [ $# -gt 0 ]; do
             LIST_ONLY=true
             shift
             ;;
-        --help|-h)
+        --help | -h)
             # Extract and print header comment
             sed -n '2,/^$/p' "$0" | sed 's/^# //; s/^#//'
             exit 0
@@ -74,8 +74,8 @@ list_sessions() {
 
         # Get size
         local size
-        if command -v du >/dev/null 2>&1; then
-            size=$(du -sh "$session_dir" 2>/dev/null | cut -f1)
+        if command -v du > /dev/null 2>&1; then
+            size=$(du -sh "$session_dir" 2> /dev/null | cut -f1)
         else
             size="unknown"
         fi
@@ -88,14 +88,14 @@ list_sessions() {
             mod_time=$(stat -f %m "$session_dir")
             local now
             now=$(date +%s)
-            age_days=$(( (now - mod_time) / 86400 ))
+            age_days=$(((now - mod_time) / 86400))
         else
             # Linux
             local mod_time
             mod_time=$(stat -c %Y "$session_dir")
             local now
             now=$(date +%s)
-            age_days=$(( (now - mod_time) / 86400 ))
+            age_days=$(((now - mod_time) / 86400))
         fi
 
         printf "%-60s %10s %15s\n" "$session_name" "$size" "$age_days"
@@ -107,9 +107,9 @@ list_sessions() {
     echo "Total sessions: $(find "$DEBUG_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
 
     # Total disk usage
-    if command -v du >/dev/null 2>&1; then
+    if command -v du > /dev/null 2>&1; then
         local total_size
-        total_size=$(du -sh "$DEBUG_DIR" 2>/dev/null | cut -f1)
+        total_size=$(du -sh "$DEBUG_DIR" 2> /dev/null | cut -f1)
         echo "Total disk usage: $total_size"
     fi
 }
@@ -122,7 +122,7 @@ remove_sessions() {
     if [ "$REMOVE_ALL" = true ]; then
         echo "Removing all debug sessions..."
         rm -rf "$DEBUG_DIR"/*
-        removed_count=$(find "$DEBUG_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+        removed_count=$(find "$DEBUG_DIR" -mindepth 1 -maxdepth 1 -type d 2> /dev/null | wc -l | tr -d ' ')
         echo "Removed all sessions"
     else
         echo "Removing debug sessions older than $days days..."
@@ -136,7 +136,7 @@ remove_sessions() {
                 local now
                 now=$(date +%s)
                 local age_days
-                age_days=$(( (now - mod_time) / 86400 ))
+                age_days=$(((now - mod_time) / 86400))
 
                 if [ "$age_days" -gt "$days" ]; then
                     echo "  Removing: $(basename "$session_dir") (${age_days} days old)"

@@ -45,11 +45,11 @@ load_config_safely() {
     local file_perms
 
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        file_owner=$(stat -f '%u' "$config_file" 2>/dev/null)
-        file_perms=$(stat -f '%Lp' "$config_file" 2>/dev/null)
+        file_owner=$(stat -f '%u' "$config_file" 2> /dev/null)
+        file_perms=$(stat -f '%Lp' "$config_file" 2> /dev/null)
     else
-        file_owner=$(stat -c '%u' "$config_file" 2>/dev/null)
-        file_perms=$(stat -c '%a' "$config_file" 2>/dev/null)
+        file_owner=$(stat -c '%u' "$config_file" 2> /dev/null)
+        file_perms=$(stat -c '%a' "$config_file" 2> /dev/null)
     fi
 
     if [ "$file_owner" != "$(id -u)" ]; then
