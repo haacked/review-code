@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        # Install bats-core
+        sudo npm install -g bats
+
+        # Install jq
+        sudo apt-get update
+        sudo apt-get install -y jq
+
+        # Verify installations
+        echo "=== Dependency Versions ==="
+        bash --version | head -1
+        bats --version
+        jq --version
+        git --version
+
+    - name: Run tests
+      run: |
+        chmod +x bin/test
+        bin/test
+
+    - name: Check shell scripts with shellcheck
+      run: |
+        # Install shellcheck
+        sudo apt-get install -y shellcheck
+
+        # Run shellcheck on all shell scripts
+        echo "=== Running shellcheck ==="
+        find . -type f -name "*.sh" -not -path "./tests/*" | while read -r script; do
+          echo "Checking: $script"
+          shellcheck -x "$script" || echo "Warning: shellcheck found issues in $script"
+        done
