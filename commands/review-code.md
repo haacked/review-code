@@ -151,6 +151,8 @@ Changes:
 - Files: $files_changed
 - Added: +$lines_added lines
 - Removed: -$lines_removed lines
+
+Review will be saved to: $review_file
 ```
 
 **For PR mode:**
@@ -171,6 +173,8 @@ Changes:
 - Files: $files_changed
 - Added: +$lines_added lines
 - Removed: -$lines_removed lines
+
+Review will be saved to: $review_file
 ```
 
 **For commit mode:**
@@ -190,6 +194,8 @@ Changes:
 - Files: $files_changed
 - Added: +$lines_added lines
 - Removed: -$lines_removed lines
+
+Review will be saved to: $review_file
 ```
 
 **For range mode:**
@@ -210,6 +216,8 @@ Changes:
 - Files: $files_changed
 - Added: +$lines_added lines
 - Removed: -$lines_removed lines
+
+Review will be saved to: $review_file
 ```
 
 **For local mode:**
@@ -230,6 +238,8 @@ Changes:
 - Files: $files_changed
 - Added: +$lines_added lines
 - Removed: -$lines_removed lines
+
+Review will be saved to: $review_file
 ```
 
 **Ask user to confirm:**
