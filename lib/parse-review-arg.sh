@@ -136,9 +136,10 @@ detect_pr() {
         return 0
     fi
 
-    # GitHub PR URL
-    if [[ "$arg" =~ ^https://github.com/ ]] && [[ "$arg" =~ /pull/ ]]; then
-        build_json_output "pr" "pr_url" "$arg"
+    # GitHub PR URL - extract PR number
+    if [[ "$arg" =~ ^https://github.com/[^/]+/[^/]+/pull/([0-9]+) ]]; then
+        local pr_number="${BASH_REMATCH[1]}"
+        build_json_output "pr" "pr_number" "$pr_number" "pr_url" "$arg"
         return 0
     fi
 
@@ -260,9 +261,51 @@ detect_no_arg() {
         return 0
     fi
 
-    # On feature branch with no uncommitted changes - review branch
-    build_json_output "branch" "branch" "$current_branch" \
-        "base_branch" "$base_branch" "scope" "auto"
+    # On feature branch with no uncommitted changes - check for PR and remote status
+    local associated_pr=""
+    local remote_ahead="false"
+
+    # Check if branch has upstream tracking
+    local upstream
+    upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null || echo "")
+
+    if [ -n "$upstream" ]; then
+        # Check if remote is ahead of local
+        local local_rev remote_rev
+        local_rev=$(git rev-parse HEAD)
+        remote_rev=$(git rev-parse "$upstream" 2>/dev/null || echo "")
+
+        if [ -n "$remote_rev" ] && [ "$local_rev" != "$remote_rev" ]; then
+            # Check if remote has commits we don't have
+            local behind_count
+            behind_count=$(git rev-list --count HEAD.."$upstream" 2>/dev/null || echo "0")
+            if [ "$behind_count" -gt 0 ]; then
+                remote_ahead="true"
+            fi
+        fi
+    fi
+
+    # Check for associated PR using gh CLI
+    if command -v gh >/dev/null 2>&1; then
+        local pr_list
+        pr_list=$(gh pr list --head "$current_branch" --json number --jq '.[0].number' 2>/dev/null || echo "")
+        if [ -n "$pr_list" ]; then
+            associated_pr="$pr_list"
+        fi
+    fi
+
+    # Build output with optional PR and remote status
+    local -a output_args=("branch" "branch" "$current_branch" "base_branch" "$base_branch" "scope" "auto")
+
+    if [ -n "$associated_pr" ]; then
+        output_args+=("associated_pr" "$associated_pr")
+    fi
+
+    if [ "$remote_ahead" == "true" ]; then
+        output_args+=("remote_ahead" "true")
+    fi
+
+    build_json_output "${output_args[@]}"
     return 0
 }
 

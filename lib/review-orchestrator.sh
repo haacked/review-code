@@ -151,10 +151,20 @@ main() {
             handle_commit_review "$commit"
             ;;
         "branch")
-            local branch base_branch
+            local branch base_branch remote_ahead associated_pr
             branch=$(echo "$parse_result" | jq -r '.branch')
             base_branch=$(echo "$parse_result" | jq -r '.base_branch')
-            handle_branch_review "$branch" "$base_branch"
+            remote_ahead=$(echo "$parse_result" | jq -r '.remote_ahead // "false"')
+            associated_pr=$(echo "$parse_result" | jq -r '.associated_pr // empty')
+
+            # Check if remote is ahead and prompt to pull
+            if [ "$remote_ahead" == "true" ]; then
+                echo "{\"status\":\"prompt_pull\",\"branch\":\"$branch\",\"associated_pr\":\"$associated_pr\"}"
+                exit 0
+            fi
+
+            # Pass PR number to branch review handler
+            handle_branch_review "$branch" "$base_branch" "$associated_pr"
             ;;
         "range")
             local range
@@ -172,14 +182,15 @@ main() {
 }
 
 # Common helper: Build review data from diff content
-# Args: $1 = mode, $2 = diff_content, $3 = git_context, $4 = file_path_identifier, $@ = mode-specific jq args
+# Args: $1 = mode, $2 = diff_content, $3 = git_context, $4 = file_path_identifier, $5 = pr_context (optional), $@ = mode-specific jq args
 # Returns: JSON output on stdout
 build_review_data() {
     local mode="$1"
     local diff_content="$2"
     local git_context="$3"
     local file_path_identifier="$4"
-    shift 4
+    local pr_context="$5"
+    shift 5
     # Remaining args are mode-specific jq --arg pairs
 
     # Detect languages
@@ -205,33 +216,60 @@ build_review_data() {
     local mode_fields
     mode_fields=$(jq -n "$@" '$ARGS.named')
     local summary
-    summary=$(build_summary "$mode" "$diff_content" "$git_context" "$mode_fields")
+    summary=$(build_summary "$mode" "$diff_content" "$git_context" "$mode_fields" "$pr_context")
 
     # Output JSON for Claude with mode-specific fields
     debug_time "07-final-output" "start"
     local final_output
-    final_output=$(jq -n \
-        --arg mode "$mode" \
-        --argjson git "$git_context" \
-        --arg diff "$diff_content" \
-        --argjson lang "$lang_info" \
-        --argjson meta "$file_metadata" \
-        --argjson file "$file_info" \
-        --arg context "$review_context" \
-        --argjson summary "$summary" \
-        "$@" \
-        '{
-            status: "ready",
-            mode: $mode,
-            git: $git,
-            diff: $diff,
-            languages: $lang,
-            file_metadata: $meta,
-            file_info: $file,
-            review_context: $context,
-            summary: $summary,
-            next_step: "gather_architectural_context"
-        } + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")))')
+    if [ -n "$pr_context" ]; then
+        final_output=$(jq -n \
+            --arg mode "$mode" \
+            --argjson git "$git_context" \
+            --arg diff "$diff_content" \
+            --argjson lang "$lang_info" \
+            --argjson meta "$file_metadata" \
+            --argjson file "$file_info" \
+            --arg context "$review_context" \
+            --argjson summary "$summary" \
+            --argjson pr "$pr_context" \
+            "$@" \
+            '{
+                status: "ready",
+                mode: $mode,
+                git: $git,
+                diff: $diff,
+                languages: $lang,
+                file_metadata: $meta,
+                file_info: $file,
+                review_context: $context,
+                summary: $summary,
+                pr: $pr,
+                next_step: "gather_architectural_context"
+            } + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")))')
+    else
+        final_output=$(jq -n \
+            --arg mode "$mode" \
+            --argjson git "$git_context" \
+            --arg diff "$diff_content" \
+            --argjson lang "$lang_info" \
+            --argjson meta "$file_metadata" \
+            --argjson file "$file_info" \
+            --arg context "$review_context" \
+            --argjson summary "$summary" \
+            "$@" \
+            '{
+                status: "ready",
+                mode: $mode,
+                git: $git,
+                diff: $diff,
+                languages: $lang,
+                file_metadata: $meta,
+                file_info: $file,
+                review_context: $context,
+                summary: $summary,
+                next_step: "gather_architectural_context"
+            } + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")))')
+    fi
     debug_save_json "07-final-output" "output.json" <<< "$final_output"
     debug_time "07-final-output" "end"
     debug_time "00-orchestrator" "end"
@@ -241,12 +279,13 @@ build_review_data() {
 }
 
 # Build a human-readable summary for user confirmation
-# Args: $1 = mode, $2 = diff_content, $3 = git_context, $4 = mode_fields (JSON string)
+# Args: $1 = mode, $2 = diff_content, $3 = git_context, $4 = mode_fields (JSON string), $5 = pr_context (optional)
 build_summary() {
     local mode="$1"
     local diff_content="$2"
     local git_context="$3"
     local mode_fields="$4"
+    local pr_context="${5:-}"
 
     # Extract key info from git context
     local org repo branch commit working_dir
@@ -276,33 +315,85 @@ build_summary() {
             local commit_count
             commit_count=$(git rev-list --count "${base_branch}..${target_branch}" 2> /dev/null || echo "unknown")
 
-            jq -n \
-                --arg mode "$mode" \
-                --arg org "$org" \
-                --arg repo "$repo" \
-                --arg branch "$target_branch" \
-                --arg base_branch "$base_branch" \
-                --arg commit "$commit" \
-                --arg working_dir "$working_dir" \
-                --arg files "$files_changed" \
-                --arg added "$lines_added" \
-                --arg removed "$lines_removed" \
-                --arg commits "$commit_count" \
-                '{
-                    mode: $mode,
-                    repository: "\($org)/\($repo)",
-                    branch: $branch,
-                    base_branch: $base_branch,
-                    commit: $commit,
-                    working_directory: $working_dir,
-                    comparison: "\($base_branch)..\($branch)",
-                    stats: {
-                        commits: $commits,
-                        files_changed: $files,
-                        lines_added: $added,
-                        lines_removed: $removed
-                    }
-                }'
+            # Build base summary
+            if [ -n "$pr_context" ]; then
+                # Include PR information
+                local pr_number pr_title pr_url pr_author pr_state
+                pr_number=$(echo "$pr_context" | jq -r '.number // "unknown"')
+                pr_title=$(echo "$pr_context" | jq -r '.title // "unknown"')
+                pr_url=$(echo "$pr_context" | jq -r '.url // "unknown"')
+                pr_author=$(echo "$pr_context" | jq -r '.author // "unknown"')
+                pr_state=$(echo "$pr_context" | jq -r '.state // "unknown"')
+
+                jq -n \
+                    --arg mode "$mode" \
+                    --arg org "$org" \
+                    --arg repo "$repo" \
+                    --arg branch "$target_branch" \
+                    --arg base_branch "$base_branch" \
+                    --arg commit "$commit" \
+                    --arg working_dir "$working_dir" \
+                    --arg files "$files_changed" \
+                    --arg added "$lines_added" \
+                    --arg removed "$lines_removed" \
+                    --arg commits "$commit_count" \
+                    --arg pr_number "$pr_number" \
+                    --arg pr_title "$pr_title" \
+                    --arg pr_url "$pr_url" \
+                    --arg pr_author "$pr_author" \
+                    --arg pr_state "$pr_state" \
+                    '{
+                        mode: $mode,
+                        repository: "\($org)/\($repo)",
+                        branch: $branch,
+                        base_branch: $base_branch,
+                        commit: $commit,
+                        working_directory: $working_dir,
+                        comparison: "\($base_branch)..\($branch)",
+                        associated_pr: {
+                            number: $pr_number,
+                            title: $pr_title,
+                            url: $pr_url,
+                            author: $pr_author,
+                            state: $pr_state
+                        },
+                        stats: {
+                            commits: $commits,
+                            files_changed: $files,
+                            lines_added: $added,
+                            lines_removed: $removed
+                        }
+                    }'
+            else
+                # No PR information
+                jq -n \
+                    --arg mode "$mode" \
+                    --arg org "$org" \
+                    --arg repo "$repo" \
+                    --arg branch "$target_branch" \
+                    --arg base_branch "$base_branch" \
+                    --arg commit "$commit" \
+                    --arg working_dir "$working_dir" \
+                    --arg files "$files_changed" \
+                    --arg added "$lines_added" \
+                    --arg removed "$lines_removed" \
+                    --arg commits "$commit_count" \
+                    '{
+                        mode: $mode,
+                        repository: "\($org)/\($repo)",
+                        branch: $branch,
+                        base_branch: $base_branch,
+                        commit: $commit,
+                        working_directory: $working_dir,
+                        comparison: "\($base_branch)..\($branch)",
+                        stats: {
+                            commits: $commits,
+                            files_changed: $files,
+                            lines_added: $added,
+                            lines_removed: $removed
+                        }
+                    }'
+            fi
             ;;
         "commit")
             local target_commit
@@ -539,7 +630,7 @@ handle_commit_review() {
     fi
 
     # Use common helper to build review data
-    build_review_data "commit" "$diff_content" "$git_context" "commit-$commit" \
+    build_review_data "commit" "$diff_content" "$git_context" "commit-$commit" "" \
         --arg mode_commit "$commit"
 }
 
@@ -547,10 +638,17 @@ handle_commit_review() {
 handle_branch_review() {
     local branch="$1"
     local base_branch="$2"
+    local associated_pr="${3:-}"
 
     # Get git context
     local git_context
     git_context=$("$SCRIPT_DIR/git-context.sh")
+
+    # Fetch PR context if available
+    local pr_context=""
+    if [ -n "$associated_pr" ]; then
+        pr_context=$("$SCRIPT_DIR/pr-context.sh" "$associated_pr" 2>/dev/null || echo "")
+    fi
 
     # Get diff for branch
     local diff_content
@@ -561,9 +659,16 @@ handle_branch_review() {
     fi
 
     # Use common helper to build review data
-    build_review_data "branch" "$diff_content" "$git_context" "branch-$branch" \
-        --arg mode_branch "$branch" \
-        --arg mode_base_branch "$base_branch"
+    if [ -n "$pr_context" ]; then
+        build_review_data "branch" "$diff_content" "$git_context" "branch-$branch" "$pr_context" \
+            --arg mode_branch "$branch" \
+            --arg mode_base_branch "$base_branch" \
+            --arg mode_associated_pr "$associated_pr"
+    else
+        build_review_data "branch" "$diff_content" "$git_context" "branch-$branch" "" \
+            --arg mode_branch "$branch" \
+            --arg mode_base_branch "$base_branch"
+    fi
 }
 
 # Handle range review
@@ -583,7 +688,7 @@ handle_range_review() {
     fi
 
     # Use common helper to build review data
-    build_review_data "range" "$diff_content" "$git_context" "range-$range" \
+    build_review_data "range" "$diff_content" "$git_context" "range-$range" "" \
         --arg mode_range "$range"
 }
 
@@ -611,10 +716,10 @@ handle_local_review() {
 
     # Use common helper to build review data
     if [ -n "$area" ]; then
-        build_review_data "local" "$diff_content" "$git_context" "" \
+        build_review_data "local" "$diff_content" "$git_context" "" "" \
             --arg mode_area "$area"
     else
-        build_review_data "local" "$diff_content" "$git_context" ""
+        build_review_data "local" "$diff_content" "$git_context" "" ""
     fi
 }
 

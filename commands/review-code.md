@@ -119,6 +119,24 @@ Use AskUserQuestion:
 
 After user selects, re-run orchestrator with appropriate mode.
 
+### Status: "prompt_pull"
+
+The remote branch is ahead of the local branch. Prompt user to pull:
+
+```bash
+branch=$(echo "$review_data" | jq -r '.branch'); associated_pr=$(echo "$review_data" | jq -r '.associated_pr // empty')
+```
+
+Use AskUserQuestion:
+- Question: "Remote branch '$branch' is ahead of local. Would you like to pull changes first?"
+- Options:
+  1. "Pull and review" - Run `git pull` then proceed with review
+  2. "Review local anyway" - Review the local branch as-is
+
+After user selects:
+- If "Pull and review": Run `git pull` then re-run orchestrator
+- If "Review local anyway": Re-run orchestrator with special flag to skip remote check (TBD: implement this)
+
 ### Status: "ready"
 
 All context has been gathered. First, extract and display the summary for user confirmation:
@@ -133,10 +151,10 @@ Build the summary message based on mode:
 
 **For branch mode:**
 ```bash
-repository=$(echo "$summary" | jq -r '.repository'); branch=$(echo "$summary" | jq -r '.branch'); base_branch=$(echo "$summary" | jq -r '.base_branch'); commit=$(echo "$summary" | jq -r '.commit // "unknown"'); working_dir=$(echo "$summary" | jq -r '.working_directory'); comparison=$(echo "$summary" | jq -r '.comparison'); commits=$(echo "$summary" | jq -r '.stats.commits // "unknown"'); files_changed=$(echo "$summary" | jq -r '.stats.files_changed'); lines_added=$(echo "$summary" | jq -r '.stats.lines_added'); lines_removed=$(echo "$summary" | jq -r '.stats.lines_removed')
+repository=$(echo "$summary" | jq -r '.repository'); branch=$(echo "$summary" | jq -r '.branch'); base_branch=$(echo "$summary" | jq -r '.base_branch'); commit=$(echo "$summary" | jq -r '.commit // "unknown"'); working_dir=$(echo "$summary" | jq -r '.working_directory'); comparison=$(echo "$summary" | jq -r '.comparison'); commits=$(echo "$summary" | jq -r '.stats.commits // "unknown"'); files_changed=$(echo "$summary" | jq -r '.stats.files_changed'); lines_added=$(echo "$summary" | jq -r '.stats.lines_added'); lines_removed=$(echo "$summary" | jq -r '.stats.lines_removed'); has_pr=$(echo "$summary" | jq -r '.associated_pr // empty'); pr_number=$(echo "$summary" | jq -r '.associated_pr.number // empty'); pr_title=$(echo "$summary" | jq -r '.associated_pr.title // empty'); pr_url=$(echo "$summary" | jq -r '.associated_pr.url // empty'); pr_author=$(echo "$summary" | jq -r '.associated_pr.author // empty'); pr_state=$(echo "$summary" | jq -r '.associated_pr.state // empty')
 ```
 
-Display:
+Display (with PR if available):
 ```
 📋 Review Summary
 
@@ -145,6 +163,14 @@ Branch: $branch (vs $base_branch)
 Commit: ${commit:0:10}
 Location: $working_dir
 Comparison: $comparison
+
+# If PR exists, display PR info:
+if [ -n "$has_pr" ]; then
+  echo "Associated PR: #$pr_number - $pr_title"
+  echo "Author: $pr_author | State: $pr_state"
+  echo "URL: $pr_url"
+  echo ""
+fi
 
 Changes:
 - Commits: $commits
@@ -301,6 +327,20 @@ pr=$(echo "$review_data" | jq -r '.pr'); pr_number=$(echo "$pr" | jq -r '.number
 commit=$(echo "$review_data" | jq -r '.commit // empty'); branch=$(echo "$review_data" | jq -r '.branch // empty'); base_branch=$(echo "$review_data" | jq -r '.base_branch // empty'); range=$(echo "$review_data" | jq -r '.range // empty')
 ```
 
+**For branch mode with associated PR**, also extract PR context:
+```bash
+pr=$(echo "$review_data" | jq -r '.pr // empty')
+if [ -n "$pr" ] && [ "$pr" != "null" ]; then
+  pr_number=$(echo "$pr" | jq -r '.number')
+  pr_title=$(echo "$pr" | jq -r '.title')
+  pr_url=$(echo "$pr" | jq -r '.url')
+  pr_author=$(echo "$pr" | jq -r '.author')
+  pr_state=$(echo "$pr" | jq -r '.state')
+  pr_body=$(echo "$pr" | jq -r '.body')
+  pr_comments=$(echo "$pr" | jq -r '.comments')
+fi
+```
+
 **For area-specific reviews**, extract:
 ```bash
 area=$(echo "$review_data" | jq -r '.area // empty')
@@ -357,7 +397,22 @@ $pr_comments
 {For commit mode:}
 Reviewing commit: $commit
 
-{For branch mode:}
+{For branch mode with associated PR:}
+Reviewing branch: $branch vs $base_branch
+
+**Associated Pull Request:**
+- PR #$pr_number: $pr_title
+- Author: $pr_author
+- State: $pr_state
+- URL: $pr_url
+
+**PR Description:**
+$pr_body
+
+**PR Discussion:**
+$pr_comments
+
+{For branch mode without PR:}
 Reviewing branch: $branch vs $base_branch
 
 {For range mode:}
