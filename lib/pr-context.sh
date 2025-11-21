@@ -113,11 +113,10 @@ main() {
     local parsed
     parsed=$(parse_pr_identifier "$input")
 
-    local org repo pr_number
+    local org="" repo="" pr_number=""
     if [[ $parsed == "|"* ]]; then
         # Just a number, use current repo
         pr_number="${parsed#|}"
-        repo=""
     else
         org="${parsed%%|*}"
         local rest="${parsed#*|}"

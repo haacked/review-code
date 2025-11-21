@@ -137,8 +137,16 @@ detect_pr() {
     fi
 
     # GitHub PR URL - extract PR number
-    if [[ "$arg" =~ ^https://github.com/[^/]+/[^/]+/pull/([0-9]+) ]]; then
+    # Allow optional trailing path segments (e.g., /files, /commits), query params, or anchors
+    if [[ "$arg" =~ ^https://github.com/[^/]+/[^/]+/pull/([0-9]+)([/?#].*)?$ ]]; then
         local pr_number="${BASH_REMATCH[1]}"
+
+        # Explicit validation - defense in depth
+        if [[ ! "$pr_number" =~ ^[0-9]+$ ]]; then
+            build_json_error "Invalid PR number extracted from URL"
+            return 1
+        fi
+
         build_json_output "pr" "pr_number" "$pr_number" "pr_url" "$arg"
         return 0
     fi
@@ -267,30 +275,50 @@ detect_no_arg() {
 
     # Check if branch has upstream tracking
     local upstream
-    upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null || echo "")
+    upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2> /dev/null || echo "")
 
     if [ -n "$upstream" ]; then
         # Check if remote is ahead of local
         local local_rev remote_rev
         local_rev=$(git rev-parse HEAD)
-        remote_rev=$(git rev-parse "$upstream" 2>/dev/null || echo "")
+        remote_rev=$(git rev-parse "$upstream" 2> /dev/null || echo "")
 
         if [ -n "$remote_rev" ] && [ "$local_rev" != "$remote_rev" ]; then
-            # Check if remote has commits we don't have
-            local behind_count
-            behind_count=$(git rev-list --count HEAD.."$upstream" 2>/dev/null || echo "0")
+            # Check if remote has commits we don't have, and if branches have diverged
+            local behind_count ahead_count
+            behind_count=$(git rev-list --count HEAD.."$upstream" 2> /dev/null || echo "0")
+            ahead_count=$(git rev-list --count "$upstream"..HEAD 2> /dev/null || echo "0")
+
             if [ "$behind_count" -gt 0 ]; then
                 remote_ahead="true"
+                if [ "$ahead_count" -gt 0 ]; then
+                    # Branches have diverged - warn user
+                    echo "Warning: Branch '$current_branch' has diverged from remote (local ahead by $ahead_count, behind by $behind_count)" >&2
+                fi
             fi
         fi
     fi
 
     # Check for associated PR using gh CLI
-    if command -v gh >/dev/null 2>&1; then
-        local pr_list
-        pr_list=$(gh pr list --head "$current_branch" --json number --jq '.[0].number' 2>/dev/null || echo "")
-        if [ -n "$pr_list" ]; then
-            associated_pr="$pr_list"
+    if command -v gh > /dev/null 2>&1; then
+        # Get all open PRs for this branch
+        local pr_numbers
+        pr_numbers=$(gh pr list --head "$current_branch" --state open --json number --jq '.[].number' 2> /dev/null || echo "")
+
+        if [ -n "$pr_numbers" ]; then
+            local pr_array
+            mapfile -t pr_array <<< "$pr_numbers"
+            local pr_count="${#pr_array[@]}"
+
+            if [ "$pr_count" -eq 1 ]; then
+                # Single open PR - use it
+                associated_pr="${pr_array[0]}"
+            elif [ "$pr_count" -gt 1 ]; then
+                # Multiple open PRs - pick first and warn
+                associated_pr="${pr_array[0]}"
+                echo "Warning: Multiple open PRs found for branch '$current_branch': ${pr_array[*]}" >&2
+                echo "Using PR #${associated_pr}. To review a different PR, specify it explicitly." >&2
+            fi
         fi
     fi
 

@@ -200,10 +200,8 @@ fi
 
 # Debug: Save summary of loaded files
 if is_debug_enabled; then
-    # Use ${array[@]+"${array[@]}"} pattern to safely handle empty arrays with set -u
-    file_count=0
-    if [ -n "${loaded_file_list[@]+"${loaded_file_list[@]}"}" ]; then
-        file_count="${#loaded_file_list[@]}"
+    file_count="${#loaded_file_list[@]}"
+    if [ "$file_count" -gt 0 ]; then
         debug_save "04-context-loading" "loaded-files.txt" "$(printf '%s\n' "${loaded_file_list[@]}")"
     else
         debug_save "04-context-loading" "loaded-files.txt" "(no files loaded)"
