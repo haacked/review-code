@@ -1,4 +1,6 @@
-## Shell Script Best Practices
+# Shell Script Best Practices
+
+- Use idiomatic bash patterns and features whenever possible
 
 **Script safety:**
 
@@ -9,7 +11,8 @@
 
 **Shebang patterns:**
 
-- Use `#!/usr/bin/env bash` for scripts requiring bash 4.0+ features (associative arrays, `${var,,}`, etc.)
+- Use `#!/usr/bin/env bash` for scripts requiring bash 4.0+ features
+  (associative arrays, `${var,,}`, etc.)
 - Use `#!/bin/bash` for scripts compatible with older bash (3.2+)
 - Never use `#!/bin/sh` for bash-specific features
 - Avoid bashisms if targeting POSIX sh
@@ -108,6 +111,27 @@ for file in "${files[@]}"; do
 done
 ```text
 
+**Safe empty array handling with `set -u`:**
+
+When using `set -u` (fail on unbound variables), checking array length on
+empty arrays will fail. Use this pattern:
+
+```bash
+# WRONG: Fails with "unbound variable" on empty arrays
+if [ "${#array[@]}" -gt 0 ]; then
+    echo "Has items"
+fi
+
+# CORRECT: Safe pattern for set -u
+if [ -n "${array[@]+"${array[@]}"}" ]; then
+    count="${#array[@]}"
+    echo "Has $count items"
+fi
+```text
+
+This pattern uses parameter expansion with alternate value to safely test
+if an array has elements.
+
 **Reading files:**
 
 ```bash
@@ -121,6 +145,40 @@ done < file.txt
 - Parsing `ls` output
 - Using `for` with word splitting
 - Not preserving whitespace in loops
+- Checking `${#array[@]}` directly when using `set -u` with potentially empty arrays
+
+## Script Initialization and Ordering
+
+**Get context before initialization:**
+
+When scripts need external context (git repo, environment, etc.), gather it
+before initializing subsystems:
+
+```bash
+# WRONG: Initialize before getting context
+init_debug "unknown" "unknown"
+org=$(get_git_org)
+repo=$(get_git_repo)
+
+# CORRECT: Get context first, then initialize
+org=$(get_git_org)
+repo=$(get_git_repo)
+init_debug "$org" "$repo"
+```text
+
+**Conditional sourcing:**
+
+Only source helper scripts when needed to avoid errors and improve performance:
+
+```bash
+# Check prerequisites before sourcing
+if git rev-parse --git-dir > /dev/null 2>&1; then
+    source "$SCRIPT_DIR/git-helpers.sh"
+    org=$(get_git_org_repo)
+else
+    org="unknown"
+fi
+```text
 
 ## Functions
 
@@ -202,6 +260,29 @@ log_info() {
 }
 ```text
 
+**Stream separation (stdout vs stderr):**
+
+Be careful when mixing streams. Avoid `2>&1` unless you specifically need
+both streams combined:
+
+```bash
+# WRONG: Mixes debug output into data stream
+result=$(command 2>&1)
+echo "$result" | jq .  # Fails if debug messages mixed in
+
+# CORRECT: Keep streams separate
+result=$(command 2>/dev/null)  # Suppress stderr
+result=$(command)  # Keep stderr separate (shows in console)
+
+# CORRECT: Capture stderr separately if needed
+result=$(command 2>"$error_file")
+```text
+
+**When to use `2>&1`:**
+- Only when you need to capture/parse both stdout and stderr together
+- When redirecting all output to a log file
+- Not for data pipelines where stdout contains structured data (JSON, CSV, etc.)
+
 ## Performance
 
 **Avoid common pitfalls:**
@@ -214,11 +295,41 @@ log_info() {
 
 **Efficient patterns:**
 
-- `${var#pattern}` - remove prefix
-- `${var%pattern}` - remove suffix
-- `${var//pattern/replacement}` - replace all
+- `${var#pattern}` - remove shortest prefix match
+- `${var##pattern}` - remove longest prefix match
+- `${var%pattern}` - remove shortest suffix match
+- `${var%%pattern}` - remove longest suffix match
+- `${var//pattern/replacement}` - replace all occurrences
 - `${var,,}` - convert to lowercase (bash 4.0+)
 - `${var^^}` - convert to uppercase (bash 4.0+)
+
+**String splitting without external commands:**
+
+```bash
+# Split on delimiter (e.g., "org|repo")
+data="posthog|posthog-js"
+org="${data%|*}"      # Everything before last |
+repo="${data#*|}"     # Everything after first |
+
+# Better than: echo "$data" | cut -d'|' -f1
+```text
+
+**Pattern matching for extraction:**
+
+```bash
+# Extract from URL paths
+url="https://github.com/org/repo/pull/123"
+
+# Use regex matching
+if [[ "$url" =~ ^https?://[^/]+/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+    org="${BASH_REMATCH[1]}"
+    repo="${BASH_REMATCH[2]}"
+    pr="${BASH_REMATCH[3]}"
+fi
+
+# Or use sed for substitution
+org=$(echo "$url" | sed -E 's|https?://[^/]+/([^/]+)/.*|\1|')
+```text
 
 **Use associative arrays for O(1) lookups (bash 4.0+):**
 

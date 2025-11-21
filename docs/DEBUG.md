@@ -3,19 +3,56 @@
 DEBUG mode captures intermediate artifacts, command logs, and outputs during
 review processing to help verify correctness and debug issues.
 
+## Quick Reference
+
+**Enable DEBUG mode from Claude Code chat:**
+
+```text
+REVIEW_CODE_DEBUG=1 /review-code pr 123
+```
+
+**Inspect artifacts afterward from your shell:**
+
+```bash
+ls ~/.cache/review-code/debug/
+cat ~/.cache/review-code/debug/*/README.md
+```
+
 ## Quick Start
 
-Enable DEBUG mode with an environment variable:
+### How It Works
+
+1. **Run `/review-code` from Claude Code chat** with `REVIEW_CODE_DEBUG=1`
+   to capture artifacts
+2. **Artifacts are saved** to `~/.cache/review-code/debug/{session}/`
+3. **Inspect artifacts from your shell** using standard tools (ls, cat, jq)
+
+The environment variable is checked at runtime, so you can toggle DEBUG mode
+per-command without restarting Claude Code.
+
+### Enable DEBUG Mode
+
+**For a single review (recommended):**
+
+From Claude Code chat:
+
+```text
+REVIEW_CODE_DEBUG=1 /review-code pr 123
+```
+
+**For multiple reviews in sequence:**
+
+From your shell (before starting Claude Code):
 
 ```bash
 export REVIEW_CODE_DEBUG=1
-/review-code pr 123
 ```
 
-Or for a single review:
+Then in Claude Code chat:
 
-```bash
-REVIEW_CODE_DEBUG=1 /review-code pr 123
+```text
+/review-code pr 123
+/review-code commit abc123
 ```
 
 ## What Gets Captured
@@ -52,11 +89,13 @@ Each stage directory may contain:
 
 ### Debug a PR Review
 
-```bash
+**From Claude Code chat:**
+
+```text
 REVIEW_CODE_DEBUG=1 /review-code 123
 ```
 
-Creates a session like:
+**Creates a session directory in your shell:**
 
 ```text
 ~/.cache/review-code/debug/posthog-posthog-pr-123-20251118-181500/
@@ -64,19 +103,25 @@ Creates a session like:
 
 ### Debug Local Changes
 
-```bash
+**From Claude Code chat:**
+
+```text
 REVIEW_CODE_DEBUG=1 /review-code
 ```
 
 ### Debug a Commit
 
-```bash
+**From Claude Code chat:**
+
+```text
 REVIEW_CODE_DEBUG=1 /review-code abc123
 ```
 
 ## Inspecting Debug Output
 
 ### View the Summary
+
+**From your shell:**
 
 ```bash
 cat ~/.cache/review-code/debug/posthog-posthog-pr-123-*/README.md
@@ -91,6 +136,8 @@ Shows:
 
 ### Explore Artifacts
 
+**From your shell:**
+
 ```bash
 # List all sessions
 ls -la ~/.cache/review-code/debug/
@@ -104,6 +151,8 @@ cat ~/.cache/review-code/debug/*/02-diff-generation/filtered-diff.txt
 ```
 
 ### Check Timing
+
+**From your shell:**
 
 ```bash
 # View timing data
@@ -137,11 +186,15 @@ bin/debug-cleanup --all
 
 ### Verify Diff Filtering
 
-Check that the diff filtering is working correctly:
+**From Claude Code chat:**
+
+```text
+REVIEW_CODE_DEBUG=1 /review-code pr 123
+```
+
+**Then from your shell:**
 
 ```bash
-REVIEW_CODE_DEBUG=1 /review-code pr 123
-
 # Compare before/after
 diff ~/.cache/review-code/debug/*/02-diff-generation/raw-diff.txt \
      ~/.cache/review-code/debug/*/02-diff-generation/filtered-diff.txt
@@ -149,7 +202,7 @@ diff ~/.cache/review-code/debug/*/02-diff-generation/raw-diff.txt \
 
 ### Debug Language Detection
 
-See what languages and frameworks were detected:
+**From your shell (after running review with DEBUG enabled):**
 
 ```bash
 cat ~/.cache/review-code/debug/*/03-language-detection/output.json | jq .
@@ -157,7 +210,7 @@ cat ~/.cache/review-code/debug/*/03-language-detection/output.json | jq .
 
 ### Investigate Performance
 
-Find slow stages:
+**From your shell (after running review with DEBUG enabled):**
 
 ```bash
 cat ~/.cache/review-code/debug/*/timing.ndjson | \
@@ -170,7 +223,7 @@ cat ~/.cache/review-code/debug/*/timing.ndjson | \
 
 ### Debug Context Loading
 
-See which context files were loaded:
+**From your shell (after running review with DEBUG enabled):**
 
 ```bash
 cat ~/.cache/review-code/debug/*/04-context-loading/context-files-loaded.txt
@@ -180,10 +233,15 @@ cat ~/.cache/review-code/debug/*/04-context-loading/context-files-loaded.txt
 
 ### Custom Debug Directory
 
-Change where debug artifacts are stored:
+**From your shell (before starting Claude Code):**
 
 ```bash
 export REVIEW_CODE_DEBUG_PATH="$HOME/.review-code-debug"
+```
+
+**Then from Claude Code chat:**
+
+```text
 REVIEW_CODE_DEBUG=1 /review-code pr 123
 ```
 
@@ -252,13 +310,15 @@ Planned additions for deeper debugging:
 
 ### Complete Workflow
 
+**From Claude Code chat:**
+
+```text
+REVIEW_CODE_DEBUG=1 /review-code pr 123
+```
+
+**Then from your shell:**
+
 ```bash
-# Enable DEBUG mode
-export REVIEW_CODE_DEBUG=1
-
-# Run review
-/review-code pr 123
-
 # Check summary
 DEBUG_DIR=$(ls -1dt ~/.cache/review-code/debug/* | head -1)
 cat "$DEBUG_DIR/debug-summary.txt"
@@ -275,10 +335,15 @@ bin/debug-cleanup --older-than 7
 
 ### Finding Issues
 
-```bash
-# Enable DEBUG and run review
-REVIEW_CODE_DEBUG=1 /review-code local
+**From Claude Code chat:**
 
+```text
+REVIEW_CODE_DEBUG=1 /review-code local
+```
+
+**Then from your shell:**
+
+```bash
 # If something looks wrong, inspect:
 DEBUG_DIR=$(ls -1dt ~/.cache/review-code/debug/* | head -1)
 
