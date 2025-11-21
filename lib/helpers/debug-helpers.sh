@@ -24,7 +24,7 @@ debug_init() {
 
     # Use cache directory for debug artifacts
     local debug_base="${REVIEW_CODE_DEBUG_PATH:-$HOME/.cache/review-code/debug}"
-    export DEBUG_SESSION_DIR="${debug_base}/${org}-${repo}-${mode}-${identifier}-${timestamp}"
+    export DEBUG_SESSION_DIR="${debug_base}/${org}-${repo}-${identifier}-${timestamp}"
 
     mkdir -p "$DEBUG_SESSION_DIR"
 

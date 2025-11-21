@@ -101,7 +101,7 @@ if [ "${BASH_SOURCE[0]:-}" = "${0}" ]; then
             else
                 diff_type="local (uncommitted)"
                 # Use git-diff-filter.sh for local changes
-                diff_content=$("$SCRIPT_DIR/git-diff-filter.sh" 2>&1 | grep -v '^DIFF_TYPE:' || true)
+                diff_content=$("$SCRIPT_DIR/git-diff-filter.sh" 2>/dev/null || true)
             fi
             ;;
     
@@ -132,7 +132,7 @@ $unstaged_diff"
                     uncommitted_diff=""
                 fi
             else
-                uncommitted_diff=$("$SCRIPT_DIR/git-diff-filter.sh" 2>&1 | grep -v '^DIFF_TYPE:' || true)
+                uncommitted_diff=$("$SCRIPT_DIR/git-diff-filter.sh" 2>/dev/null || true)
             fi
 
             # Combine them

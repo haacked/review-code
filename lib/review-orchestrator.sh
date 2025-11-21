@@ -31,28 +31,79 @@ main() {
     local arg="${1:-}"
     local file_pattern="${2:-}"
 
-    # Initialize debug session (no-op if DEBUG not enabled)
-    # We'll update org/repo/mode after parsing
-    debug_init "${arg:-local}" "unknown" "unknown" "unknown"
-    debug_time "00-orchestrator" "start"
-    debug_save "00-input" "args.txt" "arg=$arg\nfile_pattern=$file_pattern"
-
-    # Step 1: Parse the argument to determine mode
-    debug_time "01-parse" "start"
+    # Step 1: Parse the argument to determine mode (before debug_init to get context)
     local parse_result
-    parse_result=$("$SCRIPT_DIR/parse-review-arg.sh" "$arg" "$file_pattern" 2>&1) || {
+    parse_result=$("$SCRIPT_DIR/parse-review-arg.sh" "$arg" "$file_pattern") || {
         echo "$parse_result" >&2
-        debug_save "01-parse" "error.txt" "$parse_result"
-        debug_finalize
         exit 1
     }
-    debug_save_json "01-parse" "output.json" <<< "$parse_result"
-    debug_time "01-parse" "end"
 
     local mode
     mode=$(echo "$parse_result" | jq -r '.mode')
     local pattern
     pattern=$(echo "$parse_result" | jq -r '.file_pattern // empty')
+
+    # Extract org/repo early for git-based modes
+    local org="unknown" repo="unknown" identifier="${arg:-local}"
+    case "$mode" in
+        "pr")
+            # For PR mode, extract from the PR identifier
+            if [[ "$identifier" =~ ^https?:// ]]; then
+                # Extract from URL: https://github.com/org/repo/pull/123
+                org=$(echo "$identifier" | sed -E 's|https?://[^/]+/([^/]+)/.*|\1|')
+                repo=$(echo "$identifier" | sed -E 's|https?://[^/]+/[^/]+/([^/]+)/.*|\1|')
+                identifier="pr-$(echo "$identifier" | sed -E 's|.*/pull/([0-9]+).*|\1|')"
+            elif [[ "$identifier" =~ ^[0-9]+$ ]]; then
+                # Just a number - need to get org/repo from git
+                if git rev-parse --git-dir > /dev/null 2>&1; then
+                    source "$SCRIPT_DIR/helpers/git-helpers.sh"
+                    local git_data
+                    git_data=$(get_git_org_repo 2>/dev/null || echo "unknown|unknown")
+                    org="${git_data%|*}"
+                    repo="${git_data#*|}"
+                fi
+                identifier="pr-$identifier"
+            fi
+            ;;
+        "commit"|"branch"|"range"|"local"|"area")
+            # For git-based modes, extract org/repo from current repo
+            if git rev-parse --git-dir > /dev/null 2>&1; then
+                source "$SCRIPT_DIR/helpers/git-helpers.sh"
+                local git_data
+                git_data=$(get_git_org_repo 2>/dev/null || echo "unknown|unknown")
+                org="${git_data%|*}"
+                repo="${git_data#*|}"
+            fi
+            # Set identifier based on mode
+            case "$mode" in
+                "commit")
+                    identifier="commit-$(echo "$parse_result" | jq -r '.commit')"
+                    ;;
+                "branch")
+                    identifier="branch-$(echo "$parse_result" | jq -r '.branch')"
+                    ;;
+                "range")
+                    identifier="range-$(echo "$parse_result" | jq -r '.range' | tr '.' '-')"
+                    ;;
+                "area")
+                    identifier="area-$(echo "$parse_result" | jq -r '.area')"
+                    ;;
+                "local")
+                    identifier="local"
+                    ;;
+            esac
+            ;;
+    esac
+
+    # Initialize debug session with actual values (no-op if DEBUG not enabled)
+    debug_init "$identifier" "$org" "$repo" "$mode"
+    debug_time "00-orchestrator" "start"
+    debug_save "00-input" "args.txt" "arg=$arg\nfile_pattern=$file_pattern"
+
+    # Save parsed results
+    debug_time "01-parse" "start"
+    debug_save_json "01-parse" "output.json" <<< "$parse_result"
+    debug_time "01-parse" "end"
 
     # Step 2: Handle different modes
     case "$mode" in
@@ -555,7 +606,7 @@ handle_local_review() {
     if [ -n "$pattern" ]; then
         diff_content=$("$SCRIPT_DIR/get-review-diff.sh" local "$pattern")
     else
-        diff_content=$("$SCRIPT_DIR/git-diff-filter.sh" 2>&1)
+        diff_content=$("$SCRIPT_DIR/get-review-diff.sh" local)
     fi
 
     # Check if there are actually changes
