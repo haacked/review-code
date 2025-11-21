@@ -46,7 +46,7 @@ if ! command -v jq >/dev/null 2>&1; then
     echo "Error: jq is required but not installed" >&2
     exit 1
 fi
-```text
+```bash
 
 ## Variable Handling
 
@@ -98,7 +98,7 @@ if [[ ! "$user_input" =~ ^[a-zA-Z0-9_-]+$ ]]; then
     echo "Invalid input" >&2
     exit 1
 fi
-```text
+```bash
 
 ## Arrays and Loops
 
@@ -109,7 +109,7 @@ files=("file1.txt" "file2.txt" "file with spaces.txt")
 for file in "${files[@]}"; do
     process "$file"
 done
-```text
+```bash
 
 **Safe empty array handling with `set -u`:**
 
@@ -127,7 +127,7 @@ if [ -n "${array[@]+"${array[@]}"}" ]; then
     count="${#array[@]}"
     echo "Has $count items"
 fi
-```text
+```bash
 
 This pattern uses parameter expansion with alternate value to safely test
 if an array has elements.
@@ -138,7 +138,7 @@ if an array has elements.
 while IFS= read -r line; do
     process "$line"
 done < file.txt
-```text
+```bash
 
 **Anti-patterns:**
 
@@ -164,7 +164,7 @@ repo=$(get_git_repo)
 org=$(get_git_org)
 repo=$(get_git_repo)
 init_debug "$org" "$repo"
-```text
+```bash
 
 **Conditional sourcing:**
 
@@ -178,7 +178,7 @@ if git rev-parse --git-dir > /dev/null 2>&1; then
 else
     org="unknown"
 fi
-```text
+```bash
 
 ## Functions
 
@@ -203,7 +203,7 @@ process_file() {
     # Process and output
     transform "$file" > "$output"
 }
-```text
+```bash
 
 ## Command Substitution
 
@@ -220,7 +220,7 @@ result=$(command) || {
     echo "Command failed" >&2
     exit 1
 }
-```text
+```bash
 
 ## Testing and Conditions
 
@@ -258,7 +258,7 @@ log_error() {
 log_info() {
     echo "INFO: $*"
 }
-```text
+```bash
 
 **Stream separation (stdout vs stderr):**
 
@@ -276,12 +276,39 @@ result=$(command)  # Keep stderr separate (shows in console)
 
 # CORRECT: Capture stderr separately if needed
 result=$(command 2>"$error_file")
-```text
+```bash
 
 **When to use `2>&1`:**
 - Only when you need to capture/parse both stdout and stderr together
 - When redirecting all output to a log file
 - Not for data pipelines where stdout contains structured data (JSON, CSV, etc.)
+
+**Stderr handling policy:**
+
+Use consistent patterns for different scenarios:
+
+```bash
+# Pattern 1: Expected failures (e.g., checking git repo status)
+# Suppress stderr when failure is normal and expected
+git_data=$(get_git_org_repo 2>/dev/null || echo "unknown|unknown")
+
+# Pattern 2: Errors should be visible to user
+# No redirection - errors show in console for debugging
+parse_result=$("$SCRIPT_DIR/parse-review-arg.sh" "$arg" "$file_pattern")
+
+# Pattern 3: Optional data where failure is acceptable
+# Suppress stderr and provide empty fallback
+diff_content=$("$SCRIPT_DIR/git-diff-filter.sh" 2>/dev/null || echo "")
+
+# Pattern 4: Capture stderr for analysis
+# Redirect to file or variable (rare - only when you need to parse errors)
+stderr_output=$(command 2>&1 >/dev/null)
+```bash
+
+**Never:**
+- Mix stderr into stdout for data pipelines (breaks JSON/CSV parsing)
+- Silently swallow errors without fallback values
+- Use `2>&1` by default "just in case"
 
 ## Performance
 
@@ -312,7 +339,7 @@ org="${data%|*}"      # Everything before last |
 repo="${data#*|}"     # Everything after first |
 
 # Better than: echo "$data" | cut -d'|' -f1
-```text
+```bash
 
 **Pattern matching for extraction:**
 
@@ -329,7 +356,7 @@ fi
 
 # Or use sed for substitution
 org=$(echo "$url" | sed -E 's|https?://[^/]+/([^/]+)/.*|\1|')
-```text
+```bash
 
 **Use associative arrays for O(1) lookups (bash 4.0+):**
 
@@ -346,7 +373,7 @@ for item in "${items[@]}"; do
     seen_languages[$item]=1
 done
 languages=("${!seen_languages[@]}")
-```text
+```bash
 
 ## Dependencies
 

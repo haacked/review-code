@@ -114,15 +114,15 @@ if is_debug_enabled; then
     filtered_lines=$(echo "$filtered_diff" | wc -l | tr -d ' ')
     reduction=0
     if [ "$raw_lines" -gt 0 ]; then
-        reduction=$(( 100 - (filtered_lines * 100 / raw_lines) ))
+        reduction=$((100 - (filtered_lines * 100 / raw_lines)))
     fi
 
     # Estimate token counts (rough estimate: ~4 chars per token for code)
     raw_chars=$(echo "$raw_diff" | wc -c | tr -d ' ')
     filtered_chars=$(echo "$filtered_diff" | wc -c | tr -d ' ')
-    raw_tokens=$(( raw_chars / 4 ))
-    filtered_tokens=$(( filtered_chars / 4 ))
-    tokens_saved=$(( raw_tokens - filtered_tokens ))
+    raw_tokens=$((raw_chars / 4))
+    filtered_tokens=$((filtered_chars / 4))
+    tokens_saved=$((raw_tokens - filtered_tokens))
 
     debug_stats "02-diff-filter" \
         raw_lines "$raw_lines" \

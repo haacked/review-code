@@ -61,7 +61,7 @@ When DEBUG mode is enabled, review-code creates a session directory containing:
 
 ```text
 ~/.cache/review-code/debug/
-└── {org}-{repo}-{mode}-{identifier}-{timestamp}/
+└── {org}-{repo}-{identifier}-{timestamp}/
     ├── session.json              # Session metadata
     ├── 00-input/                 # Input arguments
     ├── 01-parse/                 # Argument parsing results
@@ -72,6 +72,9 @@ When DEBUG mode is enabled, review-code creates a session directory containing:
     ├── timing.ndjson             # Timing data for each stage
     └── README.md                 # Human-readable summary
 ```
+
+Note: The identifier includes the mode as a prefix (e.g., `pr-123`, `commit-abc123`,
+`branch-feature`, `local`).
 
 ### Debug Artifacts
 

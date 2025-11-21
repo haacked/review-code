@@ -23,9 +23,6 @@ source "$SCRIPT_DIR/helpers/debug-helpers.sh"
 
 set -euo pipefail
 
-# Get the directory where this script lives
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 # Main orchestration function
 main() {
     local arg="${1:-}"
@@ -44,33 +41,30 @@ main() {
     pattern=$(echo "$parse_result" | jq -r '.file_pattern // empty')
 
     # Extract org/repo early for git-based modes
+    # Cache git org/repo to avoid redundant operations
     local org="unknown" repo="unknown" identifier="${arg:-local}"
+    local git_data=""
+
+    # Source git helpers for all modes (needed for parse_pr_identifier)
+    source "$SCRIPT_DIR/helpers/git-helpers.sh"
+
+    # Get git org/repo once if we're in a git repository
+    if git rev-parse --git-dir > /dev/null 2>&1; then
+        git_data=$(get_git_org_repo 2> /dev/null || echo "unknown|unknown")
+    fi
+
     case "$mode" in
         "pr")
-            # For PR mode, extract from the PR identifier
-            if [[ "$identifier" =~ ^https?:// ]]; then
-                # Extract from URL: https://github.com/org/repo/pull/123
-                org=$(echo "$identifier" | sed -E 's|https?://[^/]+/([^/]+)/.*|\1|')
-                repo=$(echo "$identifier" | sed -E 's|https?://[^/]+/[^/]+/([^/]+)/.*|\1|')
-                identifier="pr-$(echo "$identifier" | sed -E 's|.*/pull/([0-9]+).*|\1|')"
-            elif [[ "$identifier" =~ ^[0-9]+$ ]]; then
-                # Just a number - need to get org/repo from git
-                if git rev-parse --git-dir > /dev/null 2>&1; then
-                    source "$SCRIPT_DIR/helpers/git-helpers.sh"
-                    local git_data
-                    git_data=$(get_git_org_repo 2>/dev/null || echo "unknown|unknown")
-                    org="${git_data%|*}"
-                    repo="${git_data#*|}"
-                fi
-                identifier="pr-$identifier"
-            fi
+            # For PR mode, use helper function to parse identifier
+            local pr_data
+            pr_data=$(parse_pr_identifier "$identifier")
+            org="${pr_data%%|*}"
+            repo=$(echo "$pr_data" | cut -d'|' -f2)
+            identifier="${pr_data##*|}"
             ;;
-        "commit"|"branch"|"range"|"local"|"area")
-            # For git-based modes, extract org/repo from current repo
-            if git rev-parse --git-dir > /dev/null 2>&1; then
-                source "$SCRIPT_DIR/helpers/git-helpers.sh"
-                local git_data
-                git_data=$(get_git_org_repo 2>/dev/null || echo "unknown|unknown")
+        "commit" | "branch" | "range" | "local" | "area")
+            # For git-based modes, use cached git org/repo
+            if [ -n "$git_data" ]; then
                 org="${git_data%|*}"
                 repo="${git_data#*|}"
             fi
@@ -280,7 +274,7 @@ build_summary() {
 
             # Count commits in branch
             local commit_count
-            commit_count=$(git rev-list --count "${base_branch}..${target_branch}" 2>/dev/null || echo "unknown")
+            commit_count=$(git rev-list --count "${base_branch}..${target_branch}" 2> /dev/null || echo "unknown")
 
             jq -n \
                 --arg mode "$mode" \
@@ -340,7 +334,7 @@ build_summary() {
 
             # Count commits in range
             local commit_count
-            commit_count=$(git rev-list --count "${target_range}" 2>/dev/null || echo "unknown")
+            commit_count=$(git rev-list --count "${target_range}" 2> /dev/null || echo "unknown")
 
             jq -n \
                 --arg mode "$mode" \

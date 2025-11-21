@@ -60,3 +60,33 @@ get_git_org_repo() {
 get_current_branch() {
     git branch --show-current
 }
+
+# Parse PR identifier and extract org, repo, and normalized identifier
+# Handles both PR URLs and PR numbers
+# Usage: parse_pr_identifier "https://github.com/org/repo/pull/123" || parse_pr_identifier "123"
+# Returns: "org|repo|pr-123" on success
+parse_pr_identifier() {
+    local identifier="$1"
+
+    if [[ "$identifier" =~ ^https?://[^/]+/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+        # Extract from URL: https://github.com/org/repo/pull/123
+        local org="${BASH_REMATCH[1]}"
+        local repo="${BASH_REMATCH[2]}"
+        local pr_num="${BASH_REMATCH[3]}"
+
+        # Normalize org to lowercase
+        org=$(echo "$org" | tr '[:upper:]' '[:lower:]')
+
+        echo "$org|$repo|pr-$pr_num"
+    elif [[ "$identifier" =~ ^[0-9]+$ ]]; then
+        # Just a number - need to get org/repo from git
+        local git_data
+        git_data=$(get_git_org_repo 2> /dev/null || echo "unknown|unknown")
+        local org="${git_data%|*}"
+        local repo="${git_data#*|}"
+
+        echo "$org|$repo|pr-$identifier"
+    else
+        echo "unknown|unknown|pr-$identifier"
+    fi
+}
