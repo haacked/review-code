@@ -151,10 +151,20 @@ main() {
             handle_commit_review "$commit"
             ;;
         "branch")
-            local branch base_branch
+            local branch base_branch remote_ahead associated_pr
             branch=$(echo "$parse_result" | jq -r '.branch')
             base_branch=$(echo "$parse_result" | jq -r '.base_branch')
-            handle_branch_review "$branch" "$base_branch"
+            remote_ahead=$(echo "$parse_result" | jq -r '.remote_ahead // "false"')
+            associated_pr=$(echo "$parse_result" | jq -r '.associated_pr // empty')
+
+            # Check if remote is ahead and prompt to pull
+            if [ "$remote_ahead" == "true" ]; then
+                echo "{\"status\":\"prompt_pull\",\"branch\":\"$branch\",\"associated_pr\":\"$associated_pr\"}"
+                exit 0
+            fi
+
+            # Pass PR number to branch review handler
+            handle_branch_review "$branch" "$base_branch" "$associated_pr"
             ;;
         "range")
             local range
@@ -172,19 +182,26 @@ main() {
 }
 
 # Common helper: Build review data from diff content
-# Args: $1 = mode, $2 = diff_content, $3 = git_context, $4 = file_path_identifier, $@ = mode-specific jq args
+# Args: $1 = mode, $2 = diff_content, $3 = git_context, $4 = file_path_identifier, $5 = pr_context (optional), $@ = mode-specific jq args
 # Returns: JSON output on stdout
 build_review_data() {
     local mode="$1"
     local diff_content="$2"
     local git_context="$3"
     local file_path_identifier="$4"
-    shift 4
+    local pr_context="$5"
+    shift 5
     # Remaining args are mode-specific jq --arg pairs
 
     # Detect languages
     local lang_info
     lang_info=$(echo "$diff_content" | "$SCRIPT_DIR/code-language-detect.sh")
+
+    # Validate lang_info is valid JSON (safety check)
+    if ! echo "$lang_info" | jq empty 2>/dev/null; then
+        error "Invalid JSON from code-language-detect.sh"
+        exit 1
+    fi
 
     # Extract file metadata
     local file_metadata
@@ -205,21 +222,45 @@ build_review_data() {
     local mode_fields
     mode_fields=$(jq -n "$@" '$ARGS.named')
     local summary
-    summary=$(build_summary "$mode" "$diff_content" "$git_context" "$mode_fields")
+    summary=$(build_summary "$mode" "$diff_content" "$git_context" "$mode_fields" "$pr_context")
+
+    # Build pre-formatted display summary for slash command
+    local file_path
+    file_path=$(echo "$file_info" | jq -r '.file_path')
+    local display_summary
+    display_summary=$(build_display_summary "$summary" "$file_path")
 
     # Output JSON for Claude with mode-specific fields
     debug_time "07-final-output" "start"
     local final_output
-    final_output=$(jq -n \
-        --arg mode "$mode" \
-        --argjson git "$git_context" \
-        --arg diff "$diff_content" \
-        --argjson lang "$lang_info" \
-        --argjson meta "$file_metadata" \
-        --argjson file "$file_info" \
-        --arg context "$review_context" \
-        --argjson summary "$summary" \
-        "$@" \
+
+    # Build jq arguments - always include pr (as null if not available)
+    local pr_json
+    if [ -n "$pr_context" ]; then
+        pr_json="$pr_context"
+    else
+        pr_json="null"
+    fi
+
+    local -a jq_args=(
+        -n
+        --arg mode "$mode"
+        --argjson git "$git_context"
+        --arg diff "$diff_content"
+        --argjson lang "$lang_info"
+        --argjson meta "$file_metadata"
+        --argjson file "$file_info"
+        --arg context "$review_context"
+        --argjson summary "$summary"
+        --arg display "$display_summary"
+        --argjson pr "$pr_json"
+    )
+
+    # Add mode-specific arguments
+    jq_args+=("$@")
+
+    # Single jq invocation with conditional pr field
+    final_output=$(jq "${jq_args[@]}" \
         '{
             status: "ready",
             mode: $mode,
@@ -230,8 +271,11 @@ build_review_data() {
             file_info: $file,
             review_context: $context,
             summary: $summary,
+            display_summary: $display,
             next_step: "gather_architectural_context"
-        } + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")))')
+        }
+        + (if $pr != null then {pr: $pr} else {} end)
+        + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")))')
     debug_save_json "07-final-output" "output.json" <<< "$final_output"
     debug_time "07-final-output" "end"
     debug_time "00-orchestrator" "end"
@@ -240,13 +284,188 @@ build_review_data() {
     echo "$final_output"
 }
 
+# Build a pre-formatted display summary for the slash command
+# Args: $1 = summary_json, $2 = file_path
+# Returns: Markdown-formatted text ready to display
+build_display_summary() {
+    local summary_json="$1"
+    local file_path="$2"
+
+    local mode
+    mode=$(echo "$summary_json" | jq -r '.mode')
+
+    local output=""
+
+    case "$mode" in
+        "branch")
+            local repo branch base_branch commit working_dir comparison commits files added removed
+            repo=$(echo "$summary_json" | jq -r '.repository')
+            branch=$(echo "$summary_json" | jq -r '.branch')
+            base_branch=$(echo "$summary_json" | jq -r '.base_branch')
+            commit=$(echo "$summary_json" | jq -r '.commit')
+            working_dir=$(echo "$summary_json" | jq -r '.working_directory')
+            comparison=$(echo "$summary_json" | jq -r '.comparison')
+            commits=$(echo "$summary_json" | jq -r '.stats.commits')
+            files=$(echo "$summary_json" | jq -r '.stats.files_changed')
+            added=$(echo "$summary_json" | jq -r '.stats.lines_added')
+            removed=$(echo "$summary_json" | jq -r '.stats.lines_removed')
+
+            output="Review Summary
+
+Repository: $repo
+Branch: $branch (vs $base_branch)
+Commit: ${commit:0:10}
+Location: $working_dir
+Comparison: $comparison
+"
+
+            # Check for associated PR
+            local has_pr
+            has_pr=$(echo "$summary_json" | jq -r '.associated_pr // empty')
+            if [ -n "$has_pr" ]; then
+                local pr_number pr_title pr_url pr_author pr_state
+                pr_number=$(echo "$summary_json" | jq -r '.associated_pr.number')
+                pr_title=$(echo "$summary_json" | jq -r '.associated_pr.title')
+                pr_url=$(echo "$summary_json" | jq -r '.associated_pr.url')
+                pr_author=$(echo "$summary_json" | jq -r '.associated_pr.author')
+                pr_state=$(echo "$summary_json" | jq -r '.associated_pr.state')
+
+                output="${output}
+Associated PR: #$pr_number - $pr_title
+Author: $pr_author | State: $pr_state
+URL: $pr_url
+"
+            fi
+
+            output="${output}
+Changes:
+- Commits: $commits
+- Files: $files
+- Added: +$added lines
+- Removed: -$removed lines
+
+Review will be saved to: $file_path"
+            ;;
+
+        "pr")
+            local repo pr_number pr_title pr_url branch files added removed
+            repo=$(echo "$summary_json" | jq -r '.repository')
+            pr_number=$(echo "$summary_json" | jq -r '.pr_number')
+            pr_title=$(echo "$summary_json" | jq -r '.pr_title')
+            pr_url=$(echo "$summary_json" | jq -r '.pr_url')
+            branch=$(echo "$summary_json" | jq -r '.branch')
+            files=$(echo "$summary_json" | jq -r '.stats.files_changed')
+            added=$(echo "$summary_json" | jq -r '.stats.lines_added')
+            removed=$(echo "$summary_json" | jq -r '.stats.lines_removed')
+
+            output="Review Summary
+
+Repository: $repo
+PR: #$pr_number - $pr_title
+URL: $pr_url
+Branch: $branch
+
+Changes:
+- Files: $files
+- Added: +$added lines
+- Removed: -$removed lines
+
+Review will be saved to: $file_path"
+            ;;
+
+        "commit")
+            local repo commit working_dir files added removed
+            repo=$(echo "$summary_json" | jq -r '.repository')
+            commit=$(echo "$summary_json" | jq -r '.commit')
+            working_dir=$(echo "$summary_json" | jq -r '.working_directory')
+            files=$(echo "$summary_json" | jq -r '.stats.files_changed')
+            added=$(echo "$summary_json" | jq -r '.stats.lines_added')
+            removed=$(echo "$summary_json" | jq -r '.stats.lines_removed')
+
+            output="Review Summary
+
+Repository: $repo
+Commit: $commit
+Location: $working_dir
+
+Changes:
+- Files: $files
+- Added: +$added lines
+- Removed: -$removed lines
+
+Review will be saved to: $file_path"
+            ;;
+
+        "range")
+            local repo range working_dir commits files added removed
+            repo=$(echo "$summary_json" | jq -r '.repository')
+            range=$(echo "$summary_json" | jq -r '.range')
+            working_dir=$(echo "$summary_json" | jq -r '.working_directory')
+            commits=$(echo "$summary_json" | jq -r '.stats.commits')
+            files=$(echo "$summary_json" | jq -r '.stats.files_changed')
+            added=$(echo "$summary_json" | jq -r '.stats.lines_added')
+            removed=$(echo "$summary_json" | jq -r '.stats.lines_removed')
+
+            output="Review Summary
+
+Repository: $repo
+Range: $range
+Location: $working_dir
+
+Changes:
+- Commits: $commits
+- Files: $files
+- Added: +$added lines
+- Removed: -$removed lines
+
+Review will be saved to: $file_path"
+            ;;
+
+        "local")
+            local repo branch working_dir area files added removed
+            repo=$(echo "$summary_json" | jq -r '.repository')
+            branch=$(echo "$summary_json" | jq -r '.branch')
+            working_dir=$(echo "$summary_json" | jq -r '.working_directory')
+            area=$(echo "$summary_json" | jq -r '.review_area // "all"')
+            files=$(echo "$summary_json" | jq -r '.stats.files_changed')
+            added=$(echo "$summary_json" | jq -r '.stats.lines_added')
+            removed=$(echo "$summary_json" | jq -r '.stats.lines_removed')
+
+            output="Review Summary
+
+Repository: $repo
+Branch: $branch (uncommitted changes)
+Location: $working_dir
+Review Area: $area
+
+Changes:
+- Files: $files
+- Added: +$added lines
+- Removed: -$removed lines
+
+Review will be saved to: $file_path"
+            ;;
+
+        *)
+            output="Review Summary
+
+Unknown mode: $mode
+
+Review will be saved to: $file_path"
+            ;;
+    esac
+
+    echo "$output"
+}
+
 # Build a human-readable summary for user confirmation
-# Args: $1 = mode, $2 = diff_content, $3 = git_context, $4 = mode_fields (JSON string)
+# Args: $1 = mode, $2 = diff_content, $3 = git_context, $4 = mode_fields (JSON string), $5 = pr_context (optional)
 build_summary() {
     local mode="$1"
     local diff_content="$2"
     local git_context="$3"
     local mode_fields="$4"
+    local pr_context="${5:-}"
 
     # Extract key info from git context
     local org repo branch commit working_dir
@@ -276,18 +495,39 @@ build_summary() {
             local commit_count
             commit_count=$(git rev-list --count "${base_branch}..${target_branch}" 2> /dev/null || echo "unknown")
 
-            jq -n \
-                --arg mode "$mode" \
-                --arg org "$org" \
-                --arg repo "$repo" \
-                --arg branch "$target_branch" \
-                --arg base_branch "$base_branch" \
-                --arg commit "$commit" \
-                --arg working_dir "$working_dir" \
-                --arg files "$files_changed" \
-                --arg added "$lines_added" \
-                --arg removed "$lines_removed" \
-                --arg commits "$commit_count" \
+            # Extract PR fields if context available
+            local pr_number="" pr_title="" pr_url="" pr_author="" pr_state=""
+            if [ -n "$pr_context" ]; then
+                pr_number=$(echo "$pr_context" | jq -r '.number // ""')
+                pr_title=$(echo "$pr_context" | jq -r '.title // ""')
+                pr_url=$(echo "$pr_context" | jq -r '.url // ""')
+                pr_author=$(echo "$pr_context" | jq -r '.author // ""')
+                pr_state=$(echo "$pr_context" | jq -r '.state // ""')
+            fi
+
+            # Build jq arguments - always include all fields (empty if not available)
+            local -a summary_args=(
+                -n
+                --arg mode "$mode"
+                --arg org "$org"
+                --arg repo "$repo"
+                --arg branch "$target_branch"
+                --arg base_branch "$base_branch"
+                --arg commit "$commit"
+                --arg working_dir "$working_dir"
+                --arg files "$files_changed"
+                --arg added "$lines_added"
+                --arg removed "$lines_removed"
+                --arg commits "$commit_count"
+                --arg pr_number "$pr_number"
+                --arg pr_title "$pr_title"
+                --arg pr_url "$pr_url"
+                --arg pr_author "$pr_author"
+                --arg pr_state "$pr_state"
+            )
+
+            # Single jq invocation with conditional PR field
+            jq "${summary_args[@]}" \
                 '{
                     mode: $mode,
                     repository: "\($org)/\($repo)",
@@ -302,7 +542,16 @@ build_summary() {
                         lines_added: $added,
                         lines_removed: $removed
                     }
-                }'
+                }
+                + (if ($pr_number != null and $pr_number != "") then {
+                    associated_pr: {
+                        number: $pr_number,
+                        title: $pr_title,
+                        url: $pr_url,
+                        author: $pr_author,
+                        state: $pr_state
+                    }
+                } else {} end)'
             ;;
         "commit")
             local target_commit
@@ -497,6 +746,12 @@ handle_pr_review() {
             }
         }')
 
+    # Build pre-formatted display summary for slash command
+    local file_path
+    file_path=$(echo "$file_info" | jq -r '.file_path')
+    local display_summary
+    display_summary=$(build_display_summary "$summary" "$file_path")
+
     # Output JSON for Claude
     debug_time "07-final-output" "start"
     local final_output
@@ -505,6 +760,7 @@ handle_pr_review() {
         --argjson file "$file_info" \
         --argjson meta "$file_metadata" \
         --argjson summary "$summary" \
+        --arg display "$display_summary" \
         '{
             status: "ready",
             mode: "pr",
@@ -512,6 +768,7 @@ handle_pr_review() {
             file_info: $file,
             file_metadata: $meta,
             summary: $summary,
+            display_summary: $display,
             next_step: "gather_architectural_context"
         }')
     debug_save_json "07-final-output" "output.json" <<< "$final_output"
@@ -539,7 +796,7 @@ handle_commit_review() {
     fi
 
     # Use common helper to build review data
-    build_review_data "commit" "$diff_content" "$git_context" "commit-$commit" \
+    build_review_data "commit" "$diff_content" "$git_context" "commit-$commit" "" \
         --arg mode_commit "$commit"
 }
 
@@ -547,10 +804,21 @@ handle_commit_review() {
 handle_branch_review() {
     local branch="$1"
     local base_branch="$2"
+    local associated_pr="${3:-}"
 
     # Get git context
     local git_context
     git_context=$("$SCRIPT_DIR/git-context.sh")
+
+    # Fetch PR context if available
+    local pr_context=""
+    if [ -n "$associated_pr" ]; then
+        pr_context=$("$SCRIPT_DIR/pr-context.sh" "$associated_pr" 2>&1 || true)
+        if [ -z "$pr_context" ] || ! echo "$pr_context" | jq empty 2> /dev/null; then
+            echo "Warning: Failed to fetch PR context for PR #$associated_pr" >&2
+            pr_context=""
+        fi
+    fi
 
     # Get diff for branch
     local diff_content
@@ -561,9 +829,23 @@ handle_branch_review() {
     fi
 
     # Use common helper to build review data
-    build_review_data "branch" "$diff_content" "$git_context" "branch-$branch" \
-        --arg mode_branch "$branch" \
+    # Build argument array conditionally
+    local -a build_args=(
+        "branch"
+        "$diff_content"
+        "$git_context"
+        "branch-$branch"
+        "$pr_context"
+        --arg mode_branch "$branch"
         --arg mode_base_branch "$base_branch"
+    )
+
+    # Add associated PR argument only if PR context exists
+    if [ -n "$associated_pr" ]; then
+        build_args+=(--arg mode_associated_pr "$associated_pr")
+    fi
+
+    build_review_data "${build_args[@]}"
 }
 
 # Handle range review
@@ -583,7 +865,7 @@ handle_range_review() {
     fi
 
     # Use common helper to build review data
-    build_review_data "range" "$diff_content" "$git_context" "range-$range" \
+    build_review_data "range" "$diff_content" "$git_context" "range-$range" "" \
         --arg mode_range "$range"
 }
 
@@ -611,10 +893,10 @@ handle_local_review() {
 
     # Use common helper to build review data
     if [ -n "$area" ]; then
-        build_review_data "local" "$diff_content" "$git_context" "" \
+        build_review_data "local" "$diff_content" "$git_context" "" "" \
             --arg mode_area "$area"
     else
-        build_review_data "local" "$diff_content" "$git_context" ""
+        build_review_data "local" "$diff_content" "$git_context" "" ""
     fi
 }
 

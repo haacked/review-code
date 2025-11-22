@@ -131,29 +131,44 @@ done < <(echo "$diff_content" | awk '
 frameworks=("${!seen_frameworks[@]}")
 
 # Convert arrays to JSON format
-languages_json=$(printf '%s\n' "${languages[@]}" | jq -R . | jq -s . || echo "[]")
-frameworks_json=$(printf '%s\n' "${frameworks[@]}" | jq -R . | jq -s . || echo "[]")
-extensions_json=$(printf '%s\n' "${extensions[@]}" | jq -R . | jq -s . || echo "[]")
+# Handle empty arrays properly (printf with no args outputs blank line -> [""])
+if [ "${#languages[@]}" -gt 0 ]; then
+    languages_json=$(printf '%s\n' "${languages[@]}" | jq -R . | jq -s .)
+else
+    languages_json="[]"
+fi
+
+if [ "${#frameworks[@]}" -gt 0 ]; then
+    frameworks_json=$(printf '%s\n' "${frameworks[@]}" | jq -R . | jq -s .)
+else
+    frameworks_json="[]"
+fi
+
+if [ "${#extensions[@]}" -gt 0 ]; then
+    extensions_json=$(printf '%s\n' "${extensions[@]}" | jq -R . | jq -s .)
+else
+    extensions_json="[]"
+fi
 
 # Debug: Save detected patterns
 # Use safe array handling pattern for set -u compatibility
-lang_count=0
-framework_count=0
-ext_count=0
-if [ -n "${languages[@]+"${languages[@]}"}" ]; then
-    lang_count="${#languages[@]}"
+lang_count="${#languages[@]}"
+framework_count="${#frameworks[@]}"
+ext_count="${#extensions[@]}"
+
+if [ "$lang_count" -gt 0 ]; then
     debug_save "03-language-detection" "detected-languages.txt" "$(printf '%s\n' "${languages[@]}")"
 else
     debug_save "03-language-detection" "detected-languages.txt" "(no languages detected)"
 fi
-if [ -n "${frameworks[@]+"${frameworks[@]}"}" ]; then
-    framework_count="${#frameworks[@]}"
+
+if [ "$framework_count" -gt 0 ]; then
     debug_save "03-language-detection" "detected-frameworks.txt" "$(printf '%s\n' "${frameworks[@]}")"
 else
     debug_save "03-language-detection" "detected-frameworks.txt" "(no frameworks detected)"
 fi
-if [ -n "${extensions[@]+"${extensions[@]}"}" ]; then
-    ext_count="${#extensions[@]}"
+
+if [ "$ext_count" -gt 0 ]; then
     debug_save "03-language-detection" "detected-extensions.txt" "$(printf '%s\n' "${extensions[@]}")"
 else
     debug_save "03-language-detection" "detected-extensions.txt" "(no extensions detected)"

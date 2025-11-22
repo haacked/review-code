@@ -196,10 +196,12 @@ reset_globals() {
 @test "detect_git_ref: identifies branch" {
     arg="main"
     file_pattern=""
-    # This will be ambiguous because main is the current branch
+    # When main is current branch: ambiguous (has "arg" field)
+    # When main is NOT current: branch mode (has "branch" field)
     run detect_git_ref
     [ "$status" -eq 0 ]
-    [[ "$output" == *'"arg":"main"'* ]]
+    # Should have either "arg" or "branch" field with value "main"
+    [[ "$output" == *'"arg":"main"'* ]] || [[ "$output" == *'"branch":"main"'* ]]
 }
 
 @test "detect_git_ref: identifies commit hash" {

@@ -19,10 +19,27 @@ validate_git_repo() {
 }
 
 # Extract org and repo from git remote URL
-# Returns: "org|repo" on success, exits on error
+# Returns: "org|repo" on success, "unknown|unknown" on failure
+# Uses gh CLI when available for accurate parsing, falls back to git URL parsing
 get_git_org_repo() {
+    # Try gh CLI first (most reliable, already authenticated and validated)
+    if command -v gh > /dev/null 2>&1; then
+        local gh_data
+        gh_data=$(gh repo view --json owner,name --jq '"\(.owner.login)|\(.name)"' 2> /dev/null || echo "")
+        if [ -n "$gh_data" ]; then
+            # Normalize org to lowercase for consistency
+            local org="${gh_data%|*}"
+            local repo="${gh_data#*|}"
+            org=$(echo "$org" | tr '[:upper:]' '[:lower:]')
+            echo "$org|$repo"
+            return 0
+        fi
+    fi
+
+    # Fallback: Parse git remote URL
+    # Use git ls-remote --get-url which is safer than parsing config directly
     local remote_url
-    remote_url=$(git config --get remote.origin.url || echo "")
+    remote_url=$(git ls-remote --get-url origin 2> /dev/null || echo "")
 
     # Handle missing remote (local-only repos, tests)
     if [ -z "$remote_url" ]; then
@@ -30,15 +47,8 @@ get_git_org_repo() {
         return 0
     fi
 
-    # Validate URL format - only allow safe characters to prevent injection
-    # Allow: alphanumeric, @, :, /, ., -, _
-    if [[ ! $remote_url =~ ^[a-zA-Z0-9@:/._-]+$ ]]; then
-        error "Git remote URL contains invalid characters: $remote_url"
-        exit 1
-    fi
-
-    # Extract org and repo from URL
-    # Handles both SSH (git@github.com:PostHog/posthog.git) and HTTPS (https://github.com/PostHog/posthog.git)
+    # Only support GitHub URLs - strict validation
+    # Handles both SSH (git@github.com:org/repo.git) and HTTPS (https://github.com/org/repo.git)
     if [[ $remote_url =~ ^(https://|git@)github\.com[:/]([a-zA-Z0-9_-]+)/([a-zA-Z0-9._-]+)(\.git)?$ ]]; then
         local org="${BASH_REMATCH[2]}"
         local repo="${BASH_REMATCH[3]}"
@@ -51,8 +61,9 @@ get_git_org_repo() {
 
         echo "$org|$repo"
     else
-        error "Could not parse git remote URL: $remote_url"
-        exit 1
+        # Non-GitHub remote or invalid format
+        echo "unknown|unknown"
+        return 0
     fi
 }
 

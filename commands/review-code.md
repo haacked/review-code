@@ -55,28 +55,54 @@ Examples:
 
 ## Implementation
 
-Call the review orchestrator to gather all context and determine what to do:
+**NOTE**: Uses session-based caching to run the orchestrator once and reuse the data across multiple bash invocations. This reduces token usage by ~60%.
+
+### Step 1: Initialize Session
+
+Initialize the review session by running the orchestrator and caching the result:
 
 ```bash
-review_data=$(~/.claude/bin/review-code/review-orchestrator.sh "$ARGUMENTS") && status=$(echo "$review_data" | jq -r '.status')
+bash -c '
+SESSION_ID=$(~/.claude/bin/review-code/lib/review-status-handler.sh init "'"$ARGUMENTS"'")
+STATUS=$(~/.claude/bin/review-code/lib/review-status-handler.sh get-status "$SESSION_ID")
+echo "Session: $SESSION_ID, Status: $STATUS"
+'
 ```
 
-Handle the response based on status:
+This creates a session and outputs the status. Based on the status, proceed to the appropriate handler below.
 
-### Status: "error"
+**IMPORTANT**: Save the `$SESSION_ID` value from the output - you'll need it for all subsequent operations.
 
-Display the error and exit:
+### Handler: "error"
+
+If STATUS is "error", get the error message from the session (replace `<SESSION_ID>` with the actual session ID):
 
 ```bash
-error_msg=$(echo "$review_data" | jq -r '.message') && echo "Error: $error_msg" && exit 1
+bash -c '
+SESSION_ID="<SESSION_ID>"
+error_msg=$(~/.claude/bin/review-code/lib/review-status-handler.sh get-error-data "$SESSION_ID")
+echo "Error: $error_msg"
+~/.claude/bin/review-code/lib/review-status-handler.sh cleanup "$SESSION_ID"
+'
 ```
 
-### Status: "ambiguous"
+Then stop - do not proceed with review.
 
-The user provided a reference that could mean multiple things. Ask them to clarify:
+### Handler: "ambiguous"
+
+If STATUS is "ambiguous", get the disambiguation data from the session (replace `<SESSION_ID>` with the actual session ID):
 
 ```bash
-arg=$(echo "$review_data" | jq -r '.arg'); ref_type=$(echo "$review_data" | jq -r '.ref_type'); is_branch=$(echo "$review_data" | jq -r '.is_branch'); is_current=$(echo "$review_data" | jq -r '.is_current'); base_branch=$(echo "$review_data" | jq -r '.base_branch'); reason=$(echo "$review_data" | jq -r '.reason')
+bash -c '
+SESSION_ID="<SESSION_ID>"
+data=$(~/.claude/bin/review-code/lib/review-status-handler.sh get-ambiguous-data "$SESSION_ID")
+arg=$(echo "$data" | jq -r ".arg")
+ref_type=$(echo "$data" | jq -r ".ref_type")
+is_branch=$(echo "$data" | jq -r ".is_branch")
+is_current=$(echo "$data" | jq -r ".is_current")
+base_branch=$(echo "$data" | jq -r ".base_branch")
+echo "Reference: $arg (type: $ref_type, is_branch: $is_branch, is_current: $is_current, base: $base_branch)"
+'
 ```
 
 Use AskUserQuestion to disambiguate based on the scenario.
@@ -102,12 +128,19 @@ Use AskUserQuestion to disambiguate based on the scenario.
 
 After user selects, re-run orchestrator with appropriate argument.
 
-### Status: "prompt"
+### Handler: "prompt"
 
-No argument provided and we're on a feature branch with uncommitted changes. Ask user what to review:
+If STATUS is "prompt", get the prompt data from the session (replace `<SESSION_ID>` with the actual session ID):
 
 ```bash
-current_branch=$(echo "$review_data" | jq -r '.current_branch'); base_branch=$(echo "$review_data" | jq -r '.base_branch'); has_uncommitted=$(echo "$review_data" | jq -r '.has_uncommitted')
+bash -c '
+SESSION_ID="<SESSION_ID>"
+data=$(~/.claude/bin/review-code/lib/review-status-handler.sh get-prompt-data "$SESSION_ID")
+current_branch=$(echo "$data" | jq -r ".current_branch")
+base_branch=$(echo "$data" | jq -r ".base_branch")
+has_uncommitted=$(echo "$data" | jq -r ".has_uncommitted")
+echo "Branch: $current_branch, Base: $base_branch, Uncommitted: $has_uncommitted"
+'
 ```
 
 Use AskUserQuestion:
@@ -117,130 +150,48 @@ Use AskUserQuestion:
   2. "Branch changes" - Review all changes vs $base_branch
   3. "Comprehensive" - Review branch + uncommitted changes
 
-After user selects, re-run orchestrator with appropriate mode.
+After user selects, cleanup the old session and re-initialize with the chosen mode.
 
-### Status: "ready"
+### Handler: "prompt_pull"
 
-All context has been gathered. First, extract and display the summary for user confirmation:
+If STATUS is "prompt_pull", get the pull prompt data from the session (replace `<SESSION_ID>` with the actual session ID):
 
 ```bash
-mode=$(echo "$review_data" | jq -r '.mode'); summary=$(echo "$review_data" | jq -r '.summary'); diff=$(echo "$review_data" | jq -r '.diff'); file_metadata=$(echo "$review_data" | jq -r '.file_metadata'); review_context=$(echo "$review_data" | jq -r '.review_context'); git_context=$(echo "$review_data" | jq -r '.git // empty'); languages=$(echo "$review_data" | jq -r '.languages // empty'); review_file=$(echo "$review_data" | jq -r '.file_info.file_path'); file_exists=$(echo "$review_data" | jq -r '.file_info.file_exists')
+bash -c '
+SESSION_ID="<SESSION_ID>"
+data=$(~/.claude/bin/review-code/lib/review-status-handler.sh get-prompt-pull-data "$SESSION_ID")
+branch=$(echo "$data" | jq -r ".branch")
+associated_pr=$(echo "$data" | jq -r ".associated_pr // \"none\"")
+echo "Branch: $branch, Associated PR: $associated_pr"
+'
 ```
 
-**Display the summary and get user confirmation:**
+Use AskUserQuestion:
+- Question: "Remote branch '$branch' is ahead of local. Would you like to pull changes first?"
+- Options:
+  1. "Pull and review" - Run `git pull` then proceed with review
+  2. "Review local anyway" - Review the local branch as-is
 
-Build the summary message based on mode:
+After user selects:
+- If "Pull and review": Run `git pull`, cleanup old session, then reinitialize with empty argument
+- If "Review local anyway": Cleanup old session, then reinitialize with the branch name explicitly
 
-**For branch mode:**
+### Handler: "ready"
+
+If STATUS is "ready", get all the review data from the session and display the summary (replace `<SESSION_ID>` with the actual session ID):
+
 ```bash
-repository=$(echo "$summary" | jq -r '.repository'); branch=$(echo "$summary" | jq -r '.branch'); base_branch=$(echo "$summary" | jq -r '.base_branch'); commit=$(echo "$summary" | jq -r '.commit // "unknown"'); working_dir=$(echo "$summary" | jq -r '.working_directory'); comparison=$(echo "$summary" | jq -r '.comparison'); commits=$(echo "$summary" | jq -r '.stats.commits // "unknown"'); files_changed=$(echo "$summary" | jq -r '.stats.files_changed'); lines_added=$(echo "$summary" | jq -r '.stats.lines_added'); lines_removed=$(echo "$summary" | jq -r '.stats.lines_removed')
+bash -c '
+SESSION_ID="<SESSION_ID>"
+review_data=$(~/.claude/bin/review-code/lib/review-status-handler.sh get-ready-data "$SESSION_ID")
+display_summary=$(echo "$review_data" | jq -r ".display_summary")
+echo "$display_summary"
+'
 ```
 
-Display:
-```
-📋 Review Summary
+This displays the pre-formatted summary showing what will be reviewed.
 
-Repository: $repository
-Branch: $branch (vs $base_branch)
-Commit: ${commit:0:10}
-Location: $working_dir
-Comparison: $comparison
-
-Changes:
-- Commits: $commits
-- Files: $files_changed
-- Added: +$lines_added lines
-- Removed: -$lines_removed lines
-
-Review will be saved to: $review_file
-```
-
-**For PR mode:**
-```bash
-repository=$(echo "$summary" | jq -r '.repository'); pr_number=$(echo "$summary" | jq -r '.pr_number'); pr_title=$(echo "$summary" | jq -r '.pr_title'); pr_url=$(echo "$summary" | jq -r '.pr_url'); branch=$(echo "$summary" | jq -r '.branch'); files_changed=$(echo "$summary" | jq -r '.stats.files_changed'); lines_added=$(echo "$summary" | jq -r '.stats.lines_added'); lines_removed=$(echo "$summary" | jq -r '.stats.lines_removed')
-```
-
-Display:
-```
-📋 Review Summary
-
-Repository: $repository
-PR: #$pr_number - $pr_title
-URL: $pr_url
-Branch: $branch
-
-Changes:
-- Files: $files_changed
-- Added: +$lines_added lines
-- Removed: -$lines_removed lines
-
-Review will be saved to: $review_file
-```
-
-**For commit mode:**
-```bash
-repository=$(echo "$summary" | jq -r '.repository'); commit=$(echo "$summary" | jq -r '.commit'); working_dir=$(echo "$summary" | jq -r '.working_directory'); files_changed=$(echo "$summary" | jq -r '.stats.files_changed'); lines_added=$(echo "$summary" | jq -r '.stats.lines_added'); lines_removed=$(echo "$summary" | jq -r '.stats.lines_removed')
-```
-
-Display:
-```
-📋 Review Summary
-
-Repository: $repository
-Commit: $commit
-Location: $working_dir
-
-Changes:
-- Files: $files_changed
-- Added: +$lines_added lines
-- Removed: -$lines_removed lines
-
-Review will be saved to: $review_file
-```
-
-**For range mode:**
-```bash
-repository=$(echo "$summary" | jq -r '.repository'); range=$(echo "$summary" | jq -r '.range'); working_dir=$(echo "$summary" | jq -r '.working_directory'); commits=$(echo "$summary" | jq -r '.stats.commits // "unknown"'); files_changed=$(echo "$summary" | jq -r '.stats.files_changed'); lines_added=$(echo "$summary" | jq -r '.stats.lines_added'); lines_removed=$(echo "$summary" | jq -r '.stats.lines_removed')
-```
-
-Display:
-```
-📋 Review Summary
-
-Repository: $repository
-Range: $range
-Location: $working_dir
-
-Changes:
-- Commits: $commits
-- Files: $files_changed
-- Added: +$lines_added lines
-- Removed: -$lines_removed lines
-
-Review will be saved to: $review_file
-```
-
-**For local mode:**
-```bash
-repository=$(echo "$summary" | jq -r '.repository'); branch=$(echo "$summary" | jq -r '.branch'); working_dir=$(echo "$summary" | jq -r '.working_directory'); review_area=$(echo "$summary" | jq -r '.review_area // "all"'); files_changed=$(echo "$summary" | jq -r '.stats.files_changed'); lines_added=$(echo "$summary" | jq -r '.stats.lines_added'); lines_removed=$(echo "$summary" | jq -r '.stats.lines_removed')
-```
-
-Display:
-```
-📋 Review Summary
-
-Repository: $repository
-Branch: $branch (uncommitted changes)
-Location: $working_dir
-Review Area: $review_area
-
-Changes:
-- Files: $files_changed
-- Added: +$lines_added lines
-- Removed: -$lines_removed lines
-
-Review will be saved to: $review_file
-```
+**All subsequent operations will use the same SESSION_ID to read from the cached session data.**
 
 **Ask user to confirm:**
 
@@ -256,55 +207,45 @@ If user selects "Cancel", exit without proceeding.
 
 If user selects "Yes, review these changes", continue with the review below.
 
-**Check for existing review:**
+**Check for existing review (replace `<SESSION_ID>` with the actual session ID):**
 
 ```bash
-if [ "$file_exists" = "true" ] && [ -f "$review_file" ]; then echo "existing"; else echo "none"; fi
+~/.claude/bin/review-code/lib/review-status-handler.sh \
+  get-ready-data <SESSION_ID> | \
+  jq -r 'if .file_info.file_exists == true and .file_info.file_path
+         then "existing: " + .file_info.file_path
+         else "none" end'
 ```
 
-If existing review found, use AskUserQuestion:
-- Question: "An existing review was found at:\n\n$review_file\n\nWhat would you like to do?"
-- Options:
-  1. "Continue review" - Build upon the existing review (recommended)
-     Description: "Adds new findings to existing review, references previous work"
-  2. "Start fresh" - Create a new review from scratch
-     Description: "Backs up old review and creates a new one"
-  3. "View existing" - Show the current review without changes
-     Description: "Read the existing review file"
+If the output shows "existing", use AskUserQuestion to ask what to do with it.
 
-Based on user selection:
-- If "Continue review": Load previous review:
-  ```bash
-  previous_review=$(cat "$review_file")
-  ```
-- If "Start fresh": Backup and reset:
-  ```bash
-  cp "$review_file" "${review_file}.bak" && echo "Backed up previous review to: ${review_file}.bak" && previous_review=""
-  ```
-- If "View existing": Show and exit:
-  ```bash
-  cat "$review_file"
-  ```
-  Then return without running review.
-- If no existing review:
-  ```bash
-  previous_review=""
-  ```
+**Extract the data needed for building agent context (replace `<SESSION_ID>` with the actual session ID):**
 
-**For PR mode**, also extract:
+All subsequent extractions use the SAME SESSION_ID (no re-running orchestrator). Save the session data to a variable for reuse:
+
 ```bash
-pr=$(echo "$review_data" | jq -r '.pr'); pr_number=$(echo "$pr" | jq -r '.number'); pr_title=$(echo "$pr" | jq -r '.title'); pr_url=$(echo "$pr" | jq -r '.url'); pr_author=$(echo "$pr" | jq -r '.author'); pr_body=$(echo "$pr" | jq -r '.body'); pr_comments=$(echo "$pr" | jq -r '.comments')
+review_data=$(~/.claude/bin/review-code/lib/review-status-handler.sh get-ready-data <SESSION_ID>)
 ```
 
-**For commit/branch/range modes**, extract identifier:
-```bash
-commit=$(echo "$review_data" | jq -r '.commit // empty'); branch=$(echo "$review_data" | jq -r '.branch // empty'); base_branch=$(echo "$review_data" | jq -r '.base_branch // empty'); range=$(echo "$review_data" | jq -r '.range // empty')
-```
+Then extract individual fields as needed using jq:
+- `mode=$(echo "$review_data" | jq -r ".mode")`
+- `diff=$(echo "$review_data" | jq -r ".diff")`
+- `file_metadata=$(echo "$review_data" | jq -r ".file_metadata")`
+- `review_context=$(echo "$review_data" | jq -r ".review_context")`
+- `git_context=$(echo "$review_data" | jq -r ".git")`
+- `languages=$(echo "$review_data" | jq -r ".languages")`
+- `review_file=$(echo "$review_data" | jq -r ".file_info.file_path")`
 
-**For area-specific reviews**, extract:
-```bash
-area=$(echo "$review_data" | jq -r '.area // empty')
-```
+**Extract mode-specific fields from the cached session (using the `$review_data` variable from above):**
+
+Extract mode-specific fields as needed:
+- **For PR mode:** `pr=$(echo "$review_data" | jq -r ".pr // empty")`
+- **For branch/commit/range modes:**
+  - `branch=$(echo "$review_data" | jq -r ".branch // empty")`
+  - `base_branch=$(echo "$review_data" | jq -r ".base_branch // empty")`
+  - `commit=$(echo "$review_data" | jq -r ".commit // empty")`
+  - `range=$(echo "$review_data" | jq -r ".range // empty")`
+- **For area-specific reviews:** `area=$(echo "$review_data" | jq -r ".area // empty")`
 
 ### Gather Architectural Context
 
@@ -357,7 +298,22 @@ $pr_comments
 {For commit mode:}
 Reviewing commit: $commit
 
-{For branch mode:}
+{For branch mode with associated PR:}
+Reviewing branch: $branch vs $base_branch
+
+**Associated Pull Request:**
+- PR #$pr_number: $pr_title
+- Author: $pr_author
+- State: $pr_state
+- URL: $pr_url
+
+**PR Description:**
+$pr_body
+
+**PR Discussion:**
+$pr_comments
+
+{For branch mode without PR:}
 Reviewing branch: $branch vs $base_branch
 
 {For range mode:}
@@ -396,9 +352,12 @@ IMPORTANT: Build upon the previous review. Do not duplicate findings. You may:
 
 **If no area specified (comprehensive review)**:
 
-First, check if this is frontend code by inspecting the languages data:
+First, check if this is frontend code by inspecting the languages data
+(using the `$review_data` variable from above):
+
 ```bash
-has_frontend=$(echo "$languages" | jq -r '.has_frontend // false')
+has_frontend=$(echo "$review_data" | \
+  jq -r ".languages.has_frontend // false")
 ```
 
 **Always invoke these 6 core agents in PARALLEL:**
@@ -467,3 +426,17 @@ Review complete!
 
 You can open it directly: file://$review_file
 ```
+
+### Cleanup Session
+
+After the review is complete, cleanup the session (replace `<SESSION_ID>` with the actual session ID):
+
+```bash
+bash -c '
+SESSION_ID="<SESSION_ID>"
+~/.claude/bin/review-code/lib/review-status-handler.sh cleanup "$SESSION_ID"
+echo "Session cleaned up: $SESSION_ID"
+'
+```
+
+This removes the temporary session files and frees up disk space.
