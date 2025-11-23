@@ -90,6 +90,7 @@ build_json_output() {
     shift
 
     local -a jq_args=("--arg" "mode" "${mode}")
+    # shellcheck disable=SC2016  # $ARGS is a jq variable, not a shell variable
     local jq_filter='$ARGS.named'
 
     # Add all key-value pairs
