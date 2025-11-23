@@ -121,7 +121,7 @@ remove_sessions() {
 
     if [ "$REMOVE_ALL" = true ]; then
         echo "Removing all debug sessions..."
-        rm -rf "$DEBUG_DIR"/*
+        rm -rf "${DEBUG_DIR:?}"/*
         removed_count=$(find "$DEBUG_DIR" -mindepth 1 -maxdepth 1 -type d 2> /dev/null | wc -l | tr -d ' ')
         echo "Removed all sessions"
     else

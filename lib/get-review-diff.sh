@@ -58,7 +58,7 @@ if [ "${BASH_SOURCE[0]:-}" = "${0}" ]; then
     file_pattern=""
     if [ $# -gt 0 ]; then
         # Check if last arg looks like a file pattern (not a branch/commit)
-        last_arg="${@: -1}"
+        last_arg="${*: -1}"
         # If it contains glob (*) or looks like a path pattern (contains / or common extensions)
         # But exclude git ranges (contains ..)
         if [[ "$last_arg" == *"*"* ]] || [[ "$last_arg" == *"/"*.* ]]; then

@@ -69,7 +69,7 @@ check_prerequisites() {
 
     # Check ~/.claude directory
     if [ ! -d "$CLAUDE_DIR" ]; then
-        missing+=("~/.claude directory (install Claude Code first)")
+        missing+=("$HOME/.claude directory (install Claude Code first)")
     fi
 
     if [ ${#missing[@]} -gt 0 ]; then
