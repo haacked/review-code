@@ -42,6 +42,7 @@ main() {
     TEMP_DIR=$(mktemp -d)
 
     # Ensure cleanup on exit
+    # shellcheck disable=SC2064
     trap "rm -rf '$TEMP_DIR'" EXIT
 
     # Clone repository to temp directory

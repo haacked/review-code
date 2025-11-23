@@ -130,15 +130,24 @@ main() {
         repo_spec="$org/$repo"
     fi
 
-    # Fetch PR data
+    # Fetch PR data with error handling
     local metadata
-    metadata=$(fetch_pr_metadata "$pr_number" "$repo_spec")
+    if ! metadata=$(fetch_pr_metadata "$pr_number" "$repo_spec" 2>&1); then
+        error "Failed to fetch PR metadata for #$pr_number: $metadata"
+        exit 1
+    fi
 
     local diff
-    diff=$(fetch_pr_diff "$pr_number" "$repo_spec")
+    if ! diff=$(fetch_pr_diff "$pr_number" "$repo_spec" 2>&1); then
+        error "Failed to fetch PR diff for #$pr_number: $diff"
+        exit 1
+    fi
 
     local comments
-    comments=$(fetch_pr_comments "$pr_number" "$repo_spec")
+    if ! comments=$(fetch_pr_comments "$pr_number" "$repo_spec" 2>&1); then
+        error "Failed to fetch PR comments for #$pr_number: $comments"
+        exit 1
+    fi
 
     # Extract fields from metadata JSON
     local title

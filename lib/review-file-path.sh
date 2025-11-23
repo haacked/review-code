@@ -112,8 +112,11 @@ resolve_canonical_dir() {
         basename=$(basename "$dir")
 
         if [ ! -d "$parent" ]; then
-            error "Parent of $description directory does not exist: $parent"
-            exit 1
+            # Create parent directories if they don't exist
+            mkdir -p "$parent" || {
+                error "Cannot create parent directory: $parent"
+                exit 1
+            }
         fi
 
         local canonical_parent
@@ -295,6 +298,11 @@ main() {
         review_root="${REVIEW_ROOT_PATH:-$HOME/dev/ai/reviews}"
     fi
 
+    # Resolve review_root to canonical path to handle symlinks consistently
+    # Create the directory if it doesn't exist (needed for canonical resolution)
+    mkdir -p "$review_root"
+    review_root=$(resolve_canonical_dir "$review_root" "review root")
+
     # Determine review directory and file path
     local review_dir="$review_root/$org/$repo"
     local file_path="$review_dir/$filename"
@@ -369,4 +377,7 @@ main() {
         }'
 }
 
-main "$@"
+# Only run main if script is executed directly (not sourced)
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

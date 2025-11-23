@@ -6,8 +6,39 @@ setup() {
     PROJECT_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
     export PROJECT_ROOT
 
+    # Create a temporary git repository for tests that need consistent git state
+    # This ensures tests work both locally and in CI (where we're in detached HEAD)
+    TEST_GIT_DIR="$(mktemp -d)"
+
     # Source the script to get access to functions
     source "$PROJECT_ROOT/lib/parse-review-arg.sh"
+}
+
+teardown() {
+    # Cleanup temporary git directory
+    if [ -n "$TEST_GIT_DIR" ] && [ -d "$TEST_GIT_DIR" ]; then
+        rm -rf "$TEST_GIT_DIR"
+    fi
+}
+
+# Helper: Setup a minimal git repository in TEST_GIT_DIR
+setup_test_git_repo() {
+    cd "$TEST_GIT_DIR"
+    git init -q
+    git config user.email "test@example.com"
+    git config user.name "Test User"
+
+    # Create initial commit on main branch
+    echo "initial" > file.txt
+    git add file.txt
+    git commit -q -m "Initial commit"
+
+    # Ensure we're on main branch
+    git checkout -q -b main 2>/dev/null || git checkout -q main
+
+    # Set up a fake remote origin (needed for some git commands to work)
+    # Use a fake GitHub URL to prevent git commands from failing
+    git remote add origin https://github.com/test/test.git 2>/dev/null || true
 }
 
 # Helper to reset globals between tests
@@ -194,14 +225,19 @@ reset_globals() {
 # =============================================================================
 
 @test "detect_git_ref: identifies branch" {
+    # Setup a test git repo with known state (not detached HEAD)
+    setup_test_git_repo
+
+    # Create a feature branch so "main" is not the current branch
+    git checkout -q -b feature-branch
+
     arg="main"
     file_pattern=""
-    # When main is current branch: ambiguous (has "arg" field)
-    # When main is NOT current: branch mode (has "branch" field)
+    # When main is NOT current branch: should return branch mode
     run detect_git_ref
     [ "$status" -eq 0 ]
-    # Should have either "arg" or "branch" field with value "main"
-    [[ "$output" == *'"arg":"main"'* ]] || [[ "$output" == *'"branch":"main"'* ]]
+    # Should have "branch" field with value "main" (not ambiguous since we're on feature-branch)
+    [[ "$output" == *'"branch":"main"'* ]]
 }
 
 @test "detect_git_ref: identifies commit hash" {

@@ -14,7 +14,9 @@ setup() {
 
     # Setup minimal git config with canonical path
     mkdir -p "$TEST_TEMP_DIR/.claude"
-    CANONICAL_REVIEW_PATH="$TEST_TEMP_DIR/reviews"
+    # Create reviews directory and get its canonical path to ensure consistency
+    mkdir -p "$TEST_TEMP_DIR/reviews"
+    CANONICAL_REVIEW_PATH=$(cd "$TEST_TEMP_DIR/reviews" && pwd -P)
     echo "REVIEW_ROOT_PATH=\"$CANONICAL_REVIEW_PATH\"" > "$TEST_TEMP_DIR/.claude/review-code.env"
 }
 
@@ -317,4 +319,78 @@ teardown() {
         # The path should still be under reviews even if symlink exists
         [[ "$file_path" == "$TEST_TEMP_DIR/reviews"* ]]
     fi
+}
+
+# =============================================================================
+# Directory auto-creation tests
+# =============================================================================
+
+@test "review-file-path.sh: creates missing parent directories" {
+    # Use a deeply nested path that doesn't exist
+    deep_org="new-org"
+    deep_repo="new-repo"
+
+    # Verify directories don't exist
+    [ ! -d "$TEST_TEMP_DIR/reviews/$deep_org" ]
+
+    # Run script - should create parent directories
+    run "$SCRIPT" --org "$deep_org" --repo "$deep_repo" "test-pr"
+    [ "$status" -eq 0 ]
+
+    # Verify directories were created
+    file_path=$(echo "$output" | jq -r '.file_path')
+    parent_dir=$(dirname "$file_path")
+    [ -d "$parent_dir" ]
+}
+
+@test "review-file-path.sh: handles already existing directories" {
+    # Create directories first
+    mkdir -p "$TEST_TEMP_DIR/reviews/existing-org/existing-repo"
+
+    # Run script - should work fine with existing directories
+    run "$SCRIPT" --org "existing-org" --repo "existing-repo" "test-pr"
+    [ "$status" -eq 0 ]
+
+    file_path=$(echo "$output" | jq -r '.file_path')
+    [ -n "$file_path" ]
+}
+
+@test "review-file-path.sh: fails gracefully when mkdir fails" {
+    # Create a read-only directory to prevent mkdir from succeeding
+    readonly_dir="$TEST_TEMP_DIR/reviews/readonly-org"
+    mkdir -p "$readonly_dir"
+    chmod 444 "$readonly_dir"
+
+    # Try to create a subdirectory - should fail
+    run "$SCRIPT" --org "readonly-org" --repo "new-repo" "test-pr"
+
+    # Should exit with error
+    [ "$status" -ne 0 ]
+
+    # Clean up: restore permissions
+    chmod 755 "$readonly_dir"
+}
+
+# =============================================================================
+# Source vs Execute guard clause tests
+# =============================================================================
+
+@test "review-file-path.sh: can be sourced without executing main" {
+    # Source the script - should not produce output
+    output=$(source "$SCRIPT" 2>&1)
+
+    # Sourcing should not produce any output (main not executed)
+    [ -z "$output" ]
+
+    # Verify main function exists after sourcing
+    source "$SCRIPT"
+    declare -F main > /dev/null
+}
+
+@test "review-file-path.sh: executes main when run directly" {
+    run "$SCRIPT" --org "testorg" --repo "testrepo" "test-pr"
+    [ "$status" -eq 0 ]
+
+    # Should produce JSON output when executed directly
+    echo "$output" | jq -e '.file_path' > /dev/null
 }

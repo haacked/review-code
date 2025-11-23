@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch full history for git-dependent tests
+
+    - name: Install dependencies
+      run: |
+        # Configure git to use 'main' as default branch
+        git config --global init.defaultBranch main
+
+        # Configure git user for CI (needed for tests that create commits)
+        git config --global user.email "ci@github.com"
+        git config --global user.name "GitHub CI"
+
+        # Install all system dependencies
+        sudo apt-get update
+        sudo apt-get install -y jq shellcheck
+
+        # Install bats-core (pinned version for supply chain security)
+        sudo npm install -g bats@1.10.0
+
+        # Verify installations
+        echo "=== Dependency Versions ==="
+        bash --version | head -1
+        bats --version
+        jq --version
+        git --version
+        shellcheck --version
+
+    - name: Run tests
+      run: |
+        chmod +x bin/test
+        bin/test
+
+    - name: Lint shell scripts
+      run: |
+        chmod +x bin/lint
+        bin/lint
