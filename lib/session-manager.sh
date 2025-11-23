@@ -17,12 +17,30 @@ set -euo pipefail
 # Session storage directory
 SESSION_DIR="${CLAUDE_SESSION_DIR:-/tmp/claude-sessions}"
 
+# Sanitize session ID or command name to prevent path traversal
+# Args: $1 = string to sanitize
+# Returns: sanitized string (only alphanumeric, hyphens, underscores)
+sanitize_identifier() {
+    local input="$1"
+
+    # Only allow alphanumeric, hyphens, underscores
+    if [[ ! "$input" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        echo "ERROR: Invalid identifier: $input (only alphanumeric, -, _ allowed)" >&2
+        return 1
+    fi
+
+    echo "$input"
+}
+
 # Initialize a new session
 # Args: $1 = command name (e.g., "review-code"), $2 = initial JSON data
 # Returns: session ID
 session_init() {
     local command_name="$1"
     local initial_data="$2"
+
+    # Sanitize command name
+    command_name=$(sanitize_identifier "$command_name") || return 1
 
     # Create session ID using PID and timestamp for uniqueness
     local session_id="${command_name}-$$-$(date +%s)"
@@ -57,6 +75,9 @@ session_init() {
 session_file() {
     local session_id="$1"
 
+    # Sanitize session ID to prevent path traversal
+    session_id=$(sanitize_identifier "$session_id") || return 1
+
     # Extract command name from session ID (format: command-name-pid-timestamp)
     # Need to remove the last two components (pid and timestamp)
     # First, remove timestamp: review-code-12345-1234567890 -> review-code-12345
@@ -64,7 +85,21 @@ session_file() {
     # Then remove pid: review-code-12345 -> review-code
     local command_name="${without_timestamp%-*}"
 
-    echo "$SESSION_DIR/$command_name/$session_id.json"
+    # Sanitize command name as well
+    command_name=$(sanitize_identifier "$command_name") || return 1
+
+    local session_file="$SESSION_DIR/$command_name/$session_id.json"
+
+    # Verify the resolved path is still within SESSION_DIR (defense in depth)
+    local canonical_file
+    canonical_file=$(cd "$(dirname "$session_file")" 2>/dev/null && pwd)/$(basename "$session_file") || return 1
+
+    if [[ "$canonical_file" != "$SESSION_DIR"/* ]]; then
+        echo "ERROR: Session file path outside session directory" >&2
+        return 1
+    fi
+
+    echo "$session_file"
 }
 
 # Get entire session data
@@ -148,9 +183,16 @@ session_exists() {
 session_cleanup() {
     local session_id="$1"
 
+    # Sanitize session ID
+    session_id=$(sanitize_identifier "$session_id") || return 1
+
     # Extract command name (same logic as session_file)
     local without_timestamp="${session_id%-*}"
     local command_name="${without_timestamp%-*}"
+
+    # Sanitize command name
+    command_name=$(sanitize_identifier "$command_name") || return 1
+
     local command_dir="$SESSION_DIR/$command_name"
 
     # Remove session file and metadata
@@ -168,6 +210,9 @@ session_cleanup_old() {
         find "$SESSION_DIR" -name "*.json" -type f -mmin +60 -delete 2> /dev/null || true
         find "$SESSION_DIR" -name "*.meta.json" -type f -mmin +60 -delete 2> /dev/null || true
     else
+        # Sanitize command name
+        command_name=$(sanitize_identifier "$command_name") || return 1
+
         # Cleanup specific command
         local command_dir="$SESSION_DIR/$command_name"
         if [ -d "$command_dir" ]; then
@@ -181,6 +226,10 @@ session_cleanup_old() {
 # Args: $1 = command name
 session_list() {
     local command_name="$1"
+
+    # Sanitize command name
+    command_name=$(sanitize_identifier "$command_name") || return 1
+
     local command_dir="$SESSION_DIR/$command_name"
 
     if [ ! -d "$command_dir" ]; then

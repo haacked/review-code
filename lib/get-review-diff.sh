@@ -22,20 +22,29 @@ mapfile -t EXCLUSIONS < <(get_exclusion_patterns common)
 CONTEXT_LINES="${DIFF_CONTEXT_LINES:-1}"
 
 # Helper: Run git diff command with optional file pattern
-# Args: $1 = git command, $2 = description for diff_type, $3 = optional file pattern
+# Args: Expects git command parts passed as separate arguments
+#       $1 = git subcommand (e.g., "diff" or "show")
+#       $2... = remaining git arguments (commits, ranges, etc.)
+#       Second-to-last: diff description
+#       Last: optional file pattern
 # Sets: diff_type and diff_content global variables
 run_git_diff() {
-    local git_cmd="$1"
-    local diff_desc="$2"
-    local pattern="${3:-}"
+    # Extract description and pattern from end of args
+    local args=("$@")
+    local num_args=${#args[@]}
+    local pattern="${args[$((num_args-1))]}"
+    local diff_desc="${args[$((num_args-2))]}"
+
+    # Remove description and pattern from args (keep only git command parts)
+    local git_args=("${args[@]:0:$((num_args-2))}")
 
     # Set diff type message
-    if [ -n "$pattern" ]; then
+    if [ -n "$pattern" ] && [ "$pattern" != "NOPATTERN" ]; then
         diff_type="$diff_desc filtered by: $pattern"
-        diff_content=$(eval "$git_cmd -U\"$CONTEXT_LINES\" --diff-filter=d -- \"\${EXCLUSIONS[@]}\" \"$pattern\"")
+        diff_content=$(git "${git_args[@]}" -U"$CONTEXT_LINES" --diff-filter=d -- "${EXCLUSIONS[@]}" "$pattern")
     else
         diff_type="$diff_desc"
-        diff_content=$(eval "$git_cmd -U\"$CONTEXT_LINES\" --diff-filter=d -- \"\${EXCLUSIONS[@]}\"")
+        diff_content=$(git "${git_args[@]}" -U"$CONTEXT_LINES" --diff-filter=d -- "${EXCLUSIONS[@]}")
     fi
 }
 
@@ -62,18 +71,30 @@ if [ "${BASH_SOURCE[0]:-}" = "${0}" ]; then
     case "$mode" in
         "commit")
             commit="$1"
-            run_git_diff "git show \"$commit\" --format=\"\"" "commit ($commit)" "$file_pattern"
+            if [ -z "$file_pattern" ]; then
+                run_git_diff show "$commit" --format= "commit ($commit)" "NOPATTERN"
+            else
+                run_git_diff show "$commit" --format= "commit ($commit)" "$file_pattern"
+            fi
             ;;
 
         "branch")
             branch="$1"
             base_branch="$2"
-            run_git_diff "git diff \"$base_branch..$branch\"" "branch ($base_branch..$branch)" "$file_pattern"
+            if [ -z "$file_pattern" ]; then
+                run_git_diff diff "$base_branch..$branch" "branch ($base_branch..$branch)" "NOPATTERN"
+            else
+                run_git_diff diff "$base_branch..$branch" "branch ($base_branch..$branch)" "$file_pattern"
+            fi
             ;;
 
         "range")
             range="$1"
-            run_git_diff "git diff \"$range\"" "range ($range)" "$file_pattern"
+            if [ -z "$file_pattern" ]; then
+                run_git_diff diff "$range" "range ($range)" "NOPATTERN"
+            else
+                run_git_diff diff "$range" "range ($range)" "$file_pattern"
+            fi
             ;;
 
         "local")
@@ -110,7 +131,11 @@ if [ "${BASH_SOURCE[0]:-}" = "${0}" ]; then
             base_branch="$2"
 
             # Get branch diff using helper
-            run_git_diff "git diff \"$base_branch..$branch\"" "branch + uncommitted ($base_branch..$branch + local)" "$file_pattern"
+            if [ -z "$file_pattern" ]; then
+                run_git_diff diff "$base_branch..$branch" "branch + uncommitted ($base_branch..$branch + local)" "NOPATTERN"
+            else
+                run_git_diff diff "$base_branch..$branch" "branch + uncommitted ($base_branch..$branch + local)" "$file_pattern"
+            fi
             branch_diff="$diff_content"
 
             # Get uncommitted diff (reuse local mode logic)

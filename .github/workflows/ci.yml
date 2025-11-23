@@ -20,12 +20,12 @@ jobs:
         # Configure git to use 'main' as default branch
         git config --global init.defaultBranch main
 
-        # Install bats-core
-        sudo npm install -g bats
-
-        # Install jq
+        # Install all system dependencies
         sudo apt-get update
-        sudo apt-get install -y jq
+        sudo apt-get install -y jq shellcheck
+
+        # Install bats-core (pinned version for supply chain security)
+        sudo npm install -g bats@1.10.0
 
         # Verify installations
         echo "=== Dependency Versions ==="
@@ -33,20 +33,14 @@ jobs:
         bats --version
         jq --version
         git --version
+        shellcheck --version
 
     - name: Run tests
       run: |
         chmod +x bin/test
         bin/test
 
-    - name: Check shell scripts with shellcheck
+    - name: Lint shell scripts
       run: |
-        # Install shellcheck
-        sudo apt-get install -y shellcheck
-
-        # Run shellcheck on all shell scripts
-        echo "=== Running shellcheck ==="
-        find . -type f -name "*.sh" -not -path "./tests/*" | while read -r script; do
-          echo "Checking: $script"
-          shellcheck -x "$script" || echo "Warning: shellcheck found issues in $script"
-        done
+        chmod +x bin/lint
+        bin/lint
