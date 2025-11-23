@@ -197,7 +197,11 @@ detect_git_ref() {
     fi
 
     local current_branch
-    current_branch=$(git rev-parse --abbrev-ref HEAD)
+    current_branch=$(git branch --show-current 2>/dev/null)
+    # Handle detached HEAD (common in CI)
+    if [ -z "$current_branch" ]; then
+        current_branch=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    fi
     local is_current="false"
     if [[ "$arg" == "$current_branch" ]]; then
         is_current="true"
@@ -234,7 +238,11 @@ detect_git_ref() {
 # Returns: 0 always (outputs JSON or exits with error)
 detect_no_arg() {
     local current_branch
-    current_branch=$(git rev-parse --abbrev-ref HEAD)
+    current_branch=$(git branch --show-current 2>/dev/null)
+    # Handle detached HEAD (common in CI)
+    if [ -z "$current_branch" ]; then
+        current_branch=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    fi
     local base_branch
     base_branch=$(get_base_branch)
 

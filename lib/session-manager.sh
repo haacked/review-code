@@ -96,7 +96,11 @@ session_file() {
         local canonical_file
         canonical_file=$(cd "$(dirname "$session_file")" && pwd)/$(basename "$session_file")
 
-        if [[ "$canonical_file" != "$SESSION_DIR"/* ]]; then
+        # Resolve SESSION_DIR to canonical path for comparison
+        local canonical_session_dir
+        canonical_session_dir=$(cd "$SESSION_DIR" && pwd -P)
+
+        if [[ "$canonical_file" != "$canonical_session_dir"/* ]]; then
             echo "ERROR: Session file path outside session directory" >&2
             return 1
         fi
