@@ -48,7 +48,8 @@ print_color blue "Found ${#actual_files[@]} shell scripts"
 # Run shellcheck with strict settings
 # Excluded checks:
 # - SC1091: Can't follow sourced files with dynamic paths
-if ! run_command "shellcheck -x -o all -e SC1091 ${actual_files[*]}" "Running shellcheck"; then
+# - SC2250: Optional style preference for universal variable bracing (too verbose)
+if ! run_command "shellcheck -x -o all -e SC1091,SC2250 ${actual_files[*]}" "Running shellcheck"; then
     success_status=false
 fi
 
