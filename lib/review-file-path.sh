@@ -112,8 +112,11 @@ resolve_canonical_dir() {
         basename=$(basename "$dir")
 
         if [ ! -d "$parent" ]; then
-            error "Parent of $description directory does not exist: $parent"
-            exit 1
+            # Create parent directories if they don't exist
+            mkdir -p "$parent" || {
+                error "Cannot create parent directory: $parent"
+                exit 1
+            }
         fi
 
         local canonical_parent
@@ -369,4 +372,7 @@ main() {
         }'
 }
 
-main "$@"
+# Only run main if script is executed directly (not sourced)
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

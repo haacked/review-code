@@ -152,3 +152,28 @@ teardown() {
     branch=$(echo "$output" | jq -r '.branch')
     [ "$branch" = "feature-branch" ]
 }
+
+# =============================================================================
+# Source vs Execute guard clause tests
+# =============================================================================
+
+@test "git-context.sh: can be sourced without executing main" {
+    # Source the script - should not produce output
+    output=$(cd "$TEST_REPO" && source "$PROJECT_ROOT/lib/git-context.sh" 2>&1)
+
+    # Sourcing should not produce any output (main not executed)
+    [ -z "$output" ]
+
+    # Verify main function exists after sourcing
+    cd "$TEST_REPO"
+    source "$PROJECT_ROOT/lib/git-context.sh"
+    declare -F main > /dev/null
+}
+
+@test "git-context.sh: executes main when run directly" {
+    run "$PROJECT_ROOT/lib/git-context.sh"
+    [ "$status" -eq 0 ]
+
+    # Should produce JSON output when executed directly
+    echo "$output" | jq -e '.org' > /dev/null
+}

@@ -1,5 +1,7 @@
 # Review-Code for Claude Code
 
+[![CI](https://github.com/haacked/review-code/actions/workflows/ci.yml/badge.svg)](https://github.com/haacked/review-code/actions/workflows/ci.yml)
+
 A comprehensive code review system for Claude Code that uses specialized AI agents to review your code for security, performance, maintainability, testing, compatibility, and architecture concerns.
 
 > **⚠️ macOS Users:** This tool requires **bash 4.0+**. macOS ships with bash 3.2 by default. Install bash 4.0+ with `brew install bash` before proceeding.

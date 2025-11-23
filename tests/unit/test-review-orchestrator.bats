@@ -402,3 +402,31 @@ teardown() {
     diff=$(echo "$output" | jq -r '.diff')
     [[ "$diff" == *"DIFF_TYPE:"* ]]
 }
+
+# =============================================================================
+# Source vs Execute guard clause tests
+# =============================================================================
+
+@test "review-orchestrator.sh: can be sourced without executing main" {
+    # Source the script - should not produce output
+    output=$(cd "$TEST_REPO" && source "$PROJECT_ROOT/lib/review-orchestrator.sh" 2>&1)
+
+    # Sourcing should not produce any output (main not executed)
+    [ -z "$output" ]
+
+    # Verify main function exists after sourcing
+    cd "$TEST_REPO"
+    source "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    declare -F main > /dev/null
+}
+
+@test "review-orchestrator.sh: executes main when run directly" {
+    # Create a change so orchestrator has something to review
+    echo "change" > file.txt
+
+    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    [ "$status" -eq 0 ]
+
+    # Should produce JSON output when executed directly
+    echo "$output" | jq -e '.mode' > /dev/null
+}
