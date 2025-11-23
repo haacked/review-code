@@ -68,33 +68,24 @@ if [ "${BASH_SOURCE[0]:-}" = "${0}" ]; then
         fi
     fi
 
+    # Use pattern_arg to handle empty file_pattern
+    pattern_arg="${file_pattern:-NOPATTERN}"
+
     case "$mode" in
         "commit")
             commit="$1"
-            if [ -z "$file_pattern" ]; then
-                run_git_diff show "$commit" --format= "commit ($commit)" "NOPATTERN"
-            else
-                run_git_diff show "$commit" --format= "commit ($commit)" "$file_pattern"
-            fi
+            run_git_diff show "$commit" --format= "commit ($commit)" "$pattern_arg"
             ;;
 
         "branch")
             branch="$1"
             base_branch="$2"
-            if [ -z "$file_pattern" ]; then
-                run_git_diff diff "$base_branch..$branch" "branch ($base_branch..$branch)" "NOPATTERN"
-            else
-                run_git_diff diff "$base_branch..$branch" "branch ($base_branch..$branch)" "$file_pattern"
-            fi
+            run_git_diff diff "$base_branch..$branch" "branch ($base_branch..$branch)" "$pattern_arg"
             ;;
 
         "range")
             range="$1"
-            if [ -z "$file_pattern" ]; then
-                run_git_diff diff "$range" "range ($range)" "NOPATTERN"
-            else
-                run_git_diff diff "$range" "range ($range)" "$file_pattern"
-            fi
+            run_git_diff diff "$range" "range ($range)" "$pattern_arg"
             ;;
 
         "local")
@@ -131,11 +122,7 @@ if [ "${BASH_SOURCE[0]:-}" = "${0}" ]; then
             base_branch="$2"
 
             # Get branch diff using helper
-            if [ -z "$file_pattern" ]; then
-                run_git_diff diff "$base_branch..$branch" "branch + uncommitted ($base_branch..$branch + local)" "NOPATTERN"
-            else
-                run_git_diff diff "$base_branch..$branch" "branch + uncommitted ($base_branch..$branch + local)" "$file_pattern"
-            fi
+            run_git_diff diff "$base_branch..$branch" "branch + uncommitted ($base_branch..$branch + local)" "$pattern_arg"
             branch_diff="$diff_content"
 
             # Get uncommitted diff (reuse local mode logic)
