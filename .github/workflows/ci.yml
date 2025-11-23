@@ -17,6 +17,9 @@ jobs:
 
     - name: Install dependencies
       run: |
+        # Configure git to use 'main' as default branch
+        git config --global init.defaultBranch main
+
         # Install bats-core
         sudo npm install -g bats
 
