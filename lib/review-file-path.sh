@@ -100,10 +100,10 @@ resolve_canonical_dir() {
 
     if [[ -d "${dir}" ]]; then
         # Directory exists - resolve it directly
-        cd "${dir}" 2> /dev/null && pwd -P || {
+        if ! (cd "${dir}" 2> /dev/null && pwd -P); then
             error "Cannot resolve ${description} directory: ${dir}"
             exit 1
-        }
+        fi
     else
         # Directory doesn't exist - resolve parent and append basename
         local parent
@@ -259,7 +259,7 @@ main() {
         review_type="range"
         local range="${BASH_REMATCH[1]}"
         # For ranges, replace .. with - for filename safety
-        range=$(echo "${range}" | sed 's/\.\./-to-/g')
+        range="${range//../-to-}"
         range=$(sanitize_path_component "${range}")
         filename="range-${range}.md"
     elif [[ "${identifier}" =~ ^branch-(.+)$ ]]; then
