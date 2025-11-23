@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2312  # Command substitutions for counting/formatting are non-critical
 # debug-cleanup - Clean up old debug sessions from review-code
 #
 # Usage:
@@ -20,12 +21,12 @@ set -euo pipefail
 
 # Default values
 DAYS=7
-DEBUG_DIR="${REVIEW_CODE_DEBUG_PATH:-$HOME/.cache/review-code/debug}"
+DEBUG_DIR="${REVIEW_CODE_DEBUG_PATH:-${HOME}/.cache/review-code/debug}"
 LIST_ONLY=false
 REMOVE_ALL=false
 
 # Parse arguments
-while [ $# -gt 0 ]; do
+while [[ $# -gt 0 ]]; do
     case "$1" in
         --older-than)
             DAYS="$2"
@@ -53,14 +54,14 @@ while [ $# -gt 0 ]; do
 done
 
 # Check if debug directory exists
-if [ ! -d "$DEBUG_DIR" ]; then
-    echo "No debug directory found at: $DEBUG_DIR"
+if [[ ! -d "${DEBUG_DIR}" ]]; then
+    echo "No debug directory found at: ${DEBUG_DIR}"
     exit 0
 fi
 
 # Function to list sessions
 list_sessions() {
-    echo "Debug sessions in: $DEBUG_DIR"
+    echo "Debug sessions in: ${DEBUG_DIR}"
     echo ""
     printf "%-60s %10s %15s\n" "SESSION" "SIZE" "AGE (days)"
     printf "%-60s %10s %15s\n" "$(printf '%.0s-' {1..60})" "$(printf '%.0s-' {1..10})" "$(printf '%.0s-' {1..15})"
@@ -68,49 +69,49 @@ list_sessions() {
     local total_size=0
     local total_count=0
 
-    find "$DEBUG_DIR" -mindepth 1 -maxdepth 1 -type d | sort -r | while read -r session_dir; do
+    find "${DEBUG_DIR}" -mindepth 1 -maxdepth 1 -type d | sort -r | while read -r session_dir; do
         local session_name
-        session_name=$(basename "$session_dir")
+        session_name=$(basename "${session_dir}")
 
         # Get size
         local size
         if command -v du > /dev/null 2>&1; then
-            size=$(du -sh "$session_dir" 2> /dev/null | cut -f1)
+            size=$(du -sh "${session_dir}" 2> /dev/null | cut -f1)
         else
             size="unknown"
         fi
 
         # Get age in days
         local age_days
-        if [[ "$OSTYPE" == "darwin"* ]]; then
+        if [[ "${OSTYPE}" == "darwin"* ]]; then
             # macOS
             local mod_time
-            mod_time=$(stat -f %m "$session_dir")
+            mod_time=$(stat -f %m "${session_dir}")
             local now
             now=$(date +%s)
             age_days=$(((now - mod_time) / 86400))
         else
             # Linux
             local mod_time
-            mod_time=$(stat -c %Y "$session_dir")
+            mod_time=$(stat -c %Y "${session_dir}")
             local now
             now=$(date +%s)
             age_days=$(((now - mod_time) / 86400))
         fi
 
-        printf "%-60s %10s %15s\n" "$session_name" "$size" "$age_days"
+        printf "%-60s %10s %15s\n" "${session_name}" "${size}" "${age_days}"
 
         total_count=$((total_count + 1))
     done
 
     echo ""
-    echo "Total sessions: $(find "$DEBUG_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+    echo "Total sessions: $(find "${DEBUG_DIR}" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
 
     # Total disk usage
     if command -v du > /dev/null 2>&1; then
         local total_size
-        total_size=$(du -sh "$DEBUG_DIR" 2> /dev/null | cut -f1)
-        echo "Total disk usage: $total_size"
+        total_size=$(du -sh "${DEBUG_DIR}" 2> /dev/null | cut -f1)
+        echo "Total disk usage: ${total_size}"
     fi
 }
 
@@ -119,51 +120,51 @@ remove_sessions() {
     local days="$1"
     local removed_count=0
 
-    if [ "$REMOVE_ALL" = true ]; then
+    if [[ "${REMOVE_ALL}" = true ]]; then
         echo "Removing all debug sessions..."
         rm -rf "${DEBUG_DIR:?}"/*
-        removed_count=$(find "$DEBUG_DIR" -mindepth 1 -maxdepth 1 -type d 2> /dev/null | wc -l | tr -d ' ')
+        removed_count=$(find "${DEBUG_DIR}" -mindepth 1 -maxdepth 1 -type d 2> /dev/null | wc -l | tr -d ' ')
         echo "Removed all sessions"
     else
-        echo "Removing debug sessions older than $days days..."
+        echo "Removing debug sessions older than ${days} days..."
 
         # Find and remove old sessions
-        if [[ "$OSTYPE" == "darwin"* ]]; then
+        if [[ "${OSTYPE}" == "darwin"* ]]; then
             # macOS doesn't support -mtime with find in the same way
-            find "$DEBUG_DIR" -mindepth 1 -maxdepth 1 -type d | while read -r session_dir; do
+            find "${DEBUG_DIR}" -mindepth 1 -maxdepth 1 -type d | while read -r session_dir; do
                 local mod_time
-                mod_time=$(stat -f %m "$session_dir")
+                mod_time=$(stat -f %m "${session_dir}")
                 local now
                 now=$(date +%s)
                 local age_days
                 age_days=$(((now - mod_time) / 86400))
 
-                if [ "$age_days" -gt "$days" ]; then
-                    echo "  Removing: $(basename "$session_dir") (${age_days} days old)"
-                    rm -rf "$session_dir"
+                if [[ "${age_days}" -gt "${days}" ]]; then
+                    echo "  Removing: $(basename "${session_dir}") (${age_days} days old)"
+                    rm -rf "${session_dir}"
                     removed_count=$((removed_count + 1))
                 fi
             done
         else
             # Linux
             while IFS= read -r session_dir; do
-                echo "  Removing: $(basename "$session_dir")"
-                rm -rf "$session_dir"
+                echo "  Removing: $(basename "${session_dir}")"
+                rm -rf "${session_dir}"
                 removed_count=$((removed_count + 1))
-            done < <(find "$DEBUG_DIR" -mindepth 1 -maxdepth 1 -type d -mtime +"$days")
+            done < <(find "${DEBUG_DIR}" -mindepth 1 -maxdepth 1 -type d -mtime +"${days}")
         fi
 
-        if [ "$removed_count" -eq 0 ]; then
-            echo "No sessions older than $days days found"
+        if [[ "${removed_count}" -eq 0 ]]; then
+            echo "No sessions older than ${days} days found"
         else
-            echo "Removed $removed_count session(s)"
+            echo "Removed ${removed_count} session(s)"
         fi
     fi
 }
 
 # Main logic
-if [ "$LIST_ONLY" = true ]; then
+if [[ "${LIST_ONLY}" = true ]]; then
     list_sessions
 else
-    remove_sessions "$DAYS"
+    remove_sessions "${DAYS}"
 fi

@@ -12,7 +12,7 @@
 # Source error helpers (use local variable to avoid overwriting caller's SCRIPT_DIR)
 _HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/helpers/error-helpers.sh
-source "$_HELPER_DIR/error-helpers.sh"
+source "${_HELPER_DIR}/error-helpers.sh"
 
 get_exclusion_patterns() {
     local mode="${1:-default}"
@@ -71,7 +71,7 @@ get_exclusion_patterns() {
         ':!*~'
     )
 
-    case "$mode" in
+    case "${mode}" in
         extended)
             printf '%s\n' "${common[@]}" "${extended[@]}"
             ;;
@@ -79,7 +79,7 @@ get_exclusion_patterns() {
             printf '%s\n' "${common[@]}"
             ;;
         *)
-            error "Unknown exclusion mode: $mode"
+            error "Unknown exclusion mode: ${mode}"
             echo "Valid modes: common, extended" >&2
             return 1
             ;;

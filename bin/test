@@ -5,7 +5,7 @@ set -euo pipefail
 
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Colors
 GREEN='\033[0;32m'
@@ -24,7 +24,7 @@ fi
 
 # Run unit tests
 echo -e "${YELLOW}=== Unit Tests ===${NC}"
-if bats "$ROOT_DIR/tests/unit/"*.bats; then
+if bats "${ROOT_DIR}/tests/unit/"*.bats; then
     echo -e "\n${GREEN}✓ All unit tests passed!${NC}\n"
 else
     echo -e "\n${RED}✗ Some unit tests failed${NC}\n"
@@ -32,9 +32,10 @@ else
 fi
 
 # Run integration tests if they exist
-if [ -d "$ROOT_DIR/tests/integration" ] && [ -n "$(ls -A "$ROOT_DIR/tests/integration"/*.bats 2> /dev/null)" ]; then
+# shellcheck disable=SC2312  # ls failure means no tests (correct behavior)
+if [[ -d "${ROOT_DIR}/tests/integration" ]] && [[ -n "$(ls -A "${ROOT_DIR}/tests/integration"/*.bats 2> /dev/null)" ]]; then
     echo -e "${YELLOW}=== Integration Tests ===${NC}"
-    if bats "$ROOT_DIR/tests/integration/"*.bats; then
+    if bats "${ROOT_DIR}/tests/integration/"*.bats; then
         echo -e "\n${GREEN}✓ All integration tests passed!${NC}\n"
     else
         echo -e "\n${RED}✗ Some integration tests failed${NC}\n"

@@ -20,19 +20,19 @@ set -euo pipefail
 # Source debug helpers
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/helpers/debug-helpers.sh
-source "$SCRIPT_DIR/helpers/debug-helpers.sh"
+source "${SCRIPT_DIR}/helpers/debug-helpers.sh"
 
 debug_time "03-language-detection" "start"
 
 # Read diff from stdin
 diff_content=$(cat)
 
-debug_save "03-language-detection" "diff-input.txt" "$diff_content"
+debug_save "03-language-detection" "diff-input.txt" "${diff_content}"
 
 # Extract file paths from diff
 # Format: +++ b/path/to/file.ext or --- a/path/to/file.ext
 # grep returns 1 if no matches (which is fine), but we want to catch real errors
-file_paths=$(echo "$diff_content" | { grep -E "^(\+\+\+|---) [ab]/" || test $? = 1; } | sed 's/^... [ab]\///')
+file_paths=$(echo "${diff_content}" | { grep -E "^(\+\+\+|---) [ab]/" || test $? = 1; } | sed 's/^... [ab]\///')
 
 # Detect languages from file extensions using associative arrays for O(1) lookups
 declare -A seen_languages
@@ -41,17 +41,17 @@ declare -A seen_extensions
 has_frontend=false
 
 while IFS= read -r file; do
-    [ -z "$file" ] && continue
+    [[ -z "${file}" ]] && continue
 
     # Extract extension
     ext="${file##*.}"
-    ext=".$ext"
+    ext=".${ext}"
 
     # Add to extensions map (O(1) check)
-    seen_extensions[$ext]=1
+    seen_extensions[${ext}]=1
 
     # Detect language from extension
-    case "$ext" in
+    case "${ext}" in
         .py)
             seen_languages[python]=1
             ;;
@@ -99,8 +99,11 @@ while IFS= read -r file; do
         .sql)
             seen_languages[sql]=1
             ;;
+        *)
+            # Unknown extension - no language detected
+            ;;
     esac
-done <<< "$file_paths"
+done <<< "${file_paths}"
 
 # Convert associative arrays to indexed arrays for JSON output
 languages=("${!seen_languages[@]}")
@@ -108,17 +111,18 @@ extensions=("${!seen_extensions[@]}")
 
 # Detect frameworks from file content in single pass
 # Use awk for single-pass pattern matching instead of 6 grep invocations
+# shellcheck disable=SC2312  # awk and sort failures are non-critical for framework detection
 while IFS= read -r framework; do
-    case "$framework" in
+    case "${framework}" in
         react | kea)
-            seen_frameworks[$framework]=1
+            seen_frameworks[${framework}]=1
             has_frontend=true
             ;;
         *)
-            seen_frameworks[$framework]=1
+            seen_frameworks[${framework}]=1
             ;;
     esac
-done < <(echo "$diff_content" | awk '
+done < <(echo "${diff_content}" | awk '
     /import.*from ["'\'']react["'\'']|import React/ { print "react"; next }
     /import.*from ["'\'']kea["'\'']|useValues|useActions/ { print "kea"; next }
     /from django|import django/ { print "django"; next }
@@ -132,19 +136,19 @@ frameworks=("${!seen_frameworks[@]}")
 
 # Convert arrays to JSON format
 # Handle empty arrays properly (printf with no args outputs blank line -> [""])
-if [ "${#languages[@]}" -gt 0 ]; then
+if [[ "${#languages[@]}" -gt 0 ]]; then
     languages_json=$(printf '%s\n' "${languages[@]}" | jq -R . | jq -s .)
 else
     languages_json="[]"
 fi
 
-if [ "${#frameworks[@]}" -gt 0 ]; then
+if [[ "${#frameworks[@]}" -gt 0 ]]; then
     frameworks_json=$(printf '%s\n' "${frameworks[@]}" | jq -R . | jq -s .)
 else
     frameworks_json="[]"
 fi
 
-if [ "${#extensions[@]}" -gt 0 ]; then
+if [[ "${#extensions[@]}" -gt 0 ]]; then
     extensions_json=$(printf '%s\n' "${extensions[@]}" | jq -R . | jq -s .)
 else
     extensions_json="[]"
@@ -156,43 +160,43 @@ lang_count="${#languages[@]}"
 framework_count="${#frameworks[@]}"
 ext_count="${#extensions[@]}"
 
-if [ "$lang_count" -gt 0 ]; then
+if [[ "${lang_count}" -gt 0 ]]; then
     debug_save "03-language-detection" "detected-languages.txt" "$(printf '%s\n' "${languages[@]}")"
 else
     debug_save "03-language-detection" "detected-languages.txt" "(no languages detected)"
 fi
 
-if [ "$framework_count" -gt 0 ]; then
+if [[ "${framework_count}" -gt 0 ]]; then
     debug_save "03-language-detection" "detected-frameworks.txt" "$(printf '%s\n' "${frameworks[@]}")"
 else
     debug_save "03-language-detection" "detected-frameworks.txt" "(no frameworks detected)"
 fi
 
-if [ "$ext_count" -gt 0 ]; then
+if [[ "${ext_count}" -gt 0 ]]; then
     debug_save "03-language-detection" "detected-extensions.txt" "$(printf '%s\n' "${extensions[@]}")"
 else
     debug_save "03-language-detection" "detected-extensions.txt" "(no extensions detected)"
 fi
 
 debug_stats "03-language-detection" \
-    languages_count "$lang_count" \
-    frameworks_count "$framework_count" \
-    extensions_count "$ext_count" \
-    has_frontend "$has_frontend"
+    languages_count "${lang_count}" \
+    frameworks_count "${framework_count}" \
+    extensions_count "${ext_count}" \
+    has_frontend "${has_frontend}"
 
 # Output JSON
 output=$(
     cat << EOF
 {
-    "languages": $languages_json,
-    "frameworks": $frameworks_json,
-    "has_frontend": $has_frontend,
-    "file_extensions": $extensions_json
+    "languages": ${languages_json},
+    "frameworks": ${frameworks_json},
+    "has_frontend": ${has_frontend},
+    "file_extensions": ${extensions_json}
 }
 EOF
 )
 
-debug_save_json "03-language-detection" "output.json" <<< "$output"
+debug_save_json "03-language-detection" "output.json" <<< "${output}"
 debug_time "03-language-detection" "end"
 
-echo "$output"
+echo "${output}"

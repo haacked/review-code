@@ -31,9 +31,9 @@ NC='\033[0m' # No Color
 
 # Directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CLAUDE_DIR="$HOME/.claude"
-CONFIG_FILE="$CLAUDE_DIR/review-code.env"
-DEFAULT_REVIEW_PATH="$HOME/dev/ai/reviews"
+CLAUDE_DIR="${HOME}/.claude"
+CONFIG_FILE="${CLAUDE_DIR}/review-code.env"
+DEFAULT_REVIEW_PATH="${HOME}/dev/ai/reviews"
 
 # Functions
 info() {
@@ -56,26 +56,26 @@ check_prerequisites() {
     local missing=()
 
     # Check bash version
-    if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+    if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
         missing+=("bash 4.0+")
     fi
 
     # Check required commands
     for cmd in git gh jq; do
-        if ! command -v "$cmd" &> /dev/null; then
-            missing+=("$cmd")
+        if ! command -v "${cmd}" &> /dev/null; then
+            missing+=("${cmd}")
         fi
     done
 
     # Check ~/.claude directory
-    if [ ! -d "$CLAUDE_DIR" ]; then
-        missing+=("$HOME/.claude directory (install Claude Code first)")
+    if [[ ! -d "${CLAUDE_DIR}" ]]; then
+        missing+=("${HOME}/.claude directory (install Claude Code first)")
     fi
 
-    if [ ${#missing[@]} -gt 0 ]; then
+    if [[ ${#missing[@]} -gt 0 ]]; then
         error "Missing prerequisites:"
         for item in "${missing[@]}"; do
-            echo "  - $item"
+            echo "  - ${item}"
         done
         echo ""
         echo "Install instructions:"
@@ -92,15 +92,15 @@ verify_repo_structure() {
     local missing=()
 
     for dir in "${required_dirs[@]}"; do
-        if [ ! -d "$SCRIPT_DIR/$dir" ]; then
-            missing+=("$dir/")
+        if [[ ! -d "${SCRIPT_DIR}/${dir}" ]]; then
+            missing+=("${dir}/")
         fi
     done
 
-    if [ ${#missing[@]} -gt 0 ]; then
+    if [[ ${#missing[@]} -gt 0 ]]; then
         error "Missing required directories:"
         for item in "${missing[@]}"; do
-            echo "  - $item"
+            echo "  - ${item}"
         done
         echo ""
         echo "Are you running this from the review-code repository root?"
@@ -112,50 +112,52 @@ verify_repo_structure() {
 load_config_safely() {
     local config_file="$1"
 
-    [ ! -f "$config_file" ] && return 0
+    [[ ! -f "${config_file}" ]] && return 0
 
     # Validate file permissions for security
     local file_owner
     local file_perms
 
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        file_owner=$(stat -f '%u' "$config_file" 2> /dev/null)
-        file_perms=$(stat -f '%Lp' "$config_file" 2> /dev/null)
+    if [[ "${OSTYPE}" == "darwin"* ]]; then
+        file_owner=$(stat -f '%u' "${config_file}" 2> /dev/null)
+        file_perms=$(stat -f '%Lp' "${config_file}" 2> /dev/null)
     else
-        file_owner=$(stat -c '%u' "$config_file" 2> /dev/null)
-        file_perms=$(stat -c '%a' "$config_file" 2> /dev/null)
+        file_owner=$(stat -c '%u' "${config_file}" 2> /dev/null)
+        file_perms=$(stat -c '%a' "${config_file}" 2> /dev/null)
     fi
 
-    if [ "$file_owner" != "$(id -u)" ]; then
-        error "Config file not owned by current user: $config_file"
+    # shellcheck disable=SC2312  # id command failure is critical and will be caught
+    if [[ "${file_owner}" != "$(id -u)" ]]; then
+        error "Config file not owned by current user: ${config_file}"
         return 1
     fi
 
     local world_perms=$((file_perms % 10))
-    if [ $((world_perms & 2)) -ne 0 ]; then
-        error "Config file is world-writable: $config_file"
-        error "Fix with: chmod o-w $config_file"
+    if [[ $((world_perms & 2)) -ne 0 ]]; then
+        error "Config file is world-writable: ${config_file}"
+        error "Fix with: chmod o-w ${config_file}"
         return 1
     fi
 
     # Parse configuration safely
     while IFS='=' read -r key value; do
-        [[ "$key" =~ ^[[:space:]]*# ]] && continue
-        [[ -z "$key" ]] && continue
-        [[ ! "$key" =~ ^[A-Z_][A-Z0-9_]*$ ]] && continue
+        [[ "${key}" =~ ^[[:space:]]*# ]] && continue
+        [[ -z "${key}" ]] && continue
+        [[ ! "${key}" =~ ^[A-Z_][A-Z0-9_]*$ ]] && continue
 
         value="${value#\"}"
         value="${value%\"}"
         value="${value#\'}"
         value="${value%\'}"
 
-        case "$key" in
-            REVIEW_ROOT_PATH) export REVIEW_ROOT_PATH="$value" ;;
-            CONTEXT_PATH) export CONTEXT_PATH="$value" ;;
-            DIFF_CONTEXT_LINES) export DIFF_CONTEXT_LINES="$value" ;;
-            CACHE_TTL_HOURS) export CACHE_TTL_HOURS="$value" ;;
+        case "${key}" in
+            REVIEW_ROOT_PATH) export REVIEW_ROOT_PATH="${value}" ;;
+            CONTEXT_PATH) export CONTEXT_PATH="${value}" ;;
+            DIFF_CONTEXT_LINES) export DIFF_CONTEXT_LINES="${value}" ;;
+            CACHE_TTL_HOURS) export CACHE_TTL_HOURS="${value}" ;;
+            *) ;; # Ignore unknown keys for forward compatibility
         esac
-    done < "$config_file"
+    done < "${config_file}"
 
     return 0
 }
@@ -164,25 +166,25 @@ get_review_path() {
     local review_path=""
 
     # Check if config already exists
-    if [ -f "$CONFIG_FILE" ]; then
-        load_config_safely "$CONFIG_FILE"
+    if [[ -f "${CONFIG_FILE}" ]]; then
+        load_config_safely "${CONFIG_FILE}"
         review_path="${REVIEW_ROOT_PATH:-}"
-        if [ -n "$review_path" ]; then
+        if [[ -n "${review_path}" ]]; then
             # If path exists and is writable, use it without prompting
             # Expand tilde if present
-            local expanded_path="${review_path/#\~/$HOME}"
-            if [ -d "$expanded_path" ] && [ -w "$expanded_path" ]; then
-                info "Using existing review path: $review_path" >&2
-                echo "$review_path"
+            local expanded_path="${review_path/#\~/${HOME}}"
+            if [[ -d "${expanded_path}" ]] && [[ -w "${expanded_path}" ]]; then
+                info "Using existing review path: ${review_path}" >&2
+                echo "${review_path}"
                 return
             fi
 
             # Path in config is invalid, prompt user
             echo "" >&2
-            warn "Configured path doesn't exist or isn't writable: $review_path"
+            warn "Configured path doesn't exist or isn't writable: ${review_path}"
             read -p "Enter a new path? [Y/n] " -n 1 -r
             echo "" >&2
-            if [[ $REPLY =~ ^[Nn]$ ]]; then
+            if [[ ${REPLY} =~ ^[Nn]$ ]]; then
                 error "Installation cancelled"
                 exit 1
             fi
@@ -192,19 +194,19 @@ get_review_path() {
     # Prompt for new path
     echo "" >&2
     echo "Where should code reviews and context files be saved?" >&2
-    read -p "Review path [$DEFAULT_REVIEW_PATH]: " review_path
-    review_path="${review_path:-$DEFAULT_REVIEW_PATH}"
+    read -r -p "Review path [${DEFAULT_REVIEW_PATH}]: " review_path
+    review_path="${review_path:-${DEFAULT_REVIEW_PATH}}"
 
     # Expand tilde
-    review_path="${review_path/#\~/$HOME}"
+    review_path="${review_path/#\~/${HOME}}"
 
     # Validate and create directory
-    if [ ! -d "$review_path" ]; then
+    if [[ ! -d "${review_path}" ]]; then
         read -p "Directory doesn't exist. Create it? [Y/n] " -n 1 -r
         echo "" >&2
-        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-            mkdir -p "$review_path"
-            info "Created directory: $review_path"
+        if [[ ! ${REPLY} =~ ^[Nn]$ ]]; then
+            mkdir -p "${review_path}"
+            info "Created directory: ${review_path}"
         else
             error "Installation cancelled"
             exit 1
@@ -212,58 +214,58 @@ get_review_path() {
     fi
 
     # Check if writable
-    if [ ! -w "$review_path" ]; then
-        error "Directory is not writable: $review_path"
+    if [[ ! -w "${review_path}" ]]; then
+        error "Directory is not writable: ${review_path}"
         exit 1
     fi
 
-    echo "$review_path"
+    echo "${review_path}"
 }
 
 create_config() {
     local review_path="$1"
-    local context_path="$review_path/context"
+    local context_path="${review_path}/context"
 
     # Create .claude directory if it doesn't exist
-    mkdir -p "$CLAUDE_DIR"
+    mkdir -p "${CLAUDE_DIR}"
 
     # Write config file
-    cat > "$CONFIG_FILE" << EOF
+    cat > "${CONFIG_FILE}" << EOF
 # Claude Code review-code command configuration
 # Generated by bin/setup
 #
 # Root directory where code reviews are saved
 # Reviews are organized as: {REVIEW_ROOT_PATH}/{org}/{repo}/{pr-number-or-branch}.md
-REVIEW_ROOT_PATH="$review_path"
+REVIEW_ROOT_PATH="${review_path}"
 
 # Directory where context files are stored (language/framework/org-specific guidelines)
 # These files can be customized by users
-CONTEXT_PATH="$context_path"
+CONTEXT_PATH="${context_path}"
 EOF
 
-    info "Configuration saved to: $CONFIG_FILE"
+    info "Configuration saved to: ${CONFIG_FILE}"
 }
 
 install_commands() {
-    local src="$SCRIPT_DIR/commands/review-code.md"
-    local dst="$CLAUDE_DIR/commands/review-code.md"
+    local src="${SCRIPT_DIR}/commands/review-code.md"
+    local dst="${CLAUDE_DIR}/commands/review-code.md"
 
     # Create commands directory
-    mkdir -p "$CLAUDE_DIR/commands"
+    mkdir -p "${CLAUDE_DIR}/commands"
 
     # Backup existing file if not a symlink
-    if [ -f "$dst" ] && [ ! -L "$dst" ]; then
+    if [[ -f "${dst}" ]] && [[ ! -L "${dst}" ]]; then
         debug "Backing up existing review-code.md"
-        cp "$dst" "$dst.bak"
+        cp "${dst}" "${dst}.bak"
     fi
 
     # Remove old symlink if exists
-    if [ -L "$dst" ]; then
-        rm "$dst"
+    if [[ -L "${dst}" ]]; then
+        rm "${dst}"
     fi
 
     # Copy file
-    cp "$src" "$dst"
+    cp "${src}" "${dst}"
     info "Installed command: review-code"
 }
 
@@ -279,24 +281,24 @@ install_agents() {
     )
 
     # Create agents directory
-    mkdir -p "$CLAUDE_DIR/agents"
+    mkdir -p "${CLAUDE_DIR}/agents"
 
     for agent in "${agents[@]}"; do
-        local src="$SCRIPT_DIR/agents/${agent}.md"
-        local dst="$CLAUDE_DIR/agents/${agent}.md"
+        local src="${SCRIPT_DIR}/agents/${agent}.md"
+        local dst="${CLAUDE_DIR}/agents/${agent}.md"
 
         # Backup existing file if not a symlink
-        if [ -f "$dst" ] && [ ! -L "$dst" ]; then
-            cp "$dst" "$dst.bak"
+        if [[ -f "${dst}" ]] && [[ ! -L "${dst}" ]]; then
+            cp "${dst}" "${dst}.bak"
         fi
 
         # Remove old symlink if exists
-        if [ -L "$dst" ]; then
-            rm "$dst"
+        if [[ -L "${dst}" ]]; then
+            rm "${dst}"
         fi
 
         # Copy file
-        cp "$src" "$dst"
+        cp "${src}" "${dst}"
     done
 
     info "Installed ${#agents[@]} agents (6 reviewers + 1 context explorer)"
@@ -318,33 +320,33 @@ install_scripts() {
     )
 
     # Create review-code bin subdirectory
-    mkdir -p "$CLAUDE_DIR/bin/review-code"
-    mkdir -p "$CLAUDE_DIR/bin/review-code/helpers"
+    mkdir -p "${CLAUDE_DIR}/bin/review-code"
+    mkdir -p "${CLAUDE_DIR}/bin/review-code/helpers"
 
     # Copy main scripts
     for script in "${scripts[@]}"; do
-        local src="$SCRIPT_DIR/lib/$script"
-        local dst="$CLAUDE_DIR/bin/review-code/$script"
+        local src="${SCRIPT_DIR}/lib/${script}"
+        local dst="${CLAUDE_DIR}/bin/review-code/${script}"
 
-        if [ ! -f "$src" ]; then
-            error "Missing script: $script"
+        if [[ ! -f "${src}" ]]; then
+            error "Missing script: ${script}"
             exit 1
         fi
 
-        cp "$src" "$dst"
-        chmod +x "$dst"
+        cp "${src}" "${dst}"
+        chmod +x "${dst}"
     done
 
     # Copy helper directory
-    if [ -d "$SCRIPT_DIR/lib/helpers" ]; then
-        cp -r "$SCRIPT_DIR/lib/helpers/"* "$CLAUDE_DIR/bin/review-code/helpers/" 2> /dev/null || true
-        chmod +x "$CLAUDE_DIR/bin/review-code/helpers/"*.sh 2> /dev/null || true
+    if [[ -d "${SCRIPT_DIR}/lib/helpers" ]]; then
+        cp -r "${SCRIPT_DIR}/lib/helpers/"* "${CLAUDE_DIR}/bin/review-code/helpers/" 2> /dev/null || true
+        chmod +x "${CLAUDE_DIR}/bin/review-code/helpers/"*.sh 2> /dev/null || true
     fi
 
     # Copy uninstall script to main bin (not in subfolder)
-    if [ -f "$SCRIPT_DIR/uninstall.sh" ]; then
-        cp "$SCRIPT_DIR/uninstall.sh" "$CLAUDE_DIR/bin/uninstall-review-code.sh"
-        chmod +x "$CLAUDE_DIR/bin/uninstall-review-code.sh"
+    if [[ -f "${SCRIPT_DIR}/uninstall.sh" ]]; then
+        cp "${SCRIPT_DIR}/uninstall.sh" "${CLAUDE_DIR}/bin/uninstall-review-code.sh"
+        chmod +x "${CLAUDE_DIR}/bin/uninstall-review-code.sh"
     fi
 
     info "Installed ${#scripts[@]} helper scripts"
@@ -352,12 +354,12 @@ install_scripts() {
 
 get_file_checksum() {
     local file="$1"
-    if [ -f "$file" ]; then
+    if [[ -f "${file}" ]]; then
         # Use md5 on macOS, md5sum on Linux
         if command -v md5 &> /dev/null; then
-            md5 -q "$file"
+            md5 -q "${file}"
         else
-            md5sum "$file" | cut -d' ' -f1
+            md5sum "${file}" | cut -d' ' -f1
         fi
     else
         echo ""
@@ -366,125 +368,138 @@ get_file_checksum() {
 
 install_context() {
     local review_path="$1"
-    local context_dst="$review_path/context"
+    local context_dst="${review_path}/context"
 
     # Create context directories
-    mkdir -p "$context_dst/languages"
-    mkdir -p "$context_dst/frameworks"
-    mkdir -p "$context_dst/orgs"
+    mkdir -p "${context_dst}/languages"
+    mkdir -p "${context_dst}/frameworks"
+    mkdir -p "${context_dst}/orgs"
 
     local updated=0
     local preserved=0
     local new=0
 
     # Copy language context files
-    for src in "$SCRIPT_DIR/context/languages/"*.md; do
-        [ -e "$src" ] || continue
-        local filename=$(basename "$src")
-        local dst="$context_dst/languages/$filename"
+    for src in "${SCRIPT_DIR}/context/languages/"*.md; do
+        [[ -e "${src}" ]] || continue
+        local filename
+        filename=$(basename "${src}")
+        local dst="${context_dst}/languages/${filename}"
 
-        if [ -f "$dst" ]; then
-            local src_sum=$(get_file_checksum "$src")
-            local dst_sum=$(get_file_checksum "$dst")
+        if [[ -f "${dst}" ]]; then
+            local src_sum
+            local dst_sum
+            src_sum=$(get_file_checksum "${src}")
+            dst_sum=$(get_file_checksum "${dst}")
 
-            if [ "$src_sum" != "$dst_sum" ]; then
+            if [[ "${src_sum}" != "${dst_sum}" ]]; then
                 # File was modified by user, back it up
-                cp "$dst" "$dst.bak"
-                cp "$src" "$dst"
-                warn "Updated (backed up modified): languages/$filename"
+                cp "${dst}" "${dst}.bak"
+                cp "${src}" "${dst}"
+                warn "Updated (backed up modified): languages/${filename}"
                 preserved=$((preserved + 1))
             else
                 # File unchanged, update silently
-                cp "$src" "$dst"
+                cp "${src}" "${dst}"
                 updated=$((updated + 1))
             fi
         else
             # New file
-            cp "$src" "$dst"
+            cp "${src}" "${dst}"
             new=$((new + 1))
         fi
     done
 
     # Copy framework context files
-    for src in "$SCRIPT_DIR/context/frameworks/"*.md; do
-        [ -e "$src" ] || continue
-        local filename=$(basename "$src")
-        local dst="$context_dst/frameworks/$filename"
+    for src in "${SCRIPT_DIR}/context/frameworks/"*.md; do
+        [[ -e "${src}" ]] || continue
+        local filename
+        filename=$(basename "${src}")
+        local dst="${context_dst}/frameworks/${filename}"
 
-        if [ -f "$dst" ]; then
-            local src_sum=$(get_file_checksum "$src")
-            local dst_sum=$(get_file_checksum "$dst")
+        if [[ -f "${dst}" ]]; then
+            local src_sum
+            local dst_sum
+            src_sum=$(get_file_checksum "${src}")
+            dst_sum=$(get_file_checksum "${dst}")
 
-            if [ "$src_sum" != "$dst_sum" ]; then
-                cp "$dst" "$dst.bak"
-                cp "$src" "$dst"
-                warn "Updated (backed up modified): frameworks/$filename"
+            if [[ "${src_sum}" != "${dst_sum}" ]]; then
+                cp "${dst}" "${dst}.bak"
+                cp "${src}" "${dst}"
+                warn "Updated (backed up modified): frameworks/${filename}"
                 preserved=$((preserved + 1))
             else
-                cp "$src" "$dst"
+                cp "${src}" "${dst}"
                 updated=$((updated + 1))
             fi
         else
-            cp "$src" "$dst"
+            cp "${src}" "${dst}"
             new=$((new + 1))
         fi
     done
 
     # Copy org context directories (recursive)
-    if [ -d "$SCRIPT_DIR/context/orgs" ]; then
-        for org_dir in "$SCRIPT_DIR/context/orgs/"*; do
-            [ -d "$org_dir" ] || continue
-            local org_name=$(basename "$org_dir")
-            mkdir -p "$context_dst/orgs/$org_name"
+    if [[ -d "${SCRIPT_DIR}/context/orgs" ]]; then
+        for org_dir in "${SCRIPT_DIR}/context/orgs/"*; do
+            [[ -d "${org_dir}" ]] || continue
+            local org_name
+            org_name=$(basename "${org_dir}")
+            mkdir -p "${context_dst}/orgs/${org_name}"
 
             # Copy all files in org directory
-            for src in "$org_dir"/*.md; do
-                [ -e "$src" ] || continue
-                local filename=$(basename "$src")
-                local dst="$context_dst/orgs/$org_name/$filename"
+            for src in "${org_dir}"/*.md; do
+                [[ -e "${src}" ]] || continue
+                local filename
+                filename=$(basename "${src}")
+                local dst="${context_dst}/orgs/${org_name}/${filename}"
 
-                if [ -f "$dst" ]; then
-                    local src_sum=$(get_file_checksum "$src")
-                    local dst_sum=$(get_file_checksum "$dst")
+                if [[ -f "${dst}" ]]; then
+                    local src_sum
+                    local dst_sum
+                    src_sum=$(get_file_checksum "${src}")
+                    dst_sum=$(get_file_checksum "${dst}")
 
-                    if [ "$src_sum" != "$dst_sum" ]; then
-                        cp "$dst" "$dst.bak"
-                        cp "$src" "$dst"
-                        warn "Updated (backed up modified): orgs/$org_name/$filename"
+                    if [[ "${src_sum}" != "${dst_sum}" ]]; then
+                        cp "${dst}" "${dst}.bak"
+                        cp "${src}" "${dst}"
+                        warn "Updated (backed up modified): orgs/${org_name}/${filename}"
                         preserved=$((preserved + 1))
                     else
-                        cp "$src" "$dst"
+                        cp "${src}" "${dst}"
                         updated=$((updated + 1))
                     fi
                 else
-                    cp "$src" "$dst"
+                    cp "${src}" "${dst}"
                     new=$((new + 1))
                 fi
             done
 
             # Copy repo-specific context if exists
-            if [ -d "$org_dir/repos" ]; then
-                mkdir -p "$context_dst/orgs/$org_name/repos"
-                for src in "$org_dir/repos/"*.md; do
-                    [ -e "$src" ] || continue
-                    local filename=$(basename "$src")
-                    local dst="$context_dst/orgs/$org_name/repos/$filename"
+            if [[ -d "${org_dir}/repos" ]]; then
+                mkdir -p "${context_dst}/orgs/${org_name}/repos"
+                for src in "${org_dir}/repos/"*.md; do
+                    [[ -e "${src}" ]] || continue
+                    local filename
+                    filename=$(basename "${src}")
+                    local dst="${context_dst}/orgs/${org_name}/repos/${filename}"
 
-                    if [ -f "$dst" ]; then
-                        local src_sum=$(get_file_checksum "$src")
-                        local dst_sum=$(get_file_checksum "$dst")
+                    if [[ -f "${dst}" ]]; then
+                        local src_sum
+                        local dst_sum
+                        src_sum=$(get_file_checksum "${src}")
+                        dst_sum=$(get_file_checksum "${dst}")
 
-                        if [ "$src_sum" != "$dst_sum" ]; then
-                            cp "$dst" "$dst.bak"
-                            cp "$src" "$dst"
-                            warn "Updated (backed up modified): orgs/$org_name/repos/$filename"
+                        if [[ "${src_sum}" != "${dst_sum}" ]]; then
+                            cp "${dst}" "${dst}.bak"
+                            cp "${src}" "${dst}"
+                            warn "Updated (backed up modified): orgs/${org_name}/repos/${filename}"
                             preserved=$((preserved + 1))
                         else
-                            cp "$src" "$dst"
+                            cp "${src}" "${dst}"
                             updated=$((updated + 1))
                         fi
                     else
-                        cp "$src" "$dst"
+                        cp "${src}" "${dst}"
                         new=$((new + 1))
                     fi
                 done
@@ -492,16 +507,16 @@ install_context() {
         done
     fi
 
-    info "Context files: $new new, $updated updated, $preserved preserved"
+    info "Context files: ${new} new, ${updated} updated, ${preserved} preserved"
 }
 
 check_old_installation() {
-    local old_dir="$HOME/.review-code"
+    local old_dir="${HOME}/.review-code"
 
-    if [ -d "$old_dir" ]; then
+    if [[ -d "${old_dir}" ]]; then
         echo ""
         echo "═══════════════════════════════════════════════════════"
-        warn "Old installation detected at $old_dir"
+        warn "Old installation detected at ${old_dir}"
         echo "═══════════════════════════════════════════════════════"
         echo ""
         echo "The new installation method no longer uses this directory."
@@ -509,7 +524,7 @@ check_old_installation() {
         echo ""
         read -p "Remove old installation after new install completes? [Y/n] " -n 1 -r
         echo ""
-        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        if [[ ! ${REPLY} =~ ^[Nn]$ ]]; then
             return 0 # Will remove
         else
             return 1 # Will not remove
@@ -520,30 +535,30 @@ check_old_installation() {
 }
 
 cleanup_old_installation() {
-    local old_dir="$HOME/.review-code"
+    local old_dir="${HOME}/.review-code"
 
-    if [ -d "$old_dir" ]; then
-        rm -rf "$old_dir"
+    if [[ -d "${old_dir}" ]]; then
+        rm -rf "${old_dir}"
         info "Removed old installation directory"
     fi
 
     # Remove old symlinks if they exist
-    if [ -L "$CLAUDE_DIR/commands/review-code.md" ]; then
-        rm "$CLAUDE_DIR/commands/review-code.md"
+    if [[ -L "${CLAUDE_DIR}/commands/review-code.md" ]]; then
+        rm "${CLAUDE_DIR}/commands/review-code.md"
     fi
 
-    for agent in "$CLAUDE_DIR/agents/code-reviewer-"*.md "$CLAUDE_DIR/agents/code-review-context-explorer.md"; do
-        if [ -L "$agent" ]; then
-            rm "$agent"
+    for agent in "${CLAUDE_DIR}/agents/code-reviewer-"*.md "${CLAUDE_DIR}/agents/code-review-context-explorer.md"; do
+        if [[ -L "${agent}" ]]; then
+            rm "${agent}"
         fi
     done
 }
 
 check_permissions_configured() {
-    local settings_file="$CLAUDE_DIR/settings.json"
+    local settings_file="${CLAUDE_DIR}/settings.json"
 
     # If no settings file, permissions aren't configured
-    if [ ! -f "$settings_file" ]; then
+    if [[ ! -f "${settings_file}" ]]; then
         return 1
     fi
 
@@ -553,7 +568,7 @@ check_permissions_configured() {
     fi
 
     # Check if the key permission is already configured
-    if jq -e '.permissions.allow | index("Bash(~/.claude/bin/review-code/*:*)")' "$settings_file" > /dev/null 2>&1; then
+    if jq -e '.permissions.allow | index("Bash(~/.claude/bin/review-code/*:*)")' "${settings_file}" > /dev/null 2>&1; then
         return 0
     fi
 
@@ -562,6 +577,7 @@ check_permissions_configured() {
 
 prompt_configure_permissions() {
     # Check if permissions are already configured
+    # shellcheck disable=SC2310  # Intentional conditional check
     if check_permissions_configured; then
         echo ""
         info "Permissions already configured - skipping prompt"
@@ -582,9 +598,9 @@ prompt_configure_permissions() {
     read -p "Pre-authorize review-code scripts? [Y/n] " -n 1 -r
     echo ""
 
-    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-        if [ -f "$SCRIPT_DIR/bin/manage-permissions" ]; then
-            "$SCRIPT_DIR/bin/manage-permissions" add
+    if [[ ! ${REPLY} =~ ^[Nn]$ ]]; then
+        if [[ -f "${SCRIPT_DIR}/bin/manage-permissions" ]]; then
+            "${SCRIPT_DIR}/bin/manage-permissions" add
         else
             warn "manage-permissions script not found"
             warn "You'll need to approve permissions when Claude Code asks"
@@ -642,17 +658,17 @@ main() {
     # Install components
     echo ""
     info "Installing review-code components…"
-    create_config "$review_path"
+    create_config "${review_path}"
     install_commands
     install_agents
     install_scripts
-    install_context "$review_path"
+    install_context "${review_path}"
 
     # Prompt for permission configuration
     prompt_configure_permissions
 
     # Cleanup old installation if requested
-    if [ $remove_old -eq 0 ]; then
+    if [[ "${remove_old}" -eq 0 ]]; then
         echo ""
         cleanup_old_installation
     fi
@@ -678,12 +694,12 @@ main() {
     echo "  - Or approve individually when prompted"
     echo ""
     echo "Installation locations:"
-    echo "  - Config: $CONFIG_FILE"
-    echo "  - Commands: $CLAUDE_DIR/commands/"
-    echo "  - Agents: $CLAUDE_DIR/agents/"
-    echo "  - Scripts: $CLAUDE_DIR/bin/"
-    echo "  - Context: $review_path/context/"
-    echo "  - Reviews: $review_path/{org}/{repo}/"
+    echo "  - Config: ${CONFIG_FILE}"
+    echo "  - Commands: ${CLAUDE_DIR}/commands/"
+    echo "  - Agents: ${CLAUDE_DIR}/agents/"
+    echo "  - Scripts: ${CLAUDE_DIR}/bin/"
+    echo "  - Context: ${review_path}/context/"
+    echo "  - Reviews: ${review_path}/{org}/{repo}/"
     echo ""
     echo "To update: Run bin/setup again"
     echo "To uninstall: Run uninstall.sh"
