@@ -14,7 +14,9 @@ setup() {
 
     # Setup minimal git config with canonical path
     mkdir -p "$TEST_TEMP_DIR/.claude"
-    CANONICAL_REVIEW_PATH="$TEST_TEMP_DIR/reviews"
+    # Create reviews directory and get its canonical path to ensure consistency
+    mkdir -p "$TEST_TEMP_DIR/reviews"
+    CANONICAL_REVIEW_PATH=$(cd "$TEST_TEMP_DIR/reviews" && pwd -P)
     echo "REVIEW_ROOT_PATH=\"$CANONICAL_REVIEW_PATH\"" > "$TEST_TEMP_DIR/.claude/review-code.env"
 }
 

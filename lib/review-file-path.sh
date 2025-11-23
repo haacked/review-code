@@ -298,6 +298,11 @@ main() {
         review_root="${REVIEW_ROOT_PATH:-$HOME/dev/ai/reviews}"
     fi
 
+    # Resolve review_root to canonical path to handle symlinks consistently
+    # Create the directory if it doesn't exist (needed for canonical resolution)
+    mkdir -p "$review_root"
+    review_root=$(resolve_canonical_dir "$review_root" "review root")
+
     # Determine review directory and file path
     local review_dir="$review_root/$org/$repo"
     local file_path="$review_dir/$filename"
