@@ -242,8 +242,15 @@ setup_test_git_repo() {
 # =============================================================================
 
 @test "orchestrator: includes display_summary field in ready status" {
+    setup_test_git_repo
+
+    # Create a second commit so we have HEAD~1
+    echo "second" > file2.txt
+    git add file2.txt
+    git commit -q -m "Second commit"
+
     # Use a range to ensure ready status (not ambiguous)
-    run bash -c "cd '$PROJECT_ROOT' && ./lib/review-orchestrator.sh 'HEAD~1..HEAD' 2>/dev/null"
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' 'HEAD~1..HEAD' 2>/dev/null"
     [ "$status" -eq 0 ]
 
     # Should have display_summary field
@@ -251,8 +258,15 @@ setup_test_git_repo() {
 }
 
 @test "orchestrator: display_summary is non-empty string" {
+    setup_test_git_repo
+
+    # Create a second commit so we have HEAD~1
+    echo "second" > file2.txt
+    git add file2.txt
+    git commit -q -m "Second commit"
+
     # Use a range to ensure ready status
-    run bash -c "cd '$PROJECT_ROOT' && ./lib/review-orchestrator.sh 'HEAD~1..HEAD' 2>/dev/null"
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' 'HEAD~1..HEAD' 2>/dev/null"
     [ "$status" -eq 0 ]
 
     display_summary=$(echo "$output" | jq -r '.display_summary')
@@ -260,8 +274,15 @@ setup_test_git_repo() {
 }
 
 @test "orchestrator: display_summary contains 'Review Summary'" {
+    setup_test_git_repo
+
+    # Create a second commit so we have HEAD~1
+    echo "second" > file2.txt
+    git add file2.txt
+    git commit -q -m "Second commit"
+
     # Use a range to ensure ready status
-    run bash -c "cd '$PROJECT_ROOT' && ./lib/review-orchestrator.sh 'HEAD~1..HEAD' 2>/dev/null"
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' 'HEAD~1..HEAD' 2>/dev/null"
     [ "$status" -eq 0 ]
 
     display_summary=$(echo "$output" | jq -r '.display_summary')
@@ -269,8 +290,15 @@ setup_test_git_repo() {
 }
 
 @test "orchestrator: display_summary includes file path" {
+    setup_test_git_repo
+
+    # Create a second commit so we have HEAD~1
+    echo "second" > file2.txt
+    git add file2.txt
+    git commit -q -m "Second commit"
+
     # Use a range to ensure ready status
-    run bash -c "cd '$PROJECT_ROOT' && ./lib/review-orchestrator.sh 'HEAD~1..HEAD' 2>/dev/null"
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' 'HEAD~1..HEAD' 2>/dev/null"
     [ "$status" -eq 0 ]
 
     # Extract both display_summary and file_path
@@ -282,8 +310,15 @@ setup_test_git_repo() {
 }
 
 @test "orchestrator: display_summary includes repository info" {
+    setup_test_git_repo
+
+    # Create a second commit so we have HEAD~1
+    echo "second" > file2.txt
+    git add file2.txt
+    git commit -q -m "Second commit"
+
     # Use a range to ensure ready status
-    run bash -c "cd '$PROJECT_ROOT' && ./lib/review-orchestrator.sh 'HEAD~1..HEAD' 2>/dev/null"
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' 'HEAD~1..HEAD' 2>/dev/null"
     [ "$status" -eq 0 ]
 
     display_summary=$(echo "$output" | jq -r '.display_summary')
@@ -293,8 +328,15 @@ setup_test_git_repo() {
 }
 
 @test "orchestrator: display_summary includes stats" {
+    setup_test_git_repo
+
+    # Create a second commit so we have HEAD~1
+    echo "second" > file2.txt
+    git add file2.txt
+    git commit -q -m "Second commit"
+
     # Use a range to ensure ready status
-    run bash -c "cd '$PROJECT_ROOT' && ./lib/review-orchestrator.sh 'HEAD~1..HEAD' 2>/dev/null"
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' 'HEAD~1..HEAD' 2>/dev/null"
     [ "$status" -eq 0 ]
 
     display_summary=$(echo "$output" | jq -r '.display_summary')
