@@ -8,7 +8,8 @@
 # Returns: "script:line (function)" or empty if unavailable
 _get_caller_context() {
     if [ -n "${BASH_SOURCE[2]:-}" ]; then
-        local script=$(basename "${BASH_SOURCE[2]}")
+        local script
+        script=$(basename "${BASH_SOURCE[2]}")
         local line="${BASH_LINENO[1]}"
         local func="${FUNCNAME[2]:-main}"
         echo "${script}:${line} (${func})"

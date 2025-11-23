@@ -43,7 +43,8 @@ session_init() {
     command_name=$(sanitize_identifier "$command_name") || return 1
 
     # Create session ID using PID and timestamp for uniqueness
-    local session_id="${command_name}-$$-$(date +%s)"
+    local session_id
+    session_id="${command_name}-$$-$(date +%s)"
     local command_dir="$SESSION_DIR/$command_name"
     local session_file="$command_dir/$session_id.json"
 

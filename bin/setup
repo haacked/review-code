@@ -380,12 +380,15 @@ install_context() {
     # Copy language context files
     for src in "$SCRIPT_DIR/context/languages/"*.md; do
         [ -e "$src" ] || continue
-        local filename=$(basename "$src")
+        local filename
+        filename=$(basename "$src")
         local dst="$context_dst/languages/$filename"
 
         if [ -f "$dst" ]; then
-            local src_sum=$(get_file_checksum "$src")
-            local dst_sum=$(get_file_checksum "$dst")
+            local src_sum
+            local dst_sum
+            src_sum=$(get_file_checksum "$src")
+            dst_sum=$(get_file_checksum "$dst")
 
             if [ "$src_sum" != "$dst_sum" ]; then
                 # File was modified by user, back it up
@@ -408,12 +411,15 @@ install_context() {
     # Copy framework context files
     for src in "$SCRIPT_DIR/context/frameworks/"*.md; do
         [ -e "$src" ] || continue
-        local filename=$(basename "$src")
+        local filename
+        filename=$(basename "$src")
         local dst="$context_dst/frameworks/$filename"
 
         if [ -f "$dst" ]; then
-            local src_sum=$(get_file_checksum "$src")
-            local dst_sum=$(get_file_checksum "$dst")
+            local src_sum
+            local dst_sum
+            src_sum=$(get_file_checksum "$src")
+            dst_sum=$(get_file_checksum "$dst")
 
             if [ "$src_sum" != "$dst_sum" ]; then
                 cp "$dst" "$dst.bak"
@@ -434,18 +440,22 @@ install_context() {
     if [ -d "$SCRIPT_DIR/context/orgs" ]; then
         for org_dir in "$SCRIPT_DIR/context/orgs/"*; do
             [ -d "$org_dir" ] || continue
-            local org_name=$(basename "$org_dir")
+            local org_name
+            org_name=$(basename "$org_dir")
             mkdir -p "$context_dst/orgs/$org_name"
 
             # Copy all files in org directory
             for src in "$org_dir"/*.md; do
                 [ -e "$src" ] || continue
-                local filename=$(basename "$src")
+                local filename
+                filename=$(basename "$src")
                 local dst="$context_dst/orgs/$org_name/$filename"
 
                 if [ -f "$dst" ]; then
-                    local src_sum=$(get_file_checksum "$src")
-                    local dst_sum=$(get_file_checksum "$dst")
+                    local src_sum
+                    local dst_sum
+                    src_sum=$(get_file_checksum "$src")
+                    dst_sum=$(get_file_checksum "$dst")
 
                     if [ "$src_sum" != "$dst_sum" ]; then
                         cp "$dst" "$dst.bak"
@@ -467,12 +477,15 @@ install_context() {
                 mkdir -p "$context_dst/orgs/$org_name/repos"
                 for src in "$org_dir/repos/"*.md; do
                     [ -e "$src" ] || continue
-                    local filename=$(basename "$src")
+                    local filename
+                    filename=$(basename "$src")
                     local dst="$context_dst/orgs/$org_name/repos/$filename"
 
                     if [ -f "$dst" ]; then
-                        local src_sum=$(get_file_checksum "$src")
-                        local dst_sum=$(get_file_checksum "$dst")
+                        local src_sum
+                        local dst_sum
+                        src_sum=$(get_file_checksum "$src")
+                        dst_sum=$(get_file_checksum "$dst")
 
                         if [ "$src_sum" != "$dst_sum" ]; then
                             cp "$dst" "$dst.bak"
