@@ -25,8 +25,8 @@ debug_test_env() {
     fi
 
     echo "Git config:" >&2
-    git config --global user.name 2>&1 >&2 || echo "No user.name" >&2
-    git config --global user.email 2>&1 >&2 || echo "No user.email" >&2
+    { git config --global user.name || echo "No user.name"; } >&2
+    { git config --global user.email || echo "No user.email"; } >&2
 
     echo "===========================" >&2
 }

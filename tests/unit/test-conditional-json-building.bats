@@ -34,6 +34,10 @@ setup_test_git_repo() {
 
     # Ensure we're on main branch
     git checkout -q -b main 2>/dev/null || git checkout -q main
+
+    # Set up a fake remote origin (needed for some git commands to work)
+    # Use a fake GitHub URL to prevent git commands from failing
+    git remote add origin https://github.com/test/test.git 2>/dev/null || true
 }
 
 # =============================================================================
