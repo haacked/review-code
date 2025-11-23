@@ -51,14 +51,13 @@ print_color blue "Found ${#actual_files[@]} shell scripts"
 # - SC2248: Quoting variables in arithmetic (style preference, not needed for numbers)
 # - SC2312: Command substitution in echo/return (informational, not a bug)
 # - SC2249: Missing default case (informational, not always needed)
-# - SC2162: read without -r (acceptable in interactive scripts)
 # - SC1091: Not following sourced files (info only, shellcheck can't follow all paths)
 # - SC2310: Function in condition disables set -e (info only, intentional pattern)
 # - SC2126: grep -c vs grep|wc (style preference, both work fine)
 # - SC2016: Single quotes don't expand (info only, intentional)
 # - SC2015: A && B || C pattern (info only, intentional use)
 # - SC2001: sed vs parameter expansion (style preference)
-if ! run_command "shellcheck -x -o all -e SC2250,SC2292,SC2248,SC2312,SC2249,SC2162,SC1091,SC2310,SC2126,SC2016,SC2015,SC2001 ${actual_files[*]}" "Running shellcheck"; then
+if ! run_command "shellcheck -x -o all -e SC2250,SC2292,SC2248,SC2312,SC2249,SC1091,SC2310,SC2126,SC2016,SC2015,SC2001 ${actual_files[*]}" "Running shellcheck"; then
     success_status=false
 fi
 

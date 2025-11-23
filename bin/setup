@@ -192,7 +192,7 @@ get_review_path() {
     # Prompt for new path
     echo "" >&2
     echo "Where should code reviews and context files be saved?" >&2
-    read -p "Review path [$DEFAULT_REVIEW_PATH]: " review_path
+    read -r -p "Review path [$DEFAULT_REVIEW_PATH]: " review_path
     review_path="${review_path:-$DEFAULT_REVIEW_PATH}"
 
     # Expand tilde
