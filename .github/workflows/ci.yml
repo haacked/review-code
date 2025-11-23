@@ -22,6 +22,10 @@ jobs:
         # Configure git to use 'main' as default branch
         git config --global init.defaultBranch main
 
+        # Configure git user for CI (needed for tests that create commits)
+        git config --global user.email "ci@github.com"
+        git config --global user.name "GitHub CI"
+
         # Install all system dependencies
         sudo apt-get update
         sudo apt-get install -y jq shellcheck
