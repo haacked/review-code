@@ -45,8 +45,12 @@ fi
 print_color blue "Found ${#actual_files[@]} shell scripts"
 
 # Run shellcheck with strict settings
-# Note: SC1091 (not following sourced files) is still excluded as shellcheck can't follow all paths
-if ! run_command "shellcheck -x -o all -e SC1091 ${actual_files[*]}" "Running shellcheck"; then
+# Excluded checks:
+# - SC1091: Can't follow sourced files with dynamic paths
+# - SC2016: jq expressions use literal $ which should not expand
+# - SC2310: Functions in conditionals is intentional pattern for return code checking
+# - SC2312: Command substitution masking return values is acceptable for non-critical commands
+if ! run_command "shellcheck -x -o all -e SC1091 -e SC2016 -e SC2310 -e SC2312 ${actual_files[*]}" "Running shellcheck"; then
     success_status=false
 fi
 
