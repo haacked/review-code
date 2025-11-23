@@ -45,8 +45,12 @@ setup_test_git_repo() {
 # =============================================================================
 
 @test "review-orchestrator: outputs valid JSON without PR context" {
-    # Run orchestrator on current branch (no args, which triggers prompt status)
-    run bash -c "cd '$PROJECT_ROOT' && ./lib/review-orchestrator.sh '' 2>/dev/null"
+    # Use a temporary git repo so CI detached HEAD doesn't interfere
+    setup_test_git_repo
+    git checkout -b feature-no-pr 2>/dev/null || true
+
+    # Stay on feature branch with no PR context
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' '' 2>/dev/null"
     [ "$status" -eq 0 ]
 
     # Output should be valid JSON
@@ -54,7 +58,10 @@ setup_test_git_repo() {
 }
 
 @test "review-orchestrator: JSON has status field" {
-    run bash -c "cd '$PROJECT_ROOT' && ./lib/review-orchestrator.sh '' 2>/dev/null"
+    setup_test_git_repo
+    git checkout -b feature-no-pr 2>/dev/null || true
+
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' '' 2>/dev/null"
     [ "$status" -eq 0 ]
 
     # Should have status field
@@ -63,12 +70,14 @@ setup_test_git_repo() {
 }
 
 @test "review-orchestrator: handles branch without PR gracefully" {
+    setup_test_git_repo
+
     # Create a test branch
     git checkout -b test-no-pr-$$ 2>/dev/null || true
     git commit --allow-empty -m "Test" 2>/dev/null || true
 
     # Get review data (will be prompt status due to uncommitted state)
-    run bash -c "cd '$PROJECT_ROOT' && ./lib/review-orchestrator.sh '' 2>/dev/null"
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' '' 2>/dev/null"
     [ "$status" -eq 0 ]
 
     # Should be valid JSON
@@ -149,7 +158,10 @@ setup_test_git_repo() {
 }
 
 @test "orchestrator: empty argument doesn't crash" {
-    run bash -c "cd '$PROJECT_ROOT' && ./lib/review-orchestrator.sh '' 2>/dev/null"
+    setup_test_git_repo
+    git checkout -b feature-no-pr 2>/dev/null || true
+
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' '' 2>/dev/null"
     [ "$status" -eq 0 ]
 
     # Should return valid JSON
