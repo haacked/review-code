@@ -25,15 +25,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Source session manager
 # shellcheck source=lib/session-manager.sh
-source "$SCRIPT_DIR/session-manager.sh"
+source "${SCRIPT_DIR}/session-manager.sh"
 
 # Find the orchestrator script
 find_orchestrator() {
-    if [ -f "$SCRIPT_DIR/review-orchestrator.sh" ]; then
-        echo "$SCRIPT_DIR/review-orchestrator.sh"
-    elif [ -f "$SCRIPT_DIR/../review-orchestrator.sh" ]; then
-        echo "$SCRIPT_DIR/../review-orchestrator.sh"
-    elif [ -f ~/.claude/bin/review-code/review-orchestrator.sh ]; then
+    if [[ -f "${SCRIPT_DIR}/review-orchestrator.sh" ]]; then
+        echo "${SCRIPT_DIR}/review-orchestrator.sh"
+    elif [[ -f "${SCRIPT_DIR}/../review-orchestrator.sh" ]]; then
+        echo "${SCRIPT_DIR}/../review-orchestrator.sh"
+    elif [[ -f ~/.claude/bin/review-code/review-orchestrator.sh ]]; then
         echo ~/.claude/bin/review-code/review-orchestrator.sh
     else
         echo "ERROR: Cannot find review-orchestrator.sh" >&2
@@ -44,64 +44,64 @@ find_orchestrator() {
 ORCHESTRATOR=$(find_orchestrator)
 
 # Main logic
-case "$ACTION" in
+case "${ACTION}" in
     "init")
         # Initialize session - run orchestrator and cache result
         ARGUMENTS="${*:-}"
 
         # Run orchestrator
-        review_data=$("$ORCHESTRATOR" "$ARGUMENTS")
+        review_data=$("${ORCHESTRATOR}" "${ARGUMENTS}")
 
         # Create session with the data
-        session_id=$(session_init "review-code" "$review_data")
+        session_id=$(session_init "review-code" "${review_data}")
 
         # Return session ID for subsequent calls
-        echo "$session_id"
+        echo "${session_id}"
         ;;
 
     "get-status")
         # Get status from cached session
         SESSION_ID="${1:-}"
-        if [ -z "$SESSION_ID" ]; then
+        if [[ -z "${SESSION_ID}" ]]; then
             echo "ERROR: Session ID required" >&2
             exit 1
         fi
 
-        session_get "$SESSION_ID" ".status"
+        session_get "${SESSION_ID}" ".status"
         ;;
 
     "get-error-data")
         # Get error message from cached session
         SESSION_ID="${1:-}"
-        if [ -z "$SESSION_ID" ]; then
+        if [[ -z "${SESSION_ID}" ]]; then
             echo "ERROR: Session ID required" >&2
             exit 1
         fi
 
-        status=$(session_get "$SESSION_ID" ".status")
-        if [ "$status" != "error" ]; then
-            echo "ERROR: Status is not 'error', got: $status" >&2
+        status=$(session_get "${SESSION_ID}" ".status")
+        if [[ "${status}" != "error" ]]; then
+            echo "ERROR: Status is not 'error', got: ${status}" >&2
             exit 1
         fi
 
-        session_get "$SESSION_ID" ".message"
+        session_get "${SESSION_ID}" ".message"
         ;;
 
     "get-ambiguous-data")
         # Get disambiguation fields from cached session
         SESSION_ID="${1:-}"
-        if [ -z "$SESSION_ID" ]; then
+        if [[ -z "${SESSION_ID}" ]]; then
             echo "ERROR: Session ID required" >&2
             exit 1
         fi
 
-        status=$(session_get "$SESSION_ID" ".status")
-        if [ "$status" != "ambiguous" ]; then
-            echo "ERROR: Status is not 'ambiguous', got: $status" >&2
+        status=$(session_get "${SESSION_ID}" ".status")
+        if [[ "${status}" != "ambiguous" ]]; then
+            echo "ERROR: Status is not 'ambiguous', got: ${status}" >&2
             exit 1
         fi
 
-        session_get_all "$SESSION_ID" | jq '{
+        session_get_all "${SESSION_ID}" | jq '{
             arg,
             ref_type,
             is_branch,
@@ -114,18 +114,18 @@ case "$ACTION" in
     "get-prompt-data")
         # Get prompt fields from cached session
         SESSION_ID="${1:-}"
-        if [ -z "$SESSION_ID" ]; then
+        if [[ -z "${SESSION_ID}" ]]; then
             echo "ERROR: Session ID required" >&2
             exit 1
         fi
 
-        status=$(session_get "$SESSION_ID" ".status")
-        if [ "$status" != "prompt" ]; then
-            echo "ERROR: Status is not 'prompt', got: $status" >&2
+        status=$(session_get "${SESSION_ID}" ".status")
+        if [[ "${status}" != "prompt" ]]; then
+            echo "ERROR: Status is not 'prompt', got: ${status}" >&2
             exit 1
         fi
 
-        session_get_all "$SESSION_ID" | jq '{
+        session_get_all "${SESSION_ID}" | jq '{
             current_branch,
             base_branch,
             has_uncommitted
@@ -135,18 +135,18 @@ case "$ACTION" in
     "get-prompt-pull-data")
         # Get pull prompt fields from cached session
         SESSION_ID="${1:-}"
-        if [ -z "$SESSION_ID" ]; then
+        if [[ -z "${SESSION_ID}" ]]; then
             echo "ERROR: Session ID required" >&2
             exit 1
         fi
 
-        status=$(session_get "$SESSION_ID" ".status")
-        if [ "$status" != "prompt_pull" ]; then
-            echo "ERROR: Status is not 'prompt_pull', got: $status" >&2
+        status=$(session_get "${SESSION_ID}" ".status")
+        if [[ "${status}" != "prompt_pull" ]]; then
+            echo "ERROR: Status is not 'prompt_pull', got: ${status}" >&2
             exit 1
         fi
 
-        session_get_all "$SESSION_ID" | jq '{
+        session_get_all "${SESSION_ID}" | jq '{
             branch,
             associated_pr
         }'
@@ -155,31 +155,31 @@ case "$ACTION" in
     "get-ready-data")
         # Get all review data from cached session
         SESSION_ID="${1:-}"
-        if [ -z "$SESSION_ID" ]; then
+        if [[ -z "${SESSION_ID}" ]]; then
             echo "ERROR: Session ID required" >&2
             exit 1
         fi
 
-        status=$(session_get "$SESSION_ID" ".status")
-        if [ "$status" != "ready" ]; then
-            echo "ERROR: Status is not 'ready', got: $status" >&2
+        status=$(session_get "${SESSION_ID}" ".status")
+        if [[ "${status}" != "ready" ]]; then
+            echo "ERROR: Status is not 'ready', got: ${status}" >&2
             exit 1
         fi
 
         # Return the complete review data
-        session_get_all "$SESSION_ID"
+        session_get_all "${SESSION_ID}"
         ;;
 
     "cleanup")
         # Cleanup session
         SESSION_ID="${1:-}"
-        if [ -z "$SESSION_ID" ]; then
+        if [[ -z "${SESSION_ID}" ]]; then
             echo "ERROR: Session ID required" >&2
             exit 1
         fi
 
-        session_cleanup "$SESSION_ID"
-        echo "Session cleaned up: $SESSION_ID"
+        session_cleanup "${SESSION_ID}"
+        echo "Session cleaned up: ${SESSION_ID}"
         ;;
 
     "cleanup-old")
@@ -189,7 +189,7 @@ case "$ACTION" in
         ;;
 
     *)
-        echo "ERROR: Unknown action: $ACTION" >&2
+        echo "ERROR: Unknown action: ${ACTION}" >&2
         echo "Valid actions: init, get-status, get-ready-data, get-error-data, get-ambiguous-data, get-prompt-data, get-prompt-pull-data, cleanup, cleanup-old" >&2
         exit 1
         ;;

@@ -16,7 +16,7 @@
 # Source error helpers
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/helpers/error-helpers.sh
-source "$SCRIPT_DIR/helpers/error-helpers.sh"
+source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 
 set -euo pipefail
 
@@ -44,27 +44,27 @@ main() {
     # Check for staged changes
     # git diff returns 1 if no differences, which is expected
     diff_output=$(git diff --staged 2> /dev/null || test $? = 1)
-    if [ -n "$diff_output" ]; then
+    if [[ -n "${diff_output}" ]]; then
         echo "DIFF_TYPE: staged" >&2
-        echo "$diff_output"
+        echo "${diff_output}"
         return 0
     fi
 
     # Check for unstaged changes
     diff_output=$(git diff 2> /dev/null || test $? = 1)
-    if [ -n "$diff_output" ]; then
+    if [[ -n "${diff_output}" ]]; then
         echo "DIFF_TYPE: unstaged" >&2
-        echo "$diff_output"
+        echo "${diff_output}"
         return 0
     fi
 
     # Check for branch changes
     local main_branch
     main_branch=$(get_main_branch)
-    diff_output=$(git diff "$main_branch...HEAD" 2> /dev/null || test $? = 1)
-    if [ -n "$diff_output" ]; then
-        echo "DIFF_TYPE: branch (compared to $main_branch)" >&2
-        echo "$diff_output"
+    diff_output=$(git diff "${main_branch}...HEAD" 2> /dev/null || test $? = 1)
+    if [[ -n "${diff_output}" ]]; then
+        echo "DIFF_TYPE: branch (compared to ${main_branch})" >&2
+        echo "${diff_output}"
         return 0
     fi
 
@@ -75,6 +75,6 @@ main() {
 }
 
 # Main execution (only run if script is executed directly, not sourced)
-if [ "${BASH_SOURCE[0]:-}" = "${0}" ]; then
+if [[ "${BASH_SOURCE[0]:-}" = "${0}" ]]; then
     main "$@"
 fi

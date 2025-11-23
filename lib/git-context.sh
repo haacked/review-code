@@ -20,7 +20,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Source shared git helper functions
-source "$SCRIPT_DIR/helpers/git-helpers.sh"
+source "${SCRIPT_DIR}/helpers/git-helpers.sh"
 
 get_current_commit() {
     git rev-parse HEAD
@@ -32,7 +32,7 @@ get_working_dir() {
 
 has_changes() {
     # Check if there are any staged or unstaged changes
-    if [ -n "$(git status --porcelain)" ]; then
+    if [[ -n "$(git status --porcelain)" ]]; then
         echo "true"
     else
         echo "false"
@@ -61,12 +61,12 @@ main() {
     # Output JSON
     cat << EOF
 {
-    "org": "$org",
-    "repo": "$repo",
-    "branch": "$branch",
-    "commit": "$commit",
-    "working_dir": "$working_dir",
-    "has_changes": $changes
+    "org": "${org}",
+    "repo": "${repo}",
+    "branch": "${branch}",
+    "commit": "${commit}",
+    "working_dir": "${working_dir}",
+    "has_changes": ${changes}
 }
 EOF
 }

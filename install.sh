@@ -43,18 +43,18 @@ main() {
 
     # Ensure cleanup on exit
     # shellcheck disable=SC2064
-    trap "rm -rf '$TEMP_DIR'" EXIT
+    trap "rm -rf '${TEMP_DIR}'" EXIT
 
     # Clone repository to temp directory
-    info "Downloading review-code (branch: $BRANCH)…"
-    if ! git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$TEMP_DIR" &> /dev/null; then
+    info "Downloading review-code (branch: ${BRANCH})…"
+    if ! git clone --depth 1 --branch "${BRANCH}" "${REPO_URL}" "${TEMP_DIR}" &> /dev/null; then
         error "Failed to clone repository"
         exit 1
     fi
 
     # Run installer from temp directory
     info "Running installer…"
-    cd "$TEMP_DIR"
+    cd "${TEMP_DIR}"
     # Redirect stdin from terminal so bin/setup can prompt for user input
     if ! bin/setup < /dev/tty; then
         error "Installation failed"

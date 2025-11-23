@@ -9,7 +9,7 @@
 # Source error helpers
 _HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/helpers/error-helpers.sh
-source "$_HELPER_DIR/error-helpers.sh"
+source "${_HELPER_DIR}/error-helpers.sh"
 
 validate_git_repo() {
     if ! git rev-parse --git-dir > /dev/null 2>&1; then
@@ -26,12 +26,12 @@ get_git_org_repo() {
     if command -v gh > /dev/null 2>&1; then
         local gh_data
         gh_data=$(gh repo view --json owner,name --jq '"\(.owner.login)|\(.name)"' 2> /dev/null || echo "")
-        if [ -n "$gh_data" ]; then
+        if [[ -n "${gh_data}" ]]; then
             # Normalize org to lowercase for consistency
             local org="${gh_data%|*}"
             local repo="${gh_data#*|}"
-            org=$(echo "$org" | tr '[:upper:]' '[:lower:]')
-            echo "$org|$repo"
+            org=$(echo "${org}" | tr '[:upper:]' '[:lower:]')
+            echo "${org}|${repo}"
             return 0
         fi
     fi
@@ -42,24 +42,24 @@ get_git_org_repo() {
     remote_url=$(git ls-remote --get-url origin 2> /dev/null || echo "")
 
     # Handle missing remote (local-only repos, tests)
-    if [ -z "$remote_url" ]; then
+    if [[ -z "${remote_url}" ]]; then
         echo "unknown|unknown"
         return 0
     fi
 
     # Only support GitHub URLs - strict validation
     # Handles both SSH (git@github.com:org/repo.git) and HTTPS (https://github.com/org/repo.git)
-    if [[ $remote_url =~ ^(https://|git@)github\.com[:/]([a-zA-Z0-9_-]+)/([a-zA-Z0-9._-]+)(\.git)?$ ]]; then
+    if [[ ${remote_url} =~ ^(https://|git@)github\.com[:/]([a-zA-Z0-9_-]+)/([a-zA-Z0-9._-]+)(\.git)?$ ]]; then
         local org="${BASH_REMATCH[2]}"
         local repo="${BASH_REMATCH[3]}"
 
         # Normalize org to lowercase (PostHog → posthog)
-        org=$(echo "$org" | tr '[:upper:]' '[:lower:]')
+        org=$(echo "${org}" | tr '[:upper:]' '[:lower:]')
 
         # Remove .git suffix if present
         repo="${repo%.git}"
 
-        echo "$org|$repo"
+        echo "${org}|${repo}"
     else
         # Non-GitHub remote or invalid format
         echo "unknown|unknown"
@@ -74,12 +74,12 @@ get_current_branch() {
     branch=$(git branch --show-current 2>/dev/null)
 
     # Handle detached HEAD state (common in CI environments)
-    if [ -z "$branch" ]; then
+    if [[ -z "${branch}" ]]; then
         # In detached HEAD, use short commit SHA as fallback
         branch=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
     fi
 
-    echo "$branch"
+    echo "${branch}"
 }
 
 # Parse PR identifier and extract org, repo, and normalized identifier
@@ -89,25 +89,25 @@ get_current_branch() {
 parse_pr_identifier() {
     local identifier="$1"
 
-    if [[ "$identifier" =~ ^https?://[^/]+/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+    if [[ "${identifier}" =~ ^https?://[^/]+/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
         # Extract from URL: https://github.com/org/repo/pull/123
         local org="${BASH_REMATCH[1]}"
         local repo="${BASH_REMATCH[2]}"
         local pr_num="${BASH_REMATCH[3]}"
 
         # Normalize org to lowercase
-        org=$(echo "$org" | tr '[:upper:]' '[:lower:]')
+        org=$(echo "${org}" | tr '[:upper:]' '[:lower:]')
 
-        echo "$org|$repo|pr-$pr_num"
-    elif [[ "$identifier" =~ ^[0-9]+$ ]]; then
+        echo "${org}|${repo}|pr-${pr_num}"
+    elif [[ "${identifier}" =~ ^[0-9]+$ ]]; then
         # Just a number - need to get org/repo from git
         local git_data
         git_data=$(get_git_org_repo 2> /dev/null || echo "unknown|unknown")
         local org="${git_data%|*}"
         local repo="${git_data#*|}"
 
-        echo "$org|$repo|pr-$identifier"
+        echo "${org}|${repo}|pr-${identifier}"
     else
-        echo "unknown|unknown|pr-$identifier"
+        echo "unknown|unknown|pr-${identifier}"
     fi
 }

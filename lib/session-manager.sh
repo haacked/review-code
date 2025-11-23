@@ -24,12 +24,12 @@ sanitize_identifier() {
     local input="$1"
 
     # Only allow alphanumeric, hyphens, underscores
-    if [[ ! "$input" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-        echo "ERROR: Invalid identifier: $input (only alphanumeric, -, _ allowed)" >&2
+    if [[ ! "${input}" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        echo "ERROR: Invalid identifier: ${input} (only alphanumeric, -, _ allowed)" >&2
         return 1
     fi
 
-    echo "$input"
+    echo "${input}"
 }
 
 # Initialize a new session
@@ -40,34 +40,34 @@ session_init() {
     local initial_data="$2"
 
     # Sanitize command name
-    command_name=$(sanitize_identifier "$command_name") || return 1
+    command_name=$(sanitize_identifier "${command_name}") || return 1
 
     # Create session ID using PID and timestamp for uniqueness
     local session_id
     session_id="${command_name}-$$-$(date +%s)"
-    local command_dir="$SESSION_DIR/$command_name"
-    local session_file="$command_dir/$session_id.json"
+    local command_dir="${SESSION_DIR}/${command_name}"
+    local session_file="${command_dir}/${session_id}.json"
 
     # Create directories
-    mkdir -p "$command_dir"
+    mkdir -p "${command_dir}"
 
     # Write initial data
-    echo "$initial_data" > "$session_file"
+    echo "${initial_data}" > "${session_file}"
 
     # Write session metadata
     jq -n \
-        --arg id "$session_id" \
-        --arg cmd "$command_name" \
-        --arg file "$session_file" \
+        --arg id "${session_id}" \
+        --arg cmd "${command_name}" \
+        --arg file "${session_file}" \
         --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
         '{
             session_id: $id,
             command: $cmd,
             file: $file,
             created: $created
-        }' > "$command_dir/$session_id.meta.json"
+        }' > "${command_dir}/${session_id}.meta.json"
 
-    echo "$session_id"
+    echo "${session_id}"
 }
 
 # Get session file path from session ID
@@ -77,7 +77,7 @@ session_file() {
     local session_id="$1"
 
     # Sanitize session ID to prevent path traversal
-    session_id=$(sanitize_identifier "$session_id") || return 1
+    session_id=$(sanitize_identifier "${session_id}") || return 1
 
     # Extract command name from session ID (format: command-name-pid-timestamp)
     # Need to remove the last two components (pid and timestamp)
@@ -87,27 +87,27 @@ session_file() {
     local command_name="${without_timestamp%-*}"
 
     # Sanitize command name as well
-    command_name=$(sanitize_identifier "$command_name") || return 1
+    command_name=$(sanitize_identifier "${command_name}") || return 1
 
-    local session_file="$SESSION_DIR/$command_name/$session_id.json"
+    local session_file="${SESSION_DIR}/${command_name}/${session_id}.json"
 
     # Verify the resolved path is still within SESSION_DIR (defense in depth)
     # Only perform canonical check if directory exists (allows checking for non-existent sessions)
-    if [ -d "$(dirname "$session_file")" ]; then
+    if [[ -d "$(dirname "${session_file}")" ]]; then
         local canonical_file
-        canonical_file=$(cd "$(dirname "$session_file")" && pwd -P)/$(basename "$session_file")
+        canonical_file=$(cd "$(dirname "${session_file}")" && pwd -P)/$(basename "${session_file}")
 
         # Resolve SESSION_DIR to canonical path for comparison
         local canonical_session_dir
-        canonical_session_dir=$(cd "$SESSION_DIR" && pwd -P)
+        canonical_session_dir=$(cd "${SESSION_DIR}" && pwd -P)
 
-        if [[ "$canonical_file" != "$canonical_session_dir"/* ]]; then
+        if [[ "${canonical_file}" != "${canonical_session_dir}"/* ]]; then
             echo "ERROR: Session file path outside session directory" >&2
             return 1
         fi
     fi
 
-    echo "$session_file"
+    echo "${session_file}"
 }
 
 # Get entire session data
@@ -116,14 +116,14 @@ session_file() {
 session_get_all() {
     local session_id="$1"
     local session_file
-    session_file=$(session_file "$session_id")
+    session_file=$(session_file "${session_id}")
 
-    if [ ! -f "$session_file" ]; then
-        echo "ERROR: Session not found: $session_id" >&2
+    if [[ ! -f "${session_file}" ]]; then
+        echo "ERROR: Session not found: ${session_id}" >&2
         return 1
     fi
 
-    cat "$session_file"
+    cat "${session_file}"
 }
 
 # Get specific field from session
@@ -133,7 +133,7 @@ session_get() {
     local session_id="$1"
     local field="$2"
 
-    session_get_all "$session_id" | jq -r "$field"
+    session_get_all "${session_id}" | jq -r "${field}"
 }
 
 # Set field in session
@@ -143,17 +143,17 @@ session_set() {
     local field="$2"
     local value="$3"
     local session_file
-    session_file=$(session_file "$session_id")
+    session_file=$(session_file "${session_id}")
 
-    if [ ! -f "$session_file" ]; then
-        echo "ERROR: Session not found: $session_id" >&2
+    if [[ ! -f "${session_file}" ]]; then
+        echo "ERROR: Session not found: ${session_id}" >&2
         return 1
     fi
 
     # Update JSON file
     local temp_file="${session_file}.tmp"
-    jq --arg val "$value" ".$field = \$val" "$session_file" > "$temp_file"
-    mv "$temp_file" "$session_file"
+    jq --arg val "${value}" ".${field} = \$val" "${session_file}" > "${temp_file}"
+    mv "${temp_file}" "${session_file}"
 }
 
 # Update session with new JSON data (merge)
@@ -162,17 +162,17 @@ session_update() {
     local session_id="$1"
     local update_data="$2"
     local session_file
-    session_file=$(session_file "$session_id")
+    session_file=$(session_file "${session_id}")
 
-    if [ ! -f "$session_file" ]; then
-        echo "ERROR: Session not found: $session_id" >&2
+    if [[ ! -f "${session_file}" ]]; then
+        echo "ERROR: Session not found: ${session_id}" >&2
         return 1
     fi
 
     # Merge JSON
     local temp_file="${session_file}.tmp"
-    jq --argjson update "$update_data" '. + $update' "$session_file" > "$temp_file"
-    mv "$temp_file" "$session_file"
+    jq --argjson update "${update_data}" '. + $update' "${session_file}" > "${temp_file}"
+    mv "${temp_file}" "${session_file}"
 }
 
 # Check if session exists
@@ -181,9 +181,9 @@ session_update() {
 session_exists() {
     local session_id="$1"
     local session_file
-    session_file=$(session_file "$session_id")
+    session_file=$(session_file "${session_id}")
 
-    [ -f "$session_file" ]
+    [[ -f "${session_file}" ]]
 }
 
 # Cleanup session
@@ -192,20 +192,20 @@ session_cleanup() {
     local session_id="$1"
 
     # Sanitize session ID
-    session_id=$(sanitize_identifier "$session_id") || return 1
+    session_id=$(sanitize_identifier "${session_id}") || return 1
 
     # Extract command name (same logic as session_file)
     local without_timestamp="${session_id%-*}"
     local command_name="${without_timestamp%-*}"
 
     # Sanitize command name
-    command_name=$(sanitize_identifier "$command_name") || return 1
+    command_name=$(sanitize_identifier "${command_name}") || return 1
 
-    local command_dir="$SESSION_DIR/$command_name"
+    local command_dir="${SESSION_DIR}/${command_name}"
 
     # Remove session file and metadata
-    rm -f "$command_dir/$session_id.json"
-    rm -f "$command_dir/$session_id.meta.json"
+    rm -f "${command_dir}/${session_id}.json"
+    rm -f "${command_dir}/${session_id}.meta.json"
 }
 
 # Cleanup old sessions (older than 1 hour)
@@ -213,19 +213,19 @@ session_cleanup() {
 session_cleanup_old() {
     local command_name="${1:-}"
 
-    if [ -z "$command_name" ]; then
+    if [[ -z "${command_name}" ]]; then
         # Cleanup all commands
-        find "$SESSION_DIR" -name "*.json" -type f -mmin +60 -delete 2> /dev/null || true
-        find "$SESSION_DIR" -name "*.meta.json" -type f -mmin +60 -delete 2> /dev/null || true
+        find "${SESSION_DIR}" -name "*.json" -type f -mmin +60 -delete 2> /dev/null || true
+        find "${SESSION_DIR}" -name "*.meta.json" -type f -mmin +60 -delete 2> /dev/null || true
     else
         # Sanitize command name
-        command_name=$(sanitize_identifier "$command_name") || return 1
+        command_name=$(sanitize_identifier "${command_name}") || return 1
 
         # Cleanup specific command
-        local command_dir="$SESSION_DIR/$command_name"
-        if [ -d "$command_dir" ]; then
-            find "$command_dir" -name "*.json" -type f -mmin +60 -delete 2> /dev/null || true
-            find "$command_dir" -name "*.meta.json" -type f -mmin +60 -delete 2> /dev/null || true
+        local command_dir="${SESSION_DIR}/${command_name}"
+        if [[ -d "${command_dir}" ]]; then
+            find "${command_dir}" -name "*.json" -type f -mmin +60 -delete 2> /dev/null || true
+            find "${command_dir}" -name "*.meta.json" -type f -mmin +60 -delete 2> /dev/null || true
         fi
     fi
 }
@@ -236,11 +236,11 @@ session_list() {
     local command_name="$1"
 
     # Sanitize command name
-    command_name=$(sanitize_identifier "$command_name") || return 1
+    command_name=$(sanitize_identifier "${command_name}") || return 1
 
-    local command_dir="$SESSION_DIR/$command_name"
+    local command_dir="${SESSION_DIR}/${command_name}"
 
-    if [ ! -d "$command_dir" ]; then
+    if [[ ! -d "${command_dir}" ]]; then
         echo "[]"
         return
     fi
@@ -248,13 +248,13 @@ session_list() {
     # List all .meta.json files and combine into array
     local sessions=()
     while IFS= read -r meta_file; do
-        if [ -f "$meta_file" ]; then
-            sessions+=("$(cat "$meta_file")")
+        if [[ -f "${meta_file}" ]]; then
+            sessions+=("$(cat "${meta_file}")")
         fi
-    done < <(find "$command_dir" -name "*.meta.json" -type f 2> /dev/null || true)
+    done < <(find "${command_dir}" -name "*.meta.json" -type f 2> /dev/null || true)
 
     # Combine into JSON array
-    if [ ${#sessions[@]} -eq 0 ]; then
+    if [[ ${#sessions[@]} -eq 0 ]]; then
         echo "[]"
     else
         printf '%s\n' "${sessions[@]}" | jq -s '.'

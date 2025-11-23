@@ -7,7 +7,7 @@
 # Get caller context for error messages
 # Returns: "script:line (function)" or empty if unavailable
 _get_caller_context() {
-    if [ -n "${BASH_SOURCE[2]:-}" ]; then
+    if [[ -n "${BASH_SOURCE[2]:-}" ]]; then
         local script
         script=$(basename "${BASH_SOURCE[2]}")
         local line="${BASH_LINENO[1]}"
@@ -20,8 +20,8 @@ _get_caller_context() {
 error() {
     local context
     context=$(_get_caller_context)
-    if [ -n "$context" ]; then
-        echo -e "\033[31mError: [$context] $*\033[0m" >&2
+    if [[ -n "${context}" ]]; then
+        echo -e "\033[31mError: [${context}] $*\033[0m" >&2
     else
         echo -e "\033[31mError: $*\033[0m" >&2
     fi
@@ -37,8 +37,8 @@ fatal() {
 warning() {
     local context
     context=$(_get_caller_context)
-    if [ -n "$context" ]; then
-        echo -e "\033[33mWarning: [$context] $*\033[0m" >&2
+    if [[ -n "${context}" ]]; then
+        echo -e "\033[33mWarning: [${context}] $*\033[0m" >&2
     else
         echo -e "\033[33mWarning: $*\033[0m" >&2
     fi

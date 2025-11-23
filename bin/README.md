@@ -8,25 +8,25 @@ repository itself.
 ### bin/setup
 
 Sets up the project for local development. Runs the local installer to make
-`/review-code` available in Claude Code.
+$(/review-code) available in Claude Code.
 
-```bash
+``$(bash
 bin/setup
-```
+)``
 
 ### bin/fmt
 
-Formats all shell scripts using `shfmt`.
+Formats all shell scripts using $(shfmt).
 
-```bash
+``$(bash
 # Format all scripts
 bin/fmt
 
 # Check formatting without changes
 bin/fmt --check
-```
+)``
 
-Requirements: `shfmt` (install: `brew install shfmt`)
+Requirements: $(shfmt) (install: `brew install shfmt`)
 
 ### bin/lint
 

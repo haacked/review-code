@@ -8,7 +8,7 @@ export DEBUG_SESSION_DIR="${DEBUG_SESSION_DIR:-}"
 # Check if debug mode is enabled
 # Returns: 0 if enabled, 1 if disabled
 is_debug_enabled() {
-    [ "${REVIEW_CODE_DEBUG:-0}" = "1" ]
+    [[ "${REVIEW_CODE_DEBUG:-0}" = "1" ]]
 }
 
 # Initialize debug session directory
@@ -26,26 +26,26 @@ debug_init() {
     timestamp=$(date +%Y%m%d-%H%M%S)
 
     # Use cache directory for debug artifacts
-    local debug_base="${REVIEW_CODE_DEBUG_PATH:-$HOME/.cache/review-code/debug}"
+    local debug_base="${REVIEW_CODE_DEBUG_PATH:-${HOME}/.cache/review-code/debug}"
     export DEBUG_SESSION_DIR="${debug_base}/${org}-${repo}-${identifier}-${timestamp}"
 
-    mkdir -p "$DEBUG_SESSION_DIR"
-    chmod 700 "$DEBUG_SESSION_DIR" # Restrict to owner only for security
+    mkdir -p "${DEBUG_SESSION_DIR}"
+    chmod 700 "${DEBUG_SESSION_DIR}" # Restrict to owner only for security
 
     # Create session metadata
-    cat > "$DEBUG_SESSION_DIR/session.json" << EOF
+    cat > "${DEBUG_SESSION_DIR}/session.json" << EOF
 {
-  "identifier": "$identifier",
-  "org": "$org",
-  "repo": "$repo",
-  "mode": "$mode",
-  "timestamp": "$timestamp",
+  "identifier": "${identifier}",
+  "org": "${org}",
+  "repo": "${repo}",
+  "mode": "${mode}",
+  "timestamp": "${timestamp}",
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "debug_dir": "$DEBUG_SESSION_DIR"
+  "debug_dir": "${DEBUG_SESSION_DIR}"
 }
 EOF
 
-    echo "Debug session: $DEBUG_SESSION_DIR" >&2
+    echo "Debug session: ${DEBUG_SESSION_DIR}" >&2
 }
 
 # Save debug artifact from string
@@ -53,15 +53,15 @@ EOF
 # Example: debug_save "01-diff-generation" "raw-diff.txt" "$diff"
 debug_save() {
     is_debug_enabled || return 0
-    [ -n "$DEBUG_SESSION_DIR" ] || return 0 # Skip if debug_init not called yet
+    [[ -n "${DEBUG_SESSION_DIR}" ]] || return 0 # Skip if debug_init not called yet
 
     local stage="$1"
     local filename="$2"
     local content="$3"
 
-    local stage_dir="$DEBUG_SESSION_DIR/$stage"
-    mkdir -p "$stage_dir"
-    echo "$content" > "$stage_dir/$filename"
+    local stage_dir="${DEBUG_SESSION_DIR}/${stage}"
+    mkdir -p "${stage_dir}"
+    echo "${content}" > "${stage_dir}/${filename}"
 }
 
 # Save debug artifact from file
@@ -69,15 +69,15 @@ debug_save() {
 # Example: debug_save_file "01-diff-generation" "raw-diff.txt" /tmp/diff.txt
 debug_save_file() {
     is_debug_enabled || return 0
-    [ -n "$DEBUG_SESSION_DIR" ] || return 0 # Skip if debug_init not called yet
+    [[ -n "${DEBUG_SESSION_DIR}" ]] || return 0 # Skip if debug_init not called yet
 
     local stage="$1"
     local filename="$2"
     local source_file="$3"
 
-    local stage_dir="$DEBUG_SESSION_DIR/$stage"
-    mkdir -p "$stage_dir"
-    cp "$source_file" "$stage_dir/$filename"
+    local stage_dir="${DEBUG_SESSION_DIR}/${stage}"
+    mkdir -p "${stage_dir}"
+    cp "${source_file}" "${stage_dir}/${filename}"
 }
 
 # Save JSON artifact with pretty formatting
@@ -85,21 +85,21 @@ debug_save_file() {
 # Example: echo '{"foo":"bar"}' | debug_save_json "02-metadata" "result.json"
 debug_save_json() {
     is_debug_enabled || return 0
-    [ -n "$DEBUG_SESSION_DIR" ] || return 0 # Skip if debug_init not called yet
+    [[ -n "${DEBUG_SESSION_DIR}" ]] || return 0 # Skip if debug_init not called yet
 
     local stage="$1"
     local filename="$2"
 
-    local stage_dir="$DEBUG_SESSION_DIR/$stage"
-    mkdir -p "$stage_dir"
+    local stage_dir="${DEBUG_SESSION_DIR}/${stage}"
+    mkdir -p "${stage_dir}"
 
     # Try to format as JSON, but save raw content if jq fails
     # Use mktemp with template in secure directory to prevent race conditions
     local temp_file
-    temp_file=$(mktemp "$stage_dir/.tmp.XXXXXXXX")
-    cat > "$temp_file"
-    jq '.' "$temp_file" > "$stage_dir/$filename" 2> /dev/null || cp "$temp_file" "$stage_dir/$filename"
-    rm -f "$temp_file"
+    temp_file=$(mktemp "${stage_dir}/.tmp.XXXXXXXX")
+    cat > "${temp_file}"
+    jq '.' "${temp_file}" > "${stage_dir}/${filename}" 2> /dev/null || cp "${temp_file}" "${stage_dir}/${filename}"
+    rm -f "${temp_file}"
 }
 
 # Log command execution with full output capture
@@ -108,36 +108,36 @@ debug_save_json() {
 # Example: debug_log_command "01-diff" "Generate diff" git diff main...HEAD
 debug_log_command() {
     is_debug_enabled || return 0
-    [ -n "$DEBUG_SESSION_DIR" ] || return 0 # Skip if debug_init not called yet
+    [[ -n "${DEBUG_SESSION_DIR}" ]] || return 0 # Skip if debug_init not called yet
 
     local stage="$1"
     local description="$2"
     shift 2
 
-    local stage_dir="$DEBUG_SESSION_DIR/$stage"
-    mkdir -p "$stage_dir"
+    local stage_dir="${DEBUG_SESSION_DIR}/${stage}"
+    mkdir -p "${stage_dir}"
 
-    local cmd_file="$stage_dir/commands.log"
-    local stdout_file="$stage_dir/stdout.log"
-    local stderr_file="$stage_dir/stderr.log"
+    local cmd_file="${stage_dir}/commands.log"
+    local stdout_file="${stage_dir}/stdout.log"
+    local stderr_file="${stage_dir}/stderr.log"
 
     # Log the command
     {
-        echo "=== $description ==="
+        echo "=== ${description} ==="
         echo "Command: $*"
         echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo ""
-    } >> "$cmd_file"
+    } >> "${cmd_file}"
 
     # Execute and capture output
     local exit_code=0
-    "$@" >> "$stdout_file" 2>> "$stderr_file" || exit_code=$?
+    "$@" >> "${stdout_file}" 2>> "${stderr_file}" || exit_code=$?
 
     # Log exit code
-    echo "Exit code: $exit_code" >> "$cmd_file"
-    echo "" >> "$cmd_file"
+    echo "Exit code: ${exit_code}" >> "${cmd_file}"
+    echo "" >> "${cmd_file}"
 
-    return $exit_code
+    return "${exit_code}"
 }
 
 # Record timing event for performance analysis
@@ -146,21 +146,21 @@ debug_log_command() {
 #          debug_time "01-diff-generation" "end"
 debug_time() {
     is_debug_enabled || return 0
-    [ -n "$DEBUG_SESSION_DIR" ] || return 0 # Skip if debug_init not called yet
+    [[ -n "${DEBUG_SESSION_DIR}" ]] || return 0 # Skip if debug_init not called yet
 
     local stage="$1"
     local event="$2"
 
-    local timing_file="$DEBUG_SESSION_DIR/timing.ndjson"
+    local timing_file="${DEBUG_SESSION_DIR}/timing.ndjson"
     local timestamp
     timestamp=$(date +%s.%N)
 
     jq -n \
-        --arg stage "$stage" \
-        --arg event "$event" \
-        --arg timestamp "$timestamp" \
+        --arg stage "${stage}" \
+        --arg event "${event}" \
+        --arg timestamp "${timestamp}" \
         '{stage: $stage, event: $event, timestamp: ($timestamp | tonumber)}' \
-        >> "$timing_file"
+        >> "${timing_file}"
 }
 
 # Append to trace log for detailed execution flow
@@ -168,15 +168,15 @@ debug_time() {
 # Example: debug_trace "02-metadata" "Detected Python file: src/main.py"
 debug_trace() {
     is_debug_enabled || return 0
-    [ -n "$DEBUG_SESSION_DIR" ] || return 0 # Skip if debug_init not called yet
+    [[ -n "${DEBUG_SESSION_DIR}" ]] || return 0 # Skip if debug_init not called yet
 
     local stage="$1"
     local message="$2"
 
-    local stage_dir="$DEBUG_SESSION_DIR/$stage"
-    mkdir -p "$stage_dir"
+    local stage_dir="${DEBUG_SESSION_DIR}/${stage}"
+    mkdir -p "${stage_dir}"
 
-    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $message" >> "$stage_dir/trace.log"
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] ${message}" >> "${stage_dir}/trace.log"
 }
 
 # Save statistics as JSON
@@ -184,23 +184,23 @@ debug_trace() {
 # Example: debug_stats "01-diff" lines_before 1000 lines_after 200
 debug_stats() {
     is_debug_enabled || return 0
-    [ -n "$DEBUG_SESSION_DIR" ] || return 0 # Skip if debug_init not called yet
+    [[ -n "${DEBUG_SESSION_DIR}" ]] || return 0 # Skip if debug_init not called yet
 
     local stage="$1"
     shift
 
-    local stage_dir="$DEBUG_SESSION_DIR/$stage"
-    mkdir -p "$stage_dir"
+    local stage_dir="${DEBUG_SESSION_DIR}/${stage}"
+    mkdir -p "${stage_dir}"
 
     # Build jq arguments from key-value pairs
     local jq_args=()
-    while [ $# -ge 2 ]; do
+    while [[ $# -ge 2 ]]; do
         jq_args+=(--arg "$1" "$2")
         shift 2
     done
 
     # Create stats JSON
-    jq -n "${jq_args[@]}" '$ARGS.named' > "$stage_dir/stats.json"
+    jq -n "${jq_args[@]}" '$ARGS.named' > "${stage_dir}/stats.json"
 }
 
 # Finalize debug session with summary
@@ -208,9 +208,9 @@ debug_stats() {
 # Usage: debug_finalize
 debug_finalize() {
     is_debug_enabled || return 0
-    [ -n "$DEBUG_SESSION_DIR" ] || return 0 # Skip if debug_init not called yet
+    [[ -n "${DEBUG_SESSION_DIR}" ]] || return 0 # Skip if debug_init not called yet
 
-    local summary_file="$DEBUG_SESSION_DIR/README.md"
+    local summary_file="${DEBUG_SESSION_DIR}/README.md"
 
     {
         echo "Review Code Debug Summary"
@@ -218,49 +218,49 @@ debug_finalize() {
         echo ""
 
         # Session info
-        if [ -f "$DEBUG_SESSION_DIR/session.json" ]; then
+        if [[ -f "${DEBUG_SESSION_DIR}/session.json" ]]; then
             echo "Session Information:"
             jq -r '"  Mode: \(.mode)\n  Identifier: \(.identifier)\n  Repository: \(.org)/\(.repo)\n  Started: \(.started_at)\n  Debug Directory: \(.debug_dir)"' \
-                "$DEBUG_SESSION_DIR/session.json"
+                "${DEBUG_SESSION_DIR}/session.json"
             echo ""
         fi
 
         # Timing summary
-        if [ -f "$DEBUG_SESSION_DIR/timing.ndjson" ]; then
+        if [[ -f "${DEBUG_SESSION_DIR}/timing.ndjson" ]]; then
             echo "Timing Summary:"
             echo "---------------"
 
             # Calculate stage durations
-            jq -r 'select(.event == "start") | .stage' "$DEBUG_SESSION_DIR/timing.ndjson" | while read -r stage; do
+            jq -r 'select(.event == "start") | .stage' "${DEBUG_SESSION_DIR}/timing.ndjson" | while read -r stage; do
                 local start_time
                 local end_time
-                start_time=$(jq -r "select(.stage == \"$stage\" and .event == \"start\") | .timestamp" "$DEBUG_SESSION_DIR/timing.ndjson" | head -1)
-                end_time=$(jq -r "select(.stage == \"$stage\" and .event == \"end\") | .timestamp" "$DEBUG_SESSION_DIR/timing.ndjson" | head -1)
+                start_time=$(jq -r "select(.stage == \"${stage}\" and .event == \"start\") | .timestamp" "${DEBUG_SESSION_DIR}/timing.ndjson" | head -1)
+                end_time=$(jq -r "select(.stage == \"${stage}\" and .event == \"end\") | .timestamp" "${DEBUG_SESSION_DIR}/timing.ndjson" | head -1)
 
-                if [ -n "$start_time" ] && [ -n "$end_time" ]; then
+                if [[ -n "${start_time}" ]] && [[ -n "${end_time}" ]]; then
                     local duration
-                    duration=$(echo "$end_time - $start_time" | bc)
-                    printf "  %-30s: %.3fs\n" "$stage" "$duration"
+                    duration=$(echo "${end_time} - ${start_time}" | bc)
+                    printf "  %-30s: %.3fs\n" "${stage}" "${duration}"
                 fi
             done
             echo ""
         fi
 
         # Token savings (if available)
-        if [ -f "$DEBUG_SESSION_DIR/02-diff-filter/stats.json" ]; then
+        if [[ -f "${DEBUG_SESSION_DIR}/02-diff-filter/stats.json" ]]; then
             echo "Token Savings:"
             echo "--------------"
             local raw_tokens filtered_tokens tokens_saved
-            raw_tokens=$(jq -r '.raw_tokens // "0"' "$DEBUG_SESSION_DIR/02-diff-filter/stats.json")
-            filtered_tokens=$(jq -r '.filtered_tokens // "0"' "$DEBUG_SESSION_DIR/02-diff-filter/stats.json")
-            tokens_saved=$(jq -r '.tokens_saved // "0"' "$DEBUG_SESSION_DIR/02-diff-filter/stats.json")
+            raw_tokens=$(jq -r '.raw_tokens // "0"' "${DEBUG_SESSION_DIR}/02-diff-filter/stats.json")
+            filtered_tokens=$(jq -r '.filtered_tokens // "0"' "${DEBUG_SESSION_DIR}/02-diff-filter/stats.json")
+            tokens_saved=$(jq -r '.tokens_saved // "0"' "${DEBUG_SESSION_DIR}/02-diff-filter/stats.json")
 
-            if [ "$raw_tokens" != "0" ]; then
+            if [[ "${raw_tokens}" != "0" ]]; then
                 local savings_pct
                 savings_pct=$((tokens_saved * 100 / raw_tokens))
-                echo "  Raw diff tokens: ~$raw_tokens"
-                echo "  Filtered diff tokens: ~$filtered_tokens"
-                echo "  Tokens saved: ~$tokens_saved ($savings_pct%)"
+                echo "  Raw diff tokens: ~${raw_tokens}"
+                echo "  Filtered diff tokens: ~${filtered_tokens}"
+                echo "  Tokens saved: ~${tokens_saved} (${savings_pct}%)"
             fi
             echo ""
         fi
@@ -268,26 +268,26 @@ debug_finalize() {
         # List all stages with artifacts
         echo "Debug Artifacts by Stage:"
         echo "-------------------------"
-        find "$DEBUG_SESSION_DIR" -mindepth 1 -maxdepth 1 -type d | sort | while read -r stage_dir; do
+        find "${DEBUG_SESSION_DIR}" -mindepth 1 -maxdepth 1 -type d | sort | while read -r stage_dir; do
             local stage_name
-            stage_name=$(basename "$stage_dir")
+            stage_name=$(basename "${stage_dir}")
             local file_count
-            file_count=$(find "$stage_dir" -type f | wc -l | tr -d ' ')
-            echo "  $stage_name ($file_count files)"
+            file_count=$(find "${stage_dir}" -type f | wc -l | tr -d ' ')
+            echo "  ${stage_name} (${file_count} files)"
         done
         echo ""
 
         echo "Full debug session saved to:"
-        echo "  $DEBUG_SESSION_DIR"
+        echo "  ${DEBUG_SESSION_DIR}"
         echo ""
         echo "To explore artifacts:"
-        echo "  ls -la $DEBUG_SESSION_DIR/"
+        echo "  ls -la ${DEBUG_SESSION_DIR}/"
         echo ""
         echo "To view specific stage:"
-        echo "  ls -la $DEBUG_SESSION_DIR/<stage-name>/"
+        echo "  ls -la ${DEBUG_SESSION_DIR}/<stage-name>/"
 
-    } > "$summary_file"
+    } > "${summary_file}"
 
     # Print summary location to stderr
-    echo "Debug README: $summary_file" >&2
+    echo "Debug README: ${summary_file}" >&2
 }
