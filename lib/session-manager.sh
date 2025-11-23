@@ -94,7 +94,7 @@ session_file() {
     # Only perform canonical check if directory exists (allows checking for non-existent sessions)
     if [ -d "$(dirname "$session_file")" ]; then
         local canonical_file
-        canonical_file=$(cd "$(dirname "$session_file")" && pwd)/$(basename "$session_file")
+        canonical_file=$(cd "$(dirname "$session_file")" && pwd -P)/$(basename "$session_file")
 
         # Resolve SESSION_DIR to canonical path for comparison
         local canonical_session_dir

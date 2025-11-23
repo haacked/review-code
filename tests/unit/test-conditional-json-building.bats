@@ -7,6 +7,33 @@
 setup() {
     PROJECT_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
     export PROJECT_ROOT
+
+    # Create a temporary git repository for tests that need consistent git state
+    # This ensures tests work both locally and in CI (where we're in detached HEAD)
+    TEST_GIT_DIR="$(mktemp -d)"
+}
+
+teardown() {
+    # Cleanup temporary git directory
+    if [ -n "$TEST_GIT_DIR" ] && [ -d "$TEST_GIT_DIR" ]; then
+        rm -rf "$TEST_GIT_DIR"
+    fi
+}
+
+# Helper: Setup a minimal git repository in TEST_GIT_DIR
+setup_test_git_repo() {
+    cd "$TEST_GIT_DIR"
+    git init -q
+    git config user.email "test@example.com"
+    git config user.name "Test User"
+
+    # Create initial commit on main branch
+    echo "initial" > file.txt
+    git add file.txt
+    git commit -q -m "Initial commit"
+
+    # Ensure we're on main branch
+    git checkout -q -b main 2>/dev/null || git checkout -q main
 }
 
 # =============================================================================
@@ -87,9 +114,12 @@ setup() {
 # =============================================================================
 
 @test "orchestrator with PR number: attempts to fetch PR context" {
+    # Setup a test git repo with known state (not detached HEAD)
+    setup_test_git_repo
+
     # Test that providing a PR number triggers PR context fetching
     # This may fail if gh not available or PR doesn't exist, but shouldn't crash
-    run bash -c "cd '$PROJECT_ROOT' && ./lib/review-orchestrator.sh 'https://github.com/haacked/review-code/pull/1' 2>/dev/null"
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' 'https://github.com/haacked/review-code/pull/1' 2>/dev/null"
 
     # Should exit with 0 or gracefully handle missing PR
     [ "$status" -eq 0 ] || [ "$status" -eq 1 ]
@@ -143,8 +173,14 @@ setup() {
 }
 
 @test "regression: orchestrator still handles branch name" {
-    # Test with main branch
-    run bash -c "cd '$PROJECT_ROOT' && ./lib/review-orchestrator.sh 'main' 2>/dev/null"
+    # Setup a test git repo with known state (not detached HEAD)
+    setup_test_git_repo
+
+    # Create a feature branch so "main" is not the current branch
+    git checkout -q -b feature-branch
+
+    # Test with main branch (from temp repo)
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' 'main' 2>/dev/null"
 
     # Should succeed with valid JSON
     [ "$status" -eq 0 ]
