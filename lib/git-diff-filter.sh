@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2310  # Functions in conditionals intentionally check return values
 # Wrapper around git-diff-context.sh that filters out noise files from diffs
 # This reduces token usage by 85-95% for PRs with snapshots, lock files, and generated files
 #

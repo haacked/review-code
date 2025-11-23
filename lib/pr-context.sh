@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2310  # Functions in conditionals intentionally check return values
 # pr-context.sh - Fetch PR data using gh CLI
 #
 # Usage:

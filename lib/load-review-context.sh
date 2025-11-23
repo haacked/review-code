@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2310  # Functions in conditionals intentionally check return values
 # load-review-context.sh - Load language/framework/org/repo-specific review context
 # Requires: bash 4.0+ for associative arrays
 #

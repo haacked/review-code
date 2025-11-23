@@ -576,6 +576,7 @@ check_permissions_configured() {
 
 prompt_configure_permissions() {
     # Check if permissions are already configured
+    # shellcheck disable=SC2310  # Intentional conditional check
     if check_permissions_configured; then
         echo ""
         info "Permissions already configured - skipping prompt"

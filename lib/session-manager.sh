@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2310  # Functions in conditionals intentionally check return values
 set -euo pipefail
 
 # Session Manager - Generic session state management for Claude Code slash commands

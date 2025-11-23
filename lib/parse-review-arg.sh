@@ -2,6 +2,7 @@
 # Parse and validate /review-code command arguments
 # Returns JSON with mode and validated parameters
 
+# shellcheck disable=SC2310  # Functions in conditionals intentionally check return values
 set -euo pipefail
 
 # Get the arguments (empty string if not provided)
