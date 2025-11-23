@@ -60,6 +60,7 @@ file_metadata_ndjson=$(while IFS= read -r file; do
         .ex | .exs) language="elixir" ;;
         .sql) language="sql" ;;
         .sh) language="bash" ;;
+        *) language="unknown" ;;
     esac
 
     # Determine file type

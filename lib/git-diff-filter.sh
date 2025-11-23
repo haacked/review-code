@@ -54,6 +54,9 @@ while IFS= read -r line; do
         "BASE_BRANCH:"*)
             base_branch="${line#BASE_BRANCH: }"
             ;;
+        *)
+            # Unknown metadata line - ignore
+            ;;
     esac
 done <<< "${diff_metadata}"
 
@@ -75,6 +78,9 @@ if is_debug_enabled; then
             if [[ -n "${base_branch}" ]]; then
                 raw_diff=$(git diff --unified="${CONTEXT_LINES}" "${base_branch}"...HEAD 2> /dev/null || test $? = 1)
             fi
+            ;;
+        *)
+            # Unknown diff type
             ;;
     esac
     debug_save "02-diff-filter" "raw-diff.txt" "${raw_diff}"

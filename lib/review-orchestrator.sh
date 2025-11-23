@@ -85,7 +85,14 @@ main() {
                 "local")
                     identifier="local"
                     ;;
+                *)
+                    # Unknown mode - should not reach here
+                    identifier="unknown"
+                    ;;
             esac
+            ;;
+        *)
+            # Unknown mode
             ;;
     esac
 

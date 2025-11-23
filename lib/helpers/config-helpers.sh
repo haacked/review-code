@@ -83,7 +83,9 @@ load_config_safely() {
             DIFF_CONTEXT_LINES)
                 export DIFF_CONTEXT_LINES="${value}"
                 ;;
+            *)
                 # Unknown keys are silently ignored for forward compatibility
+                ;;
         esac
     done < "${config_file}"
 

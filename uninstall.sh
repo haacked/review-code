@@ -79,6 +79,7 @@ load_config_safely() {
             REVIEW_ROOT_PATH) export REVIEW_ROOT_PATH="${value}" ;;
             CONTEXT_PATH) export CONTEXT_PATH="${value}" ;;
             DIFF_CONTEXT_LINES) export DIFF_CONTEXT_LINES="${value}" ;;
+            *) ;; # Ignore unknown keys for forward compatibility
         esac
     done < "${config_file}"
 

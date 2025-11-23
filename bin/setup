@@ -154,6 +154,7 @@ load_config_safely() {
             CONTEXT_PATH) export CONTEXT_PATH="${value}" ;;
             DIFF_CONTEXT_LINES) export DIFF_CONTEXT_LINES="${value}" ;;
             CACHE_TTL_HOURS) export CACHE_TTL_HOURS="${value}" ;;
+            *) ;; # Ignore unknown keys for forward compatibility
         esac
     done < "${config_file}"
 

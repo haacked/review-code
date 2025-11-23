@@ -99,6 +99,9 @@ while IFS= read -r file; do
         .sql)
             seen_languages[sql]=1
             ;;
+        *)
+            # Unknown extension - no language detected
+            ;;
     esac
 done <<< "${file_paths}"
 
