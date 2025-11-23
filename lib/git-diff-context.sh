@@ -40,13 +40,11 @@ get_main_branch() {
 # Main logic
 main() {
     local diff_output=""
-    local diff_type=""
 
     # Check for staged changes
     # git diff returns 1 if no differences, which is expected
     diff_output=$(git diff --staged 2> /dev/null || test $? = 1)
     if [ -n "$diff_output" ]; then
-        diff_type="staged"
         echo "DIFF_TYPE: staged" >&2
         echo "$diff_output"
         return 0
@@ -55,7 +53,6 @@ main() {
     # Check for unstaged changes
     diff_output=$(git diff 2> /dev/null || test $? = 1)
     if [ -n "$diff_output" ]; then
-        diff_type="unstaged"
         echo "DIFF_TYPE: unstaged" >&2
         echo "$diff_output"
         return 0
@@ -66,7 +63,6 @@ main() {
     main_branch=$(get_main_branch)
     diff_output=$(git diff "$main_branch...HEAD" 2> /dev/null || test $? = 1)
     if [ -n "$diff_output" ]; then
-        diff_type="branch"
         echo "DIFF_TYPE: branch (compared to $main_branch)" >&2
         echo "$diff_output"
         return 0

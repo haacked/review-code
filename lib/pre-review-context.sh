@@ -33,11 +33,6 @@ diff_content=$(cat)
 # Format: +++ b/path/to/file.ext
 file_paths=$(echo "$diff_content" | { grep -E "^\+\+\+ b/" || test $? = 1; } | sed 's/^+++ b\///')
 
-# Track metadata
-has_tests=false
-has_migrations=false
-has_config=false
-
 # Detect file type and generate metadata
 # Output newline-delimited JSON, capture for single jq processing
 file_metadata_ndjson=$(while IFS= read -r file; do
@@ -83,21 +78,18 @@ file_metadata_ndjson=$(while IFS= read -r file; do
         || [[ "$dirname" =~ /specs?$ ]]; then
         file_type="test"
         is_test=true
-        has_tests=true
     fi
 
     # Check for migrations
     if [[ "$dirname" =~ /migrations?$ ]] \
         || [[ "$basename" =~ ^[0-9]{4}_.*\.(sql|py)$ ]]; then
         file_type="migration"
-        has_migrations=true
     fi
 
     # Check for config files
     if [[ "$basename" =~ \.(json|yaml|yml|toml|ini|env|config)$ ]] \
         || [[ "$basename" =~ ^(package\.json|tsconfig|Cargo\.toml|pyproject\.toml|setup\.py|Gemfile|composer\.json)$ ]]; then
         file_type="config"
-        has_config=true
     fi
 
     # Generate likely test path if this is a source file

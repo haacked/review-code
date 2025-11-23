@@ -56,11 +56,10 @@ print_color blue "Found ${#actual_files[@]} shell scripts"
 # - SC2310: Function in condition disables set -e (info only, intentional pattern)
 # - SC2126: grep -c vs grep|wc (style preference, both work fine)
 # - SC2155: Declare and assign separately (common pattern, rarely causes issues)
-# - SC2034: Unused variables (may be reserved for future use or external consumption)
 # - SC2016: Single quotes don't expand (info only, intentional)
 # - SC2015: A && B || C pattern (info only, intentional use)
 # - SC2001: sed vs parameter expansion (style preference)
-if ! run_command "shellcheck -x -o all -e SC2250,SC2292,SC2248,SC2312,SC2249,SC2162,SC1091,SC2310,SC2126,SC2155,SC2034,SC2016,SC2015,SC2001 ${actual_files[*]}" "Running shellcheck"; then
+if ! run_command "shellcheck -x -o all -e SC2250,SC2292,SC2248,SC2312,SC2249,SC2162,SC1091,SC2310,SC2126,SC2155,SC2016,SC2015,SC2001 ${actual_files[*]}" "Running shellcheck"; then
     success_status=false
 fi
 
