@@ -484,9 +484,9 @@ build_summary() {
 
     # Calculate diff stats
     local files_changed lines_added lines_removed
-    files_changed=$(echo "${diff_content}" | grep -E '^diff --git' | wc -l | tr -d ' ')
-    lines_added=$(echo "${diff_content}" | grep -E '^\+' | grep -v -E '^\+\+\+' | wc -l | tr -d ' ')
-    lines_removed=$(echo "${diff_content}" | grep -E '^-' | grep -v -E '^---' | wc -l | tr -d ' ')
+    files_changed=$(echo "${diff_content}" | grep -cE '^diff --git')
+    lines_added=$(echo "${diff_content}" | grep -E '^\+' | grep -vcE '^\+\+\+')
+    lines_removed=$(echo "${diff_content}" | grep -E '^-' | grep -vcE '^---')
 
     # Parse mode-specific fields (already in JSON format)
     local parsed_args="${mode_fields}"
@@ -723,9 +723,9 @@ handle_pr_review() {
     pr_url=$(echo "${pr_data}" | jq -r '.url')
 
     local files_changed lines_added lines_removed
-    files_changed=$(echo "${diff_content}" | grep -E '^diff --git' | wc -l | tr -d ' ')
-    lines_added=$(echo "${diff_content}" | grep -E '^\+' | grep -v -E '^\+\+\+' | wc -l | tr -d ' ')
-    lines_removed=$(echo "${diff_content}" | grep -E '^-' | grep -v -E '^---' | wc -l | tr -d ' ')
+    files_changed=$(echo "${diff_content}" | grep -cE '^diff --git')
+    lines_added=$(echo "${diff_content}" | grep -E '^\+' | grep -vcE '^\+\+\+')
+    lines_removed=$(echo "${diff_content}" | grep -E '^-' | grep -vcE '^---')
 
     local summary
     summary=$(jq -n \
