@@ -91,12 +91,15 @@ session_file() {
     local session_file="$SESSION_DIR/$command_name/$session_id.json"
 
     # Verify the resolved path is still within SESSION_DIR (defense in depth)
-    local canonical_file
-    canonical_file=$(cd "$(dirname "$session_file")" 2>/dev/null && pwd)/$(basename "$session_file") || return 1
+    # Only perform canonical check if directory exists (allows checking for non-existent sessions)
+    if [ -d "$(dirname "$session_file")" ]; then
+        local canonical_file
+        canonical_file=$(cd "$(dirname "$session_file")" && pwd)/$(basename "$session_file")
 
-    if [[ "$canonical_file" != "$SESSION_DIR"/* ]]; then
-        echo "ERROR: Session file path outside session directory" >&2
-        return 1
+        if [[ "$canonical_file" != "$SESSION_DIR"/* ]]; then
+            echo "ERROR: Session file path outside session directory" >&2
+            return 1
+        fi
     fi
 
     echo "$session_file"
