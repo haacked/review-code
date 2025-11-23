@@ -111,6 +111,7 @@ extensions=("${!seen_extensions[@]}")
 
 # Detect frameworks from file content in single pass
 # Use awk for single-pass pattern matching instead of 6 grep invocations
+# shellcheck disable=SC2312  # awk and sort failures are non-critical for framework detection
 while IFS= read -r framework; do
     case "${framework}" in
         react | kea)

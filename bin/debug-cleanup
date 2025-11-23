@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2312  # Command substitutions for counting/formatting are non-critical
 # debug-cleanup - Clean up old debug sessions from review-code
 #
 # Usage:

@@ -32,6 +32,7 @@ else
 fi
 
 # Run integration tests if they exist
+# shellcheck disable=SC2312  # ls failure means no tests (correct behavior)
 if [[ -d "${ROOT_DIR}/tests/integration" ]] && [[ -n "$(ls -A "${ROOT_DIR}/tests/integration"/*.bats 2> /dev/null)" ]]; then
     echo -e "${YELLOW}=== Integration Tests ===${NC}"
     if bats "${ROOT_DIR}/tests/integration/"*.bats; then

@@ -32,6 +32,7 @@ get_working_dir() {
 
 has_changes() {
     # Check if there are any staged or unstaged changes
+    # shellcheck disable=SC2312  # git status failure will result in empty string (correct)
     if [[ -n "$(git status --porcelain)" ]]; then
         echo "true"
     else

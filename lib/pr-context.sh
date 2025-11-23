@@ -181,6 +181,7 @@ main() {
     body=$(echo "${body}" | jq -Rs . | jq -r .)
 
     # Output combined JSON
+    # shellcheck disable=SC2312  # jq failures for title/body sanitization are non-critical
     cat << EOF
 {
     "org": "${org}",

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2310  # Functions in conditionals intentionally check return values
+# shellcheck disable=SC2312  # Command substitutions for directory resolution are non-critical
 set -euo pipefail
 
 # Session Manager - Generic session state management for Claude Code slash commands

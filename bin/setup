@@ -126,6 +126,7 @@ load_config_safely() {
         file_perms=$(stat -c '%a' "${config_file}" 2> /dev/null)
     fi
 
+    # shellcheck disable=SC2312  # id command failure is critical and will be caught
     if [[ "${file_owner}" != "$(id -u)" ]]; then
         error "Config file not owned by current user: ${config_file}"
         return 1

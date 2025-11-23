@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2310  # Functions in conditionals intentionally check return values
+# shellcheck disable=SC2312  # Command substitutions for counting are non-critical
 # Wrapper around git-diff-context.sh that filters out noise files from diffs
 # This reduces token usage by 85-95% for PRs with snapshots, lock files, and generated files
 #

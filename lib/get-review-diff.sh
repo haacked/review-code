@@ -16,6 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/helpers/exclusion-patterns.sh"
 
 # Get common exclusion patterns (minimal set for review diffs)
+# shellcheck disable=SC2312  # get_exclusion_patterns failure will result in empty array
 mapfile -t EXCLUSIONS < <(get_exclusion_patterns common)
 
 # Get context lines from env or default to 1

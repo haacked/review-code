@@ -121,6 +121,7 @@ build_json_error() {
 # Returns: 0 if detected (outputs JSON), 1 if not detected
 detect_area_keyword() {
     [[ -z "${arg}" ]] && return 1
+    # shellcheck disable=SC2312  # contains function failure is handled by return check
     [[ "$(contains "${arg}" "${AREA_KEYWORDS[@]}")" -eq 0 ]] && return 1
 
     build_json_output "area" "area" "${arg}"
@@ -250,6 +251,7 @@ detect_no_arg() {
 
     # Check for uncommitted changes
     local has_uncommitted=false
+    # shellcheck disable=SC2312  # git status failure will result in empty string (correct behavior)
     if [[ -n "$(git status --porcelain)" ]]; then
         has_uncommitted=true
     fi

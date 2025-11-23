@@ -38,6 +38,7 @@ load_config_safely() {
     fi
 
     # Config must be owned by current user
+    # shellcheck disable=SC2312  # id command failure is critical and will be caught
     if [[ "${file_owner}" != "$(id -u)" ]]; then
         error "Config file not owned by current user: ${config_file}"
         return 1

@@ -30,6 +30,7 @@ for pattern in "${shell_files[@]}"; do
     for file in ${pattern}; do
         if [[ -f "${file}" ]] && [[ ! "${file}" =~ \.md$ ]]; then
             # Skip non-shell files
+            # shellcheck disable=SC2312  # head/grep failures indicate non-bash file (correct)
             if [[ "${file}" == *.sh ]] || [[ -x "${file}" ]] && head -1 "${file}" | grep -q '^#!/.*bash'; then
                 actual_files+=("${file}")
             fi
@@ -47,8 +48,7 @@ print_color blue "Found ${#actual_files[@]} shell scripts"
 # Run shellcheck with strict settings
 # Excluded checks:
 # - SC1091: Can't follow sourced files with dynamic paths
-# - SC2312: Command substitution masking return values is acceptable for non-critical commands
-if ! run_command "shellcheck -x -o all -e SC1091 -e SC2312 ${actual_files[*]}" "Running shellcheck"; then
+if ! run_command "shellcheck -x -o all -e SC1091 ${actual_files[*]}" "Running shellcheck"; then
     success_status=false
 fi
 
