@@ -11,8 +11,39 @@ setup() {
     PROJECT_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
     export PROJECT_ROOT
 
+    # Create a temporary git repository for tests that need consistent git state
+    # This ensures tests work both locally and in CI (where we're in detached HEAD)
+    TEST_GIT_DIR="$(mktemp -d)"
+
     # Source the script to get access to functions
     source "$PROJECT_ROOT/lib/parse-review-arg.sh"
+}
+
+teardown() {
+    # Cleanup temporary git directory
+    if [ -n "$TEST_GIT_DIR" ] && [ -d "$TEST_GIT_DIR" ]; then
+        rm -rf "$TEST_GIT_DIR"
+    fi
+}
+
+# Helper: Setup a minimal git repository in TEST_GIT_DIR
+setup_test_git_repo() {
+    cd "$TEST_GIT_DIR"
+    git init -q
+    git config user.email "test@example.com"
+    git config user.name "Test User"
+
+    # Create initial commit on main branch
+    echo "initial" > file.txt
+    git add file.txt
+    git commit -q -m "Initial commit"
+
+    # Ensure we're on main branch
+    git checkout -q -b main 2>/dev/null || git checkout -q main
+
+    # Set up a fake remote origin (needed for some git commands to work)
+    # Use a fake GitHub URL to prevent git commands from failing
+    git remote add origin https://github.com/test/test.git 2>/dev/null || true
 }
 
 # =============================================================================
@@ -89,22 +120,33 @@ setup() {
 # =============================================================================
 
 @test "detect_no_arg: handles branch with no upstream" {
-    # Create a test branch with no upstream
-    git checkout -b test-no-upstream-$$  2>/dev/null || true
-    git commit --allow-empty -m "Test commit" 2>/dev/null || true
+    # Use isolated test repo to avoid affecting actual repository
+    setup_test_git_repo
+
+    # Create a feature branch with no upstream
+    git checkout -q -b test-feature-branch
+    echo "test" > test.txt
+    git add test.txt
+    git commit -q -m "Test commit"
 
     run detect_no_arg
     # Should succeed without remote_ahead field (or remote_ahead: false)
     [ "$status" -eq 0 ]
     [[ "$output" == *'"mode":'* ]]
-
-    # Cleanup
-    git checkout - > /dev/null 2>&1 || true
-    git branch -D test-no-upstream-$$ > /dev/null 2>&1 || true
 }
 
 @test "detect_no_arg: handles missing gh CLI gracefully" {
+    # Use isolated test repo to ensure consistent git state
+    setup_test_git_repo
+
+    # Create a feature branch so detect_no_arg succeeds
+    git checkout -q -b test-feature-branch
+    echo "test" > test.txt
+    git add test.txt
+    git commit -q -m "Test commit"
+
     # Test with gh not in PATH
+    cd "$TEST_GIT_DIR"
     PATH=/usr/bin:/bin run detect_no_arg
     [ "$status" -eq 0 ]
     # Should not have associated_pr field when gh unavailable
@@ -122,7 +164,17 @@ setup() {
         skip "gh CLI not available (this is fine)"
     fi
 
+    # Use isolated test repo to ensure consistent git state
+    setup_test_git_repo
+
+    # Create a feature branch so detect_no_arg succeeds
+    git checkout -q -b test-feature-branch
+    echo "test" > test.txt
+    git add test.txt
+    git commit -q -m "Test commit"
+
     # Even with gh available, should work on branches without PRs
+    cd "$TEST_GIT_DIR"
     run detect_no_arg
     [ "$status" -eq 0 ]
 }
