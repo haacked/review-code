@@ -172,10 +172,18 @@ Smart mode that prompts you to choose:
 
 ### Review Pull Requests
 
+Review any GitHub pull request by URL - works from anywhere (inside or outside a git repository):
+
 ```bash
-/review-code 123                                    # Review PR #123 from current repo
-/review-code https://github.com/org/repo/pull/456  # Review PR by URL
+/review-code https://github.com/org/repo/pull/456  # Review any PR by URL
 ```
+
+**How it works:**
+- **Outside git repo**: Fetches all context via `gh` CLI from GitHub
+- **Inside git repo (different branch)**: Uses `gh` CLI to fetch PR context
+- **Inside git repo (on PR's branch)**: Uses local git for faster diff generation
+
+This means you can review PRs for any repository without needing to clone it locally.
 
 ### Review Git History
 
@@ -203,11 +211,11 @@ Smart mode that prompts you to choose:
 Add a file pattern as the second argument to review only matching files:
 
 ```bash
-/review-code "*.sh"                     # Review only shell scripts (uncommitted)
-/review-code 356ded2..HEAD "*.py"       # Review only Python files in range
-/review-code feature-branch "src/**/*.ts" # Review only TypeScript in src/
-/review-code 123 "lib/*.rs"            # Review only Rust files in lib/ for PR #123
-/review-code security "*.go"           # Security review only Go files (uncommitted)
+/review-code "*.sh"                                          # Review only shell scripts (uncommitted)
+/review-code 356ded2..HEAD "*.py"                            # Review only Python files in range
+/review-code feature-branch "src/**/*.ts"                    # Review only TypeScript in src/
+/review-code https://github.com/org/repo/pull/123 "lib/*.rs" # Review only Rust files in PR
+/review-code security "*.go"                                 # Security review only Go files (uncommitted)
 ```
 
 File patterns support:

@@ -7,8 +7,10 @@ Run specialized code review agent(s) with comprehensive context on local changes
 
 **Arguments:**
 
-- `<number>` - Review Pull Request by number (e.g., `123`)
-- `<pr-url>` - Review Pull Request by URL (e.g., `https://github.com/org/repo/pull/123`)
+- `<pr-url>` - Review Pull Request by URL - works from anywhere (e.g., `https://github.com/org/repo/pull/123`)
+  - Uses `gh` CLI to fetch PR context from GitHub
+  - No git repository required - review any PR without cloning
+  - Automatically uses local git for speed when on PR's branch
 - `<commit>` - Review that specific commit's changes (e.g., `356ded2`)
 - `<branch>` - Review all changes in branch vs base (e.g., `feature-branch`)
 - `<range>` - Review specific git range (e.g., `abc123..HEAD`, `v1.0.0..v2.0.0`)
@@ -34,8 +36,7 @@ Examples:
 **Usage examples:**
 
 - `/review-code` - Comprehensive review of local uncommitted changes (default)
-- `/review-code 123` - Review PR #123 from current repo
-- `/review-code https://github.com/PostHog/posthog/pull/41471` - Review PR by URL
+- `/review-code https://github.com/org/repo/pull/123` - Review any PR by URL (works from anywhere!)
 - `/review-code 356ded2` - Review that specific commit
 - `/review-code feature-branch` - Review all changes in branch vs main
 - `/review-code abc123..HEAD` - Review changes from abc123 to HEAD
@@ -48,7 +49,7 @@ Examples:
 - `/review-code 356ded2..HEAD "*.sh"` - Review only shell script changes in range
 - `/review-code "lib/*.sh"` - Review only shell scripts in lib/ directory (local)
 - `/review-code feature-branch "*.py"` - Review only Python files in branch
-- `/review-code 123 "src/**/*.ts"` - Review only TypeScript files in PR #123
+- `/review-code https://github.com/org/repo/pull/123 "src/**/*.ts"` - Review only TypeScript files in PR
 - `/review-code security "*.rs"` - Security review of only Rust files (local)
 
 ---
