@@ -205,7 +205,7 @@ build_review_data() {
     lang_info=$(echo "${diff_content}" | "${SCRIPT_DIR}/code-language-detect.sh")
 
     # Validate lang_info is valid JSON (safety check)
-    if ! echo "${lang_info}" | jq empty 2>/dev/null; then
+    if ! echo "${lang_info}" | jq empty 2> /dev/null; then
         error "Invalid JSON from code-language-detect.sh"
         exit 1
     fi

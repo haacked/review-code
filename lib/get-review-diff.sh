@@ -33,11 +33,11 @@ run_git_diff() {
     # Extract description and pattern from end of args
     local args=("$@")
     local num_args=${#args[@]}
-    local pattern="${args[$((num_args-1))]}"
-    local diff_desc="${args[$((num_args-2))]}"
+    local pattern="${args[$((num_args - 1))]}"
+    local diff_desc="${args[$((num_args - 2))]}"
 
     # Remove description and pattern from args (keep only git command parts)
-    local git_args=("${args[@]:0:$((num_args-2))}")
+    local git_args=("${args[@]:0:$((num_args - 2))}")
 
     # Set diff type message
     if [[ -n "${pattern}" ]] && [[ "${pattern}" != "NOPATTERN" ]]; then

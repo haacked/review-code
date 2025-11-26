@@ -71,12 +71,12 @@ get_git_org_repo() {
 get_current_branch() {
     # Try to get current branch name
     local branch
-    branch=$(git branch --show-current 2>/dev/null)
+    branch=$(git branch --show-current 2> /dev/null)
 
     # Handle detached HEAD state (common in CI environments)
     if [[ -z "${branch}" ]]; then
         # In detached HEAD, use short commit SHA as fallback
-        branch=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+        branch=$(git rev-parse --short HEAD 2> /dev/null || echo "unknown")
     fi
 
     echo "${branch}"
