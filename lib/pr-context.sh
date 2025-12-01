@@ -32,7 +32,7 @@ source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 set -euo pipefail
 
 # Check if gh is installed
-if ! command -v gh &> /dev/null; then
+if ! command -v gh &>/dev/null; then
     error "gh CLI is not installed. Install it with: brew install gh"
     exit 1
 fi
@@ -182,7 +182,7 @@ main() {
 
     # Output combined JSON
     # shellcheck disable=SC2312  # jq failures for title/body sanitization are non-critical
-    cat << EOF
+    cat <<EOF
 {
     "org": "${org}",
     "repo": "${repo}",

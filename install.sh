@@ -47,7 +47,7 @@ main() {
 
     # Clone repository to temp directory
     info "Downloading review-code (branch: ${BRANCH})…"
-    if ! git clone --depth 1 --branch "${BRANCH}" "${REPO_URL}" "${TEMP_DIR}" &> /dev/null; then
+    if ! git clone --depth 1 --branch "${BRANCH}" "${REPO_URL}" "${TEMP_DIR}" &>/dev/null; then
         error "Failed to clone repository"
         exit 1
     fi
@@ -56,7 +56,7 @@ main() {
     info "Running installer…"
     cd "${TEMP_DIR}"
     # Redirect stdin from terminal so bin/setup can prompt for user input
-    if ! bin/setup < /dev/tty; then
+    if ! bin/setup </dev/tty; then
         error "Installation failed"
         exit 1
     fi

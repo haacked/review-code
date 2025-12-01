@@ -33,11 +33,11 @@ run_git_diff() {
     # Extract description and pattern from end of args
     local args=("$@")
     local num_args=${#args[@]}
-    local pattern="${args[$((num_args-1))]}"
-    local diff_desc="${args[$((num_args-2))]}"
+    local pattern="${args[$((num_args - 1))]}"
+    local diff_desc="${args[$((num_args - 2))]}"
 
     # Remove description and pattern from args (keep only git command parts)
-    local git_args=("${args[@]:0:$((num_args-2))}")
+    local git_args=("${args[@]:0:$((num_args - 2))}")
 
     # Set diff type message
     if [[ -n "${pattern}" ]] && [[ "${pattern}" != "NOPATTERN" ]]; then
@@ -94,9 +94,9 @@ if [[ "${BASH_SOURCE[0]:-}" = "${0}" ]]; then
                 diff_type="local (uncommitted) filtered by: ${file_pattern}"
                 # For file patterns, use git diff directly with the pattern
                 # Check for staged changes first
-                staged_diff=$(git diff --staged -U"${CONTEXT_LINES}" --diff-filter=d -- "${EXCLUSIONS[@]}" "${file_pattern}" 2> /dev/null || true)
+                staged_diff=$(git diff --staged -U"${CONTEXT_LINES}" --diff-filter=d -- "${EXCLUSIONS[@]}" "${file_pattern}" 2>/dev/null || true)
                 # Then unstaged changes
-                unstaged_diff=$(git diff -U"${CONTEXT_LINES}" --diff-filter=d -- "${EXCLUSIONS[@]}" "${file_pattern}" 2> /dev/null || true)
+                unstaged_diff=$(git diff -U"${CONTEXT_LINES}" --diff-filter=d -- "${EXCLUSIONS[@]}" "${file_pattern}" 2>/dev/null || true)
 
                 if [[ -n "${staged_diff}" ]] && [[ -n "${unstaged_diff}" ]]; then
                     diff_content="${staged_diff}
@@ -114,7 +114,7 @@ if [[ "${BASH_SOURCE[0]:-}" = "${0}" ]]; then
             else
                 diff_type="local (uncommitted)"
                 # Use git-diff-filter.sh for local changes
-                diff_content=$("${SCRIPT_DIR}/git-diff-filter.sh" 2> /dev/null || true)
+                diff_content=$("${SCRIPT_DIR}/git-diff-filter.sh" 2>/dev/null || true)
             fi
             ;;
 
@@ -128,8 +128,8 @@ if [[ "${BASH_SOURCE[0]:-}" = "${0}" ]]; then
 
             # Get uncommitted diff (reuse local mode logic)
             if [[ -n "${file_pattern}" ]]; then
-                staged_diff=$(git diff --staged -U"${CONTEXT_LINES}" --diff-filter=d -- "${EXCLUSIONS[@]}" "${file_pattern}" 2> /dev/null || true)
-                unstaged_diff=$(git diff -U"${CONTEXT_LINES}" --diff-filter=d -- "${EXCLUSIONS[@]}" "${file_pattern}" 2> /dev/null || true)
+                staged_diff=$(git diff --staged -U"${CONTEXT_LINES}" --diff-filter=d -- "${EXCLUSIONS[@]}" "${file_pattern}" 2>/dev/null || true)
+                unstaged_diff=$(git diff -U"${CONTEXT_LINES}" --diff-filter=d -- "${EXCLUSIONS[@]}" "${file_pattern}" 2>/dev/null || true)
 
                 if [[ -n "${staged_diff}" ]] && [[ -n "${unstaged_diff}" ]]; then
                     uncommitted_diff="${staged_diff}
@@ -145,7 +145,7 @@ ${unstaged_diff}"
                     uncommitted_diff=""
                 fi
             else
-                uncommitted_diff=$("${SCRIPT_DIR}/git-diff-filter.sh" 2> /dev/null || true)
+                uncommitted_diff=$("${SCRIPT_DIR}/git-diff-filter.sh" 2>/dev/null || true)
             fi
 
             # Combine them

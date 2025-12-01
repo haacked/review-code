@@ -30,7 +30,7 @@ contains() {
 # Returns 0 if exists, 1 if not
 ref_exists() {
     local ref=$1
-    git rev-parse --verify --quiet "${ref}" > /dev/null 2>&1
+    git rev-parse --verify --quiet "${ref}" >/dev/null 2>&1
 }
 
 # Helper: Get base branch with smart fallback
@@ -38,7 +38,7 @@ ref_exists() {
 get_base_branch() {
     # Get the default branch name from remote origin/HEAD
     local default_branch_name
-    default_branch_name=$(git symbolic-ref refs/remotes/origin/HEAD 2> /dev/null | sed 's@^refs/remotes/origin/@@')
+    default_branch_name=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
 
     # If we got a default branch name, try to use it
     if [[ -n "${default_branch_name}" ]]; then
@@ -168,12 +168,12 @@ detect_git_range() {
     local end_ref="${arg#*..}"
 
     # Validate both refs exist
-    if ! git rev-parse --verify "${start_ref}" -- > /dev/null 2>&1; then
+    if ! git rev-parse --verify "${start_ref}" -- >/dev/null 2>&1; then
         build_json_error "Invalid start ref: ${start_ref}"
         exit 1
     fi
 
-    if ! git rev-parse --verify "${end_ref}" -- > /dev/null 2>&1; then
+    if ! git rev-parse --verify "${end_ref}" -- >/dev/null 2>&1; then
         build_json_error "Invalid end ref: ${end_ref}"
         exit 1
     fi
@@ -188,14 +188,14 @@ detect_git_ref() {
     [[ -z "${arg}" ]] && return 1
 
     # Check if it's a valid ref
-    git rev-parse --verify "${arg}" -- > /dev/null 2>&1 || return 1
+    git rev-parse --verify "${arg}" -- >/dev/null 2>&1 || return 1
 
     # Gather ref metadata
     local ref_type
-    ref_type=$(git cat-file -t "${arg}" -- 2> /dev/null || echo "unknown")
+    ref_type=$(git cat-file -t "${arg}" -- 2>/dev/null || echo "unknown")
 
     local is_branch="false"
-    if git show-ref --verify --quiet "refs/heads/${arg}" -- 2> /dev/null; then
+    if git show-ref --verify --quiet "refs/heads/${arg}" -- 2>/dev/null; then
         is_branch="true"
     fi
 
@@ -287,19 +287,19 @@ detect_no_arg() {
 
     # Check if branch has upstream tracking
     local upstream
-    upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2> /dev/null || echo "")
+    upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null || echo "")
 
     if [[ -n "${upstream}" ]]; then
         # Check if remote is ahead of local
         local local_rev remote_rev
         local_rev=$(git rev-parse HEAD)
-        remote_rev=$(git rev-parse "${upstream}" 2> /dev/null || echo "")
+        remote_rev=$(git rev-parse "${upstream}" 2>/dev/null || echo "")
 
         if [[ -n "${remote_rev}" ]] && [[ "${local_rev}" != "${remote_rev}" ]]; then
             # Check if remote has commits we don't have, and if branches have diverged
             local behind_count ahead_count
-            behind_count=$(git rev-list --count HEAD.."${upstream}" 2> /dev/null || echo "0")
-            ahead_count=$(git rev-list --count "${upstream}"..HEAD 2> /dev/null || echo "0")
+            behind_count=$(git rev-list --count HEAD.."${upstream}" 2>/dev/null || echo "0")
+            ahead_count=$(git rev-list --count "${upstream}"..HEAD 2>/dev/null || echo "0")
 
             if [[ "${behind_count}" -gt 0 ]]; then
                 remote_ahead="true"
@@ -312,14 +312,14 @@ detect_no_arg() {
     fi
 
     # Check for associated PR using gh CLI
-    if command -v gh > /dev/null 2>&1; then
+    if command -v gh >/dev/null 2>&1; then
         # Get all open PRs for this branch
         local pr_numbers
-        pr_numbers=$(gh pr list --head "${current_branch}" --state open --json number --jq '.[].number' 2> /dev/null || echo "")
+        pr_numbers=$(gh pr list --head "${current_branch}" --state open --json number --jq '.[].number' 2>/dev/null || echo "")
 
         if [[ -n "${pr_numbers}" ]]; then
             local pr_array
-            mapfile -t pr_array <<< "${pr_numbers}"
+            mapfile -t pr_array <<<"${pr_numbers}"
             local pr_count="${#pr_array[@]}"
 
             if [[ "${pr_count}" -eq 1 ]]; then

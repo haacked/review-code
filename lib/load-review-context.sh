@@ -113,10 +113,10 @@ fi
 
 # Extract languages and frameworks as space-separated lists
 # Allow jq to fail gracefully with malformed JSON
-languages=$(echo "${lang_info}" | jq -r '.languages[]?' 2> /dev/null | tr '\n' ' ' || true)
-frameworks=$(echo "${lang_info}" | jq -r '.frameworks[]?' 2> /dev/null | tr '\n' ' ' || true)
+languages=$(echo "${lang_info}" | jq -r '.languages[]?' 2>/dev/null | tr '\n' ' ' || true)
+frameworks=$(echo "${lang_info}" | jq -r '.frameworks[]?' 2>/dev/null | tr '\n' ' ' || true)
 
-debug_save_json "04-context-loading" "input-lang-info.json" <<< "${lang_info}"
+debug_save_json "04-context-loading" "input-lang-info.json" <<<"${lang_info}"
 debug_trace "04-context-loading" "Languages detected: ${languages}"
 debug_trace "04-context-loading" "Frameworks detected: ${frameworks}"
 debug_trace "04-context-loading" "Org: ${org:-none}, Repo: ${repo:-none}"

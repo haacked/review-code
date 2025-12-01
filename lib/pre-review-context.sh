@@ -69,27 +69,27 @@ file_metadata_ndjson=$(while IFS= read -r file; do
     likely_test_path=""
 
     # Check if it's a test file
-    if [[ "${basename}" =~ ^test_ ]] \
-        || [[ "${basename}" =~ _test\. ]] \
-        || [[ "${basename}" =~ _spec\. ]] \
-        || [[ "${basename}" =~ \.test\. ]] \
-        || [[ "${basename}" =~ \.spec\. ]] \
-        || [[ "${dirname}" =~ /__tests__$ ]] \
-        || [[ "${dirname}" =~ /tests?$ ]] \
-        || [[ "${dirname}" =~ /specs?$ ]]; then
+    if [[ "${basename}" =~ ^test_ ]] ||
+        [[ "${basename}" =~ _test\. ]] ||
+        [[ "${basename}" =~ _spec\. ]] ||
+        [[ "${basename}" =~ \.test\. ]] ||
+        [[ "${basename}" =~ \.spec\. ]] ||
+        [[ "${dirname}" =~ /__tests__$ ]] ||
+        [[ "${dirname}" =~ /tests?$ ]] ||
+        [[ "${dirname}" =~ /specs?$ ]]; then
         file_type="test"
         is_test=true
     fi
 
     # Check for migrations
-    if [[ "${dirname}" =~ /migrations?$ ]] \
-        || [[ "${basename}" =~ ^[0-9]{4}_.*\.(sql|py)$ ]]; then
+    if [[ "${dirname}" =~ /migrations?$ ]] ||
+        [[ "${basename}" =~ ^[0-9]{4}_.*\.(sql|py)$ ]]; then
         file_type="migration"
     fi
 
     # Check for config files
-    if [[ "${basename}" =~ \.(json|yaml|yml|toml|ini|env|config)$ ]] \
-        || [[ "${basename}" =~ ^(package\.json|tsconfig|Cargo\.toml|pyproject\.toml|setup\.py|Gemfile|composer\.json)$ ]]; then
+    if [[ "${basename}" =~ \.(json|yaml|yml|toml|ini|env|config)$ ]] ||
+        [[ "${basename}" =~ ^(package\.json|tsconfig|Cargo\.toml|pyproject\.toml|setup\.py|Gemfile|composer\.json)$ ]]; then
         file_type="config"
     fi
 
@@ -140,7 +140,7 @@ file_metadata_ndjson=$(while IFS= read -r file; do
     printf '{"path":"%s","type":"%s","language":"%s","is_test":%s,"likely_test_path":"%s"}\n' \
         "${safe_path}" "${file_type}" "${language}" "${is_test}" "${safe_test_path}"
 
-done <<< "${file_paths}")
+done <<<"${file_paths}")
 
 # Build final JSON output with single jq call
 # Convert newline-delimited JSON to array and calculate metadata

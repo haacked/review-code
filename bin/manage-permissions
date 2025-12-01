@@ -38,9 +38,19 @@ CLAUDE_DIR="${HOME}/.claude"
 SETTINGS_FILE="${CLAUDE_DIR}/settings.json"
 
 # Required permissions for review-code scripts
+# Note: Commands with variable assignments need their own patterns because
+# Claude Code matches from the beginning of the command string
 permissions=(
+    # Direct script invocation
     "Bash(~/.claude/bin/review-code/*:*)"
+    # Variable assignments that call scripts
+    "Bash(SESSION_ID=:*)"
+    "Bash(review_data=:*)"
+    # Temp file operations for session management
+    "Bash(ls -la /tmp/review-code:*)"
+    # Git operations
     "Bash(git rev-parse:*)"
+    # File reading
     "Read(~/.claude/**)"
 )
 
@@ -80,9 +90,36 @@ cmd_add() {
     echo ""
     echo "This will add the following permissions to ${SETTINGS_FILE}:"
     echo ""
+
+    # Check what needs to be added
+    local to_add=()
+    local already_configured=()
+
     for perm in "${permissions[@]}"; do
-        echo "  - ${perm}"
+        if jq -e ".permissions.allow | index(\"${perm}\")" "${SETTINGS_FILE}" > /dev/null 2>&1; then
+            already_configured+=("${perm}")
+        else
+            to_add+=("${perm}")
+        fi
     done
+
+    # Show what will be added
+    if [[ ${#to_add[@]} -gt 0 ]]; then
+        echo "Permissions to add:"
+        for perm in "${to_add[@]}"; do
+            echo "  + ${perm}"
+        done
+    fi
+
+    # Show what's already configured
+    if [[ ${#already_configured[@]} -gt 0 ]]; then
+        echo ""
+        echo "Already configured (no change):"
+        for perm in "${already_configured[@]}"; do
+            echo "  ✓ ${perm}"
+        done
+    fi
+
     echo ""
     echo "These permissions allow review-code scripts to:"
     echo "  • Read git repository metadata"
@@ -90,80 +127,114 @@ cmd_add() {
     echo "  • Load context files"
     echo ""
     echo "All operations are READ-ONLY."
+
+    # If nothing to add, exit early
+    if [[ ${#to_add[@]} -eq 0 ]]; then
+        echo ""
+        info "All permissions are already configured"
+        echo ""
+        return 0
+    fi
+
+    # Prompt for confirmation
+    echo ""
+    read -p "Add ${#to_add[@]} permission(s)? [Y/n] " -n 1 -r
     echo ""
 
-    # Add each permission if not already present
-    local added=0
-    local skipped=0
+    if [[ ${REPLY} =~ ^[Nn]$ ]]; then
+        echo ""
+        warn "Cancelled - no changes made"
+        echo ""
+        return 0
+    fi
 
-    for perm in "${permissions[@]}"; do
-        if jq -e ".permissions.allow | index(\"${perm}\")" "${SETTINGS_FILE}" > /dev/null 2>&1; then
-            echo "  ✓ Already configured: ${perm}"
-            skipped=$((skipped + 1))
+    # Add the permissions
+    echo ""
+    for perm in "${to_add[@]}"; do
+        if jq ".permissions.allow += [\"${perm}\"]" "${SETTINGS_FILE}" > "${SETTINGS_FILE}.tmp"; then
+            mv "${SETTINGS_FILE}.tmp" "${SETTINGS_FILE}"
+            echo "  + Added: ${perm}"
         else
-            if jq ".permissions.allow += [\"${perm}\"]" "${SETTINGS_FILE}" > "${SETTINGS_FILE}.tmp"; then
-                mv "${SETTINGS_FILE}.tmp" "${SETTINGS_FILE}"
-                echo "  + Added: ${perm}"
-                added=$((added + 1))
-            else
-                error "Failed to add permission: ${perm}"
-                rm -f "${SETTINGS_FILE}.tmp"
-                exit 1
-            fi
+            error "Failed to add permission: ${perm}"
+            rm -f "${SETTINGS_FILE}.tmp"
+            exit 1
         fi
     done
 
     echo ""
-    if [[ "${added}" -gt 0 ]]; then
-        info "Added ${added} new permission(s)"
-    fi
-    if [[ "${skipped}" -gt 0 ]]; then
-        info "${skipped} permission(s) already configured"
-    fi
-    echo ""
-    info "Permissions configured successfully!"
+    info "Added ${#to_add[@]} permission(s)"
     echo ""
 }
 
 cmd_remove() {
     echo ""
-    echo "This will remove the following permissions from ${SETTINGS_FILE}:"
-    echo ""
-    for perm in "${permissions[@]}"; do
-        echo "  - ${perm}"
-    done
+    echo "Checking permissions in ${SETTINGS_FILE}:"
     echo ""
 
-    # Remove each permission if present
-    local removed=0
-    local not_found=0
+    # Check what can be removed
+    local to_remove=()
+    local not_configured=()
 
     for perm in "${permissions[@]}"; do
         if jq -e ".permissions.allow | index(\"${perm}\")" "${SETTINGS_FILE}" > /dev/null 2>&1; then
-            if jq ".permissions.allow |= map(select(. != \"${perm}\"))" "${SETTINGS_FILE}" > "${SETTINGS_FILE}.tmp"; then
-                mv "${SETTINGS_FILE}.tmp" "${SETTINGS_FILE}"
-                echo "  - Removed: ${perm}"
-                removed=$((removed + 1))
-            else
-                error "Failed to remove permission: ${perm}"
-                rm -f "${SETTINGS_FILE}.tmp"
-                exit 1
-            fi
+            to_remove+=("${perm}")
         else
-            echo "  ✓ Not configured: ${perm}"
-            not_found=$((not_found + 1))
+            not_configured+=("${perm}")
+        fi
+    done
+
+    # Show what will be removed
+    if [[ ${#to_remove[@]} -gt 0 ]]; then
+        echo "Permissions to remove:"
+        for perm in "${to_remove[@]}"; do
+            echo "  - ${perm}"
+        done
+    fi
+
+    # Show what's not configured
+    if [[ ${#not_configured[@]} -gt 0 ]]; then
+        echo ""
+        echo "Not configured (no change):"
+        for perm in "${not_configured[@]}"; do
+            echo "  ✓ ${perm}"
+        done
+    fi
+
+    # If nothing to remove, exit early
+    if [[ ${#to_remove[@]} -eq 0 ]]; then
+        echo ""
+        info "No permissions to remove"
+        echo ""
+        return 0
+    fi
+
+    # Prompt for confirmation
+    echo ""
+    read -p "Remove ${#to_remove[@]} permission(s)? [Y/n] " -n 1 -r
+    echo ""
+
+    if [[ ${REPLY} =~ ^[Nn]$ ]]; then
+        echo ""
+        warn "Cancelled - no changes made"
+        echo ""
+        return 0
+    fi
+
+    # Remove the permissions
+    echo ""
+    for perm in "${to_remove[@]}"; do
+        if jq ".permissions.allow |= map(select(. != \"${perm}\"))" "${SETTINGS_FILE}" > "${SETTINGS_FILE}.tmp"; then
+            mv "${SETTINGS_FILE}.tmp" "${SETTINGS_FILE}"
+            echo "  - Removed: ${perm}"
+        else
+            error "Failed to remove permission: ${perm}"
+            rm -f "${SETTINGS_FILE}.tmp"
+            exit 1
         fi
     done
 
     echo ""
-    if [[ "${removed}" -gt 0 ]]; then
-        info "Removed ${removed} permission(s)"
-    fi
-    if [[ "${not_found}" -gt 0 ]]; then
-        info "${not_found} permission(s) were not configured"
-    fi
-    echo ""
-    info "Permissions removed successfully!"
+    info "Removed ${#to_remove[@]} permission(s)"
     echo ""
 }
 
@@ -172,27 +243,27 @@ cmd_status() {
     echo "Checking permissions in ${SETTINGS_FILE}:"
     echo ""
 
-    local configured=0
-    local not_configured=0
+    local configured_count=0
+    local missing_count=0
 
     for perm in "${permissions[@]}"; do
         if jq -e ".permissions.allow | index(\"${perm}\")" "${SETTINGS_FILE}" > /dev/null 2>&1; then
             echo "  ✓ Configured: ${perm}"
-            configured=$((configured + 1))
+            configured_count=$((configured_count + 1))
         else
             echo "  ✗ Not configured: ${perm}"
-            not_configured=$((not_configured + 1))
+            missing_count=$((missing_count + 1))
         fi
     done
 
     echo ""
-    if [[ "${configured}" -eq ${#permissions[@]} ]]; then
+    if [[ "${configured_count}" -eq ${#permissions[@]} ]]; then
         info "All permissions are configured"
-    elif [[ "${configured}" -eq 0 ]]; then
+    elif [[ "${configured_count}" -eq 0 ]]; then
         warn "No permissions are configured"
         echo "  Run: bin/manage-permissions add"
     else
-        warn "Some permissions are missing (${not_configured} of ${#permissions[@]})"
+        warn "Some permissions are missing (${missing_count} of ${#permissions[@]})"
         echo "  Run: bin/manage-permissions add"
     fi
     echo ""

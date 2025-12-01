@@ -34,7 +34,7 @@ debug_init() {
     chmod 700 "${DEBUG_SESSION_DIR}" # Restrict to owner only for security
 
     # Create session metadata
-    cat > "${DEBUG_SESSION_DIR}/session.json" << EOF
+    cat >"${DEBUG_SESSION_DIR}/session.json" <<EOF
 {
   "identifier": "${identifier}",
   "org": "${org}",
@@ -62,7 +62,7 @@ debug_save() {
 
     local stage_dir="${DEBUG_SESSION_DIR}/${stage}"
     mkdir -p "${stage_dir}"
-    echo "${content}" > "${stage_dir}/${filename}"
+    echo "${content}" >"${stage_dir}/${filename}"
 }
 
 # Save debug artifact from file
@@ -98,8 +98,8 @@ debug_save_json() {
     # Use mktemp with template in secure directory to prevent race conditions
     local temp_file
     temp_file=$(mktemp "${stage_dir}/.tmp.XXXXXXXX")
-    cat > "${temp_file}"
-    jq '.' "${temp_file}" > "${stage_dir}/${filename}" 2> /dev/null || cp "${temp_file}" "${stage_dir}/${filename}"
+    cat >"${temp_file}"
+    jq '.' "${temp_file}" >"${stage_dir}/${filename}" 2>/dev/null || cp "${temp_file}" "${stage_dir}/${filename}"
     rm -f "${temp_file}"
 }
 
@@ -128,15 +128,15 @@ debug_log_command() {
         echo "Command: $*"
         echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo ""
-    } >> "${cmd_file}"
+    } >>"${cmd_file}"
 
     # Execute and capture output
     local exit_code=0
-    "$@" >> "${stdout_file}" 2>> "${stderr_file}" || exit_code=$?
+    "$@" >>"${stdout_file}" 2>>"${stderr_file}" || exit_code=$?
 
     # Log exit code
-    echo "Exit code: ${exit_code}" >> "${cmd_file}"
-    echo "" >> "${cmd_file}"
+    echo "Exit code: ${exit_code}" >>"${cmd_file}"
+    echo "" >>"${cmd_file}"
 
     return "${exit_code}"
 }
@@ -161,7 +161,7 @@ debug_time() {
         --arg event "${event}" \
         --arg timestamp "${timestamp}" \
         '{stage: $stage, event: $event, timestamp: ($timestamp | tonumber)}' \
-        >> "${timing_file}"
+        >>"${timing_file}"
 }
 
 # Append to trace log for detailed execution flow
@@ -177,7 +177,7 @@ debug_trace() {
     local stage_dir="${DEBUG_SESSION_DIR}/${stage}"
     mkdir -p "${stage_dir}"
 
-    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] ${message}" >> "${stage_dir}/trace.log"
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] ${message}" >>"${stage_dir}/trace.log"
 }
 
 # Save statistics as JSON
@@ -201,7 +201,7 @@ debug_stats() {
     done
 
     # Create stats JSON
-    jq -n "${jq_args[@]}" '$ARGS.named' > "${stage_dir}/stats.json"
+    jq -n "${jq_args[@]}" '$ARGS.named' >"${stage_dir}/stats.json"
 }
 
 # Finalize debug session with summary
@@ -287,7 +287,7 @@ debug_finalize() {
         echo "To view specific stage:"
         echo "  ls -la ${DEBUG_SESSION_DIR}/<stage-name>/"
 
-    } > "${summary_file}"
+    } >"${summary_file}"
 
     # Print summary location to stderr
     echo "Debug README: ${summary_file}" >&2
