@@ -38,9 +38,19 @@ CLAUDE_DIR="${HOME}/.claude"
 SETTINGS_FILE="${CLAUDE_DIR}/settings.json"
 
 # Required permissions for review-code scripts
+# Note: Commands with variable assignments need their own patterns because
+# Claude Code matches from the beginning of the command string
 permissions=(
+    # Direct script invocation
     "Bash(~/.claude/bin/review-code/*:*)"
+    # Variable assignments that call scripts
+    "Bash(SESSION_ID=:*)"
+    "Bash(review_data=:*)"
+    # Temp file operations for session management
+    "Bash(ls -la /tmp/review-code:*)"
+    # Git operations
     "Bash(git rev-parse:*)"
+    # File reading
     "Read(~/.claude/**)"
 )
 
