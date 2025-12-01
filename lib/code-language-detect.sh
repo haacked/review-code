@@ -103,7 +103,7 @@ while IFS= read -r file; do
             # Unknown extension - no language detected
             ;;
     esac
-done <<< "${file_paths}"
+done <<<"${file_paths}"
 
 # Convert associative arrays to indexed arrays for JSON output
 languages=("${!seen_languages[@]}")
@@ -186,7 +186,7 @@ debug_stats "03-language-detection" \
 
 # Output JSON
 output=$(
-    cat << EOF
+    cat <<EOF
 {
     "languages": ${languages_json},
     "frameworks": ${frameworks_json},
@@ -196,7 +196,7 @@ output=$(
 EOF
 )
 
-debug_save_json "03-language-detection" "output.json" <<< "${output}"
+debug_save_json "03-language-detection" "output.json" <<<"${output}"
 debug_time "03-language-detection" "end"
 
 echo "${output}"

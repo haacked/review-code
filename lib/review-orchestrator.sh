@@ -49,8 +49,8 @@ main() {
     source "${SCRIPT_DIR}/helpers/git-helpers.sh"
 
     # Get git org/repo once if we're in a git repository
-    if git rev-parse --git-dir > /dev/null 2>&1; then
-        git_data=$(get_git_org_repo 2> /dev/null || echo "unknown|unknown")
+    if git rev-parse --git-dir >/dev/null 2>&1; then
+        git_data=$(get_git_org_repo 2>/dev/null || echo "unknown|unknown")
     fi
 
     case "${mode}" in
@@ -103,7 +103,7 @@ main() {
 
     # Save parsed results
     debug_time "01-parse" "start"
-    debug_save_json "01-parse" "output.json" <<< "${parse_result}"
+    debug_save_json "01-parse" "output.json" <<<"${parse_result}"
     debug_time "01-parse" "end"
 
     # Step 2: Handle different modes
@@ -205,7 +205,7 @@ build_review_data() {
     lang_info=$(echo "${diff_content}" | "${SCRIPT_DIR}/code-language-detect.sh")
 
     # Validate lang_info is valid JSON (safety check)
-    if ! echo "${lang_info}" | jq empty 2> /dev/null; then
+    if ! echo "${lang_info}" | jq empty 2>/dev/null; then
         error "Invalid JSON from code-language-detect.sh"
         exit 1
     fi
@@ -283,7 +283,7 @@ build_review_data() {
         }
         + (if $pr != null then {pr: $pr} else {} end)
         + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")))')
-    debug_save_json "07-final-output" "output.json" <<< "${final_output}"
+    debug_save_json "07-final-output" "output.json" <<<"${final_output}"
     debug_time "07-final-output" "end"
     debug_time "00-orchestrator" "end"
     debug_finalize
@@ -500,7 +500,7 @@ build_summary() {
 
             # Count commits in branch
             local commit_count
-            commit_count=$(git rev-list --count "${base_branch}..${target_branch}" 2> /dev/null || echo "unknown")
+            commit_count=$(git rev-list --count "${base_branch}..${target_branch}" 2>/dev/null || echo "unknown")
 
             # Extract PR fields if context available
             local pr_number="" pr_title="" pr_url="" pr_author="" pr_state=""
@@ -590,7 +590,7 @@ build_summary() {
 
             # Count commits in range
             local commit_count
-            commit_count=$(git rev-list --count "${target_range}" 2> /dev/null || echo "unknown")
+            commit_count=$(git rev-list --count "${target_range}" 2>/dev/null || echo "unknown")
 
             jq -n \
                 --arg mode "${mode}" \
@@ -684,17 +684,17 @@ handle_pr_review() {
     # 2. Current repo matches PR's repo
     # 3. Current branch matches PR's head branch
     local use_fast_path=false
-    if git rev-parse --git-dir > /dev/null 2>&1; then
+    if git rev-parse --git-dir >/dev/null 2>&1; then
         # Source git helpers to get current repo info
         source "${SCRIPT_DIR}/helpers/git-helpers.sh"
 
         # Check if current repo matches
         local current_git_data
-        current_git_data=$(get_git_org_repo 2> /dev/null || echo "|")
+        current_git_data=$(get_git_org_repo 2>/dev/null || echo "|")
         local current_org="${current_git_data%|*}"
         local current_repo="${current_git_data#*|}"
         local current_branch
-        current_branch=$(git branch --show-current 2> /dev/null || echo "")
+        current_branch=$(git branch --show-current 2>/dev/null || echo "")
 
         # Normalize org names to lowercase for comparison
         current_org=$(echo "${current_org}" | tr '[:upper:]' '[:lower:]')
@@ -778,7 +778,7 @@ handle_pr_review() {
             display_summary: $display,
             next_step: "gather_architectural_context"
         }')
-    debug_save_json "07-final-output" "output.json" <<< "${final_output}"
+    debug_save_json "07-final-output" "output.json" <<<"${final_output}"
     debug_time "07-final-output" "end"
     debug_time "00-orchestrator" "end"
     debug_finalize
@@ -821,7 +821,7 @@ handle_branch_review() {
     local pr_context=""
     if [[ -n "${associated_pr}" ]]; then
         pr_context=$("${SCRIPT_DIR}/pr-context.sh" "${associated_pr}" 2>&1 || true)
-        if [[ -z "${pr_context}" ]] || ! echo "${pr_context}" | jq empty 2> /dev/null; then
+        if [[ -z "${pr_context}" ]] || ! echo "${pr_context}" | jq empty 2>/dev/null; then
             echo "Warning: Failed to fetch PR context for PR #${associated_pr}" >&2
             pr_context=""
         fi

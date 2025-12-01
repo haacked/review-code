@@ -29,12 +29,12 @@ load_config_safely() {
 
     if [[ "${OSTYPE}" == "darwin"* ]]; then
         # macOS
-        file_owner=$(stat -f '%u' "${config_file}" 2> /dev/null)
-        file_perms=$(stat -f '%Lp' "${config_file}" 2> /dev/null)
+        file_owner=$(stat -f '%u' "${config_file}" 2>/dev/null)
+        file_perms=$(stat -f '%Lp' "${config_file}" 2>/dev/null)
     else
         # Linux
-        file_owner=$(stat -c '%u' "${config_file}" 2> /dev/null)
-        file_perms=$(stat -c '%a' "${config_file}" 2> /dev/null)
+        file_owner=$(stat -c '%u' "${config_file}" 2>/dev/null)
+        file_perms=$(stat -c '%a' "${config_file}" 2>/dev/null)
     fi
 
     # Config must be owned by current user
@@ -88,7 +88,7 @@ load_config_safely() {
                 # Unknown keys are silently ignored for forward compatibility
                 ;;
         esac
-    done < "${config_file}"
+    done <"${config_file}"
 
     return 0
 }

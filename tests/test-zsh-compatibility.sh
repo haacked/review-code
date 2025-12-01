@@ -12,7 +12,7 @@ echo ""
 # Test 1: code-language-detect.sh with empty diff
 echo "Test 1: code-language-detect.sh with empty diff"
 result=$(echo "" | "$LIB_DIR/code-language-detect.sh")
-if echo "$result" | jq -e '.languages == []' > /dev/null; then
+if echo "$result" | jq -e '.languages == []' >/dev/null; then
     echo "✓ PASS: Empty arrays returned for empty diff"
 else
     echo "✗ FAIL: Expected empty arrays, got: $result"
@@ -22,7 +22,8 @@ echo ""
 
 # Test 2: code-language-detect.sh with valid diff
 echo "Test 2: code-language-detect.sh with valid diff"
-result=$(cat << 'EOF' | "$LIB_DIR/code-language-detect.sh"
+result=$(
+    cat <<'EOF' | "$LIB_DIR/code-language-detect.sh"
 diff --git a/test.py b/test.py
 --- a/test.py
 +++ b/test.py
@@ -30,8 +31,8 @@ diff --git a/test.py b/test.py
 +import flask
 EOF
 )
-if echo "$result" | jq -e '.languages | contains(["python"])' > /dev/null && \
-   echo "$result" | jq -e '.frameworks | contains(["flask"])' > /dev/null; then
+if echo "$result" | jq -e '.languages | contains(["python"])' >/dev/null &&
+    echo "$result" | jq -e '.frameworks | contains(["flask"])' >/dev/null; then
     echo "✓ PASS: Languages and frameworks detected correctly"
 else
     echo "✗ FAIL: Expected python and flask, got: $result"
@@ -76,7 +77,7 @@ echo ""
 # Test 6: Test pre-review-context with empty diff
 echo "Test 6: pre-review-context.sh with empty diff"
 result=$(echo "" | "$LIB_DIR/pre-review-context.sh")
-if echo "$result" | jq -e '.modified_files == []' > /dev/null; then
+if echo "$result" | jq -e '.modified_files == []' >/dev/null; then
     echo "✓ PASS: Empty file list returned for empty diff"
 else
     echo "✗ FAIL: Expected empty file list, got: $result"

@@ -5,11 +5,11 @@
 # Print colored text
 print_color() {
     case $1 in
-        red)    echo -e "\033[31m$2\033[0m";;
-        green)  echo -e "\033[32m$2\033[0m";;
-        yellow) echo -e "\033[33m$2\033[0m";;
-        blue)   echo -e "\033[34m$2\033[0m";;
-        *)      echo "$2";;
+        red) echo -e "\033[31m$2\033[0m" ;;
+        green) echo -e "\033[32m$2\033[0m" ;;
+        yellow) echo -e "\033[33m$2\033[0m" ;;
+        blue) echo -e "\033[34m$2\033[0m" ;;
+        *) echo "$2" ;;
     esac
 }
 
@@ -27,7 +27,7 @@ fatal() {
 # Set source and root directories, cd to root
 set_source_and_root_dir() {
     { set +x; } 2>/dev/null
-    source_dir="$( cd -P "$( dirname "$0" )" >/dev/null 2>&1 && pwd )"
+    source_dir="$(cd -P "$(dirname "$0")" >/dev/null 2>&1 && pwd)"
     root_dir=$(cd "$source_dir" && cd ../ && pwd)
     cd "$root_dir"
 }
@@ -75,13 +75,13 @@ show_help() {
 
 # Parse common arguments
 parse_common_args() {
-    while (( "$#" )); do
+    while (("$#")); do
         case "$1" in
-            -h|--help)
+            -h | --help)
                 show_help
                 exit 0
                 ;;
-            -v|--verbose)
+            -v | --verbose)
                 export VERBOSE=1
                 shift
                 ;;

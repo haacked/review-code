@@ -31,7 +31,7 @@ debug_trace "02-diff-filter" "Using extended exclusion patterns ($(echo "${EXCLU
 
 # Detect diff type by calling git-diff-context.sh and capturing stderr
 # Only suppress exit code 1 (no changes), not other errors
-diff_metadata=$("${SCRIPT_DIR}/git-diff-context.sh" 2>&1 > /dev/null || test $? = 1)
+diff_metadata=$("${SCRIPT_DIR}/git-diff-context.sh" 2>&1 >/dev/null || test $? = 1)
 
 # Output the metadata to stderr (preserve original behavior)
 echo "${diff_metadata}" >&2
@@ -60,7 +60,7 @@ while IFS= read -r line; do
             # Unknown metadata line - ignore
             ;;
     esac
-done <<< "${diff_metadata}"
+done <<<"${diff_metadata}"
 
 # Token Optimization: Use minimal context lines (default is 3)
 # Agents can read full files if they need more context
@@ -71,14 +71,14 @@ raw_lines=0
 if is_debug_enabled; then
     case "${diff_type}" in
         staged)
-            raw_diff=$(git diff --staged --unified="${CONTEXT_LINES}" 2> /dev/null || test $? = 1)
+            raw_diff=$(git diff --staged --unified="${CONTEXT_LINES}" 2>/dev/null || test $? = 1)
             ;;
         unstaged)
-            raw_diff=$(git diff --unified="${CONTEXT_LINES}" 2> /dev/null || test $? = 1)
+            raw_diff=$(git diff --unified="${CONTEXT_LINES}" 2>/dev/null || test $? = 1)
             ;;
         branch)
             if [[ -n "${base_branch}" ]]; then
-                raw_diff=$(git diff --unified="${CONTEXT_LINES}" "${base_branch}"...HEAD 2> /dev/null || test $? = 1)
+                raw_diff=$(git diff --unified="${CONTEXT_LINES}" "${base_branch}"...HEAD 2>/dev/null || test $? = 1)
             fi
             ;;
         *)
@@ -95,16 +95,16 @@ filtered_diff=""
 case "${diff_type}" in
     staged)
         # Staged changes (suppress exit code 1 for no differences)
-        filtered_diff=$(git diff --staged --unified="${CONTEXT_LINES}" -- . "${EXCLUDE_PATTERNS[@]}" 2> /dev/null || test $? = 1)
+        filtered_diff=$(git diff --staged --unified="${CONTEXT_LINES}" -- . "${EXCLUDE_PATTERNS[@]}" 2>/dev/null || test $? = 1)
         ;;
     unstaged)
         # Unstaged changes (suppress exit code 1 for no differences)
-        filtered_diff=$(git diff --unified="${CONTEXT_LINES}" -- . "${EXCLUDE_PATTERNS[@]}" 2> /dev/null || test $? = 1)
+        filtered_diff=$(git diff --unified="${CONTEXT_LINES}" -- . "${EXCLUDE_PATTERNS[@]}" 2>/dev/null || test $? = 1)
         ;;
     branch)
         # Branch changes (suppress exit code 1 for no differences)
         if [[ -n "${base_branch}" ]]; then
-            filtered_diff=$(git diff --unified="${CONTEXT_LINES}" "${base_branch}"...HEAD -- . "${EXCLUDE_PATTERNS[@]}" 2> /dev/null || test $? = 1)
+            filtered_diff=$(git diff --unified="${CONTEXT_LINES}" "${base_branch}"...HEAD -- . "${EXCLUDE_PATTERNS[@]}" 2>/dev/null || test $? = 1)
         fi
         ;;
     *)

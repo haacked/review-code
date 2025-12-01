@@ -60,7 +60,7 @@ main() {
     changes=$(has_changes)
 
     # Output JSON
-    cat << EOF
+    cat <<EOF
 {
     "org": "${org}",
     "repo": "${repo}",

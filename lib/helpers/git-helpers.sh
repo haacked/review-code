@@ -12,7 +12,7 @@ _HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${_HELPER_DIR}/error-helpers.sh"
 
 validate_git_repo() {
-    if ! git rev-parse --git-dir > /dev/null 2>&1; then
+    if ! git rev-parse --git-dir >/dev/null 2>&1; then
         error "Not in a git repository"
         exit 1
     fi
@@ -23,9 +23,9 @@ validate_git_repo() {
 # Uses gh CLI when available for accurate parsing, falls back to git URL parsing
 get_git_org_repo() {
     # Try gh CLI first (most reliable, already authenticated and validated)
-    if command -v gh > /dev/null 2>&1; then
+    if command -v gh >/dev/null 2>&1; then
         local gh_data
-        gh_data=$(gh repo view --json owner,name --jq '"\(.owner.login)|\(.name)"' 2> /dev/null || echo "")
+        gh_data=$(gh repo view --json owner,name --jq '"\(.owner.login)|\(.name)"' 2>/dev/null || echo "")
         if [[ -n "${gh_data}" ]]; then
             # Normalize org to lowercase for consistency
             local org="${gh_data%|*}"
@@ -39,7 +39,7 @@ get_git_org_repo() {
     # Fallback: Parse git remote URL
     # Use git ls-remote --get-url which is safer than parsing config directly
     local remote_url
-    remote_url=$(git ls-remote --get-url origin 2> /dev/null || echo "")
+    remote_url=$(git ls-remote --get-url origin 2>/dev/null || echo "")
 
     # Handle missing remote (local-only repos, tests)
     if [[ -z "${remote_url}" ]]; then
@@ -71,12 +71,12 @@ get_git_org_repo() {
 get_current_branch() {
     # Try to get current branch name
     local branch
-    branch=$(git branch --show-current 2> /dev/null)
+    branch=$(git branch --show-current 2>/dev/null)
 
     # Handle detached HEAD state (common in CI environments)
     if [[ -z "${branch}" ]]; then
         # In detached HEAD, use short commit SHA as fallback
-        branch=$(git rev-parse --short HEAD 2> /dev/null || echo "unknown")
+        branch=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
     fi
 
     echo "${branch}"
@@ -102,7 +102,7 @@ parse_pr_identifier() {
     elif [[ "${identifier}" =~ ^[0-9]+$ ]]; then
         # Just a number - need to get org/repo from git
         local git_data
-        git_data=$(get_git_org_repo 2> /dev/null || echo "unknown|unknown")
+        git_data=$(get_git_org_repo 2>/dev/null || echo "unknown|unknown")
         local org="${git_data%|*}"
         local repo="${git_data#*|}"
 
