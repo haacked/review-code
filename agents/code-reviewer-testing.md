@@ -57,6 +57,19 @@ Your singular focus is testing quality. Review code changes and provide detailed
 - **State Transitions**: All valid and invalid state changes
 - **Error Scenarios**: Network failures, timeouts, invalid data
 
+### 7. Test-Code Synchronization
+When code under test changes, verify tests stay in sync:
+- **Stale Assertions**: Tests that pass but assert old behavior (e.g., old default values, removed fields, changed constants)
+- **Missing Path Coverage**: New code paths added to existing functions but test file not extended
+- **Behavior Drift**: Implementation changed but test still verifies the old contract
+- **Incomplete Negative Assertions**: Tests verify something IS present but don't verify something SHOULD BE absent (e.g., cache eviction tests that check the kept item but not that the victim was removed)
+- **Hardcoded Values**: Test assertions using magic numbers that no longer match source constants
+
+**Red Flags:**
+- Test file unchanged when corresponding source file has significant logic changes
+- Assertions using hardcoded values that don't match new defaults/constants in source
+- Tests that verify state A but not ¬B when the change affects both
+
 ## Review Process
 
 When reviewing code changes:
@@ -200,6 +213,10 @@ Flag as **Critical** [90-100% confidence] when you find:
 5. **Ineffective Assertions** - Assertions that can never fail
    - `assert True`, `assert len(items) >= 0`, `assert x == x`
 
+6. **Incomplete Negative Assertions** - Test verifies presence but not absence
+   - LRU cache test checks kept item exists but doesn't verify evicted item is gone
+   - Deletion test verifies success response but doesn't check item was actually removed
+
 ### How to Flag (Template)
 
 ```markdown
@@ -304,6 +321,30 @@ def test_get_user_with_posts():
 **Impact**: When this test fails, developers need to read the test body to understand what scenario broke.
 
 **Recommendation**: Rename to describe the specific scenario: `TestDivide_ByZero_ReturnsError`
+
+---
+
+### Important: Incomplete Negative Assertion in Cache Test [85% confidence]
+
+**Location**: `tests/cache_test.rs:145-165`
+
+**Issue**: Test `test_lru_reaccess_prevents_eviction` verifies that the re-accessed entry is still present after a 4th item is added, but doesn't verify that the expected LRU victim (`team_ids[1]`) was actually evicted.
+
+**Impact**: The test could pass even if eviction is broken. For example, if the cache silently grew beyond capacity, the test would still pass because the re-accessed item would be present.
+
+**Recommendation**: Add assertion to verify the victim was evicted:
+
+**Example**:
+```rust
+// Current (incomplete)
+assert!(cache.get(&team_ids[0]).is_some(), "Re-accessed entry should not be evicted");
+assert!(cache.get(&new_team.id).is_some(), "New entry should be present");
+
+// Improved (complete)
+assert!(cache.get(&team_ids[0]).is_some(), "Re-accessed entry should not be evicted");
+assert!(cache.get(&new_team.id).is_some(), "New entry should be present");
+assert!(cache.get(&team_ids[1]).is_none(), "LRU victim should be evicted");  // Added
+```
 
 ## Completed reviews
 
