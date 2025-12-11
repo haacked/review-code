@@ -127,6 +127,14 @@ Review code changes for these maintainability concerns in priority order:
 - Magic numbers/strings repeated throughout code
 - Validation rules duplicated instead of centralized
 - Error handling patterns duplicated instead of abstracted
+- **New code that duplicates existing code in the same file** - When a new function is nearly identical to an existing one with only minor differences (e.g., different log messages, one extra parameter), flag it for consolidation
+
+**How to Spot Same-File Duplication:**
+
+When reviewing new functions, actively compare them to existing functions in the same file. Look for:
+- Identical structure with different string literals (log messages, error messages)
+- Same try/except pattern with different variable names
+- Functions that could be parameterized instead of duplicated
 
 **When Duplication is OK:**
 
@@ -386,6 +394,11 @@ You receive **Architectural Context** from a pre-review exploration, but you may
 ❌ Premature Abstraction (payment/strategy_factory.py): 150 lines for 1 provider
 - AbstractPaymentStrategy + Factory + 5 implementations for only Stripe
 + Simple stripe.Charge.create() until 2nd provider exists (YAGNI)
+
+⚠️ Same-File Duplication (cache_command.py:497): _fix_expiry duplicates _fix_cache
+- _fix_expiry() and _fix_cache() are nearly identical (same try/except, same stats updates)
+- Only differences: log messages ("cache" vs "expiry") and config parameter
++ Extract: _fix_with_update_fn(team, stats, config, action_name: str) → bool
 ```
 
 ## Completed Reviews
