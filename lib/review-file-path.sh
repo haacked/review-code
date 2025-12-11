@@ -100,7 +100,7 @@ resolve_canonical_dir() {
 
     if [[ -d "${dir}" ]]; then
         # Directory exists - resolve it directly
-        if ! (cd "${dir}" 2>/dev/null && pwd -P); then
+        if ! (cd "${dir}" 2> /dev/null && pwd -P); then
             error "Cannot resolve ${description} directory: ${dir}"
             exit 1
         fi
@@ -120,7 +120,7 @@ resolve_canonical_dir() {
         fi
 
         local canonical_parent
-        canonical_parent=$(cd "${parent}" 2>/dev/null && pwd -P) || {
+        canonical_parent=$(cd "${parent}" 2> /dev/null && pwd -P) || {
             error "Cannot resolve ${description} parent directory: ${parent}"
             exit 1
         }
@@ -204,7 +204,7 @@ main() {
 
     # Determine if we're in a git repository
     local in_git_repo=false
-    if git rev-parse --git-dir >/dev/null 2>&1; then
+    if git rev-parse --git-dir > /dev/null 2>&1; then
         in_git_repo=true
     fi
 
@@ -274,9 +274,9 @@ main() {
         sanitized_id=$(sanitize_path_component "${identifier}")
 
         # Check if it's a valid git ref (only if in git repo)
-        if [[ "${in_git_repo}" = true ]] && git rev-parse --verify "${identifier}" -- >/dev/null 2>&1; then
+        if [[ "${in_git_repo}" = true ]] && git rev-parse --verify "${identifier}" -- > /dev/null 2>&1; then
             # Check if it's a branch
-            if git show-ref --verify --quiet "refs/heads/${identifier}" -- 2>/dev/null; then
+            if git show-ref --verify --quiet "refs/heads/${identifier}" -- 2> /dev/null; then
                 review_type="branch"
                 filename="${sanitized_id}.md"
             else
@@ -332,9 +332,9 @@ main() {
 
     # For branch mode with no identifier, check if a PR exists (only if in git repo)
     if [[ "${in_git_repo}" = true ]] && [[ "${review_type}" = "branch" ]] && [[ -z "${identifier}" ]]; then
-        if [[ -d "${review_dir}" ]] && command -v gh &>/dev/null; then
+        if [[ -d "${review_dir}" ]] && command -v gh &> /dev/null; then
             local pr_check
-            pr_check=$(gh pr list --head "${branch}" --json number --jq '.[0].number' 2>/dev/null || echo "")
+            pr_check=$(gh pr list --head "${branch}" --json number --jq '.[0].number' 2> /dev/null || echo "")
             if [[ -n "${pr_check}" ]]; then
                 local pr_file="${review_dir}/pr-${pr_check}.md"
                 verify_path_safety "${pr_file}" "${review_root}"

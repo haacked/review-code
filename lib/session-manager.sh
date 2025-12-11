@@ -54,7 +54,7 @@ session_init() {
     mkdir -p "${command_dir}"
 
     # Write initial data
-    echo "${initial_data}" >"${session_file}"
+    echo "${initial_data}" > "${session_file}"
 
     # Write session metadata
     jq -n \
@@ -67,7 +67,7 @@ session_init() {
             command: $cmd,
             file: $file,
             created: $created
-        }' >"${command_dir}/${session_id}.meta.json"
+        }' > "${command_dir}/${session_id}.meta.json"
 
     echo "${session_id}"
 }
@@ -154,7 +154,7 @@ session_set() {
 
     # Update JSON file
     local temp_file="${session_file}.tmp"
-    jq --arg val "${value}" ".${field} = \$val" "${session_file}" >"${temp_file}"
+    jq --arg val "${value}" ".${field} = \$val" "${session_file}" > "${temp_file}"
     mv "${temp_file}" "${session_file}"
 }
 
@@ -173,7 +173,7 @@ session_update() {
 
     # Merge JSON
     local temp_file="${session_file}.tmp"
-    jq --argjson update "${update_data}" '. + $update' "${session_file}" >"${temp_file}"
+    jq --argjson update "${update_data}" '. + $update' "${session_file}" > "${temp_file}"
     mv "${temp_file}" "${session_file}"
 }
 
@@ -217,8 +217,8 @@ session_cleanup_old() {
 
     if [[ -z "${command_name}" ]]; then
         # Cleanup all commands
-        find "${SESSION_DIR}" -name "*.json" -type f -mmin +60 -delete 2>/dev/null || true
-        find "${SESSION_DIR}" -name "*.meta.json" -type f -mmin +60 -delete 2>/dev/null || true
+        find "${SESSION_DIR}" -name "*.json" -type f -mmin +60 -delete 2> /dev/null || true
+        find "${SESSION_DIR}" -name "*.meta.json" -type f -mmin +60 -delete 2> /dev/null || true
     else
         # Sanitize command name
         command_name=$(sanitize_identifier "${command_name}") || return 1
@@ -226,8 +226,8 @@ session_cleanup_old() {
         # Cleanup specific command
         local command_dir="${SESSION_DIR}/${command_name}"
         if [[ -d "${command_dir}" ]]; then
-            find "${command_dir}" -name "*.json" -type f -mmin +60 -delete 2>/dev/null || true
-            find "${command_dir}" -name "*.meta.json" -type f -mmin +60 -delete 2>/dev/null || true
+            find "${command_dir}" -name "*.json" -type f -mmin +60 -delete 2> /dev/null || true
+            find "${command_dir}" -name "*.meta.json" -type f -mmin +60 -delete 2> /dev/null || true
         fi
     fi
 }
@@ -253,7 +253,7 @@ session_list() {
         if [[ -f "${meta_file}" ]]; then
             sessions+=("$(cat "${meta_file}")")
         fi
-    done < <(find "${command_dir}" -name "*.meta.json" -type f 2>/dev/null || true)
+    done < <(find "${command_dir}" -name "*.meta.json" -type f 2> /dev/null || true)
 
     # Combine into JSON array
     if [[ ${#sessions[@]} -eq 0 ]]; then
