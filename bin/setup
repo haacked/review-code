@@ -317,6 +317,8 @@ install_scripts() {
         "parse-review-arg.sh"
         "get-review-diff.sh"
         "review-orchestrator.sh"
+        "review-status-handler.sh"
+        "session-manager.sh"
     )
 
     # Create review-code bin subdirectory

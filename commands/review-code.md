@@ -64,8 +64,8 @@ Initialize the review session by running the orchestrator and caching the result
 
 ```bash
 bash -c '
-SESSION_ID=$(~/.claude/bin/review-code/lib/review-status-handler.sh init "'"$ARGUMENTS"'")
-STATUS=$(~/.claude/bin/review-code/lib/review-status-handler.sh get-status "$SESSION_ID")
+SESSION_ID=$(~/.claude/bin/review-code/review-status-handler.sh init "'"$ARGUMENTS"'")
+STATUS=$(~/.claude/bin/review-code/review-status-handler.sh get-status "$SESSION_ID")
 echo "Session: $SESSION_ID, Status: $STATUS"
 '
 ```
@@ -81,9 +81,9 @@ If STATUS is "error", get the error message from the session (replace `<SESSION_
 ```bash
 bash -c '
 SESSION_ID="<SESSION_ID>"
-error_msg=$(~/.claude/bin/review-code/lib/review-status-handler.sh get-error-data "$SESSION_ID")
+error_msg=$(~/.claude/bin/review-code/review-status-handler.sh get-error-data "$SESSION_ID")
 echo "Error: $error_msg"
-~/.claude/bin/review-code/lib/review-status-handler.sh cleanup "$SESSION_ID"
+~/.claude/bin/review-code/review-status-handler.sh cleanup "$SESSION_ID"
 '
 ```
 
@@ -96,7 +96,7 @@ If STATUS is "ambiguous", get the disambiguation data from the session (replace 
 ```bash
 bash -c '
 SESSION_ID="<SESSION_ID>"
-data=$(~/.claude/bin/review-code/lib/review-status-handler.sh get-ambiguous-data "$SESSION_ID")
+data=$(~/.claude/bin/review-code/review-status-handler.sh get-ambiguous-data "$SESSION_ID")
 arg=$(echo "$data" | jq -r ".arg")
 ref_type=$(echo "$data" | jq -r ".ref_type")
 is_branch=$(echo "$data" | jq -r ".is_branch")
@@ -136,7 +136,7 @@ If STATUS is "prompt", get the prompt data from the session (replace `<SESSION_I
 ```bash
 bash -c '
 SESSION_ID="<SESSION_ID>"
-data=$(~/.claude/bin/review-code/lib/review-status-handler.sh get-prompt-data "$SESSION_ID")
+data=$(~/.claude/bin/review-code/review-status-handler.sh get-prompt-data "$SESSION_ID")
 current_branch=$(echo "$data" | jq -r ".current_branch")
 base_branch=$(echo "$data" | jq -r ".base_branch")
 has_uncommitted=$(echo "$data" | jq -r ".has_uncommitted")
@@ -160,7 +160,7 @@ If STATUS is "prompt_pull", get the pull prompt data from the session (replace `
 ```bash
 bash -c '
 SESSION_ID="<SESSION_ID>"
-data=$(~/.claude/bin/review-code/lib/review-status-handler.sh get-prompt-pull-data "$SESSION_ID")
+data=$(~/.claude/bin/review-code/review-status-handler.sh get-prompt-pull-data "$SESSION_ID")
 branch=$(echo "$data" | jq -r ".branch")
 associated_pr=$(echo "$data" | jq -r ".associated_pr // \"none\"")
 echo "Branch: $branch, Associated PR: $associated_pr"
@@ -184,7 +184,7 @@ If STATUS is "ready", get all the review data from the session and display the s
 ```bash
 bash -c '
 SESSION_ID="<SESSION_ID>"
-review_data=$(~/.claude/bin/review-code/lib/review-status-handler.sh get-ready-data "$SESSION_ID")
+review_data=$(~/.claude/bin/review-code/review-status-handler.sh get-ready-data "$SESSION_ID")
 display_summary=$(echo "$review_data" | jq -r ".display_summary")
 echo "$display_summary"
 '
@@ -211,7 +211,7 @@ If user selects "Yes, review these changes", continue with the review below.
 **Check for existing review (replace `<SESSION_ID>` with the actual session ID):**
 
 ```bash
-~/.claude/bin/review-code/lib/review-status-handler.sh \
+~/.claude/bin/review-code/review-status-handler.sh \
   get-ready-data <SESSION_ID> | \
   jq -r 'if .file_info.file_exists == true and .file_info.file_path
          then "existing: " + .file_info.file_path
@@ -225,7 +225,7 @@ If the output shows "existing", use AskUserQuestion to ask what to do with it.
 All subsequent extractions use the SAME SESSION_ID (no re-running orchestrator). Save the session data to a variable for reuse:
 
 ```bash
-review_data=$(~/.claude/bin/review-code/lib/review-status-handler.sh get-ready-data <SESSION_ID>)
+review_data=$(~/.claude/bin/review-code/review-status-handler.sh get-ready-data <SESSION_ID>)
 ```
 
 Then extract individual fields as needed using jq:
@@ -435,7 +435,7 @@ After the review is complete, cleanup the session (replace `<SESSION_ID>` with t
 ```bash
 bash -c '
 SESSION_ID="<SESSION_ID>"
-~/.claude/bin/review-code/lib/review-status-handler.sh cleanup "$SESSION_ID"
+~/.claude/bin/review-code/review-status-handler.sh cleanup "$SESSION_ID"
 echo "Session cleaned up: $SESSION_ID"
 '
 ```
