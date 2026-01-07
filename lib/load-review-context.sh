@@ -215,7 +215,16 @@ if is_debug_enabled; then
     debug_time "04-context-loading" "end"
 fi
 
-# Output context or nothing if no matches
-if [[ -n "${context}" ]]; then
-    echo -e "${context}"
+# Output JSON with both content and loaded files list
+# This allows the orchestrator to show users which context files were loaded
+# Build JSON array of loaded files
+loaded_files_json="[]"
+if [[ "${loaded_file_list[*]:-}" ]]; then
+    loaded_files_json=$(printf '%s\n' "${loaded_file_list[@]}" | jq -R . | jq -s .)
 fi
+
+# Always output JSON (even when empty) for consistency
+jq -n \
+    --arg content "$(echo -e "${context}")" \
+    --argjson files "${loaded_files_json}" \
+    '{content: $content, loaded_files: $files}'
