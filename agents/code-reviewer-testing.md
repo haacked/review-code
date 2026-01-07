@@ -70,6 +70,65 @@ When code under test changes, verify tests stay in sync:
 - Assertions using hardcoded values that don't match new defaults/constants in source
 - Tests that verify state A but not ¬B when the change affects both
 
+### 8. Optimization & Cross-Function Tests (Critical)
+
+When code includes optimizations or cross-function logic, verify tests cover the interaction scenarios:
+
+**Optimization Boundary Tests:**
+
+Optimizations that skip work need tests for BOTH sides of the boundary:
+- Test where optimization SHOULD trigger (skip work, take fast path)
+- Test where optimization SHOULD NOT trigger (do work, take slow path)
+- Test the exact boundary condition between the two
+- Test that skipping work doesn't change the observable result
+
+**Dependency & Graph Scenarios:**
+
+For code involving dependencies, relationships, or graph structures:
+- **Direct dependencies**: A depends on B, request A, verify B is also processed
+- **Transitive dependencies**: A → B → C, request A, verify C is included
+- **Filtered subsets with dependencies**: Request subset via filter, verify dependencies outside the filter are still handled
+- **Circular dependencies**: If possible, verify they're handled gracefully
+
+**Cross-Function Invariant Tests:**
+
+When functions have implicit contracts with each other:
+- Test the contract explicitly (e.g., if B assumes A's output is sorted, test with unsorted input)
+- Test edge cases at function boundaries
+- Test data transformations preserve required properties
+
+**Example Issues:**
+
+```text
+⚠️ Missing: Optimization with dependencies test [90% confidence]
+Location: test_optimization_respects_flag_keys_filter (line 6661)
+Issue: Test uses flags without dependencies
+Risk: Doesn't verify optimization handles transitive dependencies correctly
+Scenario to add:
+  - Flag A (100% rollout, no lookup needed) depends on Flag B (50% rollout, needs lookup)
+  - User requests only Flag A via flag_keys
+  - Expected: Hash key lookup should happen because dependency B needs it
+  - This tests that optimization considers dependencies, not just requested flags
+
+⚠️ Missing: Optimization boundary test [85% confidence]
+Location: test_cache_optimization.py
+Issue: Tests only the "cache hit" path, not the boundary
+Scenario to add:
+  - Test with exactly cache_size items (boundary)
+  - Test with cache_size + 1 items (triggers eviction)
+  - Verify eviction doesn't break dependent lookups
+```
+
+**How to Generate These Tests:**
+
+1. Identify the optimization condition (what triggers the fast path?)
+2. Create test data that is exactly AT the boundary
+3. Create test data that is just PAST the boundary
+4. For dependency-aware code, create scenarios where:
+   - Requested items don't need the optimization
+   - But their dependencies DO need it
+5. Verify the optimization doesn't change observable behavior
+
 ## Review Process
 
 When reviewing code changes:

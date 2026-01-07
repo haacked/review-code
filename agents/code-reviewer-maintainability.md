@@ -41,6 +41,74 @@ Review code changes for these maintainability concerns in priority order:
 
 **Note:** This section focuses on whether the code does what it's supposed to do, not how well it does it. If the logic is fundamentally wrong, no amount of clean code will help.
 
+### 1b. Cross-Function Correctness (Critical)
+
+These issues are harder to spot because they require understanding how different parts of the code interact. A function may be locally correct but break invariants expected by other code.
+
+**Optimization Safety:**
+
+When code includes optimizations that skip work (early returns, caching, conditional execution), verify the optimization preserves behavior in ALL code paths:
+
+- Does the optimization decision consider all relevant data? (e.g., dependencies, transitive relationships)
+- Is the condition for skipping work comprehensive enough?
+- Could filtering/transformation earlier in the flow cause the optimization to miss cases?
+- Are there scenarios where the optimization incorrectly skips necessary work?
+
+**Red Flags for Unsafe Optimizations:**
+- Optimization decision made using "filtered" or "partial" data
+- Optimization depends on iteration order or data structure shape
+- Optimization assumes invariants that aren't enforced
+- Optimization added without tests for boundary cases
+
+**Implicit Contracts Between Functions:**
+
+Identify assumptions one function makes about another's behavior:
+
+- Function A filters data, Function B assumes the filtered data includes dependencies
+- Function A builds a graph, Function B assumes transitive relationships are included
+- Function A caches results, Function B assumes the cache key captures all relevant state
+- Function A transforms data, Function B assumes properties are preserved
+
+**How to Spot Implicit Contracts:**
+1. Look for data transformations (filtering, mapping, aggregation) early in a function
+2. Trace where that transformed data is used later
+3. Ask: "Does the transformation preserve everything the later code needs?"
+4. Check for dependencies, transitive relationships, or edge cases that might be excluded
+
+**Data Flow Across Boundaries:**
+
+- Trace key data from source to all consumers across functions
+- Verify invariants hold throughout the entire flow
+- Check that graph/tree operations include transitive relationships when needed
+- Look for places where "filtered" data might exclude items that downstream code requires
+
+**Example Issues:**
+
+```text
+⚠️ Optimization may miss dependencies [85% confidence]
+Location: flag_matching.rs:262-274
+- Optimization iterates `dependency_graph.iter_nodes()` to check if any flag needs lookup
+- But `dependency_graph` was filtered by `flag_keys` at line 250
+- Question: Does `filter_graph_by_keys` include transitive dependencies?
+- Risk: If flag A (no lookup needed) depends on flag B (needs lookup), and user
+  requests only flag A, does the optimization see flag B?
+- Recommendation: Add test with dependent flags to verify behavior
+
+❌ Implicit contract violation [90% confidence]
+Location: cache_service.py:89
+- `get_cached_user()` assumes cache was populated by `warm_cache()`
+- But `warm_cache()` only populates for "active" users
+- `get_cached_user()` is called for all users, causing cache misses for inactive ones
+- Fix: Either expand `warm_cache()` or handle cache misses in `get_cached_user()`
+
+⚠️ Filtering loses required data [80% confidence]
+Location: event_processor.rs:156
+- Events filtered by `event_type` at line 156
+- But `process_batch()` at line 203 expects all related events for deduplication
+- Related events with different types will be missing, causing duplicate processing
+- Fix: Filter after deduplication, or include related events in filter
+```
+
 ### 2. Code Clarity & Readability (Critical)
 
 **Function/Method Complexity:**
