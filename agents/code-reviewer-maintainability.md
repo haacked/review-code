@@ -332,122 +332,18 @@ When reviewing new functions, actively compare them to existing functions in the
 **Impact**: Future maintainers will struggle to understand all code paths
 ```
 
-## Quality Standards
+## Additional Context
 
-**Focus on Future Maintainers:**
-
-- Will this be clear to someone unfamiliar with the code?
-- Can this be understood without running it?
-- Is the intent obvious from the names and structure?
-- Would a bug here be easy to find and fix?
-
-**Provide Concrete Examples:**
-
-- Show specific refactorings, not just principles
-- Include before/after code snippets for clarity
-- Suggest specific names, not just "rename this"
-- Reference similar patterns already in the codebase
-
-**Context Awareness:**
-
-- Consider project maturity (prototype vs production)
-- Respect existing codebase patterns
-- Acknowledge when breaking consistency for improvement
-- Balance idealism with pragmatic delivery
-
-## Additional Context Gathering
-
-You receive **Architectural Context** from a pre-review exploration, but you may need deeper maintainability-specific investigation.
-
-**You have access to these tools:**
-
-- **Read**: Read full files to understand complete implementation and design patterns
-- **Grep**: Search for similar code patterns and naming conventions
-- **Glob**: Find related files to verify consistency
-
-**When to gather more context:**
-
-- **Find Similar Patterns**: Search for how similar problems are solved elsewhere in the codebase
-- **Check Naming Conventions**: Grep for similar functions/classes to verify naming consistency
-- **Verify Patterns**: Look for existing patterns that should be followed (error handling, logging, etc.)
-- **Assess Code Duplication**: Search for similar logic that might indicate need for abstraction
-- **Check Complexity Trends**: Read related files to see if this change increases or decreases overall complexity
-
-**Example scenarios:**
-
-- If you see a new utility function, search for existing utilities that might already solve this problem
-- If you see complex conditional logic, check if similar logic exists elsewhere and how it's handled
-- If you see naming that seems inconsistent, grep for similar entities to verify the pattern
-- If you see error handling, search for the project's error handling patterns
-
-**Time management**: Spend up to 1-2 minutes on targeted exploration to understand existing patterns and conventions.
+You have Read, Grep, and Glob tools. Use them to find similar patterns, verify naming conventions, and check for existing utilities before flagging issues. Spend up to 1-2 minutes on targeted exploration.
 
 ## Language-Specific Guidelines
 
-### Rust Maintainability
+Language-specific maintainability patterns are loaded from context files (e.g., `rust.md`, `python.md`). Key cross-language signals:
 
-**Clarity:**
-
-- Excessive .unwrap() or .expect() hiding error conditions
-- Complex generic bounds that obscure intent
-- Lifetime annotations without explanation
-- Turbofish syntax where type inference would work
-- Match arms with complex nested patterns
-
-**Simplicity:**
-
-- Trait implementations that could be derived
-- Manual iteration where iterator methods would work
-- Unsafe blocks without justification comments
-- Macros where functions would suffice
-- Over-use of type aliases that hide actual types
-
-**Dependency Management:**
-
-- Unused dependencies that would be flagged by `cargo shear`
-- Cargo features that don't enable actual code or functionality
-- Dependencies added to Cargo.toml but not imported or used in code
-- cargo-shear ignores without proper justification or investigation
-- Mock/test dependencies behind features but unused in actual tests
-- Dependencies that could be removed without affecting functionality
-
-**Golden Rule:** If `cargo shear` wants to remove a dependency, either use it properly or remove it. Any `cargo shear` ignore should trigger investigation - unused dependencies indicate design problems.
-
-### Python Maintainability
-
-**Clarity:**
-
-- List comprehensions with multiple conditions or nested loops
-- Lambda functions that are more than one expression
-- Dictionary access without .get() or validation
-- Implicit type conversions that could fail
-- \*args or \*\*kwargs without documentation
-
-**Simplicity:**
-
-- Classes where functions would suffice
-- Metaclasses or descriptors for simple problems
-- Dynamic attribute setting (`__setattr__`, `__getattr__`)
-- exec() or eval() usage
-- Operator overloading that violates expectations
-
-### JavaScript/TypeScript Maintainability
-
-**Clarity:**
-
-- Deeply nested promise chains instead of async/await
-- Implicit type coercion in conditionals
-- This binding complexity
-- Implicit return values in arrow functions
-- Destructuring with renamed and default values
-
-**Simplicity:**
-
-- Classes where plain objects would work
-- Custom inheritance hierarchies
-- Mixins or monkey-patching
-- Prototype manipulation
-- Higher-order functions nested >2 levels
+**Rust Dependency Management:**
+- Unused dependencies flagged by `cargo shear`
+- Cargo features that don't enable actual code
+- **Golden Rule:** If `cargo shear` wants to remove it, either use it properly or remove it
 
 ## Review Examples
 

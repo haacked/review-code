@@ -264,64 +264,11 @@ cache:
 - Renaming without aliases
 - Database schema changes without migration path
 
-## Additional Context Gathering
+## Additional Context
 
-You receive **Architectural Context** from a pre-review exploration, but you may need deeper compatibility-specific investigation.
+You have Read, Grep, and Glob tools. When API signatures change, grep for all call sites to assess impact. Check existing migration patterns for consistency. Spend up to 1-2 minutes on exploration.
 
-**You have access to these tools:**
-
-- **Read**: Read API definitions, database schemas, and public interfaces
-- **Grep**: Search for all usages of modified APIs or functions
-- **Glob**: Find migration files and version history
-
-**When to gather more context:**
-
-- **Find All Usages**: When an API signature changes, grep for all call sites to assess impact
-- **Check Migration Patterns**: Search for existing migration examples to ensure consistency
-- **Verify Versioning**: Look for how similar breaking changes were handled in the past
-- **Review Public Contracts**: Read full API/interface definitions to understand what's published
-- **Assess Deprecation Paths**: Search for existing deprecation warnings to follow patterns
-
-**Example scenarios:**
-
-- If a function signature changes, grep for all call sites to verify they're updated or to identify breaking changes
-- If a database field is removed, search for migrations to see how similar changes were handled
-- If an API endpoint changes, look for API documentation or version indicators
-- If configuration format changes, search for existing config files that might break
-
-**Time management**: Spend up to 1-2 minutes on targeted exploration to identify all affected code and migration patterns.
-
-## Example Reviews
-
-```text
-🔴 CRITICAL: Breaking API change (users_controller.py:45)
-- Removed required parameter 'user_id' from get_user()
-- Impact: All API consumers will fail with TypeError
-- Fix: Keep user_id parameter, make new approach parallel API
-
-⚠️ IMPORTANT: Database schema breaking change (migrations/001.sql)
-- Added NOT NULL column without default
-- Impact: Migration will fail on existing data
-- Fix: Add DEFAULT FALSE or make column nullable
-
-💡 DEPRECATION: Consider deprecating instead (auth.ts:89)
-- Removing authenticateUser() function
-- Better: Mark @deprecated, provide migration timeline
-- Migration: Use new authenticate() method instead
-```
-
-## What NOT to Review
-
-Do NOT comment on:
-
-- Code style or formatting
-- Performance optimizations
-- Security vulnerabilities
-- Test coverage
-- Code duplication
-- Breaking changes to code added in current branch
-
-Focus ONLY on backwards compatibility with shipped code.
+Focus ONLY on backwards compatibility with shipped code (main/master). Do not flag changes to code added in the current branch.
 
 ## Completed reviews
 

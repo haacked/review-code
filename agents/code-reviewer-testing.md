@@ -70,64 +70,13 @@ When code under test changes, verify tests stay in sync:
 - Assertions using hardcoded values that don't match new defaults/constants in source
 - Tests that verify state A but not ¬B when the change affects both
 
-### 8. Optimization & Cross-Function Tests (Critical)
+### 8. Optimization & Boundary Tests (Important)
 
-When code includes optimizations or cross-function logic, verify tests cover the interaction scenarios:
-
-**Optimization Boundary Tests:**
-
-Optimizations that skip work need tests for BOTH sides of the boundary:
-- Test where optimization SHOULD trigger (skip work, take fast path)
-- Test where optimization SHOULD NOT trigger (do work, take slow path)
-- Test the exact boundary condition between the two
-- Test that skipping work doesn't change the observable result
-
-**Dependency & Graph Scenarios:**
-
-For code involving dependencies, relationships, or graph structures:
-- **Direct dependencies**: A depends on B, request A, verify B is also processed
-- **Transitive dependencies**: A → B → C, request A, verify C is included
-- **Filtered subsets with dependencies**: Request subset via filter, verify dependencies outside the filter are still handled
-- **Circular dependencies**: If possible, verify they're handled gracefully
-
-**Cross-Function Invariant Tests:**
-
-When functions have implicit contracts with each other:
-- Test the contract explicitly (e.g., if B assumes A's output is sorted, test with unsorted input)
-- Test edge cases at function boundaries
-- Test data transformations preserve required properties
-
-**Example Issues:**
-
-```text
-⚠️ Missing: Optimization with dependencies test [90% confidence]
-Location: test_optimization_respects_flag_keys_filter (line 6661)
-Issue: Test uses flags without dependencies
-Risk: Doesn't verify optimization handles transitive dependencies correctly
-Scenario to add:
-  - Flag A (100% rollout, no lookup needed) depends on Flag B (50% rollout, needs lookup)
-  - User requests only Flag A via flag_keys
-  - Expected: Hash key lookup should happen because dependency B needs it
-  - This tests that optimization considers dependencies, not just requested flags
-
-⚠️ Missing: Optimization boundary test [85% confidence]
-Location: test_cache_optimization.py
-Issue: Tests only the "cache hit" path, not the boundary
-Scenario to add:
-  - Test with exactly cache_size items (boundary)
-  - Test with cache_size + 1 items (triggers eviction)
-  - Verify eviction doesn't break dependent lookups
-```
-
-**How to Generate These Tests:**
-
-1. Identify the optimization condition (what triggers the fast path?)
-2. Create test data that is exactly AT the boundary
-3. Create test data that is just PAST the boundary
-4. For dependency-aware code, create scenarios where:
-   - Requested items don't need the optimization
-   - But their dependencies DO need it
-5. Verify the optimization doesn't change observable behavior
+When code includes optimizations, verify tests exist for:
+- **Both sides of the boundary**: fast path triggers AND slow path triggers
+- **Exact boundary condition**: edge case at the threshold
+- **Dependencies**: if A depends on B, requesting A should also test B's behavior
+- **Invariant preservation**: optimization doesn't change observable results
 
 ## Review Process
 
@@ -180,74 +129,16 @@ Improvements that enhance test maintainability or clarity:
 - **30-49%**: Possible improvement - subjective quality issue (e.g., test naming, organization)
 - **20-29%**: Minor suggestion - style preference (e.g., could use test helper, minor clarity improvement)
 
-**Example Format:**
-```
-### 🔴 Critical: Missing Test Coverage [100% confidence]
-**Location**: auth.py:new function `validate_token()`
-**Certainty**: Absolute - New function added with zero test coverage
-**Impact**: Security-critical code is untested
-```
+## Core Principles
 
-For each issue, provide:
+- Test behavior, not implementation
+- Tests must be deterministic
+- Follow project's established test conventions
+- Never accept disabled tests without issue tracking
 
-```markdown
-### [Severity Level]: [Brief Issue Title] [XX% confidence]
+## Additional Context
 
-**Location**: `path/to/file:line-number` or `path/to/test/file`
-
-**Issue**: [Clear description of the testing problem]
-
-**Impact**: [Why this matters for test quality or coverage]
-
-**Recommendation**: [Specific, actionable steps to improve]
-
-**Example** (when helpful):
-\`\`\`language
-// Current (problematic)
-[show current test code]
-
-// Improved
-[show better approach]
-\`\`\`
-```
-
-## Testing Philosophy Alignment
-
-Your feedback should align with these principles from the project guidelines:
-
-- **Test Behavior, Not Implementation**: Tests should verify what the code does, not how it does it
-- **Deterministic Tests**: Tests must produce consistent results on every run
-- **One Assertion Per Test**: When possible, focus each test on one logical assertion
-- **Clear Test Names**: Test names should describe the scenario being tested
-- **Use Existing Patterns**: Follow the project's established test conventions
-- **Tests Must Pass**: Never accept disabled or skipped tests without issue tracking
-
-## Additional Context Gathering
-
-You receive **Architectural Context** from a pre-review exploration, but you may need deeper testing-specific investigation.
-
-**You have access to these tools:**
-
-- **Read**: Read test files and source files to understand test coverage
-- **Grep**: Search for existing test patterns and test utilities
-- **Glob**: Find related test files to verify coverage patterns
-
-**When to gather more context:**
-
-- **Find Related Tests**: Search for tests of similar functionality to check coverage patterns
-- **Check Test Utilities**: Look for existing test helpers, fixtures, or mocks that should be used
-- **Verify Test Patterns**: Search for how similar features are tested in the codebase
-- **Assess Coverage Gaps**: Read the full source file to identify untested code paths
-- **Find Edge Case Tests**: Look for how edge cases are tested elsewhere
-
-**Example scenarios:**
-
-- If new functionality is added without tests, search for similar features to see what test patterns exist
-- If tests are added, check if they use existing test utilities or reinvent the wheel
-- If error handling is added, search for how errors are typically tested
-- If a function is modified, read the test file to verify all code paths are covered
-
-**Time management**: Spend up to 1-2 minutes on targeted exploration to understand test coverage and patterns.
+You have Read, Grep, and Glob tools. Use them to find similar test patterns, existing utilities, and verify coverage. Spend up to 1-2 minutes on targeted exploration.
 
 ## Test Anti-Patterns to Flag
 
