@@ -169,6 +169,7 @@ Location: event_processor.rs:156
 - Premature optimization without evidence
 - Frameworks built for one feature
 - Excessive indirection layers (wrapper around wrapper)
+- **Manual reimplementation of built-in or library functionality**
 
 **SOLID Violations:**
 

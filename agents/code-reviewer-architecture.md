@@ -202,7 +202,38 @@ Review code changes EXCLUSIVELY for these high-level concerns:
 - Context: Rust convention per language context
 ```
 
-### 7. **Product & Business Context** (Important)
+### 7. **Built-in Functionality Awareness** (Critical)
+
+**The Most Common "Reinventing the Wheel":**
+
+Manual code that duplicates what the language or library already provides. This happens when developers don't realize existing functionality handles their use case.
+
+**Detection Signals:**
+
+1. **Field-name string literals**: `.get("field_name")` where names match struct/class fields
+2. **Repetitive per-field operations**: Same pattern repeated N times for N fields
+3. **Disproportionate line count**: 50+ lines for what should be 1-5 lines
+
+**Review Process:**
+
+For any conversion/parsing/serialization function:
+1. Check if the type has built-in support (annotations, macros, base classes)
+2. Check if a single library call exists
+3. Ask: "Could this entire function be one line?"
+
+**Language-specific patterns are in the language context files** (e.g., Rust serde in `rust.md`, Python pydantic in `python.md`).
+
+**Example:**
+```text
+🔴 CRITICAL: Manual reimplementation of library functionality [95% confidence]
+Location: models.py:45-120
+- Class User is a pydantic BaseModel
+- Function validate_user() manually checks 15 fields
+- Fix: Use pydantic's built-in validation
+- Impact: Remove 70 lines, use battle-tested library
+```
+
+### 8. **Product & Business Context** (Important)
 
 **Does This Make Sense?:**
 - Does this align with product requirements?
@@ -231,7 +262,7 @@ Review code changes EXCLUSIVELY for these high-level concerns:
 - Question: Do we actually need real-time here?
 ```
 
-### 8. **Abstraction Appropriateness** (Important)
+### 9. **Abstraction Appropriateness** (Important)
 
 **Right Level of Abstraction:**
 - Is this abstraction earning its keep?
