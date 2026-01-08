@@ -83,6 +83,11 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
+@test "uninstall.sh: removes correctness agent" {
+    run bash -c "grep -A50 'remove_agents()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'code-reviewer-correctness'"
+    [ "$status" -eq 0 ]
+}
+
 @test "uninstall.sh: removes maintainability agent" {
     run bash -c "grep -A50 'remove_agents()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'code-reviewer-maintainability'"
     [ "$status" -eq 0 ]

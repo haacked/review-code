@@ -16,11 +16,12 @@ Run specialized code review agent(s) with comprehensive context on local changes
 - `<range>` - Review specific git range (e.g., `abc123..HEAD`, `v1.0.0..v2.0.0`)
 - `security` - Deep security vulnerability analysis only (local changes)
 - `performance` - Performance bottlenecks and optimization only (local changes)
+- `correctness` - Functional correctness, intent verification, and integration boundaries only (local changes)
 - `maintainability` - Code clarity, simplicity, and maintainability only (local changes)
 - `testing` - Test coverage, quality, and patterns only (local changes)
 - `compatibility` - Backwards compatibility with shipped code only (local changes)
 - `architecture` - High-level design, patterns, and necessity only (local changes)
-- (no argument) - Run ALL 6 specialized agents in parallel on local changes (default)
+- (no argument) - Run ALL 7 specialized agents in parallel on local changes (default)
 
 **Optional File Pattern:**
 
@@ -346,6 +347,7 @@ IMPORTANT: Build upon the previous review. Do not duplicate findings. You may:
 
 **If area is "security"**: Invoke ONLY `code-reviewer-security` agent with the context
 **If area is "performance"**: Invoke ONLY `code-reviewer-performance` agent with the context
+**If area is "correctness"**: Invoke ONLY `code-reviewer-correctness` agent with the context
 **If area is "maintainability"**: Invoke ONLY `code-reviewer-maintainability` agent with the context
 **If area is "testing"**: Invoke ONLY `code-reviewer-testing` agent with the context
 **If area is "compatibility"**: Invoke ONLY `code-reviewer-compatibility` agent with the context
@@ -361,16 +363,17 @@ has_frontend=$(echo "$review_data" | \
   jq -r ".languages.has_frontend // false")
 ```
 
-**Always invoke these 6 core agents in PARALLEL:**
+**Always invoke these 7 core agents in PARALLEL:**
 1. `code-reviewer-security` - Focus: vulnerabilities, exploits, security hardening
 2. `code-reviewer-performance` - Focus: bottlenecks, inefficiencies, optimization
-3. `code-reviewer-maintainability` - Focus: readability, simplicity, long-term code health
-4. `code-reviewer-testing` - Focus: test coverage, quality, edge cases
-5. `code-reviewer-compatibility` - Focus: backwards compatibility with shipped code
-6. `code-reviewer-architecture` - Focus: necessity, patterns, code reuse, simplicity
+3. `code-reviewer-correctness` - Focus: intent verification, integration boundaries, functional correctness
+4. `code-reviewer-maintainability` - Focus: readability, simplicity, long-term code health
+5. `code-reviewer-testing` - Focus: test coverage, quality, edge cases
+6. `code-reviewer-compatibility` - Focus: backwards compatibility with shipped code
+7. `code-reviewer-architecture` - Focus: necessity, patterns, code reuse, simplicity
 
 **If `has_frontend` is true**, also invoke in the same parallel batch:
-7. `code-reviewer` - With additional context: "Focus on frontend-specific concerns: React/TypeScript patterns, component design, state management, accessibility, performance, and user experience. Supplement the specialized reviews with frontend-specific insights."
+8. `code-reviewer-frontend` - Focus: React/TypeScript patterns, component design, state management, accessibility
 
 All agents receive the same context but focus on their specific area.
 
@@ -408,6 +411,7 @@ Code Review: (org/repo from git_context) - (branch) (uncommitted)
 **For comprehensive reviews**, include sections for each area:
 - Security Review
 - Performance Review
+- Correctness Review
 - Maintainability Review
 - Testing Review
 - Compatibility Review
