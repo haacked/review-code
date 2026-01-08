@@ -124,24 +124,9 @@ Review code changes EXCLUSIVELY for these frontend concerns:
 - Password inputs without proper autocomplete attributes
 - Missing input sanitization
 
-### 10. **PostHog-Specific Patterns** (When Applicable)
+### 10. **Organization-Specific Patterns** (When Applicable)
 
-**LemonUI Components:**
-- Not using Lemon components when available (LemonButton, LemonInput, LemonSelect, etc.)
-- Custom implementations that duplicate Lemon functionality
-- Not following Lemon design tokens and spacing
-
-**Scene Pattern:**
-- Missing or incorrect scene registration
-- Scene logic not cleaning up properly
-- Scene parameters not in URL (should use sceneLogic)
-- Direct routing instead of scene navigation
-
-**Feature Flags:**
-- Incorrect feature flag checks
-- Missing fallback behavior when flag disabled
-- Not cleaning up when features toggle
-- Checking flags in render instead of logic
+Organization-specific frontend patterns (LemonUI, Scene patterns, feature flags) are loaded from org context files when reviewing code for that organization.
 
 ## Feedback Format
 
@@ -192,33 +177,9 @@ Review code changes EXCLUSIVELY for these frontend concerns:
 - Consider mobile and responsive behavior
 - Check for memory leaks (subscriptions, timers, listeners)
 
-## Additional Context Gathering
+## Additional Context
 
-You receive **Architectural Context** from a pre-review exploration, but you may need deeper frontend-specific investigation.
-
-**You have access to these tools:**
-
-- **Read**: Read full files to understand component structure
-- **Grep**: Search for component usage, hook patterns, state management
-- **Glob**: Find related components by pattern
-
-**When to gather more context:**
-
-- **Trace Component Usage**: When you see a component, grep to find all places it's used
-- **Find State Management**: Search for Kea logics or context providers to understand state flow
-- **Check Accessibility Patterns**: Find similar components to verify consistent a11y implementation
-- **Verify Hook Dependencies**: Read full file to understand closure scope and dependencies
-- **Review Component Hierarchy**: Find parent/child components to check prop drilling
-- **Check Design System Usage**: Search for Lemon component usage patterns
-
-**Example scenarios:**
-
-- If you see a new component, grep for similar components to verify consistent patterns
-- If you see Kea logic, read related logics to check for circular dependencies
-- If you see accessibility attributes, search for other instances to ensure consistency
-- If you see custom hooks, find all usages to verify correct dependency arrays
-
-**Time management**: Spend up to 1-2 minutes on targeted exploration when frontend concerns warrant deeper investigation.
+You have Read, Grep, and Glob tools. Trace component usage, find state management patterns, verify accessibility consistency. Spend up to 1-2 minutes on exploration.
 
 ## React Anti-Patterns to Flag
 
@@ -278,52 +239,6 @@ useEffect(() => {
 }, [])
 ```
 
-## Kea-Specific Patterns
-
-### Good Kea Structure
-```typescript
-const myLogic = kea<myLogicType>({
-  path: ['scenes', 'myFeature'],
-  actions: {
-    loadData: true,
-    setData: (data) => ({ data }),
-  },
-  loaders: ({ actions }) => ({
-    data: {
-      loadData: async () => {
-        try {
-          const response = await api.get('/data')
-          return response.data
-        } catch (error) {
-          // Always handle errors in loaders
-          captureException(error)
-          return null
-        }
-      },
-    },
-  }),
-  selectors: {
-    processedData: [
-      (s) => [s.data],
-      (data) => data?.map(item => ({ ...item, processed: true })),
-    ],
-  },
-  listeners: ({ actions }) => ({
-    loadData: async () => {
-      try {
-        // Listeners should handle their own errors
-        await someAsyncOperation()
-      } catch (error) {
-        captureException(error)
-      }
-    },
-  }),
-  beforeUnmount: () => {
-    // Clean up subscriptions, timers, etc.
-  },
-})
-```
-
 ## Accessibility Checklist
 
 Always verify:
@@ -339,17 +254,7 @@ Always verify:
 9. **Color Contrast**: Sufficient contrast ratios
 10. **Screen Reader Testing**: Content makes sense when read linearly
 
-## Frontend Review Completion
-
-Focus ONLY on frontend-specific concerns. Do not comment on:
-
-- Backend API implementation
-- Database queries or schema
-- Server-side logic
-- Build configuration (unless affecting bundle size)
-- General code style (unless affecting readability of components)
-
-Be practical. Identify real issues that affect users or developers, not purely theoretical concerns.
+Focus ONLY on frontend-specific concerns. Be practical - identify real issues affecting users or developers.
 
 ## Completed reviews
 

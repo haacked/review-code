@@ -113,6 +113,19 @@ When reviewing networking, IP handling, or infrastructure-related code, consult 
 - Provide fallback behavior
 - Clean up when features toggle
 
+### Kea State Management
+
+**When to use Kea vs React State:**
+- React State: Local UI state, form inputs, toggles
+- Kea Logic: Shared state, async workflows, cross-component communication
+
+**Kea issues to catch:**
+- Direct state mutations (must return new objects)
+- Missing error handling in async listeners
+- Missing cleanup in `beforeUnmount`
+- Incorrect selector memoization
+- Circular dependencies between logics
+
 ## SDK Repositories
 
 PostHog has client-side and server-side SDKs:

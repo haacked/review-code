@@ -30,6 +30,33 @@
 - Case modification: `${var,,}` (lowercase), `${var^^}` (uppercase)
 - `**` globbing: `shopt -s globstar; for f in **/*.sh`
 
+## Portability (macOS vs Linux)
+
+**Commands that differ:**
+
+- `date +%s%N` - nanoseconds not supported on BSD date (outputs literal `%N`)
+- `md5sum` doesn't exist on macOS (use `md5` or `openssl md5`)
+- `sed -i` requires empty string on macOS: `sed -i '' 's/old/new/'`
+- `grep -P` (Perl regex) not available on macOS BSD grep
+- `readlink -f` not available on macOS (use `realpath` or custom function)
+
+**Portable alternatives:**
+
+```bash
+# Random hex (instead of: date +%s%N | md5sum | head -c 8)
+printf '%04x%04x' $RANDOM $RANDOM
+
+# In-place sed that works on both
+sed -i.bak 's/old/new/' file && rm file.bak
+
+# MD5 hash portable
+if command -v md5sum >/dev/null 2>&1; then
+    echo "test" | md5sum | cut -d' ' -f1
+else
+    echo "test" | md5 -q
+fi
+```
+
 ## Error Handling
 
 **Defensive scripting:**

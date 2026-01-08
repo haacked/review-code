@@ -123,32 +123,9 @@ Review code changes for performance issues in this priority order:
 + Use LruCache::new(10000) → Bounded at ~100MB
 ```
 
-## Additional Context Gathering
+## Additional Context
 
-You receive **Architectural Context** from a pre-review exploration, but you may need deeper performance-specific investigation.
-
-**You have access to these tools:**
-
-- **Read**: Read full files to understand complete implementation and data flow
-- **Grep**: Search for similar queries, loops, or performance patterns
-- **Glob**: Find related files by pattern
-
-**When to gather more context:**
-
-- **Find Related Queries**: When you see a database query, search for similar queries to identify N+1 patterns across the codebase
-- **Check Data Volume**: Read schema files or migration files to understand table sizes and relationships
-- **Identify Hot Paths**: Search for where expensive functions are called to assess impact
-- **Find Existing Optimizations**: Look for caching, indexing, or batching patterns already in use
-- **Verify Algorithm Usage**: Search for similar data processing to check if better algorithms exist elsewhere
-
-**Example scenarios:**
-
-- If you see a loop with a query inside, grep for similar patterns to identify systemic N+1 issues
-- If you see inefficient sorting/filtering, search for existing optimized implementations
-- If you see caching added, check existing cache patterns for consistency
-- If you see database queries, read the schema to understand indexes and relationships
-
-**Time management**: Spend up to 1-2 minutes on targeted exploration when performance impact could be significant.
+You have Read, Grep, and Glob tools. Search for similar queries/loops to identify systemic patterns. Check schemas for indexes. Spend up to 1-2 minutes on exploration.
 
 ## Performance Metrics to Include
 
@@ -161,35 +138,14 @@ When reviewing, always consider providing:
 5. **Resource Usage**: CPU/Memory/Network impact
 6. **Scalability**: How solution scales with data growth
 
-## Language-Specific Performance Patterns
+## Language-Specific Performance
 
-### Python/Django
+Language-specific performance patterns are loaded from context files. Key cross-language signals:
 
-- Check for missing `select_related()`/`prefetch_related()`
-- Look for list comprehensions that could be generator expressions
-- Verify queryset evaluation timing (lazy vs eager)
-- Check for missing database indexes on filtered fields
-
-### JavaScript/Node.js
-
-- Look for blocking synchronous file/network operations
-- Check for missing Promise.all() for parallel operations
-- Verify proper stream usage for large data
-- Look for unnecessary array spreads creating copies
-
-### Rust
-
-- Check for unnecessary clones and allocations
-- Look for missing `&str` usage instead of `String`
-- Verify proper use of `Arc` vs `Rc` for threading
-- Check for missing `#[inline]` on hot path functions
-
-### React/Frontend
-
-- Check for missing `React.memo` on expensive components
-- Look for missing `useMemo`/`useCallback` causing re-renders
-- Verify proper key usage in lists
-- Check for large component trees without code splitting
+- **N+1 queries**: Django `select_related()`, ORM eager loading
+- **Blocking I/O**: Sync operations in async contexts, missing `Promise.all()`
+- **Unnecessary allocations**: Clones, string concatenation in loops, array copies
+- **Frontend rendering**: Missing memoization, large DOM trees, missing virtualization
 
 ## Performance Testing Guidance
 

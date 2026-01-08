@@ -219,10 +219,12 @@ build_review_data() {
     file_info=$("${SCRIPT_DIR}/review-file-path.sh" "${file_path_identifier}")
 
     # Load review context
-    local org repo review_context
+    local org repo review_context_json review_context loaded_context_files
     org=$(echo "${git_context}" | jq -r '.org')
     repo=$(echo "${git_context}" | jq -r '.repo')
-    review_context=$(echo "${lang_info}" | "${SCRIPT_DIR}/load-review-context.sh" "${org}" "${repo}")
+    review_context_json=$(echo "${lang_info}" | "${SCRIPT_DIR}/load-review-context.sh" "${org}" "${repo}")
+    review_context=$(echo "${review_context_json}" | jq -r '.content')
+    loaded_context_files=$(echo "${review_context_json}" | jq -r '.loaded_files')
 
     # Build summary for user confirmation
     # Extract mode-specific fields to avoid passing large args to jq
@@ -235,7 +237,7 @@ build_review_data() {
     local file_path
     file_path=$(echo "${file_info}" | jq -r '.file_path')
     local display_summary
-    display_summary=$(build_display_summary "${summary}" "${file_path}")
+    display_summary=$(build_display_summary "${summary}" "${file_path}" "${loaded_context_files}")
 
     # Output JSON for Claude with mode-specific fields
     debug_time "07-final-output" "start"
@@ -292,11 +294,12 @@ build_review_data() {
 }
 
 # Build a pre-formatted display summary for the slash command
-# Args: $1 = summary_json, $2 = file_path
+# Args: $1 = summary_json, $2 = file_path, $3 = loaded_context_files (optional, JSON array)
 # Returns: Markdown-formatted text ready to display
 build_display_summary() {
     local summary_json="$1"
     local file_path="$2"
+    local loaded_context_files="${3:-[]}"
 
     local mode
     mode=$(echo "${summary_json}" | jq -r '.mode')
@@ -349,9 +352,7 @@ Changes:
 - Commits: ${commits}
 - Files: ${files}
 - Added: +${added} lines
-- Removed: -${removed} lines
-
-Review will be saved to: ${file_path}"
+- Removed: -${removed} lines"
             ;;
 
         "pr")
@@ -375,9 +376,7 @@ Branch: ${branch}
 Changes:
 - Files: ${files}
 - Added: +${added} lines
-- Removed: -${removed} lines
-
-Review will be saved to: ${file_path}"
+- Removed: -${removed} lines"
             ;;
 
         "commit")
@@ -398,9 +397,7 @@ Location: ${working_dir}
 Changes:
 - Files: ${files}
 - Added: +${added} lines
-- Removed: -${removed} lines
-
-Review will be saved to: ${file_path}"
+- Removed: -${removed} lines"
             ;;
 
         "range")
@@ -423,9 +420,7 @@ Changes:
 - Commits: ${commits}
 - Files: ${files}
 - Added: +${added} lines
-- Removed: -${removed} lines
-
-Review will be saved to: ${file_path}"
+- Removed: -${removed} lines"
             ;;
 
         "local")
@@ -448,19 +443,34 @@ Review Area: ${area}
 Changes:
 - Files: ${files}
 - Added: +${added} lines
-- Removed: -${removed} lines
-
-Review will be saved to: ${file_path}"
+- Removed: -${removed} lines"
             ;;
 
         *)
             output="Review Summary
 
-Unknown mode: ${mode}
-
-Review will be saved to: ${file_path}"
+Unknown mode: ${mode}"
             ;;
     esac
+
+    # Add loaded context files section if any were loaded
+    local context_count
+    context_count=$(echo "${loaded_context_files}" | jq -r 'length // 0')
+    if [[ "${context_count}" -gt 0 ]]; then
+        output="${output}
+
+Context files loaded:"
+        # Format each file as a bullet point
+        while IFS= read -r context_file; do
+            output="${output}
+- ${context_file}"
+        done < <(echo "${loaded_context_files}" | jq -r '.[]')
+    fi
+
+    # Add final line
+    output="${output}
+
+Review will be saved to: ${file_path}"
 
     echo "${output}"
 }

@@ -119,6 +119,20 @@
 - `large_enum_variant` - box large variants
 - `too_many_arguments` - use a struct
 
+## Log Safety
+
+**Truncate user-provided strings:**
+
+- User-Agent headers can be KB+ from bots/crawlers
+- Truncate to reasonable limits (256-512 chars) in log lines
+- Apply to any user-controlled string in structured logs
+
+```rust
+// Before logging user input
+let user_agent = truncate_chars(raw_user_agent, 512);
+tracing::info!(user_agent = ?user_agent, "request received");
+```
+
 ## Idioms
 
 **Rust conventions:**
@@ -128,3 +142,54 @@
 - Use `Default` trait for initialization
 - Derive `Debug`, `Clone` where appropriate
 - Follow naming conventions (snake_case, CamelCase)
+
+## Derive Awareness (Critical)
+
+**The most common source of unnecessary complexity in Rust:** Manual code that reimplements what a derive macro already provides.
+
+**Detection signals:**
+
+- Field-name string literals: `.get("user_id")` matching struct fields
+- Repetitive per-field operations: N similar `.get().and_then()` calls
+- Disproportionate line count: 50+ lines for a simple type conversion
+- Error messages naming fields: `"Missing 'id' field"`
+
+**Common patterns to flag:**
+
+| If struct has... | Flag this manual pattern | Use instead |
+|------------------|--------------------------|-------------|
+| `#[derive(Deserialize)]` | `.get("field").and_then(\|v\| v.as_*())` chains | `serde_json::from_value()` |
+| `#[derive(Serialize)]` | Manual `serde_json::json!{}` or HashMap building | `serde_json::to_value()` |
+| `#[derive(Clone)]` | `Self { a: self.a.clone(), b: self.b, ... }` | `.clone()` |
+| `#[derive(Default)]` | `Self { a: 0, b: String::new(), ... }` | `Default::default()` |
+| `#[derive(FromRow)]` | Manual `row.get("column")` extraction | Let sqlx use the derive |
+| `#[derive(Debug)]` | Manual `fmt::Debug` impl with same output | Remove manual impl |
+
+**The test:** For any conversion/parsing function, ask: "Does a derive already handle this?"
+
+**Example - what to catch:**
+
+```rust
+// RED FLAG: Struct has Deserialize but function does manual parsing
+#[derive(Deserialize)]
+pub struct Team { id: i32, name: String, /* 30 fields */ }
+
+// This 150-line function should be 3 lines:
+pub fn from_json(value: Value) -> Result<Team, Error> {
+    let obj = value.as_object().ok_or(Error::Parse)?;
+    let id = obj.get("id").and_then(|v| v.as_i64())...;  // repeated 30x
+    // ... 140 more lines of manual field extraction ...
+}
+
+// CORRECT: Use the derive
+pub fn from_json(value: Value) -> Result<Team, Error> {
+    serde_json::from_value(value).map_err(|e| Error::Parse(e.to_string()))
+}
+```
+
+**Why this matters:**
+
+- Manual parsing is 50x more code
+- Manual parsing misses edge cases serde handles (nulls, missing fields, type coercion)
+- Manual parsing must be updated when struct fields change
+- Serde is battle-tested; manual code is not
