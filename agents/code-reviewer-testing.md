@@ -70,6 +70,22 @@ When code under test changes, verify tests stay in sync:
 - Assertions using hardcoded values that don't match new defaults/constants in source
 - Tests that verify state A but not ¬B when the change affects both
 
+### 7b. Test Claims vs Actual Coverage
+
+When a test name claims to verify a relationship (e.g., "consistency between A and B"), verify it actually tests ALL variants:
+
+- **Subset testing**: Test claims to verify all cases but only tests convenient subset
+- **False confidence**: Passing test gives illusion of full coverage
+- **Missing variants**: Adding untested variants to the test would cause it to fail
+
+**Example Issue:**
+```text
+❌ Test "test_error_code_consistency_with_is_5xx" only tests 5 of 12 error variants
+   - Test passes but FlagError::CacheMiss and FlagError::DataParsingError
+     would fail if added (status_code() returns 5xx but is_5xx() returns false)
+   - Fix: Either test ALL variants or rename to "test_error_code_consistency_for_common_errors"
+```
+
 ### 8. Optimization & Boundary Tests (Important)
 
 When code includes optimizations, verify tests exist for:

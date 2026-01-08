@@ -119,6 +119,20 @@
 - `large_enum_variant` - box large variants
 - `too_many_arguments` - use a struct
 
+## Log Safety
+
+**Truncate user-provided strings:**
+
+- User-Agent headers can be KB+ from bots/crawlers
+- Truncate to reasonable limits (256-512 chars) in log lines
+- Apply to any user-controlled string in structured logs
+
+```rust
+// Before logging user input
+let user_agent = truncate_chars(raw_user_agent, 512);
+tracing::info!(user_agent = ?user_agent, "request received");
+```
+
 ## Idioms
 
 **Rust conventions:**
