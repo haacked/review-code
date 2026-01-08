@@ -464,7 +464,7 @@ Context files loaded:"
         while IFS= read -r context_file; do
             output="${output}
 - ${context_file}"
-        done < <(echo "${loaded_context_files}" | jq -r '.[]')
+        done < <(echo "${loaded_context_files}" | jq -r '.[]' || true)
     fi
 
     # Add final line

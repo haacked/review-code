@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/haacked/review-code/actions/workflows/ci.yml/badge.svg)](https://github.com/haacked/review-code/actions/workflows/ci.yml)
 
-A comprehensive code review system for Claude Code that uses specialized AI agents to review your code for security, performance, maintainability, testing, compatibility, and architecture concerns.
+A comprehensive code review system for Claude Code that uses specialized AI agents to review your code for security, performance, correctness, maintainability, testing, compatibility, and architecture concerns.
 
 > **⚠️ macOS Users:** This tool requires **bash 4.0+**. macOS ships with bash 3.2 by default. Install bash 4.0+ with `brew install bash` before proceeding.
 
@@ -12,11 +12,12 @@ This system was built with three core objectives:
 
 ### 1. Comprehensive Code Reviews
 
-Seven specialized agents each focus on a distinct aspect of code quality, ensuring nothing falls through the cracks:
+Eight specialized agents each focus on a distinct aspect of code quality, ensuring nothing falls through the cracks:
 
 **Core Agents (Always Run):**
 - **Security**: Vulnerabilities, OWASP Top 10, secret management
 - **Performance**: Database optimization, N+1 queries, algorithmic complexity
+- **Correctness**: Intent verification, integration boundaries, functional correctness
 - **Maintainability**: Code clarity, simplicity, technical debt
 - **Testing**: Coverage, quality, edge cases
 - **Compatibility**: Breaking changes, backward compatibility
@@ -38,7 +39,7 @@ This architecture solves real problems encountered with single-agent reviews:
 - Superficial coverage across all concerns since one agent can't be expert in everything
 
 **Benefits of Multiple Specialized Agents:**
-- **Parallel Execution**: 6 agents × 2-3s = 3-4s total (4-6x faster than sequential)
+- **Parallel Execution**: 7 agents × 2-3s = 3-4s total (4-6x faster than sequential)
 - **Fresh Context Windows**: Each agent gets full context budget, maintaining quality across all areas
 - **Deep Expertise**: Security agent knows OWASP Top 10, performance agent knows N+1 patterns
 - **Token Efficiency**: Each agent loads only relevant context (security doesn't need performance guidelines)
@@ -72,8 +73,8 @@ This creates a virtuous cycle where reviews get better as you identify new patte
 
 ## Features
 
-- **7 Specialized Review Agents**: Each agent focuses on a specific aspect of code quality
-  - **Core Agents (6)**: Security, Performance, Maintainability, Testing, Compatibility, Architecture
+- **8 Specialized Review Agents**: Each agent focuses on a specific aspect of code quality
+  - **Core Agents (7)**: Security, Performance, Correctness, Maintainability, Testing, Compatibility, Architecture
   - **Domain-Specific (1)**: Frontend (conditional - runs only for React/TypeScript files)
 - **Hierarchical Context Loading**: Automatically loads language, framework, org, and repo-specific guidelines
 - **PR and Local Review Modes**: Review pull requests or uncommitted changes

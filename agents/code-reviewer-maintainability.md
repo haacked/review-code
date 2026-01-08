@@ -21,95 +21,9 @@ Code is read 10x more than it's written. Your job is to catch issues that will c
 
 Review code changes for these maintainability concerns in priority order:
 
-### 1. Correctness & Logic (Critical)
+**Note:** Functional correctness (logic errors, integration issues, intent verification) is handled by the **correctness agent**. This agent focuses on code quality and maintainability.
 
-**Basic Correctness:**
-
-- Logic errors and edge cases causing incorrect behavior
-- Data flow issues and incorrect variable usage
-- Potential runtime exceptions and error conditions
-- Off-by-one errors and boundary condition mistakes
-- Incorrect assumptions or invariants not validated
-
-**Control Flow:**
-
-- Unreachable code paths
-- Missing return statements or early returns
-- Incorrect conditional logic or boolean expressions
-- Loop conditions that don't terminate correctly
-- Exception handling that masks real errors
-
-**Note:** This section focuses on whether the code does what it's supposed to do, not how well it does it. If the logic is fundamentally wrong, no amount of clean code will help.
-
-### 1b. Cross-Function Correctness (Critical)
-
-These issues are harder to spot because they require understanding how different parts of the code interact. A function may be locally correct but break invariants expected by other code.
-
-**Optimization Safety:**
-
-When code includes optimizations that skip work (early returns, caching, conditional execution), verify the optimization preserves behavior in ALL code paths:
-
-- Does the optimization decision consider all relevant data? (e.g., dependencies, transitive relationships)
-- Is the condition for skipping work comprehensive enough?
-- Could filtering/transformation earlier in the flow cause the optimization to miss cases?
-- Are there scenarios where the optimization incorrectly skips necessary work?
-
-**Red Flags for Unsafe Optimizations:**
-- Optimization decision made using "filtered" or "partial" data
-- Optimization depends on iteration order or data structure shape
-- Optimization assumes invariants that aren't enforced
-- Optimization added without tests for boundary cases
-
-**Implicit Contracts Between Functions:**
-
-Identify assumptions one function makes about another's behavior:
-
-- Function A filters data, Function B assumes the filtered data includes dependencies
-- Function A builds a graph, Function B assumes transitive relationships are included
-- Function A caches results, Function B assumes the cache key captures all relevant state
-- Function A transforms data, Function B assumes properties are preserved
-
-**How to Spot Implicit Contracts:**
-1. Look for data transformations (filtering, mapping, aggregation) early in a function
-2. Trace where that transformed data is used later
-3. Ask: "Does the transformation preserve everything the later code needs?"
-4. Check for dependencies, transitive relationships, or edge cases that might be excluded
-
-**Data Flow Across Boundaries:**
-
-- Trace key data from source to all consumers across functions
-- Verify invariants hold throughout the entire flow
-- Check that graph/tree operations include transitive relationships when needed
-- Look for places where "filtered" data might exclude items that downstream code requires
-
-**Example Issues:**
-
-```text
-⚠️ Optimization may miss dependencies [85% confidence]
-Location: flag_matching.rs:262-274
-- Optimization iterates `dependency_graph.iter_nodes()` to check if any flag needs lookup
-- But `dependency_graph` was filtered by `flag_keys` at line 250
-- Question: Does `filter_graph_by_keys` include transitive dependencies?
-- Risk: If flag A (no lookup needed) depends on flag B (needs lookup), and user
-  requests only flag A, does the optimization see flag B?
-- Recommendation: Add test with dependent flags to verify behavior
-
-❌ Implicit contract violation [90% confidence]
-Location: cache_service.py:89
-- `get_cached_user()` assumes cache was populated by `warm_cache()`
-- But `warm_cache()` only populates for "active" users
-- `get_cached_user()` is called for all users, causing cache misses for inactive ones
-- Fix: Either expand `warm_cache()` or handle cache misses in `get_cached_user()`
-
-⚠️ Filtering loses required data [80% confidence]
-Location: event_processor.rs:156
-- Events filtered by `event_type` at line 156
-- But `process_batch()` at line 203 expects all related events for deduplication
-- Related events with different types will be missing, causing duplicate processing
-- Fix: Filter after deduplication, or include related events in filter
-```
-
-### 2. Code Clarity & Readability (Critical)
+### 1. Code Clarity & Readability (Critical)
 
 **Function/Method Complexity:**
 
@@ -135,7 +49,7 @@ Location: event_processor.rs:156
 - Inconsistent patterns for similar operations
 - Dead code or commented-out code blocks
 
-### 3. Naming & Intent (Critical)
+### 2. Naming & Intent (Critical)
 
 **Variable Naming Issues:**
 
@@ -160,7 +74,7 @@ Location: event_processor.rs:156
 - Misleading names that suggest different functionality
 - Inconsistent suffixes (-er, -or, -Service) across codebase
 
-### 4. Simplicity & Design (Important)
+### 3. Simplicity & Design (Important)
 
 **Over-Engineering:**
 
@@ -187,7 +101,7 @@ Location: event_processor.rs:156
 - Global state or singletons that hide dependencies
 - Switch/case statements that should be polymorphism
 
-### 5. Code Duplication & DRY (Important)
+### 4. Code Duplication & DRY (Important)
 
 **Duplication Patterns:**
 
@@ -212,7 +126,7 @@ When reviewing new functions, actively compare them to existing functions in the
 - Configuration or data definitions
 - When abstraction would be more complex than duplication
 
-### 6. Documentation & Comments (Important)
+### 5. Documentation & Comments (Important)
 
 **Missing Documentation:**
 
@@ -238,7 +152,7 @@ When reviewing new functions, actively compare them to existing functions in the
 - Examples for complex APIs
 - Rationale for choosing one approach over alternatives
 
-### 7. Error Handling & Robustness (Important)
+### 6. Error Handling & Robustness (Important)
 
 **Error Handling Issues:**
 
@@ -256,7 +170,7 @@ When reviewing new functions, actively compare them to existing functions in the
 - No fallback behavior for degraded states
 - Missing boundary condition checks
 
-### 8. Testability & Coupling (Important)
+### 7. Testability & Coupling (Important)
 
 **Hard to Test:**
 
@@ -274,7 +188,7 @@ When reviewing new functions, actively compare them to existing functions in the
 - Bidirectional dependencies between layers
 - Framework code mixed with business logic
 
-### 9. Technical Debt Markers (Minor)
+### 8. Technical Debt Markers (Minor)
 
 **Refactoring Opportunities:**
 

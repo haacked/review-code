@@ -105,6 +105,7 @@ remove_agents() {
         "code-review-context-explorer"
         "code-reviewer-security"
         "code-reviewer-performance"
+        "code-reviewer-correctness"
         "code-reviewer-maintainability"
         "code-reviewer-testing"
         "code-reviewer-compatibility"

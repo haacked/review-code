@@ -219,7 +219,7 @@ fi
 # This allows the orchestrator to show users which context files were loaded
 # Build JSON array of loaded files
 loaded_files_json="[]"
-if [[ "${loaded_file_list[*]:-}" ]]; then
+if [[ -n "${loaded_file_list[*]:-}" ]]; then
     loaded_files_json=$(printf '%s\n' "${loaded_file_list[@]}" | jq -R . | jq -s .)
 fi
 
