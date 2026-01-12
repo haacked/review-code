@@ -189,9 +189,32 @@ main() {
 }
 
 # Common helper: Build review data from diff content
-# Args: $1 = mode, $2 = diff_content, $3 = git_context, $4 = file_path_identifier, $5 = pr_context (optional), $@ = mode-specific jq args
+# Args: [--override-org ORG] [--override-repo REPO] $1 = mode, $2 = diff_content, $3 = git_context, $4 = file_path_identifier, $5 = pr_context (optional), $@ = mode-specific jq args
+# Optional flags:
+#   --override-org ORG: Use this org for file path and context loading (for PR mode when not in matching repo)
+#   --override-repo REPO: Use this repo for file path and context loading (for PR mode when not in matching repo)
 # Returns: JSON output on stdout
 build_review_data() {
+    # Parse optional override flags
+    local override_org=""
+    local override_repo=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --override-org)
+                override_org="$2"
+                shift 2
+                ;;
+            --override-repo)
+                override_repo="$2"
+                shift 2
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+
     local mode="$1"
     local diff_content="$2"
     local git_context="$3"
@@ -214,14 +237,23 @@ build_review_data() {
     local file_metadata
     file_metadata=$(echo "${diff_content}" | "${SCRIPT_DIR}/pre-review-context.sh")
 
-    # Get review file path
+    # Get review file path (with org/repo override if provided)
     local file_info
-    file_info=$("${SCRIPT_DIR}/review-file-path.sh" "${file_path_identifier}")
+    if [[ -n "${override_org}" && -n "${override_repo}" ]]; then
+        file_info=$("${SCRIPT_DIR}/review-file-path.sh" --org "${override_org}" --repo "${override_repo}" "${file_path_identifier}")
+    else
+        file_info=$("${SCRIPT_DIR}/review-file-path.sh" "${file_path_identifier}")
+    fi
 
-    # Load review context
+    # Load review context (use override org/repo if provided, otherwise extract from git_context)
     local org repo review_context_json review_context loaded_context_files
-    org=$(echo "${git_context}" | jq -r '.org')
-    repo=$(echo "${git_context}" | jq -r '.repo')
+    if [[ -n "${override_org}" && -n "${override_repo}" ]]; then
+        org="${override_org}"
+        repo="${override_repo}"
+    else
+        org=$(echo "${git_context}" | jq -r '.org')
+        repo=$(echo "${git_context}" | jq -r '.repo')
+    fi
     review_context_json=$(echo "${lang_info}" | "${SCRIPT_DIR}/load-review-context.sh" "${org}" "${repo}")
     review_context=$(echo "${review_context_json}" | jq -r '.content')
     loaded_context_files=$(echo "${review_context_json}" | jq -r '.loaded_files')
@@ -651,6 +683,39 @@ build_summary() {
                     }
                 }'
             ;;
+        "pr")
+            # Extract PR fields from pr_context
+            local pr_number pr_title pr_url pr_branch
+            pr_number=$(echo "${pr_context}" | jq -r '.number // "unknown"')
+            pr_title=$(echo "${pr_context}" | jq -r '.title // "unknown"')
+            pr_url=$(echo "${pr_context}" | jq -r '.url // "unknown"')
+            pr_branch=$(echo "${parsed_args}" | jq -r '.mode_branch // "unknown"')
+
+            jq -n \
+                --arg mode "${mode}" \
+                --arg org "${org}" \
+                --arg repo "${repo}" \
+                --arg pr_number "${pr_number}" \
+                --arg pr_title "${pr_title}" \
+                --arg pr_url "${pr_url}" \
+                --arg branch "${pr_branch}" \
+                --arg files "${files_changed}" \
+                --arg added "${lines_added}" \
+                --arg removed "${lines_removed}" \
+                '{
+                    mode: $mode,
+                    repository: "\($org)/\($repo)",
+                    pr_number: $pr_number,
+                    pr_title: $pr_title,
+                    pr_url: $pr_url,
+                    branch: $branch,
+                    stats: {
+                        files_changed: $files,
+                        lines_added: $added,
+                        lines_removed: $removed
+                    }
+                }'
+            ;;
         *)
             jq -n \
                 --arg mode "${mode}" \
@@ -694,6 +759,8 @@ handle_pr_review() {
     # 2. Current repo matches PR's repo
     # 3. Current branch matches PR's head branch
     local use_fast_path=false
+    local git_context=""
+
     if git rev-parse --git-dir > /dev/null 2>&1; then
         # Source git helpers to get current repo info
         source "${SCRIPT_DIR}/helpers/git-helpers.sh"
@@ -711,89 +778,42 @@ handle_pr_review() {
 
         if [[ "${current_org}" = "${org}" ]] && [[ "${current_repo}" = "${repo}" ]] && [[ "${current_branch}" = "${head_ref}" ]]; then
             use_fast_path=true
+            # Use actual git context when on matching branch
+            git_context=$("${SCRIPT_DIR}/git-context.sh")
         fi
     fi
 
-    # Get file path info (pass org/repo if not using fast path)
-    local file_info
-    if [[ "${use_fast_path}" = true ]]; then
-        file_info=$("${SCRIPT_DIR}/review-file-path.sh" "pr-${pr_number}")
-    else
-        file_info=$("${SCRIPT_DIR}/review-file-path.sh" --org "${org}" --repo "${repo}" "pr-${pr_number}")
+    # If not on fast path, construct a synthetic git_context with PR's org/repo
+    if [[ -z "${git_context}" ]]; then
+        git_context=$(jq -n \
+            --arg org "${org}" \
+            --arg repo "${repo}" \
+            --arg branch "${head_ref}" \
+            --arg commit "unknown" \
+            --arg working_dir "$(pwd)" \
+            '{
+                org: $org,
+                repo: $repo,
+                branch: $branch,
+                commit: $commit,
+                working_dir: $working_dir,
+                has_changes: false
+            }')
     fi
 
-    # Extract file metadata from diff
-    local file_metadata
-    file_metadata=$(echo "${pr_data}" | jq -r '.diff' | "${SCRIPT_DIR}/pre-review-context.sh")
-
-    # Build summary for PR
-    local diff_content pr_title pr_url
+    # Extract diff content from PR data
+    local diff_content
     diff_content=$(echo "${pr_data}" | jq -r '.diff')
-    pr_title=$(echo "${pr_data}" | jq -r '.title')
-    pr_url=$(echo "${pr_data}" | jq -r '.url')
 
-    local files_changed lines_added lines_removed
-    files_changed=$(echo "${diff_content}" | grep -cE '^diff --git')
-    lines_added=$(echo "${diff_content}" | grep -E '^\+' | grep -vcE '^\+\+\+')
-    lines_removed=$(echo "${diff_content}" | grep -E '^-' | grep -vcE '^---')
-
-    local summary
-    summary=$(jq -n \
-        --arg mode "pr" \
-        --arg org "${org}" \
-        --arg repo "${repo}" \
-        --arg pr_number "${pr_number}" \
-        --arg pr_title "${pr_title}" \
-        --arg pr_url "${pr_url}" \
-        --arg branch "${head_ref}" \
-        --arg files "${files_changed}" \
-        --arg added "${lines_added}" \
-        --arg removed "${lines_removed}" \
-        '{
-            mode: $mode,
-            repository: "\($org)/\($repo)",
-            pr_number: $pr_number,
-            pr_title: $pr_title,
-            pr_url: $pr_url,
-            branch: $branch,
-            stats: {
-                files_changed: $files,
-                lines_added: $added,
-                lines_removed: $removed
-            }
-        }')
-
-    # Build pre-formatted display summary for slash command
-    local file_path
-    file_path=$(echo "${file_info}" | jq -r '.file_path')
-    local display_summary
-    display_summary=$(build_display_summary "${summary}" "${file_path}")
-
-    # Output JSON for Claude
-    debug_time "07-final-output" "start"
-    local final_output
-    final_output=$(jq -n \
-        --argjson pr "${pr_data}" \
-        --argjson file "${file_info}" \
-        --argjson meta "${file_metadata}" \
-        --argjson summary "${summary}" \
-        --arg display "${display_summary}" \
-        '{
-            status: "ready",
-            mode: "pr",
-            pr: $pr,
-            file_info: $file,
-            file_metadata: $meta,
-            summary: $summary,
-            display_summary: $display,
-            next_step: "gather_architectural_context"
-        }')
-    debug_save_json "07-final-output" "output.json" <<< "${final_output}"
-    debug_time "07-final-output" "end"
-    debug_time "00-orchestrator" "end"
-    debug_finalize
-
-    echo "${final_output}"
+    # Call build_review_data with override flags if not on fast path
+    if [[ "${use_fast_path}" = true ]]; then
+        build_review_data "pr" "${diff_content}" "${git_context}" "pr-${pr_number}" "${pr_data}" \
+            --arg mode_branch "${head_ref}"
+    else
+        build_review_data --override-org "${org}" --override-repo "${repo}" \
+            "pr" "${diff_content}" "${git_context}" "pr-${pr_number}" "${pr_data}" \
+            --arg mode_branch "${head_ref}"
+    fi
 }
 
 # Handle commit review
