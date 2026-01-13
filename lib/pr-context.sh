@@ -41,6 +41,28 @@ if ! command -v gh &> /dev/null; then
     exit 1
 fi
 
+# Validate repo_spec format (owner/repo pattern)
+# Returns 0 if valid, 1 if invalid
+validate_repo_spec() {
+    local repo_spec="$1"
+    if [[ ! "${repo_spec}" =~ ^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$ ]]; then
+        error "Invalid repo specification: ${repo_spec}"
+        return 1
+    fi
+    return 0
+}
+
+# Validate PR number (numeric only)
+# Returns 0 if valid, 1 if invalid
+validate_pr_number() {
+    local pr_number="$1"
+    if [[ ! "${pr_number}" =~ ^[0-9]+$ ]]; then
+        error "Invalid PR number: ${pr_number}"
+        return 1
+    fi
+    return 0
+}
+
 # Parse PR identifier (number or URL)
 parse_pr_identifier() {
     local input="$1"
@@ -95,12 +117,13 @@ fetch_pr_diff() {
 
 # Fetch PR conversation comments (main discussion thread)
 # Uses paginated API to handle PRs with many comments.
-# Note: Direct string interpolation is safe here because repo_spec and pr_number
-# are validated by parse_pr_identifier() and passed as URL path data to gh api,
-# not executed as shell commands.
 fetch_conversation_comments() {
     local pr_number="$1"
     local repo_spec="$2"
+
+    # Validate inputs before interpolating into URL
+    validate_pr_number "${pr_number}" || return 1
+    validate_repo_spec "${repo_spec}" || return 1
 
     gh api --paginate "repos/${repo_spec}/issues/${pr_number}/comments" \
         | jq -s 'add | [.[] | {id, author: .user.login, body, created_at, url: .html_url}]'
@@ -108,12 +131,13 @@ fetch_conversation_comments() {
 
 # Fetch inline review comments (line-level code feedback)
 # Uses paginated API to handle PRs with many review comments.
-# Note: Direct string interpolation is safe here because repo_spec and pr_number
-# are validated by parse_pr_identifier() and passed as URL path data to gh api,
-# not executed as shell commands.
 fetch_inline_comments() {
     local pr_number="$1"
     local repo_spec="$2"
+
+    # Validate inputs before interpolating into URL
+    validate_pr_number "${pr_number}" || return 1
+    validate_repo_spec "${repo_spec}" || return 1
 
     gh api --paginate "repos/${repo_spec}/pulls/${pr_number}/comments" \
         | jq -s 'add | [.[] | {id, author: .user.login, body, path, line, side, diff_hunk, created_at, in_reply_to_id, url: .html_url}]'
