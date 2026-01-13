@@ -343,6 +343,25 @@ IMPORTANT: Build upon the previous review. Do not duplicate findings. You may:
 - Mark findings as resolved if fixed
 ```
 
+**Handling Existing PR Comments:**
+
+When the context includes PR comments (`$pr_comments`), instruct agents to:
+1. **Never claim credit** for issues already identified by other reviewers
+2. **Evaluate each finding** - Is it legitimate? Correct? A false positive?
+3. **Attribute with assessment**: `[Found by @username] Issue description` + your analysis
+4. **Track fix status**: `✅ Fixed in <commit>`, `Open`, or `Invalid`
+5. **Summarize at the start** in a table:
+   ```
+   | Issue | Found By | Status | Assessment |
+   |-------|----------|--------|------------|
+   | N+1 query | @bot | ✅ Fixed | Valid - good catch |
+   | Missing null check | @reviewer | Open | Valid - needs fix |
+   | Unused import | @linter | Invalid | False positive - used in macro |
+   ```
+6. **Focus on NEW findings** not already raised
+
+Comment structure: `conversation` (discussion), `reviews` (approve/changes), `inline` (line-level with `path`, `line`, `author`, `body`)
+
 **Determine which agents to invoke:**
 
 **If area is "security"**: Invoke ONLY `code-reviewer-security` agent with the context
