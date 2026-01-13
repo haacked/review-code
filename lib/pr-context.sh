@@ -94,23 +94,29 @@ fetch_pr_diff() {
 }
 
 # Fetch PR conversation comments (main discussion thread)
-# Uses paginated API to handle PRs with many comments
+# Uses paginated API to handle PRs with many comments.
+# Note: Direct string interpolation is safe here because repo_spec and pr_number
+# are validated by parse_pr_identifier() and passed as URL path data to gh api,
+# not executed as shell commands.
 fetch_conversation_comments() {
-    local repo_spec="$1"
-    local pr_number="$2"
+    local pr_number="$1"
+    local repo_spec="$2"
 
     gh api --paginate "repos/${repo_spec}/issues/${pr_number}/comments" \
-        | jq '[.[] | {id, author: .user.login, body, created_at, url: .html_url}]'
+        | jq -s 'add | [.[] | {id, author: .user.login, body, created_at, url: .html_url}]'
 }
 
 # Fetch inline review comments (line-level code feedback)
-# Uses paginated API to handle PRs with many review comments
+# Uses paginated API to handle PRs with many review comments.
+# Note: Direct string interpolation is safe here because repo_spec and pr_number
+# are validated by parse_pr_identifier() and passed as URL path data to gh api,
+# not executed as shell commands.
 fetch_inline_comments() {
-    local repo_spec="$1"
-    local pr_number="$2"
+    local pr_number="$1"
+    local repo_spec="$2"
 
     gh api --paginate "repos/${repo_spec}/pulls/${pr_number}/comments" \
-        | jq '[.[] | {id, author: .user.login, body, path, line, side, diff_hunk, created_at, in_reply_to_id, url: .html_url}]'
+        | jq -s 'add | [.[] | {id, author: .user.login, body, path, line, side, diff_hunk, created_at, in_reply_to_id, url: .html_url}]'
 }
 
 # Fetch review summaries (approval/changes requested with body text)
@@ -203,22 +209,22 @@ main() {
     local reviews="[]"
 
     if [[ -n "${repo_spec}" ]]; then
-        if ! conversation_comments=$(fetch_conversation_comments "${repo_spec}" "${pr_number}" 2>&1); then
+        if ! conversation_comments=$(fetch_conversation_comments "${pr_number}" "${repo_spec}"); then
             # Non-fatal: log warning but continue
-            echo "Warning: Failed to fetch conversation comments: ${conversation_comments}" >&2
+            warning "Failed to fetch conversation comments"
             conversation_comments="[]"
         fi
 
-        if ! inline_comments=$(fetch_inline_comments "${repo_spec}" "${pr_number}" 2>&1); then
+        if ! inline_comments=$(fetch_inline_comments "${pr_number}" "${repo_spec}"); then
             # Non-fatal: log warning but continue
-            echo "Warning: Failed to fetch inline comments: ${inline_comments}" >&2
+            warning "Failed to fetch inline comments"
             inline_comments="[]"
         fi
     fi
 
-    if ! reviews=$(fetch_reviews "${pr_number}" "${repo_spec}" 2>&1); then
+    if ! reviews=$(fetch_reviews "${pr_number}" "${repo_spec}"); then
         # Non-fatal: log warning but continue
-        echo "Warning: Failed to fetch reviews: ${reviews}" >&2
+        warning "Failed to fetch reviews"
         reviews="[]"
     fi
 

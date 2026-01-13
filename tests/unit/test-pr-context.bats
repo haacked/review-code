@@ -90,8 +90,20 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
+@test "pr-context.sh: fetch_conversation_comments uses jq slurp for pagination" {
+    # jq -s is required to combine multiple pages into a single array
+    run bash -c "source '$PROJECT_ROOT/lib/pr-context.sh' && declare -f fetch_conversation_comments | grep -q 'jq -s'"
+    [ "$status" -eq 0 ]
+}
+
 @test "pr-context.sh: fetch_inline_comments uses paginated API" {
     run bash -c "source '$PROJECT_ROOT/lib/pr-context.sh' && declare -f fetch_inline_comments | grep -q 'gh api --paginate'"
+    [ "$status" -eq 0 ]
+}
+
+@test "pr-context.sh: fetch_inline_comments uses jq slurp for pagination" {
+    # jq -s is required to combine multiple pages into a single array
+    run bash -c "source '$PROJECT_ROOT/lib/pr-context.sh' && declare -f fetch_inline_comments | grep -q 'jq -s'"
     [ "$status" -eq 0 ]
 }
 
