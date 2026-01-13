@@ -21,7 +21,11 @@
 #     "base_ref": "main",
 #     "state": "open",
 #     "diff": "diff content...",
-#     "comments": "formatted comments..."
+#     "comments": {
+#       "conversation": [...],  # PR discussion thread comments
+#       "reviews": [...],       # Review summaries with state
+#       "inline": [...]         # Line-level code review comments
+#     }
 #   }
 
 # Source error helpers
@@ -89,18 +93,37 @@ fetch_pr_diff() {
     "${gh_cmd[@]}"
 }
 
-# Fetch PR comments
-fetch_pr_comments() {
+# Fetch PR conversation comments (main discussion thread)
+# Uses paginated API to handle PRs with many comments
+fetch_conversation_comments() {
+    local repo_spec="$1"
+    local pr_number="$2"
+
+    gh api --paginate "repos/${repo_spec}/issues/${pr_number}/comments" \
+        | jq '[.[] | {id, author: .user.login, body, created_at, url: .html_url}]'
+}
+
+# Fetch inline review comments (line-level code feedback)
+# Uses paginated API to handle PRs with many review comments
+fetch_inline_comments() {
+    local repo_spec="$1"
+    local pr_number="$2"
+
+    gh api --paginate "repos/${repo_spec}/pulls/${pr_number}/comments" \
+        | jq '[.[] | {id, author: .user.login, body, path, line, side, diff_hunk, created_at, in_reply_to_id, url: .html_url}]'
+}
+
+# Fetch review summaries (approval/changes requested with body text)
+fetch_reviews() {
     local pr_number="$1"
     local repo_spec="${2:-}"
 
-    # Use array to prevent command injection
-    local gh_cmd=(gh pr view "${pr_number}" --comments)
+    local gh_cmd=(gh pr view "${pr_number}" --json reviews)
     if [[ -n "${repo_spec}" ]]; then
         gh_cmd+=(--repo "${repo_spec}")
     fi
 
-    "${gh_cmd[@]}"
+    "${gh_cmd[@]}" | jq '.reviews | [.[] | {id, author: .author.login, state, body, submitted_at: .submittedAt}]'
 }
 
 # Main logic
@@ -144,12 +167,6 @@ main() {
         exit 1
     fi
 
-    local comments
-    if ! comments=$(fetch_pr_comments "${pr_number}" "${repo_spec}" 2>&1); then
-        error "Failed to fetch PR comments for #${pr_number}: ${comments}"
-        exit 1
-    fi
-
     # Extract fields from metadata JSON
     local title
     title=$(echo "${metadata}" | jq -r '.title')
@@ -175,9 +192,38 @@ main() {
         fi
     fi
 
+    # Rebuild repo_spec now that we have org/repo
+    if [[ -z "${repo_spec}" && -n "${org}" && -n "${repo}" ]]; then
+        repo_spec="${org}/${repo}"
+    fi
+
+    # Fetch all comment types (conversation, inline, reviews) with pagination
+    local conversation_comments="[]"
+    local inline_comments="[]"
+    local reviews="[]"
+
+    if [[ -n "${repo_spec}" ]]; then
+        if ! conversation_comments=$(fetch_conversation_comments "${repo_spec}" "${pr_number}" 2>&1); then
+            # Non-fatal: log warning but continue
+            echo "Warning: Failed to fetch conversation comments: ${conversation_comments}" >&2
+            conversation_comments="[]"
+        fi
+
+        if ! inline_comments=$(fetch_inline_comments "${repo_spec}" "${pr_number}" 2>&1); then
+            # Non-fatal: log warning but continue
+            echo "Warning: Failed to fetch inline comments: ${inline_comments}" >&2
+            inline_comments="[]"
+        fi
+    fi
+
+    if ! reviews=$(fetch_reviews "${pr_number}" "${repo_spec}" 2>&1); then
+        # Non-fatal: log warning but continue
+        echo "Warning: Failed to fetch reviews: ${reviews}" >&2
+        reviews="[]"
+    fi
+
     # Escape special characters for JSON
     diff=$(echo "${diff}" | jq -Rs .)
-    comments=$(echo "${comments}" | jq -Rs .)
     body=$(echo "${body}" | jq -Rs . | jq -r .)
 
     # Output combined JSON
@@ -195,7 +241,11 @@ main() {
     "base_ref": "${base_ref}",
     "state": "${state}",
     "diff": ${diff},
-    "comments": ${comments}
+    "comments": {
+        "conversation": ${conversation_comments},
+        "reviews": ${reviews},
+        "inline": ${inline_comments}
+    }
 }
 EOF
 }
