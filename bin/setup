@@ -274,10 +274,12 @@ install_agents() {
         "code-review-context-explorer"
         "code-reviewer-security"
         "code-reviewer-performance"
+        "code-reviewer-correctness"
         "code-reviewer-maintainability"
         "code-reviewer-testing"
         "code-reviewer-compatibility"
         "code-reviewer-architecture"
+        "code-reviewer-frontend"
     )
 
     # Create agents directory
@@ -301,7 +303,7 @@ install_agents() {
         cp "${src}" "${dst}"
     done
 
-    info "Installed ${#agents[@]} agents (6 reviewers + 1 context explorer)"
+    info "Installed ${#agents[@]} agents (8 reviewers + 1 context explorer)"
 }
 
 install_scripts() {

@@ -364,13 +364,15 @@ Comment structure: `conversation` (discussion), `reviews` (approve/changes), `in
 
 **Determine which agents to invoke:**
 
-**If area is "security"**: Invoke ONLY `code-reviewer-security` agent with the context
-**If area is "performance"**: Invoke ONLY `code-reviewer-performance` agent with the context
-**If area is "correctness"**: Invoke ONLY `code-reviewer-correctness` agent with the context
-**If area is "maintainability"**: Invoke ONLY `code-reviewer-maintainability` agent with the context
-**If area is "testing"**: Invoke ONLY `code-reviewer-testing` agent with the context
-**If area is "compatibility"**: Invoke ONLY `code-reviewer-compatibility` agent with the context
-**If area is "architecture"**: Invoke ONLY `code-reviewer-architecture` agent with the context
+Use the Task tool with `subagent_type` set to the agent name, passing the full context as the `prompt`.
+
+**If area is "security"**: Use Task tool with `subagent_type: "code-reviewer-security"`
+**If area is "performance"**: Use Task tool with `subagent_type: "code-reviewer-performance"`
+**If area is "correctness"**: Use Task tool with `subagent_type: "code-reviewer-correctness"`
+**If area is "maintainability"**: Use Task tool with `subagent_type: "code-reviewer-maintainability"`
+**If area is "testing"**: Use Task tool with `subagent_type: "code-reviewer-testing"`
+**If area is "compatibility"**: Use Task tool with `subagent_type: "code-reviewer-compatibility"`
+**If area is "architecture"**: Use Task tool with `subagent_type: "code-reviewer-architecture"`
 
 **If no area specified (comprehensive review)**:
 
@@ -382,7 +384,14 @@ has_frontend=$(echo "$review_data" | \
   jq -r ".languages.has_frontend // false")
 ```
 
-**Always invoke these 7 core agents in PARALLEL:**
+**Always invoke these 7 core agents in PARALLEL using the Task tool:**
+
+For each agent, use the Task tool with:
+- `subagent_type`: The agent name (e.g., "code-reviewer-security")
+- `prompt`: The full context built above (PR details, diff, architectural context, etc.)
+- `description`: Short description like "Security review"
+
+Agents to invoke:
 1. `code-reviewer-security` - Focus: vulnerabilities, exploits, security hardening
 2. `code-reviewer-performance` - Focus: bottlenecks, inefficiencies, optimization
 3. `code-reviewer-correctness` - Focus: intent verification, integration boundaries, functional correctness
@@ -394,7 +403,7 @@ has_frontend=$(echo "$review_data" | \
 **If `has_frontend` is true**, also invoke in the same parallel batch:
 8. `code-reviewer-frontend` - Focus: React/TypeScript patterns, component design, state management, accessibility
 
-All agents receive the same context but focus on their specific area.
+**IMPORTANT:** Pass the FULL context (PR info, diff, architectural context, guidelines) to each agent as the prompt. Agents cannot review code without receiving the actual code changes.
 
 ### Collect and Present Results
 
