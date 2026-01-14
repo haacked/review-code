@@ -1,7 +1,7 @@
 ---
 name: code-reviewer-frontend
 description: Use this agent when you need deep frontend code review focused on React, Kea, component design, accessibility, and state management. Focuses exclusively on frontend-specific concerns. Examples: Before deploying UI changes, when modifying React components, for accessibility-critical features, state management refactoring. Use this for thorough frontend review beyond general code quality.
-model: sonnet
+model: opus
 color: cyan
 ---
 

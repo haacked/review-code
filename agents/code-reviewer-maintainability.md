@@ -1,7 +1,7 @@
 ---
 name: code-reviewer-maintainability
 description: Use this agent when you need deep maintainability analysis of code changes. Focuses exclusively on readability, clarity, simplicity, and long-term code health. Examples: Before refactoring, when reviewing complex logic, for code that will be maintained by others. Use this for thorough maintainability review that ensures code is boring, simple, and easy to understand.
-model: sonnet
+model: opus
 color: green
 ---
 

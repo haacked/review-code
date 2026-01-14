@@ -1,7 +1,7 @@
 ---
 name: code-reviewer-compatibility
 description: Use this agent when you need backwards compatibility analysis of code changes. Focuses exclusively on breaking changes with code already shipped in the default branch (main/master). Examples: Before deploying API changes, when modifying public interfaces, for database schema updates. Use this to catch breaking changes that affect production users.
-model: sonnet
+model: opus
 color: purple
 ---
 
