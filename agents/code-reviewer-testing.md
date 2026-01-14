@@ -1,6 +1,6 @@
 ---
 name: code-reviewer-testing
-description: Use this agent when you need deep test quality analysis of code changes. Focuses exclusively on test coverage, test patterns, and ensuring comprehensive testing. Examples: Before merging features without tests, when fixing bugs without regression tests, for reviewing test suites. Use this for thorough test review that ensures tests are comprehensive, clear, and maintainable.
+description: "Use this agent when you need deep test quality analysis of code changes. Focuses exclusively on test coverage, test patterns, and ensuring comprehensive testing. Examples: Before merging features without tests, when fixing bugs without regression tests, for reviewing test suites. Use this for thorough test review that ensures tests are comprehensive, clear, and maintainable."
 model: opus
 color: yellow
 ---

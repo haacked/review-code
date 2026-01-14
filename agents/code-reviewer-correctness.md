@@ -1,6 +1,6 @@
 ---
 name: code-reviewer-correctness
-description: Use this agent when you need to verify code actually works as intended. Focuses on functional correctness - does the code do what it claims to do? Does it integrate correctly with other systems? Examples: When code crosses system boundaries (cache, queue, API), when PR description makes specific claims, when code interacts with other components. Use this for verifying intent matches implementation.
+description: "Use this agent when you need to verify code actually works as intended. Focuses on functional correctness - does the code do what it claims to do? Does it integrate correctly with other systems? Examples: When code crosses system boundaries (cache, queue, API), when PR description makes specific claims, when code interacts with other components. Use this for verifying intent matches implementation."
 model: opus
 color: orange
 ---

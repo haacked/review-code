@@ -1,6 +1,6 @@
 ---
 name: code-reviewer-performance
-description: Use this agent when you need deep performance analysis of code changes. Focuses exclusively on bottlenecks, inefficiencies, and optimization opportunities. Examples: Before deploying database query changes, when implementing high-traffic endpoints, for performance-critical features like event processing or analytics. Use this for thorough performance review beyond the general code-reviewer's coverage.
+description: "Use this agent when you need deep performance analysis of code changes. Focuses exclusively on bottlenecks, inefficiencies, and optimization opportunities. Examples: Before deploying database query changes, when implementing high-traffic endpoints, for performance-critical features like event processing or analytics. Use this for thorough performance review beyond the general code-reviewer's coverage."
 model: opus
 color: orange
 ---

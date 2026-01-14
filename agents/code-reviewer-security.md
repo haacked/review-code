@@ -1,6 +1,6 @@
 ---
 name: code-reviewer-security
-description: Use this agent when you need deep security analysis of code changes. Focuses exclusively on vulnerabilities, exploits, and security hardening. Examples: Before deploying authentication changes, when handling sensitive data or user input, for security-critical features like payment processing or admin panels. Use this for thorough security review beyond the general code-reviewer's coverage.
+description: "Use this agent when you need deep security analysis of code changes. Focuses exclusively on vulnerabilities, exploits, and security hardening. Examples: Before deploying authentication changes, when handling sensitive data or user input, for security-critical features like payment processing or admin panels. Use this for thorough security review beyond the general code-reviewer's coverage."
 model: opus
 color: red
 ---

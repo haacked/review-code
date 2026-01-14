@@ -1,6 +1,6 @@
 ---
 name: code-reviewer-architecture
-description: Use this agent when you need high-level design and architecture review of code changes. Focuses exclusively on necessity, simplicity, established patterns, and code reuse. Examples: Before adding new dependencies, when implementing new features, for refactoring efforts. Use this to question premises and suggest better approaches.
+description: "Use this agent when you need high-level design and architecture review of code changes. Focuses exclusively on necessity, simplicity, established patterns, and code reuse. Examples: Before adding new dependencies, when implementing new features, for refactoring efforts. Use this to question premises and suggest better approaches."
 model: opus
 color: blue
 ---
