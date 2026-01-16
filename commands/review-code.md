@@ -198,7 +198,7 @@ SESSION_ID="<SESSION_ID>"
 find_data=$(~/.claude/bin/review-code/review-status-handler.sh get-find-data "$SESSION_ID")
 display_target=$(echo "$find_data" | jq -r ".display_target")
 file_path=$(echo "$find_data" | jq -r ".file_info.file_path")
-file_exists=$(echo "$find_data" | jq -r ".file_exists")
+file_exists=$(echo "$find_data" | jq -r ".file_info.file_exists")
 file_summary=$(echo "$find_data" | jq -r ".file_summary")
 echo "Target: $display_target"
 echo "File: $file_path"
