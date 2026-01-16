@@ -9,6 +9,15 @@ set -euo pipefail
 arg="${1:-}"
 file_pattern="${2:-}"
 
+# Check for 'find' mode - if present, strip it and set flag
+FIND_MODE="false"
+if [[ "${arg}" == "find" ]]; then
+    FIND_MODE="true"
+    # Shift arguments: second arg becomes the target, third becomes file_pattern
+    arg="${2:-}"
+    file_pattern="${3:-}"
+fi
+
 # Special keywords for area-specific reviews
 AREA_KEYWORDS=("security" "performance" "maintainability" "testing" "compatibility" "architecture" "frontend")
 
@@ -84,7 +93,7 @@ get_base_branch() {
     echo "main"
 }
 
-# Helper: Build JSON output with optional file_pattern
+# Helper: Build JSON output with optional file_pattern and find_mode
 # Usage: build_json_output mode key1 val1 [key2 val2 ...]
 build_json_output() {
     local mode=$1
@@ -105,6 +114,11 @@ build_json_output() {
     # Add file_pattern if provided
     if [[ -n "${file_pattern}" ]]; then
         jq_args+=("--arg" "file_pattern" "${file_pattern}")
+    fi
+
+    # Add find_mode if enabled
+    if [[ "${FIND_MODE}" == "true" ]]; then
+        jq_args+=("--arg" "find_mode" "true")
     fi
 
     jq -nc "${jq_args[@]}" "${jq_filter}"

@@ -62,7 +62,7 @@ main() {
             repo=$(echo "${pr_data}" | cut -d'|' -f2)
             identifier="${pr_data##*|}"
             ;;
-        "commit" | "branch" | "range" | "local" | "area")
+        "commit" | "branch" | "range" | "local" | "area" | "prompt" | "ambiguous")
             # For git-based modes, use cached git org/repo
             if [[ -n "${git_data}" ]]; then
                 org="${git_data%|*}"
@@ -105,6 +105,14 @@ main() {
     debug_time "01-parse" "start"
     debug_save_json "01-parse" "output.json" <<< "${parse_result}"
     debug_time "01-parse" "end"
+
+    # Step 1.5: Handle find mode - returns early with just file info
+    local find_mode
+    find_mode=$(echo "${parse_result}" | jq -r '.find_mode // "false"')
+    if [[ "${find_mode}" == "true" ]]; then
+        handle_find_mode "${mode}" "${parse_result}" "${org}" "${repo}"
+        exit 0
+    fi
 
     # Step 2: Handle different modes
     case "${mode}" in
@@ -184,6 +192,38 @@ main() {
         *)
             echo "{\"status\":\"error\",\"message\":\"Unknown mode: ${mode}\"}" >&2
             exit 1
+            ;;
+    esac
+}
+
+# Helper: Build file path identifier from mode and parse_result
+# Args: $1 = mode, $2 = value (pr_number, branch, commit, range, or empty for current branch)
+# Returns: identifier string like "pr-123", "branch-foo", "commit-abc", "range-x..y"
+build_file_path_identifier() {
+    local mode="$1"
+    local value="$2"
+
+    case "${mode}" in
+        "pr")
+            echo "pr-${value}"
+            ;;
+        "branch")
+            echo "branch-${value}"
+            ;;
+        "commit")
+            echo "commit-${value}"
+            ;;
+        "range")
+            echo "range-${value}"
+            ;;
+        "local" | "area" | "prompt" | "ambiguous")
+            # Use current branch
+            local branch
+            branch=$(git branch --show-current 2> /dev/null || echo "unknown")
+            echo "branch-${branch}"
+            ;;
+        *)
+            echo ""
             ;;
     esac
 }
@@ -720,6 +760,84 @@ build_summary() {
                 }'
             ;;
     esac
+}
+
+# Handle find mode - returns file info without running full review
+# Args: $1 = mode, $2 = parse_result, $3 = org, $4 = repo
+handle_find_mode() {
+    local mode="$1"
+    local parse_result="$2"
+    local org="$3"
+    local repo="$4"
+
+    # Handle errors
+    if [[ "${mode}" == "error" ]]; then
+        echo "${parse_result}" | jq '{status: "error", message: .error}' >&2
+        return
+    fi
+
+    # For PR mode with just a number, get org/repo from git context
+    if [[ "${mode}" == "pr" ]] && [[ "${org}" == "unknown" ]] && git rev-parse --git-dir > /dev/null 2>&1; then
+        local git_data
+        git_data=$(get_git_org_repo 2> /dev/null || echo "unknown|unknown")
+        org="${git_data%|*}"
+        repo="${git_data#*|}"
+    fi
+
+    # Extract value from parse_result based on mode
+    local value=""
+    case "${mode}" in
+        "pr") value=$(echo "${parse_result}" | jq -r '.pr_number') ;;
+        "branch") value=$(echo "${parse_result}" | jq -r '.branch') ;;
+        "commit") value=$(echo "${parse_result}" | jq -r '.commit') ;;
+        "range") value=$(echo "${parse_result}" | jq -r '.range') ;;
+    esac
+
+    # Use shared helper to build identifier
+    local file_path_identifier
+    file_path_identifier=$(build_file_path_identifier "${mode}" "${value}")
+
+    if [[ -z "${file_path_identifier}" ]]; then
+        echo "{\"status\":\"error\",\"message\":\"Find mode not supported for mode: ${mode}\"}" >&2
+        return
+    fi
+
+    # Build display target from the mode and value
+    local display_target
+    case "${mode}" in
+        "pr") display_target="PR #${value}" ;;
+        "branch") display_target="branch ${value}" ;;
+        "commit") display_target="commit ${value}" ;;
+        "range") display_target="range ${value}" ;;
+        *) display_target="current branch $(git branch --show-current 2> /dev/null || echo unknown)" ;;
+    esac
+
+    # Get file info from review-file-path.sh (handles PR association, existence, etc.)
+    local file_info file_exists
+    file_info=$("${SCRIPT_DIR}/review-file-path.sh" --org "${org}" --repo "${repo}" "${file_path_identifier}")
+    file_exists=$(echo "${file_info}" | jq -r '.file_exists')
+
+    # Update display if review-file-path.sh found an associated PR
+    local found_pr
+    found_pr=$(echo "${file_info}" | jq -r '.pr_number // empty')
+    if [[ -n "${found_pr}" ]] && [[ "${mode}" != "pr" ]]; then
+        display_target="${display_target} (PR #${found_pr})"
+    fi
+
+    # Read file summary if exists
+    local file_path file_summary=""
+    file_path=$(echo "${file_info}" | jq -r '.file_path')
+    if [[ "${file_exists}" == "true" ]] && [[ -f "${file_path}" ]]; then
+        file_summary=$(head -50 "${file_path}" 2> /dev/null || echo "")
+    fi
+
+    # Output result
+    jq -n \
+        --arg status "find" \
+        --argjson file_info "${file_info}" \
+        --arg display_target "${display_target}" \
+        --arg file_summary "${file_summary}" \
+        '{status: $status, file_info: $file_info, display_target: $display_target, file_summary: $file_summary}'
 }
 
 # Handle PR review

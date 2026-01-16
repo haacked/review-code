@@ -47,10 +47,8 @@ ORCHESTRATOR=$(find_orchestrator)
 case "${ACTION}" in
     "init")
         # Initialize session - run orchestrator and cache result
-        ARGUMENTS="${*:-}"
-
-        # Run orchestrator
-        review_data=$("${ORCHESTRATOR}" "${ARGUMENTS}")
+        # Pass arguments separately to preserve word splitting
+        review_data=$("${ORCHESTRATOR}" "$@")
 
         # Create session with the data
         session_id=$(session_init "review-code" "${review_data}")
@@ -170,6 +168,24 @@ case "${ACTION}" in
         session_get_all "${SESSION_ID}"
         ;;
 
+    "get-find-data")
+        # Get find mode data from cached session
+        SESSION_ID="${1:-}"
+        if [[ -z "${SESSION_ID}" ]]; then
+            echo "ERROR: Session ID required" >&2
+            exit 1
+        fi
+
+        status=$(session_get "${SESSION_ID}" ".status")
+        if [[ "${status}" != "find" ]]; then
+            echo "ERROR: Status is not 'find', got: ${status}" >&2
+            exit 1
+        fi
+
+        # Return the find data
+        session_get_all "${SESSION_ID}"
+        ;;
+
     "cleanup")
         # Cleanup session
         SESSION_ID="${1:-}"
@@ -190,7 +206,7 @@ case "${ACTION}" in
 
     *)
         echo "ERROR: Unknown action: ${ACTION}" >&2
-        echo "Valid actions: init, get-status, get-ready-data, get-error-data, get-ambiguous-data, get-prompt-data, get-prompt-pull-data, cleanup, cleanup-old" >&2
+        echo "Valid actions: init, get-status, get-ready-data, get-find-data, get-error-data, get-ambiguous-data, get-prompt-data, get-prompt-pull-data, cleanup, cleanup-old" >&2
         exit 1
         ;;
 esac
