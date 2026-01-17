@@ -1,12 +1,16 @@
 ---
 description: Run specialized code review agents on code changes or pull requests
-argument-hint: [pr|commit|branch|range|area]
+argument-hint: [find|pr|commit|branch|range|area]
 ---
 
 Run specialized code review agent(s) with comprehensive context on local changes or pull requests.
 
 **Arguments:**
 
+- `find` - Find existing review notes without starting a new review
+  - `find` - Find review for current branch/PR
+  - `find <pr-number>` - Find review for specific PR (e.g., `find 123`)
+  - `find <branch>` - Find review for specific branch (e.g., `find feature-branch`)
 - `<pr-url>` - Review Pull Request by URL - works from anywhere (e.g., `https://github.com/org/repo/pull/123`)
   - Uses `gh` CLI to fetch PR context from GitHub
   - No git repository required - review any PR without cloning
@@ -44,6 +48,12 @@ Examples:
 - `/review-code v1.0.0..v2.0.0` - Review changes between two tags
 - `/review-code security` - Run only security review on local changes
 - `/review-code maintainability` - Run only maintainability review on local changes
+
+**Find existing reviews:**
+
+- `/review-code find` - Find review for current branch/PR
+- `/review-code find 123` - Find review for PR #123
+- `/review-code find feature-branch` - Find review for a specific branch
 
 **With file patterns:**
 
@@ -177,6 +187,40 @@ Use AskUserQuestion:
 After user selects:
 - If "Pull and review": Run `git pull`, cleanup old session, then reinitialize with empty argument
 - If "Review local anyway": Cleanup old session, then reinitialize with the branch name explicitly
+
+### Handler: "find"
+
+If STATUS is "find", get the find data from the session and display the result (replace `<SESSION_ID>` with the actual session ID):
+
+```bash
+bash -c '
+SESSION_ID="<SESSION_ID>"
+find_data=$(~/.claude/bin/review-code/review-status-handler.sh get-find-data "$SESSION_ID")
+display_target=$(echo "$find_data" | jq -r ".display_target")
+file_path=$(echo "$find_data" | jq -r ".file_info.file_path")
+file_exists=$(echo "$find_data" | jq -r ".file_info.file_exists")
+file_summary=$(echo "$find_data" | jq -r ".file_summary")
+echo "Target: $display_target"
+echo "File: $file_path"
+echo "Exists: $file_exists"
+~/.claude/bin/review-code/review-status-handler.sh cleanup "$SESSION_ID"
+'
+```
+
+**Present the results to the user:**
+
+If `file_exists` is "true":
+- Display: "Found existing review for $display_target"
+- Show the file path as a clickable link: `file://$file_path`
+- Show a brief summary from `file_summary` (the first ~50 lines of the review file)
+- Offer to open or read the full review
+
+If `file_exists` is "false":
+- Display: "No existing review found for $display_target"
+- Show where the review would be saved: `$file_path`
+- Suggest running `/review-code` (without `find`) to create a new review
+
+Then stop - do not proceed with review agents.
 
 ### Handler: "ready"
 
