@@ -791,6 +791,7 @@ handle_find_mode() {
         "branch") value=$(echo "${parse_result}" | jq -r '.branch') ;;
         "commit") value=$(echo "${parse_result}" | jq -r '.commit') ;;
         "range") value=$(echo "${parse_result}" | jq -r '.range') ;;
+        *) ;;  # Unsupported mode - value stays empty, handled below
     esac
 
     # Use shared helper to build identifier
