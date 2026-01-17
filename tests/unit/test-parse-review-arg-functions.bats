@@ -304,3 +304,100 @@ reset_globals() {
     # Validate JSON by piping to jq
     echo "$output" | jq . > /dev/null
 }
+
+@test "build_json_output: includes find_mode when set" {
+    file_pattern=""
+    FIND_MODE="true"
+    run build_json_output "test" "key" "val"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"find_mode":"true"'* ]]
+}
+
+@test "build_json_output: excludes find_mode when false" {
+    file_pattern=""
+    FIND_MODE="false"
+    run build_json_output "test" "key" "val"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *'"find_mode"'* ]]
+}
+
+# =============================================================================
+# Find mode tests
+# =============================================================================
+
+@test "find mode: FIND_MODE is false by default" {
+    # Re-source to reset FIND_MODE
+    source "$PROJECT_ROOT/lib/parse-review-arg.sh"
+    [ "$FIND_MODE" = "false" ]
+}
+
+@test "find mode: detect_pr works with find mode PR number" {
+    # Simulate find mode argument shifting (find 123 → arg=123)
+    FIND_MODE="true"
+    arg="123"
+    file_pattern=""
+    run detect_pr
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"mode":"pr"'* ]]
+    [[ "$output" == *'"pr_number":"123"'* ]]
+    [[ "$output" == *'"find_mode":"true"'* ]]
+}
+
+@test "find mode: detect_area_keyword works with find mode" {
+    FIND_MODE="true"
+    arg="security"
+    file_pattern=""
+    run detect_area_keyword
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"mode":"area"'* ]]
+    [[ "$output" == *'"find_mode":"true"'* ]]
+}
+
+@test "find mode: detect_git_range works with find mode" {
+    FIND_MODE="true"
+    arg="HEAD~1..HEAD"
+    file_pattern=""
+    run detect_git_range
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"mode":"range"'* ]]
+    [[ "$output" == *'"find_mode":"true"'* ]]
+}
+
+@test "find mode: detect_git_ref works with find mode" {
+    setup_test_git_repo
+    git checkout -q -b feature-branch
+
+    FIND_MODE="true"
+    arg="main"
+    file_pattern=""
+    run detect_git_ref
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"find_mode":"true"'* ]]
+}
+
+@test "find mode: detect_no_arg returns branch on base branch with no changes" {
+    setup_test_git_repo
+    # We're on main branch with no uncommitted changes
+
+    FIND_MODE="true"
+    arg=""
+    file_pattern=""
+    run detect_no_arg
+    [ "$status" -eq 0 ]
+    # Should NOT error, should return branch mode with scope "find"
+    [[ "$output" == *'"mode":"branch"'* ]]
+    [[ "$output" == *'"scope":"find"'* ]]
+    [[ "$output" == *'"find_mode":"true"'* ]]
+}
+
+@test "find mode: detect_no_arg errors on base branch without find mode" {
+    setup_test_git_repo
+    # We're on main branch with no uncommitted changes
+
+    FIND_MODE="false"
+    arg=""
+    file_pattern=""
+    run detect_no_arg
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"No changes to review"* ]]
+}

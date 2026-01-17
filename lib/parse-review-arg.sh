@@ -282,8 +282,14 @@ detect_no_arg() {
         return 0
     fi
 
-    # On base branch with no uncommitted changes - error
+    # On base branch with no uncommitted changes
     if [[ "${is_feature_branch}" == false ]] && [[ "${has_uncommitted}" == false ]]; then
+        # In find mode, return branch mode so user can check if review exists
+        if [[ "${FIND_MODE}" == "true" ]]; then
+            build_json_output "branch" "branch" "${current_branch}" "base_branch" "${base_branch}" "scope" "find"
+            return 0
+        fi
+        # For regular review, error - nothing to review
         build_json_error "No changes to review. Use /review-code <commit|branch|range>"
         exit 1
     fi

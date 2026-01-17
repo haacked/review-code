@@ -430,3 +430,97 @@ teardown() {
     # Should produce JSON output when executed directly
     echo "$output" | jq -e '.mode' > /dev/null
 }
+
+# =============================================================================
+# Find mode tests
+# =============================================================================
+
+@test "review-orchestrator.sh: find mode returns status find" {
+    # Create a change so we have something to find
+    echo "change" > file.txt
+
+    run "$PROJECT_ROOT/lib/review-orchestrator.sh" find
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.status == "find"'
+}
+
+@test "review-orchestrator.sh: find mode includes file_info" {
+    echo "change" > file.txt
+
+    run "$PROJECT_ROOT/lib/review-orchestrator.sh" find
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.file_info.file_path'
+    # file_exists can be true or false, so just check it's a boolean
+    echo "$output" | jq -e 'has("file_info") and (.file_info | has("file_exists"))'
+}
+
+@test "review-orchestrator.sh: find mode includes display_target" {
+    echo "change" > file.txt
+
+    run "$PROJECT_ROOT/lib/review-orchestrator.sh" find
+    [ "$status" -eq 0 ]
+    display_target=$(echo "$output" | jq -r '.display_target')
+    [ -n "$display_target" ]
+    [ "$display_target" != "null" ]
+}
+
+@test "review-orchestrator.sh: find mode does not include diff" {
+    echo "change" > file.txt
+
+    run "$PROJECT_ROOT/lib/review-orchestrator.sh" find
+    [ "$status" -eq 0 ]
+    # Find mode should NOT include diff - it's an early exit
+    diff_value=$(echo "$output" | jq -r '.diff // "not_present"')
+    [ "$diff_value" = "not_present" ]
+}
+
+@test "review-orchestrator.sh: find mode with PR number" {
+    run "$PROJECT_ROOT/lib/review-orchestrator.sh" find 123
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.status == "find"'
+    # Display target should mention PR
+    display_target=$(echo "$output" | jq -r '.display_target')
+    [[ "$display_target" == *"PR"* ]] || [[ "$display_target" == *"123"* ]]
+}
+
+@test "review-orchestrator.sh: find mode with branch" {
+    # Create feature branch
+    git checkout -b find-test-branch
+    echo "feature" > feature.txt
+    git add feature.txt
+    git commit -m "Feature"
+
+    # Switch back to main
+    git checkout main
+
+    run "$PROJECT_ROOT/lib/review-orchestrator.sh" find find-test-branch
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.status == "find"'
+    display_target=$(echo "$output" | jq -r '.display_target')
+    [[ "$display_target" == *"find-test-branch"* ]]
+}
+
+@test "review-orchestrator.sh: find mode on base branch with no changes" {
+    # Clean repo with no changes - should work in find mode
+    run "$PROJECT_ROOT/lib/review-orchestrator.sh" find
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.status == "find"'
+}
+
+@test "review-orchestrator.sh: find mode file_info.file_path is absolute" {
+    echo "change" > file.txt
+
+    run "$PROJECT_ROOT/lib/review-orchestrator.sh" find
+    [ "$status" -eq 0 ]
+    file_path=$(echo "$output" | jq -r '.file_info.file_path')
+    [[ "$file_path" == /* ]]
+}
+
+@test "review-orchestrator.sh: find mode file_exists is boolean string" {
+    echo "change" > file.txt
+
+    run "$PROJECT_ROOT/lib/review-orchestrator.sh" find
+    [ "$status" -eq 0 ]
+    file_exists=$(echo "$output" | jq -r '.file_info.file_exists')
+    [ "$file_exists" = "true" ] || [ "$file_exists" = "false" ]
+}
