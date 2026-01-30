@@ -330,11 +330,19 @@ main() {
         fi
     fi
 
-    # For branch mode with no identifier, check if a PR exists (only if in git repo)
-    if [[ "${in_git_repo}" = true ]] && [[ "${review_type}" = "branch" ]] && [[ -z "${identifier}" ]]; then
-        if [[ -d "${review_dir}" ]] && command -v gh &> /dev/null; then
+    # For branch mode, check if a PR exists and has a review file (only if in git repo)
+    # This handles both empty identifier (current branch) and explicit branch identifiers
+    if [[ "${in_git_repo}" = true ]] && [[ "${review_type}" = "branch" ]] && [[ "${file_exists}" = false ]]; then
+        if command -v gh &> /dev/null; then
+            # Determine which branch to check - use the branch name from the identifier
+            # or fall back to current branch
+            local branch_to_check="${branch}"
+            if [[ -n "${identifier}" ]] && [[ "${identifier}" =~ ^branch-(.+)$ ]]; then
+                branch_to_check="${BASH_REMATCH[1]}"
+            fi
+
             local pr_check
-            pr_check=$(gh pr list --head "${branch}" --json number --jq '.[0].number' 2> /dev/null || echo "")
+            pr_check=$(gh pr list --head "${branch_to_check}" --json number --jq '.[0].number' 2> /dev/null || echo "")
             if [[ -n "${pr_check}" ]]; then
                 local pr_file="${review_dir}/pr-${pr_check}.md"
                 verify_path_safety "${pr_file}" "${review_root}"
