@@ -450,7 +450,7 @@ EOF
     echo "$output" | jq -e '.file_path | endswith("my-feature.md")'
 }
 
-@test "branch fallback: doesn't override existing branch file" {
+@test "branch fallback: PR takes precedence when both exist, flags branch review" {
     # Create BOTH a branch file and PR file
     mkdir -p "$TEST_TEMP_DIR/reviews/myorg/myrepo"
     touch "$TEST_TEMP_DIR/reviews/myorg/myrepo/existing-branch.md"
@@ -471,9 +471,13 @@ EOF
     PATH="$TEST_TEMP_DIR/bin:$PATH" run "$SCRIPT" --org "myorg" --repo "myrepo" "branch-existing-branch"
     [ "$status" -eq 0 ]
 
-    # Should return the branch file since it exists
+    # PR should take precedence
     echo "$output" | jq -e '.file_exists == true'
-    echo "$output" | jq -e '.file_path | endswith("existing-branch.md")'
+    echo "$output" | jq -e '.file_path | endswith("pr-888.md")'
+    echo "$output" | jq -e '.pr_number == "888"'
+    # Should flag that branch review also exists
+    echo "$output" | jq -e '.has_branch_review == true'
+    echo "$output" | jq -e '.branch_review_path | endswith("existing-branch.md")'
 }
 
 @test "branch fallback: handles branch names with slashes" {
@@ -500,4 +504,63 @@ EOF
     echo "$output" | jq -e '.file_exists == true'
     echo "$output" | jq -e '.pr_number == "777"'
     echo "$output" | jq -e '.file_path | endswith("pr-777.md")'
+}
+
+@test "branch fallback: sets needs_rename when branch review exists but no PR review" {
+    # Create only a branch file, no PR file
+    mkdir -p "$TEST_TEMP_DIR/reviews/myorg/myrepo"
+    touch "$TEST_TEMP_DIR/reviews/myorg/myrepo/my-feature.md"
+
+    # Create a mock gh script that returns PR 555
+    mock_gh="$TEST_TEMP_DIR/bin/gh"
+    mkdir -p "$(dirname "$mock_gh")"
+    cat > "$mock_gh" << 'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "pr" ]] && [[ "$2" == "list" ]]; then
+    echo "555"
+fi
+EOF
+    chmod +x "$mock_gh"
+
+    # Run with mock gh in PATH
+    PATH="$TEST_TEMP_DIR/bin:$PATH" run "$SCRIPT" --org "myorg" --repo "myrepo" "branch-my-feature"
+    [ "$status" -eq 0 ]
+
+    # Should return the branch file but suggest migration
+    echo "$output" | jq -e '.file_exists == true'
+    echo "$output" | jq -e '.file_path | endswith("my-feature.md")'
+    echo "$output" | jq -e '.needs_rename == true'
+    echo "$output" | jq -e '.pr_number == "555"'
+}
+
+@test "json output: includes has_branch_review field" {
+    result=$("$SCRIPT" --org "myorg" --repo "myrepo" "test")
+    echo "$result" | jq -e 'has("has_branch_review")'
+}
+
+@test "json output: includes branch_review_path field" {
+    result=$("$SCRIPT" --org "myorg" --repo "myrepo" "test")
+    echo "$result" | jq -e 'has("branch_review_path")'
+}
+
+@test "json output: has_branch_review is false when no branch review exists" {
+    mkdir -p "$TEST_TEMP_DIR/reviews/myorg/myrepo"
+    touch "$TEST_TEMP_DIR/reviews/myorg/myrepo/pr-123.md"
+
+    # Create a mock gh script that returns PR 123
+    mock_gh="$TEST_TEMP_DIR/bin/gh"
+    mkdir -p "$(dirname "$mock_gh")"
+    cat > "$mock_gh" << 'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "pr" ]] && [[ "$2" == "list" ]]; then
+    echo "123"
+fi
+EOF
+    chmod +x "$mock_gh"
+
+    PATH="$TEST_TEMP_DIR/bin:$PATH" run "$SCRIPT" --org "myorg" --repo "myrepo" "branch-some-feature"
+    [ "$status" -eq 0 ]
+
+    echo "$output" | jq -e '.has_branch_review == false'
+    echo "$output" | jq -e '.branch_review_path == null'
 }
