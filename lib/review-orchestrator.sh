@@ -29,8 +29,9 @@ main() {
     local file_pattern="${2:-}"
 
     # Step 1: Parse the argument to determine mode (before debug_init to get context)
+    # Pass all arguments to parser so it can handle flags in any position
     local parse_result
-    parse_result=$("${SCRIPT_DIR}/parse-review-arg.sh" "${arg}" "${file_pattern}") || {
+    parse_result=$("${SCRIPT_DIR}/parse-review-arg.sh" "$@") || {
         echo "${parse_result}" >&2
         exit 1
     }
@@ -797,7 +798,7 @@ handle_find_mode() {
         "branch") value=$(echo "${parse_result}" | jq -r '.branch') ;;
         "commit") value=$(echo "${parse_result}" | jq -r '.commit') ;;
         "range") value=$(echo "${parse_result}" | jq -r '.range') ;;
-        *) ;;  # Unsupported mode - value stays empty, handled below
+        *) ;; # Unsupported mode - value stays empty, handled below
     esac
 
     # Use shared helper to build identifier

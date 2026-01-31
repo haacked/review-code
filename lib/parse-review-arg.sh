@@ -5,30 +5,29 @@
 # shellcheck disable=SC2310  # Functions in conditionals intentionally check return values
 set -euo pipefail
 
-# Get the arguments (empty string if not provided)
-arg="${1:-}"
-file_pattern="${2:-}"
-
-# Check for --force or -f flag anywhere in arguments
+# Process all arguments into an array, extracting flags first
+# This ensures flags can appear anywhere and remaining args are properly ordered
 FORCE_MODE="false"
-if [[ "${arg}" == "--force" ]] || [[ "${arg}" == "-f" ]]; then
-    FORCE_MODE="true"
-    # Shift arguments: second arg becomes the target, third becomes file_pattern
-    arg="${2:-}"
-    file_pattern="${3:-}"
-elif [[ "${file_pattern}" == "--force" ]] || [[ "${file_pattern}" == "-f" ]]; then
-    FORCE_MODE="true"
-    # Flag was second arg, third becomes file_pattern
-    file_pattern="${3:-}"
-fi
-
-# Check for 'find' mode - if present, strip it and set flag
 FIND_MODE="false"
+remaining_args=()
+
+for arg_item in "$@"; do
+    if [[ "${arg_item}" == "--force" ]] || [[ "${arg_item}" == "-f" ]]; then
+        FORCE_MODE="true"
+    else
+        remaining_args+=("${arg_item}")
+    fi
+done
+
+# Extract positional args from the remaining (non-flag) arguments
+arg="${remaining_args[0]:-}"
+file_pattern="${remaining_args[1]:-}"
+
+# Check for 'find' mode - if present, shift remaining args
 if [[ "${arg}" == "find" ]]; then
     FIND_MODE="true"
-    # Shift arguments: second arg becomes the target, third becomes file_pattern
-    arg="${2:-}"
-    file_pattern="${3:-}"
+    arg="${remaining_args[1]:-}"
+    file_pattern="${remaining_args[2]:-}"
 fi
 
 # Special keywords for area-specific reviews
