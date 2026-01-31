@@ -5,17 +5,29 @@
 # shellcheck disable=SC2310  # Functions in conditionals intentionally check return values
 set -euo pipefail
 
-# Get the arguments (empty string if not provided)
-arg="${1:-}"
-file_pattern="${2:-}"
-
-# Check for 'find' mode - if present, strip it and set flag
+# Process all arguments into an array, extracting flags first
+# This ensures flags can appear anywhere and remaining args are properly ordered
+FORCE_MODE="false"
 FIND_MODE="false"
+remaining_args=()
+
+for arg_item in "$@"; do
+    if [[ "${arg_item}" == "--force" ]] || [[ "${arg_item}" == "-f" ]]; then
+        FORCE_MODE="true"
+    else
+        remaining_args+=("${arg_item}")
+    fi
+done
+
+# Extract positional args from the remaining (non-flag) arguments
+arg="${remaining_args[0]:-}"
+file_pattern="${remaining_args[1]:-}"
+
+# Check for 'find' mode - if present, shift remaining args
 if [[ "${arg}" == "find" ]]; then
     FIND_MODE="true"
-    # Shift arguments: second arg becomes the target, third becomes file_pattern
-    arg="${2:-}"
-    file_pattern="${3:-}"
+    arg="${remaining_args[1]:-}"
+    file_pattern="${remaining_args[2]:-}"
 fi
 
 # Special keywords for area-specific reviews
@@ -119,6 +131,11 @@ build_json_output() {
     # Add find_mode if enabled
     if [[ "${FIND_MODE}" == "true" ]]; then
         jq_args+=("--arg" "find_mode" "true")
+    fi
+
+    # Add force_mode if enabled
+    if [[ "${FORCE_MODE}" == "true" ]]; then
+        jq_args+=("--arg" "force_mode" "true")
     fi
 
     jq -nc "${jq_args[@]}" "${jq_filter}"
@@ -294,10 +311,15 @@ detect_no_arg() {
         exit 1
     fi
 
-    # On feature branch with uncommitted changes - prompt
+    # On feature branch with uncommitted changes - prompt (unless --force)
     if [[ "${is_feature_branch}" == true ]] && [[ "${has_uncommitted}" == true ]]; then
-        build_json_output "prompt" "current_branch" "${current_branch}" \
-            "base_branch" "${base_branch}" "has_uncommitted" "true"
+        if [[ "${FORCE_MODE}" == "true" ]]; then
+            # With --force, default to reviewing uncommitted local changes
+            build_json_output "local" "scope" "uncommitted"
+        else
+            build_json_output "prompt" "current_branch" "${current_branch}" \
+                "base_branch" "${base_branch}" "has_uncommitted" "true"
+        fi
         return 0
     fi
 

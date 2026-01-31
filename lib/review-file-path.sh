@@ -212,7 +212,7 @@ main() {
 
     # Extract git context if in repo and org/repo not provided
     local branch="unknown"
-    local branch_raw="unknown"  # Unsanitized branch name for API calls
+    local branch_raw="unknown" # Unsanitized branch name for API calls
     if [[ "${in_git_repo}" = true ]]; then
         if [[ -z "${org}" ]] || [[ -z "${repo}" ]]; then
             local git_data

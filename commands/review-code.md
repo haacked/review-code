@@ -27,6 +27,10 @@ Run specialized code review agent(s) with comprehensive context on local changes
 - `architecture` - High-level design, patterns, and necessity only (local changes)
 - (no argument) - Run ALL 7 specialized agents in parallel on local changes (default)
 
+**Optional Flags:**
+
+- `--force` or `-f` - Skip the confirmation prompt and proceed directly with review
+
 **Optional File Pattern:**
 
 Add a file pattern as a second argument to filter changes by file:
@@ -63,6 +67,12 @@ Examples:
 - `/review-code https://github.com/org/repo/pull/123 "src/**/*.ts"` - Review only TypeScript files in PR
 - `/review-code security "*.rs"` - Security review of only Rust files (local)
 
+**With --force flag (skip confirmation):**
+
+- `/review-code --force` - Review local changes without confirmation
+- `/review-code https://github.com/org/repo/pull/123 --force` - Review PR without confirmation
+- `/review-code -f feature-branch` - Short form, review branch without confirmation
+
 ---
 
 ## Implementation
@@ -80,6 +90,8 @@ STATUS=$(~/.claude/bin/review-code/review-status-handler.sh get-status "$SESSION
 echo "Session: $SESSION_ID, Status: $STATUS"
 '
 ```
+
+The `--force` and `-f` flags are handled automatically by the orchestrator. When present, the session data will include `"force": true`.
 
 This creates a session and outputs the status. Based on the status, proceed to the appropriate handler below.
 
@@ -278,9 +290,17 @@ This displays the pre-formatted summary showing what will be reviewed.
 
 **All subsequent operations will use the same SESSION_ID to read from the cached session data.**
 
-**Ask user to confirm:**
+**Ask user to confirm (unless --force was specified):**
 
-Use AskUserQuestion:
+Check if the `force` flag is set in the session data:
+
+```bash
+force_flag=$(echo "$review_data" | jq -r ".force // false")
+```
+
+If `force_flag` is `true`, skip the confirmation and proceed directly with the review below.
+
+Otherwise, use AskUserQuestion:
 - Question: "Proceed with code review of these changes?"
 - Options:
   1. "Yes, review these changes" - Proceed with the review
@@ -290,7 +310,7 @@ Use AskUserQuestion:
 
 If user selects "Cancel", exit without proceeding.
 
-If user selects "Yes, review these changes", continue with the review below.
+If user selects "Yes, review these changes" (or if `force_flag` is `true`), continue with the review below.
 
 **Check for existing review and branch review (replace `<SESSION_ID>` with the actual session ID):**
 

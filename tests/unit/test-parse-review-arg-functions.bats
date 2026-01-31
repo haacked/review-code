@@ -401,3 +401,127 @@ reset_globals() {
     [ "$status" -eq 1 ]
     [[ "$output" == *"No changes to review"* ]]
 }
+
+# =============================================================================
+# Force mode tests
+# =============================================================================
+
+@test "force mode: FORCE_MODE is false by default" {
+    # Re-source with no args to reset FORCE_MODE
+    source "$PROJECT_ROOT/lib/parse-review-arg.sh"
+    [ "$FORCE_MODE" = "false" ]
+}
+
+@test "force mode: --force as first argument sets FORCE_MODE" {
+    # Source with --force as first arg, 123 as second
+    source "$PROJECT_ROOT/lib/parse-review-arg.sh" "--force" "123"
+    [ "$FORCE_MODE" = "true" ]
+    [ "$arg" = "123" ]
+}
+
+@test "force mode: -f as first argument sets FORCE_MODE" {
+    # Source with -f as first arg
+    source "$PROJECT_ROOT/lib/parse-review-arg.sh" "-f" "main"
+    [ "$FORCE_MODE" = "true" ]
+    [ "$arg" = "main" ]
+}
+
+@test "force mode: --force as second argument sets FORCE_MODE" {
+    # Source with target first, then --force
+    source "$PROJECT_ROOT/lib/parse-review-arg.sh" "main" "--force"
+    [ "$FORCE_MODE" = "true" ]
+    [ "$arg" = "main" ]
+}
+
+@test "force mode: -f as second argument sets FORCE_MODE" {
+    source "$PROJECT_ROOT/lib/parse-review-arg.sh" "123" "-f"
+    [ "$FORCE_MODE" = "true" ]
+    [ "$arg" = "123" ]
+}
+
+@test "force mode: --force with file pattern preserves pattern" {
+    # /review-code --force main "*.py"
+    source "$PROJECT_ROOT/lib/parse-review-arg.sh" "--force" "main" "*.py"
+    [ "$FORCE_MODE" = "true" ]
+    [ "$arg" = "main" ]
+    [ "$file_pattern" = "*.py" ]
+}
+
+@test "force mode: target --force pattern preserves both" {
+    # /review-code main --force "*.py"
+    source "$PROJECT_ROOT/lib/parse-review-arg.sh" "main" "--force" "*.py"
+    [ "$FORCE_MODE" = "true" ]
+    [ "$arg" = "main" ]
+    [ "$file_pattern" = "*.py" ]
+}
+
+@test "force mode: build_json_output includes force_mode when set" {
+    file_pattern=""
+    FORCE_MODE="true"
+    run build_json_output "test" "key" "val"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"force_mode":"true"'* ]]
+}
+
+@test "force mode: build_json_output excludes force_mode when false" {
+    file_pattern=""
+    FORCE_MODE="false"
+    run build_json_output "test" "key" "val"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *'"force_mode"'* ]]
+}
+
+@test "force mode: detect_no_arg skips prompt on feature branch with changes" {
+    setup_test_git_repo
+    git checkout -q -b feature-branch
+    echo "change" >> file.txt  # Create uncommitted change
+
+    FORCE_MODE="true"
+    arg=""
+    file_pattern=""
+    run detect_no_arg
+    [ "$status" -eq 0 ]
+    # Should return local mode (not prompt) when force is true
+    [[ "$output" == *'"mode":"local"'* ]]
+    [[ "$output" == *'"scope":"uncommitted"'* ]]
+}
+
+@test "force mode: detect_no_arg prompts without force on feature branch with changes" {
+    setup_test_git_repo
+    git checkout -q -b feature-branch
+    echo "change" >> file.txt  # Create uncommitted change
+
+    FORCE_MODE="false"
+    arg=""
+    file_pattern=""
+    run detect_no_arg
+    [ "$status" -eq 0 ]
+    # Should return prompt mode when force is false
+    [[ "$output" == *'"mode":"prompt"'* ]]
+    [[ "$output" == *'"has_uncommitted":"true"'* ]]
+}
+
+# =============================================================================
+# Force + Find mode combination tests
+# =============================================================================
+
+@test "force + find: --force find 123 parses correctly" {
+    source "$PROJECT_ROOT/lib/parse-review-arg.sh" "--force" "find" "123"
+    [ "$FORCE_MODE" = "true" ]
+    [ "$FIND_MODE" = "true" ]
+    [ "$arg" = "123" ]
+}
+
+@test "force + find: find --force 123 parses correctly" {
+    source "$PROJECT_ROOT/lib/parse-review-arg.sh" "find" "--force" "123"
+    [ "$FORCE_MODE" = "true" ]
+    [ "$FIND_MODE" = "true" ]
+    [ "$arg" = "123" ]
+}
+
+@test "force + find: -f find main parses correctly" {
+    source "$PROJECT_ROOT/lib/parse-review-arg.sh" "-f" "find" "main"
+    [ "$FORCE_MODE" = "true" ]
+    [ "$FIND_MODE" = "true" ]
+    [ "$arg" = "main" ]
+}

@@ -29,8 +29,9 @@ main() {
     local file_pattern="${2:-}"
 
     # Step 1: Parse the argument to determine mode (before debug_init to get context)
+    # Pass all arguments to parser so it can handle flags in any position
     local parse_result
-    parse_result=$("${SCRIPT_DIR}/parse-review-arg.sh" "${arg}" "${file_pattern}") || {
+    parse_result=$("${SCRIPT_DIR}/parse-review-arg.sh" "$@") || {
         echo "${parse_result}" >&2
         exit 1
     }
@@ -39,6 +40,8 @@ main() {
     mode=$(echo "${parse_result}" | jq -r '.mode')
     local pattern
     pattern=$(echo "${parse_result}" | jq -r '.file_pattern // empty')
+    local force_mode
+    force_mode=$(echo "${parse_result}" | jq -r '.force_mode // "false"')
 
     # Extract org/repo early for git-based modes
     # Cache git org/repo to avoid redundant operations
@@ -311,6 +314,9 @@ build_review_data() {
     # Add mode-specific arguments
     jq_args+=("$@")
 
+    # Add force_mode to jq args
+    jq_args+=(--arg force_mode "${force_mode}")
+
     # Single jq invocation with conditional pr field
     final_output=$(jq "${jq_args[@]}" \
         '{
@@ -326,6 +332,7 @@ build_review_data() {
             display_summary: $display,
             next_step: "gather_architectural_context"
         }
+        + (if $force_mode == "true" then {force: true} else {} end)
         + (if $pr != null then {pr: $pr} else {} end)
         + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")))')
     debug_save_json "07-final-output" "output.json" <<< "${final_output}"
@@ -791,7 +798,7 @@ handle_find_mode() {
         "branch") value=$(echo "${parse_result}" | jq -r '.branch') ;;
         "commit") value=$(echo "${parse_result}" | jq -r '.commit') ;;
         "range") value=$(echo "${parse_result}" | jq -r '.range') ;;
-        *) ;;  # Unsupported mode - value stays empty, handled below
+        *) ;; # Unsupported mode - value stays empty, handled below
     esac
 
     # Use shared helper to build identifier
