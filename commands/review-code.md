@@ -250,7 +250,7 @@ If user selects "Merge into PR review":
     2. "Keep as branch review" - Leave the file as-is
 
 If user selects "Migrate to PR review":
-1. Compute the new path: replace `$branch_review_path` filename with `pr-$pr_number.md`
+1. Compute the new path: replace `$file_path` filename with `pr-$pr_number.md`
 2. Move the file using Bash: `mv "$file_path" "$new_path"`
 3. Confirm: "Migrated review to $new_path"
 

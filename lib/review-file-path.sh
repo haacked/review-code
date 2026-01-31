@@ -212,6 +212,7 @@ main() {
 
     # Extract git context if in repo and org/repo not provided
     local branch="unknown"
+    local branch_raw="unknown"  # Unsanitized branch name for API calls
     if [[ "${in_git_repo}" = true ]]; then
         if [[ -z "${org}" ]] || [[ -z "${repo}" ]]; then
             local git_data
@@ -219,7 +220,8 @@ main() {
             org="${git_data%|*}"
             repo="${git_data#*|}"
         fi
-        branch=$(get_current_branch)
+        branch_raw=$(get_current_branch)
+        branch="${branch_raw}"
     elif [[ -z "${org}" ]] || [[ -z "${repo}" ]]; then
         # Not in git repo and no org/repo provided
         error "Not in a git repository and --org/--repo not provided"
@@ -227,6 +229,7 @@ main() {
     fi
 
     # Sanitize all path components to prevent directory traversal
+    # Note: branch_raw is preserved unsanitized for GitHub API calls (gh pr list --head)
     org=$(sanitize_path_component "${org}")
     repo=$(sanitize_path_component "${repo}")
     branch=$(sanitize_path_component "${branch}")
@@ -341,8 +344,8 @@ main() {
     if [[ "${in_git_repo}" = true ]] && [[ "${review_type}" = "branch" ]]; then
         if command -v gh &> /dev/null; then
             # Determine which branch to check - use the branch name from the identifier
-            # or fall back to current branch
-            local branch_to_check="${branch}"
+            # or fall back to current branch (unsanitized for GitHub API)
+            local branch_to_check="${branch_raw}"
             if [[ -n "${identifier}" ]] && [[ "${identifier}" =~ ^branch-(.+)$ ]]; then
                 branch_to_check="${BASH_REMATCH[1]}"
             fi
