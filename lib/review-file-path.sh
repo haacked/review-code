@@ -34,7 +34,9 @@ source "${SCRIPT_DIR}/helpers/config-helpers.sh"
 #     "file_path": "{REVIEW_ROOT_PATH}/posthog/posthog/pr-123.md",
 #     "file_exists": true,
 #     "needs_rename": false,
-#     "old_path": null
+#     "old_path": null,
+#     "has_branch_review": true,
+#     "branch_review_path": "{REVIEW_ROOT_PATH}/posthog/posthog/my-feature.md"
 #   }
 
 set -euo pipefail
@@ -210,6 +212,7 @@ main() {
 
     # Extract git context if in repo and org/repo not provided
     local branch="unknown"
+    local branch_raw="unknown"  # Unsanitized branch name for API calls
     if [[ "${in_git_repo}" = true ]]; then
         if [[ -z "${org}" ]] || [[ -z "${repo}" ]]; then
             local git_data
@@ -217,7 +220,8 @@ main() {
             org="${git_data%|*}"
             repo="${git_data#*|}"
         fi
-        branch=$(get_current_branch)
+        branch_raw=$(get_current_branch)
+        branch="${branch_raw}"
     elif [[ -z "${org}" ]] || [[ -z "${repo}" ]]; then
         # Not in git repo and no org/repo provided
         error "Not in a git repository and --org/--repo not provided"
@@ -225,6 +229,7 @@ main() {
     fi
 
     # Sanitize all path components to prevent directory traversal
+    # Note: branch_raw is preserved unsanitized for GitHub API calls (gh pr list --head)
     org=$(sanitize_path_component "${org}")
     repo=$(sanitize_path_component "${repo}")
     branch=$(sanitize_path_component "${branch}")
@@ -330,16 +335,46 @@ main() {
         fi
     fi
 
-    # For branch mode with no identifier, check if a PR exists (only if in git repo)
-    if [[ "${in_git_repo}" = true ]] && [[ "${review_type}" = "branch" ]] && [[ -z "${identifier}" ]]; then
-        if [[ -d "${review_dir}" ]] && command -v gh &> /dev/null; then
+    # For branch mode, always check if a PR exists and prefer PR review (only if in git repo)
+    # This handles both empty identifier (current branch) and explicit branch identifiers
+    # Priority: PR review > branch review (PRs are canonical review targets)
+    local has_branch_review=false
+    local branch_review_path=""
+
+    if [[ "${in_git_repo}" = true ]] && [[ "${review_type}" = "branch" ]]; then
+        if command -v gh &> /dev/null; then
+            # Determine which branch to check - use the branch name from the identifier
+            # or fall back to current branch (unsanitized for GitHub API)
+            local branch_to_check="${branch_raw}"
+            if [[ -n "${identifier}" ]] && [[ "${identifier}" =~ ^branch-(.+)$ ]]; then
+                branch_to_check="${BASH_REMATCH[1]}"
+            fi
+
             local pr_check
-            pr_check=$(gh pr list --head "${branch}" --json number --jq '.[0].number' 2> /dev/null || echo "")
+            pr_check=$(gh pr list --head "${branch_to_check}" --json number --jq '.[0].number' 2> /dev/null || echo "")
             if [[ -n "${pr_check}" ]]; then
                 local pr_file="${review_dir}/pr-${pr_check}.md"
                 verify_path_safety "${pr_file}" "${review_root}"
+
+                # Check what review files exist
+                local pr_review_exists=false
+                local branch_review_exists=false
+
                 if [[ -f "${pr_file}" ]]; then
-                    # PR file exists, should use that instead
+                    pr_review_exists=true
+                fi
+                if [[ -f "${file_path}" ]]; then
+                    branch_review_exists=true
+                fi
+
+                # PR review takes precedence
+                if [[ "${pr_review_exists}" = true ]]; then
+                    # Track if branch review also exists (for merge option)
+                    if [[ "${branch_review_exists}" = true ]]; then
+                        has_branch_review=true
+                        branch_review_path="${file_path}"
+                    fi
+                    # Switch to PR review
                     pr_number="${pr_check}"
                     old_path="${file_path}"
                     file_path="${pr_file}"
@@ -347,6 +382,12 @@ main() {
                     review_type="pr"
                     file_exists=true
                     needs_rename=false
+                elif [[ "${branch_review_exists}" = true ]]; then
+                    # Only branch review exists - suggest migration to PR
+                    # Keep branch file as primary, but note the PR number for migration
+                    pr_number="${pr_check}"
+                    needs_rename=true
+                    old_path="${file_path}"
                 fi
             fi
         fi
@@ -365,6 +406,8 @@ main() {
         --argjson file_exists "${file_exists}" \
         --argjson needs_rename "${needs_rename}" \
         --arg old_path "${old_path}" \
+        --argjson has_branch_review "${has_branch_review}" \
+        --arg branch_review_path "${branch_review_path}" \
         '{
             org: $org,
             repo: $repo,
@@ -373,7 +416,9 @@ main() {
             file_path: $file_path,
             file_exists: $file_exists,
             needs_rename: $needs_rename,
-            old_path: (if $old_path == "" then null else $old_path end)
+            old_path: (if $old_path == "" then null else $old_path end),
+            has_branch_review: $has_branch_review,
+            branch_review_path: (if $branch_review_path == "" then null else $branch_review_path end)
         }'
 }
 

@@ -394,3 +394,229 @@ teardown() {
     # Should produce JSON output when executed directly
     echo "$output" | jq -e '.file_path' > /dev/null
 }
+
+# =============================================================================
+# PR fallback tests for branch mode
+# =============================================================================
+
+@test "branch fallback: finds PR file when branch file doesn't exist and gh returns PR" {
+    # Create a PR review file but not a branch file
+    mkdir -p "$TEST_TEMP_DIR/reviews/myorg/myrepo"
+    touch "$TEST_TEMP_DIR/reviews/myorg/myrepo/pr-999.md"
+
+    # Create a mock gh script that returns PR 999 for any branch
+    mock_gh="$TEST_TEMP_DIR/bin/gh"
+    mkdir -p "$(dirname "$mock_gh")"
+    cat > "$mock_gh" << 'EOF'
+#!/usr/bin/env bash
+# Mock gh CLI that returns PR 999 for any pr list command
+if [[ "$1" == "pr" ]] && [[ "$2" == "list" ]]; then
+    echo "999"
+fi
+EOF
+    chmod +x "$mock_gh"
+
+    # Run with mock gh in PATH
+    PATH="$TEST_TEMP_DIR/bin:$PATH" run "$SCRIPT" --org "myorg" --repo "myrepo" "branch-feature-test"
+    [ "$status" -eq 0 ]
+
+    # Should find the PR file instead
+    echo "$output" | jq -e '.file_exists == true'
+    echo "$output" | jq -e '.pr_number == "999"'
+    echo "$output" | jq -e '.file_path | endswith("pr-999.md")'
+}
+
+@test "branch fallback: returns branch file path when no PR exists" {
+    # Create just the directory, no files
+    mkdir -p "$TEST_TEMP_DIR/reviews/myorg/myrepo"
+
+    # Create a mock gh script that returns empty (no PR)
+    mock_gh="$TEST_TEMP_DIR/bin/gh"
+    mkdir -p "$(dirname "$mock_gh")"
+    cat > "$mock_gh" << 'EOF'
+#!/usr/bin/env bash
+# Mock gh CLI that returns nothing
+echo ""
+EOF
+    chmod +x "$mock_gh"
+
+    # Run with mock gh in PATH
+    PATH="$TEST_TEMP_DIR/bin:$PATH" run "$SCRIPT" --org "myorg" --repo "myrepo" "branch-my-feature"
+    [ "$status" -eq 0 ]
+
+    # Should return the branch file path (not found)
+    echo "$output" | jq -e '.file_exists == false'
+    echo "$output" | jq -e '.pr_number == null'
+    echo "$output" | jq -e '.file_path | endswith("my-feature.md")'
+}
+
+@test "branch fallback: PR takes precedence when both exist, flags branch review" {
+    # Create BOTH a branch file and PR file
+    mkdir -p "$TEST_TEMP_DIR/reviews/myorg/myrepo"
+    touch "$TEST_TEMP_DIR/reviews/myorg/myrepo/existing-branch.md"
+    touch "$TEST_TEMP_DIR/reviews/myorg/myrepo/pr-888.md"
+
+    # Create a mock gh script that returns PR 888
+    mock_gh="$TEST_TEMP_DIR/bin/gh"
+    mkdir -p "$(dirname "$mock_gh")"
+    cat > "$mock_gh" << 'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "pr" ]] && [[ "$2" == "list" ]]; then
+    echo "888"
+fi
+EOF
+    chmod +x "$mock_gh"
+
+    # Run with mock gh in PATH
+    PATH="$TEST_TEMP_DIR/bin:$PATH" run "$SCRIPT" --org "myorg" --repo "myrepo" "branch-existing-branch"
+    [ "$status" -eq 0 ]
+
+    # PR should take precedence
+    echo "$output" | jq -e '.file_exists == true'
+    echo "$output" | jq -e '.file_path | endswith("pr-888.md")'
+    echo "$output" | jq -e '.pr_number == "888"'
+    # Should flag that branch review also exists
+    echo "$output" | jq -e '.has_branch_review == true'
+    echo "$output" | jq -e '.branch_review_path | endswith("existing-branch.md")'
+}
+
+@test "branch fallback: handles branch names with slashes" {
+    # Create a PR review file for a branch with slashes
+    mkdir -p "$TEST_TEMP_DIR/reviews/myorg/myrepo"
+    touch "$TEST_TEMP_DIR/reviews/myorg/myrepo/pr-777.md"
+
+    # Create a mock gh script that returns PR 777
+    mock_gh="$TEST_TEMP_DIR/bin/gh"
+    mkdir -p "$(dirname "$mock_gh")"
+    cat > "$mock_gh" << 'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "pr" ]] && [[ "$2" == "list" ]]; then
+    echo "777"
+fi
+EOF
+    chmod +x "$mock_gh"
+
+    # Branch identifier with slash (haacked/feature becomes haacked-feature in filename)
+    PATH="$TEST_TEMP_DIR/bin:$PATH" run "$SCRIPT" --org "myorg" --repo "myrepo" "branch-haacked/feature"
+    [ "$status" -eq 0 ]
+
+    # Should find the PR file
+    echo "$output" | jq -e '.file_exists == true'
+    echo "$output" | jq -e '.pr_number == "777"'
+    echo "$output" | jq -e '.file_path | endswith("pr-777.md")'
+}
+
+@test "branch fallback: uses unsanitized branch name for gh CLI when identifier is empty" {
+    # This tests the bug where branch_to_check used the sanitized branch name
+    # (haacked-feature) instead of the original (haacked/feature) for gh pr list
+    mkdir -p "$TEST_TEMP_DIR/reviews/myorg/myrepo"
+    touch "$TEST_TEMP_DIR/reviews/myorg/myrepo/pr-666.md"
+
+    # Create a mock git that returns a branch with slashes
+    mock_git="$TEST_TEMP_DIR/bin/git"
+    mkdir -p "$(dirname "$mock_git")"
+    cat > "$mock_git" << 'EOF'
+#!/usr/bin/env bash
+# Mock git CLI
+if [[ "$1" == "branch" ]] && [[ "$2" == "--show-current" ]]; then
+    echo "haacked/feature-branch"
+elif [[ "$1" == "rev-parse" ]] && [[ "$2" == "--git-dir" ]]; then
+    echo ".git"
+elif [[ "$1" == "ls-remote" ]]; then
+    echo "git@github.com:myorg/myrepo.git"
+else
+    # Pass through to real git for other commands
+    /usr/bin/git "$@"
+fi
+EOF
+    chmod +x "$mock_git"
+
+    # Create a mock gh that only returns PR 666 if it receives the UNSANITIZED branch name
+    # This validates that gh pr list --head receives "haacked/feature-branch" not "haacked-feature-branch"
+    mock_gh="$TEST_TEMP_DIR/bin/gh"
+    cat > "$mock_gh" << 'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "pr" ]] && [[ "$2" == "list" ]]; then
+    # Check if --head argument contains the unsanitized branch (with slash)
+    if [[ "$*" == *"haacked/feature-branch"* ]]; then
+        echo "666"
+    else
+        # Wrong branch name passed (sanitized version) - return empty
+        echo ""
+    fi
+elif [[ "$1" == "repo" ]] && [[ "$2" == "view" ]]; then
+    echo "myorg|myrepo"
+fi
+EOF
+    chmod +x "$mock_gh"
+
+    # Run WITHOUT an identifier - uses current branch
+    PATH="$TEST_TEMP_DIR/bin:$PATH" run "$SCRIPT" --org "myorg" --repo "myrepo"
+    [ "$status" -eq 0 ]
+
+    # Should find the PR file (proves gh received correct unsanitized branch name)
+    echo "$output" | jq -e '.file_exists == true'
+    echo "$output" | jq -e '.pr_number == "666"'
+    echo "$output" | jq -e '.file_path | endswith("pr-666.md")'
+    # The branch in output should be sanitized (for filename purposes)
+    echo "$output" | jq -e '.branch == "haacked-feature-branch"'
+}
+
+@test "branch fallback: sets needs_rename when branch review exists but no PR review" {
+    # Create only a branch file, no PR file
+    mkdir -p "$TEST_TEMP_DIR/reviews/myorg/myrepo"
+    touch "$TEST_TEMP_DIR/reviews/myorg/myrepo/my-feature.md"
+
+    # Create a mock gh script that returns PR 555
+    mock_gh="$TEST_TEMP_DIR/bin/gh"
+    mkdir -p "$(dirname "$mock_gh")"
+    cat > "$mock_gh" << 'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "pr" ]] && [[ "$2" == "list" ]]; then
+    echo "555"
+fi
+EOF
+    chmod +x "$mock_gh"
+
+    # Run with mock gh in PATH
+    PATH="$TEST_TEMP_DIR/bin:$PATH" run "$SCRIPT" --org "myorg" --repo "myrepo" "branch-my-feature"
+    [ "$status" -eq 0 ]
+
+    # Should return the branch file but suggest migration
+    echo "$output" | jq -e '.file_exists == true'
+    echo "$output" | jq -e '.file_path | endswith("my-feature.md")'
+    echo "$output" | jq -e '.needs_rename == true'
+    echo "$output" | jq -e '.pr_number == "555"'
+}
+
+@test "json output: includes has_branch_review field" {
+    result=$("$SCRIPT" --org "myorg" --repo "myrepo" "test")
+    echo "$result" | jq -e 'has("has_branch_review")'
+}
+
+@test "json output: includes branch_review_path field" {
+    result=$("$SCRIPT" --org "myorg" --repo "myrepo" "test")
+    echo "$result" | jq -e 'has("branch_review_path")'
+}
+
+@test "json output: has_branch_review is false when no branch review exists" {
+    mkdir -p "$TEST_TEMP_DIR/reviews/myorg/myrepo"
+    touch "$TEST_TEMP_DIR/reviews/myorg/myrepo/pr-123.md"
+
+    # Create a mock gh script that returns PR 123
+    mock_gh="$TEST_TEMP_DIR/bin/gh"
+    mkdir -p "$(dirname "$mock_gh")"
+    cat > "$mock_gh" << 'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "pr" ]] && [[ "$2" == "list" ]]; then
+    echo "123"
+fi
+EOF
+    chmod +x "$mock_gh"
+
+    PATH="$TEST_TEMP_DIR/bin:$PATH" run "$SCRIPT" --org "myorg" --repo "myrepo" "branch-some-feature"
+    [ "$status" -eq 0 ]
+
+    echo "$output" | jq -e '.has_branch_review == false'
+    echo "$output" | jq -e '.branch_review_path == null'
+}

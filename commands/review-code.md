@@ -200,9 +200,17 @@ display_target=$(echo "$find_data" | jq -r ".display_target")
 file_path=$(echo "$find_data" | jq -r ".file_info.file_path")
 file_exists=$(echo "$find_data" | jq -r ".file_info.file_exists")
 file_summary=$(echo "$find_data" | jq -r ".file_summary")
+has_branch_review=$(echo "$find_data" | jq -r ".file_info.has_branch_review // false")
+branch_review_path=$(echo "$find_data" | jq -r ".file_info.branch_review_path // empty")
+needs_rename=$(echo "$find_data" | jq -r ".file_info.needs_rename // false")
+pr_number=$(echo "$find_data" | jq -r ".file_info.pr_number // empty")
 echo "Target: $display_target"
 echo "File: $file_path"
 echo "Exists: $file_exists"
+echo "Has branch review: $has_branch_review"
+echo "Branch review path: $branch_review_path"
+echo "Needs rename: $needs_rename"
+echo "PR number: $pr_number"
 ~/.claude/bin/review-code/review-status-handler.sh cleanup "$SESSION_ID"
 '
 ```
@@ -214,6 +222,37 @@ If `file_exists` is "true":
 - Show the file path as a clickable link: `file://$file_path`
 - Show a brief summary from `file_summary` (the first ~50 lines of the review file)
 - Offer to open or read the full review
+
+**If `has_branch_review` is "true" (both PR and branch reviews exist):**
+- Display a warning: "⚠️ A branch-based review also exists that can be merged"
+- Show the branch review path: `$branch_review_path`
+- Use AskUserQuestion to offer merge options:
+  - Question: "A branch review exists alongside the PR review. What would you like to do?"
+  - Options:
+    1. "Merge into PR review" - Append branch review content to PR review, then delete branch review
+    2. "Keep both" - Leave both files as-is
+    3. "Delete branch review" - Remove the branch review file (content already in PR review)
+
+If user selects "Merge into PR review":
+1. Read both files using the Read tool
+2. Append the branch review content to the PR review with a separator like `\n\n---\n\n## Previous Branch Review\n\n`
+3. Write the merged content to the PR review file
+4. Delete the branch review file using Bash: `rm "$branch_review_path"`
+5. Confirm: "Merged branch review into PR review and deleted the old file."
+
+**If `needs_rename` is "true" (branch review exists, PR exists but no PR review):**
+- Display: "Found branch review for $display_target"
+- Show that a PR (#$pr_number) now exists for this branch
+- Use AskUserQuestion to offer migration:
+  - Question: "A PR (#$pr_number) now exists for this branch. Migrate the review?"
+  - Options:
+    1. "Migrate to PR review" - Rename the file from branch to PR format
+    2. "Keep as branch review" - Leave the file as-is
+
+If user selects "Migrate to PR review":
+1. Compute the new path: replace `$file_path` filename with `pr-$pr_number.md`
+2. Move the file using Bash: `mv "$file_path" "$new_path"`
+3. Confirm: "Migrated review to $new_path"
 
 If `file_exists` is "false":
 - Display: "No existing review found for $display_target"
@@ -253,17 +292,54 @@ If user selects "Cancel", exit without proceeding.
 
 If user selects "Yes, review these changes", continue with the review below.
 
-**Check for existing review (replace `<SESSION_ID>` with the actual session ID):**
+**Check for existing review and branch review (replace `<SESSION_ID>` with the actual session ID):**
 
 ```bash
 ~/.claude/bin/review-code/review-status-handler.sh \
   get-ready-data <SESSION_ID> | \
-  jq -r 'if .file_info.file_exists == true and .file_info.file_path
-         then "existing: " + .file_info.file_path
-         else "none" end'
+  jq -r '{
+    existing: (if .file_info.file_exists == true then .file_info.file_path else null end),
+    has_branch_review: (.file_info.has_branch_review // false),
+    branch_review_path: (.file_info.branch_review_path // null),
+    needs_rename: (.file_info.needs_rename // false),
+    pr_number: (.file_info.pr_number // null)
+  }'
 ```
 
-If the output shows "existing", use AskUserQuestion to ask what to do with it.
+**If `has_branch_review` is true (both PR and branch reviews exist):**
+
+Use AskUserQuestion:
+- Question: "A branch review exists alongside the PR review. Merge before proceeding?"
+- Options:
+  1. "Merge and continue" - Merge branch review into PR review, then proceed with new review
+  2. "Continue without merging" - Keep both files, proceed with review
+  3. "Cancel" - Stop and handle manually
+
+If user selects "Merge and continue":
+1. Read both files using the Read tool
+2. Append branch review content to PR review with separator: `\n\n---\n\n## Previous Branch Review\n\n`
+3. Write merged content to PR review file
+4. Delete branch review file: `rm "$branch_review_path"`
+5. Continue with the review
+
+**If `needs_rename` is true (branch review exists, but should migrate to PR):**
+
+Use AskUserQuestion:
+- Question: "A PR (#$pr_number) exists. Migrate branch review to PR format before proceeding?"
+- Options:
+  1. "Migrate and continue" - Rename to PR format, then proceed
+  2. "Continue as branch review" - Keep current format, proceed
+  3. "Cancel" - Stop and handle manually
+
+If user selects "Migrate and continue":
+1. Compute new path with `pr-$pr_number.md` filename
+2. Move file: `mv "$file_path" "$new_path"`
+3. Update `review_file` variable to new path
+4. Continue with the review
+
+**If `existing` is not null (review file already exists):**
+
+Use AskUserQuestion to ask what to do with the existing review.
 
 **Extract the data needed for building agent context (replace `<SESSION_ID>` with the actual session ID):**
 
