@@ -9,6 +9,19 @@ set -euo pipefail
 arg="${1:-}"
 file_pattern="${2:-}"
 
+# Check for --force or -f flag anywhere in arguments
+FORCE_MODE="false"
+if [[ "${arg}" == "--force" ]] || [[ "${arg}" == "-f" ]]; then
+    FORCE_MODE="true"
+    # Shift arguments: second arg becomes the target, third becomes file_pattern
+    arg="${2:-}"
+    file_pattern="${3:-}"
+elif [[ "${file_pattern}" == "--force" ]] || [[ "${file_pattern}" == "-f" ]]; then
+    FORCE_MODE="true"
+    # Flag was second arg, third becomes file_pattern
+    file_pattern="${3:-}"
+fi
+
 # Check for 'find' mode - if present, strip it and set flag
 FIND_MODE="false"
 if [[ "${arg}" == "find" ]]; then
@@ -119,6 +132,11 @@ build_json_output() {
     # Add find_mode if enabled
     if [[ "${FIND_MODE}" == "true" ]]; then
         jq_args+=("--arg" "find_mode" "true")
+    fi
+
+    # Add force_mode if enabled
+    if [[ "${FORCE_MODE}" == "true" ]]; then
+        jq_args+=("--arg" "force_mode" "true")
     fi
 
     jq -nc "${jq_args[@]}" "${jq_filter}"
@@ -294,10 +312,15 @@ detect_no_arg() {
         exit 1
     fi
 
-    # On feature branch with uncommitted changes - prompt
+    # On feature branch with uncommitted changes - prompt (unless --force)
     if [[ "${is_feature_branch}" == true ]] && [[ "${has_uncommitted}" == true ]]; then
-        build_json_output "prompt" "current_branch" "${current_branch}" \
-            "base_branch" "${base_branch}" "has_uncommitted" "true"
+        if [[ "${FORCE_MODE}" == "true" ]]; then
+            # With --force, default to reviewing uncommitted local changes
+            build_json_output "local" "scope" "uncommitted"
+        else
+            build_json_output "prompt" "current_branch" "${current_branch}" \
+                "base_branch" "${base_branch}" "has_uncommitted" "true"
+        fi
         return 0
     fi
 
