@@ -81,30 +81,11 @@ Examples:
 
 ### Step 1: Initialize Session
 
-First, check if the `--force` or `-f` flag is present and extract it from arguments:
+Initialize the review session by running the orchestrator and caching the result:
 
 ```bash
 bash -c '
-args="'"$ARGUMENTS"'"
-force_flag=false
-# Check for --force or -f flag
-if [[ "$args" =~ (^|[[:space:]])(--force|-f)([[:space:]]|$) ]]; then
-  force_flag=true
-  # Remove the flag from args
-  args=$(echo "$args" | sed -E "s/(^|[[:space:]])(--force|-f)([[:space:]]|$)/\1\3/g" | xargs)
-fi
-echo "Force: $force_flag"
-echo "Args: $args"
-'
-```
-
-**IMPORTANT**: Save the `force_flag` value (`true` or `false`) - you'll need it to determine whether to skip confirmation prompts.
-
-Initialize the review session by running the orchestrator and caching the result (use the `args` value with `--force` removed):
-
-```bash
-bash -c '
-SESSION_ID=$(~/.claude/bin/review-code/review-status-handler.sh init "'"$args"'")
+SESSION_ID=$(~/.claude/bin/review-code/review-status-handler.sh init "'"$ARGUMENTS"'")
 STATUS=$(~/.claude/bin/review-code/review-status-handler.sh get-status "$SESSION_ID")
 echo "Session: $SESSION_ID, Status: $STATUS"
 '
