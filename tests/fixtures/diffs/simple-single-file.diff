@@ -1,0 +1,21 @@
+diff --git a/src/utils.ts b/src/utils.ts
+new file mode 100644
+index 0000000..a1b2c3d
+--- /dev/null
++++ b/src/utils.ts
+@@ -0,0 +1,15 @@
++export function formatDate(date: Date): string {
++    return date.toISOString().split('T')[0];
++}
++
++export function capitalize(str: string): string {
++    if (!str) return str;
++    return str.charAt(0).toUpperCase() + str.slice(1);
++}
++
++export function delay(ms: number): Promise<void> {
++    return new Promise(resolve => setTimeout(resolve, ms));
++}
++
++export const VERSION = '1.0.0';
++export const MAX_RETRIES = 3;

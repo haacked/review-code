@@ -1,0 +1,15 @@
+{
+  "id": 12345678,
+  "node_id": "PRR_kwDOTest",
+  "user": {
+    "login": "testuser",
+    "id": 1234,
+    "type": "User"
+  },
+  "body": "Draft review in progress",
+  "state": "PENDING",
+  "html_url": "https://github.com/test-owner/test-repo/pull/42#pullrequestreview-12345678",
+  "pull_request_url": "https://api.github.com/repos/test-owner/test-repo/pulls/42",
+  "submitted_at": null,
+  "commit_id": "abc123def456"
+}

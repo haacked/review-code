@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-# create-draft-review.sh - Create or amend a pending GitHub PR review with inline comments
+# create-draft-review.sh - Create a pending GitHub PR review with inline comments
 #
 # Creates a pending (draft) review on GitHub with inline comments. If a pending
-# review already exists from the same user, it performs a smart merge:
-# - Compares existing comments with new suggestions semantically
-# - Keeps comments that still apply (using new wording)
-# - Adds new comments not previously covered
-# - Removes outdated comments
+# review already exists from the same user, it deletes the existing review and
+# creates a fresh one with the new comments.
 #
 # Usage:
 #   echo '<json_input>' | create-draft-review.sh
@@ -34,10 +31,7 @@
 #     "review_url": "https://github.com/org/repo/pull/123#pullrequestreview-12345",
 #     "inline_count": 5,
 #     "summary_count": 2,
-#     "amended": true,
-#     "kept_comments": 3,
-#     "new_comments": 2,
-#     "removed_comments": 1
+#     "replaced_existing": true
 #   }
 
 set -euo pipefail
@@ -46,84 +40,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/helpers/error-helpers.sh
 source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 
-# Calculate word-based similarity between two strings (0-100)
-# Uses Jaccard similarity on word sets
-# Args: $1 = text1, $2 = text2
-# Output: Similarity percentage (0-100)
-calculate_similarity() {
-    local text1="$1"
-    local text2="$2"
+# Validate a required field
+# Args: $1 = value, $2 = field name
+# Output: JSON error if invalid, returns 1 if invalid
+require_field() {
+    local value="$1"
+    local name="$2"
 
-    # Normalize: lowercase, remove punctuation, split to words
-    local words1 words2
-    words1=$(echo "${text1}" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]' '\n' | sort -u | grep -v '^$' || true)
-    words2=$(echo "${text2}" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]' '\n' | sort -u | grep -v '^$' || true)
-
-    # Handle empty cases
-    if [[ -z "${words1}" ]] && [[ -z "${words2}" ]]; then
-        echo "100"
-        return
-    fi
-    if [[ -z "${words1}" ]] || [[ -z "${words2}" ]]; then
-        echo "0"
-        return
-    fi
-
-    # Count common words and total unique words
-    local common total_unique
-    common=$(comm -12 <(echo "${words1}") <(echo "${words2}") | wc -l | tr -d ' ')
-    total_unique=$(cat <(echo "${words1}") <(echo "${words2}") | sort -u | wc -l | tr -d ' ')
-
-    # Jaccard similarity: intersection / union
-    if [[ "${total_unique}" -eq 0 ]]; then
-        echo "0"
-    else
-        echo $(( (common * 100) / total_unique ))
-    fi
-}
-
-# Check if two comments match semantically
-# Args: $1 = existing comment JSON, $2 = new comment JSON
-# Output: "true" if match, "false" otherwise
-comments_match() {
-    local existing="$1"
-    local new="$2"
-
-    # Extract fields
-    local existing_path existing_line existing_body
-    local new_path new_position new_body
-
-    existing_path=$(echo "${existing}" | jq -r '.path')
-    existing_line=$(echo "${existing}" | jq -r '.line // .position // 0')
-    existing_body=$(echo "${existing}" | jq -r '.body')
-
-    new_path=$(echo "${new}" | jq -r '.path')
-    new_position=$(echo "${new}" | jq -r '.position // 0')
-    new_body=$(echo "${new}" | jq -r '.body')
-
-    # Must be same file
-    if [[ "${existing_path}" != "${new_path}" ]]; then
-        echo "false"
-        return
-    fi
-
-    # Line must be within ±5 lines
-    local line_diff=$(( existing_line - new_position ))
-    if [[ ${line_diff} -lt 0 ]]; then
-        line_diff=$(( -line_diff ))
-    fi
-    if [[ ${line_diff} -gt 5 ]]; then
-        echo "false"
-        return
-    fi
-
-    # Content similarity must be > 60%
-    local similarity
-    similarity=$(calculate_similarity "${existing_body}" "${new_body}")
-    if [[ ${similarity} -ge 60 ]]; then
-        echo "true"
-    else
-        echo "false"
+    if [[ -z "${value}" ]] || [[ "${value}" == "null" ]]; then
+        jq -n --arg name "${name}" '{success: false, error: ("Missing " + $name)}'
+        return 1
     fi
 }
 
@@ -198,28 +124,35 @@ create_pending_review() {
     local body="$4"
     local comments_json="$5"
 
-    local result
+    local result error_output
+    local tmpfile
+    tmpfile=$(mktemp)
+    trap "rm -f '${tmpfile}'" RETURN
+
     if [[ "${comments_json}" == "[]" ]]; then
         # No inline comments, just create review with body
-        result=$(gh api --method POST "repos/${owner}/${repo}/pulls/${pr_number}/reviews" \
-            -f body="${body}" 2>&1) || {
-            echo "${result}" >&2
+        if ! result=$(gh api --method POST "repos/${owner}/${repo}/pulls/${pr_number}/reviews" \
+            -f body="${body}" 2>"${tmpfile}"); then
+            error_output=$(<"${tmpfile}")
+            echo "API error: ${error_output}" >&2
             return 1
-        }
+        fi
     else
-        # Create review with inline comments
-        # Build the request body as JSON and use stdin
+        # Create review with inline comments using gh's JSON input support
+        # Use jq to build properly escaped JSON
         local request_body
         request_body=$(jq -n \
             --arg body "${body}" \
             --argjson comments "${comments_json}" \
             '{body: $body, comments: $comments}')
 
-        result=$(echo "${request_body}" | gh api --method POST "repos/${owner}/${repo}/pulls/${pr_number}/reviews" \
-            --input - 2>&1) || {
-            echo "${result}" >&2
+        if ! result=$(echo "${request_body}" | gh api --method POST \
+            "repos/${owner}/${repo}/pulls/${pr_number}/reviews" \
+            --input - 2>"${tmpfile}"); then
+            error_output=$(<"${tmpfile}")
+            echo "API error: ${error_output}" >&2
             return 1
-        }
+        fi
     fi
 
     echo "${result}"
@@ -247,83 +180,26 @@ main() {
     unmapped_comments=$(echo "${input}" | jq -c '.unmapped_comments // []')
 
     # Validate required fields
-    if [[ -z "${owner}" ]] || [[ "${owner}" == "null" ]]; then
-        jq -n '{success: false, error: "Missing owner"}'
-        exit 1
-    fi
-    if [[ -z "${repo}" ]] || [[ "${repo}" == "null" ]]; then
-        jq -n '{success: false, error: "Missing repo"}'
-        exit 1
-    fi
-    if [[ -z "${pr_number}" ]] || [[ "${pr_number}" == "null" ]]; then
-        jq -n '{success: false, error: "Missing pr_number"}'
-        exit 1
-    fi
-    if [[ -z "${reviewer}" ]] || [[ "${reviewer}" == "null" ]]; then
-        jq -n '{success: false, error: "Missing reviewer_username"}'
-        exit 1
-    fi
+    require_field "${owner}" "owner" || exit 1
+    require_field "${repo}" "repo" || exit 1
+    require_field "${pr_number}" "pr_number" || exit 1
+    require_field "${reviewer}" "reviewer_username" || exit 1
 
     # Check for existing pending review
     local existing_review
     existing_review=$(get_existing_pending_review "${owner}" "${repo}" "${pr_number}" "${reviewer}")
 
-    local amended="false"
-    local kept_count=0
-    local new_count=0
-    local removed_count=0
-    local merged_comments="${comments}"
+    local replaced_existing="false"
 
     if [[ "${existing_review}" != "null" ]]; then
-        # Smart merge with existing review
-        amended="true"
-        local existing_comments
-        existing_comments=$(echo "${existing_review}" | jq -c '.comments // []')
+        # Delete existing pending review and replace with new one
+        replaced_existing="true"
         local existing_review_id
         existing_review_id=$(echo "${existing_review}" | jq -r '.review_id')
 
-        # Compare and categorize
-        local new_comments_arr="[]"
-        local kept_comments_arr="[]"
-
-        # For each new comment, check if it matches an existing one
-        while IFS= read -r new_comment; do
-            local found_match="false"
-            while IFS= read -r existing_comment; do
-                if [[ $(comments_match "${existing_comment}" "${new_comment}") == "true" ]]; then
-                    found_match="true"
-                    # Use new comment (fresher wording)
-                    kept_comments_arr=$(echo "${kept_comments_arr}" | jq --argjson c "${new_comment}" '. + [$c]')
-                    break
-                fi
-            done < <(echo "${existing_comments}" | jq -c '.[]')
-
-            if [[ "${found_match}" == "false" ]]; then
-                new_comments_arr=$(echo "${new_comments_arr}" | jq --argjson c "${new_comment}" '. + [$c]')
-            fi
-        done < <(echo "${comments}" | jq -c '.[]')
-
-        kept_count=$(echo "${kept_comments_arr}" | jq 'length')
-        new_count=$(echo "${new_comments_arr}" | jq 'length')
-
-        # Count removed (existing comments with no match in new)
-        local existing_count
-        existing_count=$(echo "${existing_comments}" | jq 'length')
-        removed_count=$(( existing_count - kept_count ))
-        if [[ ${removed_count} -lt 0 ]]; then
-            removed_count=0
-        fi
-
-        # Merge: kept + new
-        merged_comments=$(echo "${kept_comments_arr}" | jq --argjson new "${new_comments_arr}" '. + $new')
-
-        # Delete existing pending review
         if ! delete_pending_review "${owner}" "${repo}" "${pr_number}" "${existing_review_id}"; then
             warning "Proceeding without deleting existing review…"
         fi
-    else
-        # No existing review, all comments are new
-        new_count=$(echo "${comments}" | jq 'length')
     fi
 
     # Build review body
@@ -345,16 +221,9 @@ main() {
         done < <(echo "${unmapped_comments}" | jq -c '.[]')
     fi
 
-    # Add note about removed comments if any
-    if [[ ${removed_count} -gt 0 ]]; then
-        review_body="${review_body}
-
-*Note: ${removed_count} previous draft comment(s) were removed as they no longer apply.*"
-    fi
-
     # Create the pending review
     local create_result
-    create_result=$(create_pending_review "${owner}" "${repo}" "${pr_number}" "${review_body}" "${merged_comments}") || {
+    create_result=$(create_pending_review "${owner}" "${repo}" "${pr_number}" "${review_body}" "${comments}") || {
         jq -n \
             --arg error "Failed to create review: ${create_result}" \
             '{success: false, error: $error}'
@@ -367,7 +236,7 @@ main() {
     review_url="https://github.com/${owner}/${repo}/pull/${pr_number}#pullrequestreview-${review_id}"
 
     local inline_count
-    inline_count=$(echo "${merged_comments}" | jq 'length')
+    inline_count=$(echo "${comments}" | jq 'length')
 
     # Return success result
     jq -n \
@@ -376,20 +245,14 @@ main() {
         --arg review_url "${review_url}" \
         --argjson inline_count "${inline_count}" \
         --argjson summary_count "${unmapped_count}" \
-        --argjson amended "$(echo "${amended}" | jq -R 'if . == "true" then true else false end')" \
-        --argjson kept_comments "${kept_count}" \
-        --argjson new_comments "${new_count}" \
-        --argjson removed_comments "${removed_count}" \
+        --argjson replaced_existing "$(echo "${replaced_existing}" | jq -R 'if . == "true" then true else false end')" \
         '{
             success: $success,
             review_id: $review_id,
             review_url: $review_url,
             inline_count: $inline_count,
             summary_count: $summary_count,
-            amended: $amended,
-            kept_comments: $kept_comments,
-            new_comments: $new_comments,
-            removed_comments: $removed_comments
+            replaced_existing: $replaced_existing
         }'
 }
 
