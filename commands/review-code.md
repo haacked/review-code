@@ -609,7 +609,7 @@ If this is a PR review and the reviewer is NOT the PR author, generate suggested
 Extract from session data (using the `$review_data` variable):
 
 ```bash
-is_own_pr=$(echo "$review_data" | jq -r '.is_own_pr // true')
+is_own_pr=$(echo "$review_data" | jq -r '.is_own_pr // false')
 inline_comments=$(echo "$review_data" | jq '.pr.comments.inline // []')
 ```
 
