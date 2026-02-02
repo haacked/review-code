@@ -12,12 +12,12 @@ setup() {
 # =============================================================================
 
 @test "get-review-diff.sh: requires mode argument" {
-    run "$PROJECT_ROOT/lib/get-review-diff.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh"
     [ "$status" -eq 1 ]
 }
 
 @test "get-review-diff.sh: rejects unknown mode" {
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" unknown-mode
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" unknown-mode
     [ "$status" -eq 1 ]
     [[ "$output" == *"Unknown diff mode"* ]]
 }
@@ -28,21 +28,21 @@ setup() {
 
 @test "get-review-diff.sh: commit mode requires commit hash" {
     cd "$PROJECT_ROOT"
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" commit
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" commit
     [ "$status" -ne 0 ]
 }
 
 @test "get-review-diff.sh: commit mode generates diff" {
     cd "$PROJECT_ROOT"
     # Use HEAD as the commit
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" commit HEAD
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" commit HEAD
     [ "$status" -eq 0 ]
     [[ "$output" == *"DIFF_TYPE: commit (HEAD)"* ]]
 }
 
 @test "get-review-diff.sh: commit mode with file pattern" {
     cd "$PROJECT_ROOT"
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" commit HEAD "*.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" commit HEAD "*.sh"
     [ "$status" -eq 0 ]
     [[ "$output" == *"DIFF_TYPE: commit (HEAD) filtered by: *.sh"* ]]
 }
@@ -53,20 +53,20 @@ setup() {
 
 @test "get-review-diff.sh: branch mode requires branch name" {
     cd "$PROJECT_ROOT"
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" branch
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" branch
     [ "$status" -ne 0 ]
 }
 
 @test "get-review-diff.sh: branch mode requires base branch" {
     cd "$PROJECT_ROOT"
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" branch feature-branch
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" branch feature-branch
     [ "$status" -ne 0 ]
 }
 
 @test "get-review-diff.sh: branch mode with file pattern" {
     cd "$PROJECT_ROOT"
     # This will fail if branches don't exist, but tests the argument parsing
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" branch main main "*.md"
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" branch main main "*.md"
     # Status might be non-zero if branches are the same, but should show filtered type
     [[ "$output" == *"filtered by: *.md"* ]] || [ "$status" -ne 0 ]
 }
@@ -77,21 +77,21 @@ setup() {
 
 @test "get-review-diff.sh: range mode requires range argument" {
     cd "$PROJECT_ROOT"
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" range
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" range
     [ "$status" -ne 0 ]
 }
 
 @test "get-review-diff.sh: range mode generates diff" {
     cd "$PROJECT_ROOT"
     # Use HEAD~1..HEAD as the range
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" range "HEAD~1..HEAD"
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" range "HEAD~1..HEAD"
     [ "$status" -eq 0 ]
     [[ "$output" == *"DIFF_TYPE: range (HEAD~1..HEAD)"* ]]
 }
 
 @test "get-review-diff.sh: range mode with file pattern" {
     cd "$PROJECT_ROOT"
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" range "HEAD~1..HEAD" "lib/*.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" range "HEAD~1..HEAD" "lib/*.sh"
     [ "$status" -eq 0 ]
     [[ "$output" == *"filtered by: lib/*.sh"* ]]
 }
@@ -102,14 +102,14 @@ setup() {
 
 @test "get-review-diff.sh: local mode works without arguments" {
     cd "$PROJECT_ROOT"
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" local
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" local
     [ "$status" -eq 0 ]
     [[ "$output" == *"DIFF_TYPE: local (uncommitted)"* ]]
 }
 
 @test "get-review-diff.sh: local mode with file pattern" {
     cd "$PROJECT_ROOT"
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" local "*.bats"
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" local "*.bats"
     [ "$status" -eq 0 ]
     [[ "$output" == *"filtered by: *.bats"* ]]
 }
@@ -120,19 +120,19 @@ setup() {
 
 @test "get-review-diff.sh: branch-plus-uncommitted requires branch" {
     cd "$PROJECT_ROOT"
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" branch-plus-uncommitted
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" branch-plus-uncommitted
     [ "$status" -ne 0 ]
 }
 
 @test "get-review-diff.sh: branch-plus-uncommitted requires base" {
     cd "$PROJECT_ROOT"
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" branch-plus-uncommitted feature
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" branch-plus-uncommitted feature
     [ "$status" -ne 0 ]
 }
 
 @test "get-review-diff.sh: branch-plus-uncommitted with file pattern" {
     cd "$PROJECT_ROOT"
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" branch-plus-uncommitted main main "*.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" branch-plus-uncommitted main main "*.sh"
     [[ "$output" == *"filtered by: *.sh"* ]] || [ "$status" -ne 0 ]
 }
 
@@ -143,7 +143,7 @@ setup() {
 @test "get-review-diff.sh: excludes lock files" {
     cd "$PROJECT_ROOT"
     # Check that exclusion patterns are being used (common mode)
-    run bash -c "source '$PROJECT_ROOT/lib/get-review-diff.sh' 2>&1 >/dev/null || true"
+    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh' 2>&1 >/dev/null || true"
     # Should source exclusion-patterns.sh
     [ "$status" -eq 0 ]
 }
@@ -155,7 +155,7 @@ setup() {
 @test "get-review-diff.sh: respects DIFF_CONTEXT_LINES env var" {
     cd "$PROJECT_ROOT"
     export DIFF_CONTEXT_LINES=5
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" commit HEAD
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" commit HEAD
     [ "$status" -eq 0 ]
     # Verify it ran (exact diff validation would be fragile)
 }
@@ -163,7 +163,7 @@ setup() {
 @test "get-review-diff.sh: defaults to 1 context line" {
     cd "$PROJECT_ROOT"
     unset DIFF_CONTEXT_LINES
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" commit HEAD
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" commit HEAD
     [ "$status" -eq 0 ]
 }
 
@@ -175,6 +175,7 @@ setup_test_repo() {
     TEST_REPO=$(mktemp -d)
     cd "$TEST_REPO"
     git init -q
+    git config commit.gpgsign false
     git config user.email "test@example.com"
     git config user.name "Test User"
 }
@@ -198,7 +199,7 @@ teardown_test_repo() {
     git commit -q -m "Change file"
 
     # Get diff for last commit
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" commit HEAD
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" commit HEAD
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"DIFF_TYPE: commit (HEAD)"* ]]
@@ -223,7 +224,7 @@ teardown_test_repo() {
     git commit -q -m "Feature commit"
 
     # Get diff between main and feature
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" branch feature main
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" branch feature main
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"DIFF_TYPE: branch (main..feature)"* ]]
@@ -250,7 +251,7 @@ teardown_test_repo() {
     git commit -q -m "Commit 3"
 
     # Get diff for last 2 commits
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" range "HEAD~2..HEAD"
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" range "HEAD~2..HEAD"
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"DIFF_TYPE: range (HEAD~2..HEAD)"* ]]
@@ -272,7 +273,7 @@ teardown_test_repo() {
     git add file.txt
 
     # Get local diff
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" local
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" local
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"DIFF_TYPE: local (uncommitted)"* ]]
@@ -294,7 +295,7 @@ teardown_test_repo() {
     echo "unstaged change" > file.txt
 
     # Get local diff
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" local
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" local
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"file.txt"* ]]
@@ -320,7 +321,7 @@ teardown_test_repo() {
     echo "unstaged" > file2.txt
 
     # Get local diff
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" local
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" local
 
     [ "$status" -eq 0 ]
     # Should show staged file (definitely)
@@ -350,7 +351,7 @@ teardown_test_repo() {
     git add file3.txt
 
     # Get combined diff
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" branch-plus-uncommitted feature main
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" branch-plus-uncommitted feature main
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"DIFF_TYPE: branch + uncommitted (main..feature + local)"* ]]
@@ -376,7 +377,7 @@ teardown_test_repo() {
     git commit -q -m "Add files"
 
     # Filter only .js files
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" commit HEAD "*.js"
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" commit HEAD "*.js"
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"app.js"* ]]
@@ -401,7 +402,7 @@ teardown_test_repo() {
     git add .
 
     # Filter only .js files
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" local "*.js"
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" local "*.js"
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"app.js"* ]]
@@ -422,7 +423,7 @@ teardown_test_repo() {
     git commit -q -m "Add files"
 
     # Filter only src/ files
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" commit HEAD "src/*.js"
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" commit HEAD "src/*.js"
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"src/app.js"* ]]
@@ -445,7 +446,7 @@ teardown_test_repo() {
     git commit -q -m "Add files"
 
     # Get diff
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" commit HEAD
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" commit HEAD
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"app.js"* ]]
@@ -468,7 +469,7 @@ teardown_test_repo() {
     git add .
 
     # Get diff
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" local
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" local
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"app.js"* ]]
@@ -494,7 +495,7 @@ teardown_test_repo() {
     git commit -q -m "Feature"
 
     # Get diff
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" branch feature main
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" branch feature main
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"app.js"* ]]
@@ -516,7 +517,7 @@ teardown_test_repo() {
     git commit -q -m "Commit"
 
     # Try to diff with itself (empty)
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" range "HEAD..HEAD"
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" range "HEAD..HEAD"
 
     [ "$status" -eq 0 ]
     # Should have DIFF_TYPE but minimal content
@@ -534,7 +535,7 @@ teardown_test_repo() {
     git commit -q -m "Commit"
 
     # Get local diff (should be empty)
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" local
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" local
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"DIFF_TYPE: local (uncommitted)"* ]]
@@ -556,7 +557,7 @@ teardown_test_repo() {
     git commit -q -m "Feature"
 
     # Branch name contains dot but shouldn't be treated as file pattern
-    run "$PROJECT_ROOT/lib/get-review-diff.sh" branch "feature.test" main
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" branch "feature.test" main
 
     [ "$status" -eq 0 ]
     # Should NOT show "filtered by" since feature.test is the branch name

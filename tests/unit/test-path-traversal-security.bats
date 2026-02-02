@@ -7,7 +7,7 @@ setup() {
 
     # Source the script to test sanitize_path_component function
     # We need to extract just the function for testing
-    source "$PROJECT_ROOT/lib/review-file-path.sh"
+    source "$PROJECT_ROOT/skills/review-code/scripts/review-file-path.sh"
 }
 
 # Test sanitize_path_component function directly

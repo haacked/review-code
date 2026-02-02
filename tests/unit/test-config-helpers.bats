@@ -5,10 +5,10 @@ setup() {
     # Get paths
     TEST_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")" && pwd)"
     PROJECT_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
-    SCRIPT="$PROJECT_ROOT/lib/helpers/config-helpers.sh"
+    SCRIPT="$PROJECT_ROOT/skills/review-code/scripts/helpers/config-helpers.sh"
 
     # Source the script
-    source "$PROJECT_ROOT/lib/helpers/error-helpers.sh"
+    source "$PROJECT_ROOT/skills/review-code/scripts/helpers/error-helpers.sh"
     source "$SCRIPT"
 
     # Create temporary directory for test configs

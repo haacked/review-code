@@ -4,7 +4,7 @@
 setup() {
     TEST_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")" && pwd)"
     PROJECT_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
-    SCRIPT="$PROJECT_ROOT/lib/review-file-path.sh"
+    SCRIPT="$PROJECT_ROOT/skills/review-code/scripts/review-file-path.sh"
 
     # Create temp directory for tests (use canonical path to avoid symlink issues on macOS)
     TEST_TEMP_DIR=$(mktemp -d)
@@ -13,11 +13,11 @@ setup() {
     export HOME="$TEST_TEMP_DIR"
 
     # Setup minimal git config with canonical path
-    mkdir -p "$TEST_TEMP_DIR/.claude"
+    mkdir -p "$TEST_TEMP_DIR/.claude/skills/review-code"
     # Create reviews directory and get its canonical path to ensure consistency
     mkdir -p "$TEST_TEMP_DIR/reviews"
     CANONICAL_REVIEW_PATH=$(cd "$TEST_TEMP_DIR/reviews" && pwd -P)
-    echo "REVIEW_ROOT_PATH=\"$CANONICAL_REVIEW_PATH\"" > "$TEST_TEMP_DIR/.claude/review-code.env"
+    echo "REVIEW_ROOT_PATH=\"$CANONICAL_REVIEW_PATH\"" > "$TEST_TEMP_DIR/.claude/skills/review-code/.env"
 }
 
 teardown() {
@@ -230,7 +230,8 @@ teardown() {
 # ============================================================================
 
 @test "config: uses default review root when config doesn't exist" {
-    # Remove config file
+    # Remove config file (both new and old locations)
+    rm -f "$TEST_TEMP_DIR/.claude/skills/review-code/.env"
     rm -f "$TEST_TEMP_DIR/.claude/review-code.env"
 
     # Create the default directory structure so verify_path_safety doesn't fail

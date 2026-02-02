@@ -20,7 +20,9 @@ NC='\033[0m'
 
 # Directories
 CLAUDE_DIR="${HOME}/.claude"
-CONFIG_FILE="${CLAUDE_DIR}/review-code.env"
+SKILL_DIR="${CLAUDE_DIR}/skills/review-code"
+CONFIG_FILE="${SKILL_DIR}/.env"
+OLD_CONFIG_FILE="${CLAUDE_DIR}/review-code.env"
 
 info() {
     echo -e "${GREEN}✓${NC} $1"
@@ -87,16 +89,38 @@ load_config_safely() {
     return 0
 }
 
-remove_commands() {
+remove_skill() {
     local removed=0
 
+    # Remove skill directory (new installation location)
+    if [[ -d "${CLAUDE_DIR}/skills/review-code" ]]; then
+        rm -rf "${CLAUDE_DIR}/skills/review-code"
+        info "Removed review-code skill"
+        removed=1
+    fi
+
+    # Remove old command file (legacy installation)
     if [[ -f "${CLAUDE_DIR}/commands/review-code.md" ]]; then
         rm "${CLAUDE_DIR}/commands/review-code.md"
+        info "Removed legacy review-code command"
         removed=$((removed + 1))
     fi
 
-    if [[ "${removed}" -gt 0 ]]; then
-        info "Removed review-code command"
+    # Remove old bin scripts (legacy installation)
+    if [[ -d "${CLAUDE_DIR}/bin/review-code" ]]; then
+        rm -rf "${CLAUDE_DIR}/bin/review-code"
+        info "Removed legacy helper scripts"
+        removed=$((removed + 1))
+    fi
+
+    # Remove uninstall script from main bin directory
+    if [[ -f "${CLAUDE_DIR}/bin/uninstall-review-code.sh" ]]; then
+        rm "${CLAUDE_DIR}/bin/uninstall-review-code.sh"
+        removed=$((removed + 1))
+    fi
+
+    if [[ "${removed}" -eq 0 ]]; then
+        warn "No review-code installation found"
     fi
 }
 
@@ -110,6 +134,7 @@ remove_agents() {
         "code-reviewer-testing"
         "code-reviewer-compatibility"
         "code-reviewer-architecture"
+        "code-reviewer-frontend"
     )
 
     local removed=0
@@ -126,34 +151,19 @@ remove_agents() {
     fi
 }
 
-remove_scripts() {
-    local removed=0
-
-    # Remove review-code subdirectory (contains all helper scripts)
-    if [[ -d "${CLAUDE_DIR}/bin/review-code" ]]; then
-        rm -rf "${CLAUDE_DIR}/bin/review-code"
-        info "Removed review-code helper scripts"
-        removed=1
-    fi
-
-    # Remove uninstall script from main bin directory
-    if [[ -f "${CLAUDE_DIR}/bin/uninstall-review-code.sh" ]]; then
-        rm "${CLAUDE_DIR}/bin/uninstall-review-code.sh"
-        removed=$((removed + 1))
-    fi
-
-    if [[ "${removed}" -gt 0 ]]; then
-        info "Removed helper scripts"
-    fi
-}
-
 remove_context_files() {
-    if [[ ! -f "${CONFIG_FILE}" ]]; then
+    # Check new location first, fall back to old location
+    local active_config=""
+    if [[ -f "${CONFIG_FILE}" ]]; then
+        active_config="${CONFIG_FILE}"
+    elif [[ -f "${OLD_CONFIG_FILE}" ]]; then
+        active_config="${OLD_CONFIG_FILE}"
+    else
         return
     fi
 
     # Load config to find context path
-    load_config_safely "${CONFIG_FILE}"
+    load_config_safely "${active_config}"
     local context_path="${CONTEXT_PATH:-}"
 
     if [[ -z "${context_path}" ]] || [[ ! -d "${context_path}" ]]; then
@@ -174,15 +184,38 @@ remove_context_files() {
 }
 
 remove_config() {
+    local removed=0
+
+    # Remove new config location
     if [[ -f "${CONFIG_FILE}" ]]; then
-        read -p "Remove configuration file? [y/N] " -n 1 -r
+        read -p "Remove configuration file (${CONFIG_FILE})? [y/N] " -n 1 -r
         echo ""
 
         if [[ ${REPLY} =~ ^[Yy]$ ]]; then
             rm "${CONFIG_FILE}"
             info "Removed configuration file"
+            removed=1
         else
             info "Kept configuration file"
+        fi
+    fi
+
+    # Also remove old config location if it exists
+    if [[ -f "${OLD_CONFIG_FILE}" ]]; then
+        if [[ ${removed} -eq 1 ]]; then
+            # Already removed new config, just remove old one silently
+            rm "${OLD_CONFIG_FILE}"
+            info "Removed old configuration file"
+        else
+            read -p "Remove old configuration file (${OLD_CONFIG_FILE})? [y/N] " -n 1 -r
+            echo ""
+
+            if [[ ${REPLY} =~ ^[Yy]$ ]]; then
+                rm "${OLD_CONFIG_FILE}"
+                info "Removed old configuration file"
+            else
+                info "Kept old configuration file"
+            fi
         fi
     fi
 }
@@ -212,9 +245,8 @@ main() {
 
     # Remove components
     info "Removing review-code components…"
-    remove_commands
+    remove_skill
     remove_agents
-    remove_scripts
 
     # Ask about context files
     remove_context_files

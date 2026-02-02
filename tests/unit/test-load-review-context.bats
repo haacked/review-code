@@ -34,7 +34,7 @@ teardown() {
 
 @test "load-review-context.sh: parses languages from JSON" {
     json='{"languages":["python"],"frameworks":[]}'
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh'"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh'"
     [ "$status" -eq 0 ]
     content=$(echo "$output" | jq -r '.content')
     [[ "$content" == *"Python Guidelines"* ]]
@@ -42,7 +42,7 @@ teardown() {
 
 @test "load-review-context.sh: parses frameworks from JSON" {
     json='{"languages":[],"frameworks":["react"]}'
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh'"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh'"
     [ "$status" -eq 0 ]
     content=$(echo "$output" | jq -r '.content')
     [[ "$content" == *"React Guidelines"* ]]
@@ -50,7 +50,7 @@ teardown() {
 
 @test "load-review-context.sh: handles multiple languages" {
     json='{"languages":["python","typescript"],"frameworks":[]}'
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh'"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh'"
     [ "$status" -eq 0 ]
     content=$(echo "$output" | jq -r '.content')
     [[ "$content" == *"Python Guidelines"* ]]
@@ -63,7 +63,7 @@ teardown() {
 
 @test "load-review-context.sh: loads language context" {
     json='{"languages":["python"],"frameworks":[]}'
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh'"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh'"
     [ "$status" -eq 0 ]
     content=$(echo "$output" | jq -r '.content')
     [[ "$content" == *"Python guidelines content"* ]]
@@ -71,7 +71,7 @@ teardown() {
 
 @test "load-review-context.sh: loads framework context" {
     json='{"languages":[],"frameworks":["django"]}'
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh'"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh'"
     [ "$status" -eq 0 ]
     content=$(echo "$output" | jq -r '.content')
     [[ "$content" == *"Django guidelines content"* ]]
@@ -79,7 +79,7 @@ teardown() {
 
 @test "load-review-context.sh: loads org context" {
     json='{"languages":[],"frameworks":[]}'
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh' testorg"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh' testorg"
     [ "$status" -eq 0 ]
     content=$(echo "$output" | jq -r '.content')
     [[ "$content" == *"Testorg Organization Guidelines"* ]]
@@ -87,7 +87,7 @@ teardown() {
 
 @test "load-review-context.sh: loads repo context" {
     json='{"languages":[],"frameworks":[]}'
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh' testorg testrepo"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh' testorg testrepo"
     [ "$status" -eq 0 ]
     content=$(echo "$output" | jq -r '.content')
     [[ "$content" == *"Testorg/Testrepo Repository Guidelines"* ]]
@@ -99,7 +99,7 @@ teardown() {
 
 @test "load-review-context.sh: converts language names to lowercase" {
     json='{"languages":["Python","PYTHON"],"frameworks":[]}'
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh'"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh'"
     [ "$status" -eq 0 ]
     content=$(echo "$output" | jq -r '.content')
     [[ "$content" == *"Python guidelines content"* ]]
@@ -107,7 +107,7 @@ teardown() {
 
 @test "load-review-context.sh: converts framework names to lowercase" {
     json='{"languages":[],"frameworks":["React","REACT"]}'
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh'"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh'"
     [ "$status" -eq 0 ]
     content=$(echo "$output" | jq -r '.content')
     [[ "$content" == *"React guidelines content"* ]]
@@ -116,7 +116,7 @@ teardown() {
 @test "load-review-context.sh: converts org names to lowercase" {
     json='{"languages":[],"frameworks":[]}'
     # Lowercase org should work (uppercase is rejected for security)
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh' testorg"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh' testorg"
     [ "$status" -eq 0 ]
     content=$(echo "$output" | jq -r '.content')
     [[ "$content" == *"TestOrg guidelines content"* ]]
@@ -128,7 +128,7 @@ teardown() {
 
 @test "load-review-context.sh: handles missing language files" {
     json='{"languages":["nonexistent"],"frameworks":[]}'
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh'"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh'"
     [ "$status" -eq 0 ]
     # Now outputs JSON with empty content
     content=$(echo "$output" | jq -r '.content')
@@ -139,7 +139,7 @@ teardown() {
 
 @test "load-review-context.sh: handles missing framework files" {
     json='{"languages":[],"frameworks":["nonexistent"]}'
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh'"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh'"
     [ "$status" -eq 0 ]
     # Now outputs JSON with empty content
     content=$(echo "$output" | jq -r '.content')
@@ -148,7 +148,7 @@ teardown() {
 
 @test "load-review-context.sh: handles missing org files" {
     json='{"languages":[],"frameworks":[]}'
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh' nonexistent"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh' nonexistent"
     [ "$status" -eq 0 ]
     # Now outputs JSON with empty content
     content=$(echo "$output" | jq -r '.content')
@@ -161,7 +161,7 @@ teardown() {
 
 @test "load-review-context.sh: loads all context in hierarchy" {
     json='{"languages":["python"],"frameworks":["django"]}'
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh' testorg testrepo"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh' testorg testrepo"
     [ "$status" -eq 0 ]
     content=$(echo "$output" | jq -r '.content')
     [[ "$content" == *"Python Guidelines"* ]]
@@ -172,7 +172,7 @@ teardown() {
 
 @test "load-review-context.sh: separates context sections" {
     json='{"languages":["python","typescript"],"frameworks":[]}'
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh'"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh'"
     [ "$status" -eq 0 ]
     content=$(echo "$output" | jq -r '.content')
     # Should have double newlines between sections
@@ -187,7 +187,7 @@ teardown() {
 @test "load-review-context.sh: prevents duplicate framework loads" {
     # Create duplicate framework reference
     json='{"languages":[],"frameworks":["react","react"]}'
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh'"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh'"
     [ "$status" -eq 0 ]
     content=$(echo "$output" | jq -r '.content')
     # Count occurrences of "React Guidelines" (should be 1)
@@ -201,7 +201,7 @@ teardown() {
 
 @test "load-review-context.sh: handles empty JSON" {
     json='{"languages":[],"frameworks":[]}'
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh'"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh'"
     [ "$status" -eq 0 ]
     # Now outputs JSON with empty content
     content=$(echo "$output" | jq -r '.content')
@@ -210,7 +210,7 @@ teardown() {
 
 @test "load-review-context.sh: handles malformed JSON gracefully" {
     json='not valid json'
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh'"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh'"
     [ "$status" -eq 0 ]
     # Now outputs JSON with empty content
     content=$(echo "$output" | jq -r '.content')
@@ -225,7 +225,7 @@ teardown() {
     json='{"languages":["python"]}'
 
     # Try to traverse up with ../
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh' '../../../etc' 'passwd'"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh' '../../../etc' 'passwd'"
     [ "$status" -eq 0 ]
 
     # Should not contain /etc/passwd content
@@ -237,7 +237,7 @@ teardown() {
     json='{"languages":["python"]}'
 
     # Try absolute path
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh' '/etc' 'passwd'"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh' '/etc' 'passwd'"
     [ "$status" -eq 0 ]
 
     # Should not contain /etc/passwd content
@@ -249,7 +249,7 @@ teardown() {
     json='{"languages":["python"]}'
 
     # Try to traverse with .. in repo
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh' 'testorg' '../../etc/passwd'"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh' 'testorg' '../../etc/passwd'"
     [ "$status" -eq 0 ]
 
     # Should not contain /etc/passwd content
@@ -261,7 +261,7 @@ teardown() {
     json='{"languages":["python"]}'
 
     # Uppercase not allowed (should be normalized to lowercase upstream, but we validate)
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh' 'TestOrg' 'testrepo'"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh' 'TestOrg' 'testrepo'"
     [ "$status" -eq 0 ]
 
     # Should reject and not load org context
@@ -273,7 +273,7 @@ teardown() {
     json='{"languages":["python"]}'
 
     # Slash not allowed
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh' 'test/org' 'testrepo'"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh' 'test/org' 'testrepo'"
     [ "$status" -eq 0 ]
 
     # Should contain Python guidelines (valid language)
@@ -288,7 +288,7 @@ teardown() {
     json='{"languages":[]}'
 
     # Valid parameters should work
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh' 'testorg' 'testrepo'"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh' 'testorg' 'testrepo'"
     [ "$status" -eq 0 ]
 
     # Should contain both org and repo context
@@ -301,10 +301,32 @@ teardown() {
     json='{"languages":["python"]}'
 
     # Empty org should work (optional parameter)
-    run bash -c "echo '$json' | '$PROJECT_ROOT/lib/load-review-context.sh' '' ''"
+    run bash -c "echo '$json' | '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh' '' ''"
     [ "$status" -eq 0 ]
 
     # Should contain Python context
     content=$(echo "$output" | jq -r '.content')
     [[ "$content" =~ "Python guidelines content" ]]
+}
+
+# =============================================================================
+# Config file location tests
+# =============================================================================
+
+@test "load-review-context.sh: checks new config location first" {
+    # Verify the script checks the new skills/.env location first
+    run bash -c "grep -A10 'Load config if available' '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh' | grep -q 'skills/review-code/.env'"
+    [ "$status" -eq 0 ]
+}
+
+@test "load-review-context.sh: falls back to old config location" {
+    # Verify the script falls back to old review-code.env location
+    run bash -c "grep -A10 'Load config if available' '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh' | grep -q 'review-code.env'"
+    [ "$status" -eq 0 ]
+}
+
+@test "load-review-context.sh: uses elif for config fallback" {
+    # Verify fallback uses elif (only loads from one location, not both)
+    run bash -c "grep -A10 'Load config if available' '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh' | grep -q 'elif'"
+    [ "$status" -eq 0 ]
 }

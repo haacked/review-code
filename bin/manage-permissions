@@ -41,8 +41,8 @@ SETTINGS_FILE="${CLAUDE_DIR}/settings.json"
 # Note: Commands with variable assignments need their own patterns because
 # Claude Code matches from the beginning of the command string
 permissions=(
-    # Direct script invocation
-    "Bash(~/.claude/bin/review-code/*:*)"
+    # Direct script invocation (new skill path)
+    "Bash(~/.claude/skills/review-code/scripts/*:*)"
     # Variable assignments that call scripts
     "Bash(SESSION_ID=:*)"
     "Bash(review_data=:*)"

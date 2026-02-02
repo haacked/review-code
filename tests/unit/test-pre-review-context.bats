@@ -5,7 +5,7 @@ setup() {
     # Get the directory containing this test file
     TEST_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")" && pwd)"
     PROJECT_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
-    SCRIPT="$PROJECT_ROOT/lib/pre-review-context.sh"
+    SCRIPT="$PROJECT_ROOT/skills/review-code/scripts/pre-review-context.sh"
 }
 
 @test "pre-review-context.sh exists and is executable" {

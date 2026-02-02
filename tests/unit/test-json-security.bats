@@ -4,7 +4,7 @@
 setup() {
     TEST_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")" && pwd)"
     PROJECT_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
-    PARSE_REVIEW_ARG="$PROJECT_ROOT/lib/parse-review-arg.sh"
+    PARSE_REVIEW_ARG="$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh"
 }
 
 # Test that JSON output is always valid even with malicious input

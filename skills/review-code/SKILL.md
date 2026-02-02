@@ -85,8 +85,8 @@ Initialize the review session by running the orchestrator and caching the result
 
 ```bash
 bash -c '
-SESSION_ID=$(~/.claude/bin/review-code/review-status-handler.sh init "'"$ARGUMENTS"'")
-STATUS=$(~/.claude/bin/review-code/review-status-handler.sh get-status "$SESSION_ID")
+SESSION_ID=$(~/.claude/skills/review-code/scripts/review-status-handler.sh init "'"$ARGUMENTS"'")
+STATUS=$(~/.claude/skills/review-code/scripts/review-status-handler.sh get-status "$SESSION_ID")
 echo "Session: $SESSION_ID, Status: $STATUS"
 '
 ```
@@ -104,9 +104,9 @@ If STATUS is "error", get the error message from the session (replace `<SESSION_
 ```bash
 bash -c '
 SESSION_ID="<SESSION_ID>"
-error_msg=$(~/.claude/bin/review-code/review-status-handler.sh get-error-data "$SESSION_ID")
+error_msg=$(~/.claude/skills/review-code/scripts/review-status-handler.sh get-error-data "$SESSION_ID")
 echo "Error: $error_msg"
-~/.claude/bin/review-code/review-status-handler.sh cleanup "$SESSION_ID"
+~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "$SESSION_ID"
 '
 ```
 
@@ -119,7 +119,7 @@ If STATUS is "ambiguous", get the disambiguation data from the session (replace 
 ```bash
 bash -c '
 SESSION_ID="<SESSION_ID>"
-data=$(~/.claude/bin/review-code/review-status-handler.sh get-ambiguous-data "$SESSION_ID")
+data=$(~/.claude/skills/review-code/scripts/review-status-handler.sh get-ambiguous-data "$SESSION_ID")
 arg=$(echo "$data" | jq -r ".arg")
 ref_type=$(echo "$data" | jq -r ".ref_type")
 is_branch=$(echo "$data" | jq -r ".is_branch")
@@ -159,7 +159,7 @@ If STATUS is "prompt", get the prompt data from the session (replace `<SESSION_I
 ```bash
 bash -c '
 SESSION_ID="<SESSION_ID>"
-data=$(~/.claude/bin/review-code/review-status-handler.sh get-prompt-data "$SESSION_ID")
+data=$(~/.claude/skills/review-code/scripts/review-status-handler.sh get-prompt-data "$SESSION_ID")
 current_branch=$(echo "$data" | jq -r ".current_branch")
 base_branch=$(echo "$data" | jq -r ".base_branch")
 has_uncommitted=$(echo "$data" | jq -r ".has_uncommitted")
@@ -183,7 +183,7 @@ If STATUS is "prompt_pull", get the pull prompt data from the session (replace `
 ```bash
 bash -c '
 SESSION_ID="<SESSION_ID>"
-data=$(~/.claude/bin/review-code/review-status-handler.sh get-prompt-pull-data "$SESSION_ID")
+data=$(~/.claude/skills/review-code/scripts/review-status-handler.sh get-prompt-pull-data "$SESSION_ID")
 branch=$(echo "$data" | jq -r ".branch")
 associated_pr=$(echo "$data" | jq -r ".associated_pr // \"none\"")
 echo "Branch: $branch, Associated PR: $associated_pr"
@@ -207,7 +207,7 @@ If STATUS is "find", get the find data from the session and display the result (
 ```bash
 bash -c '
 SESSION_ID="<SESSION_ID>"
-find_data=$(~/.claude/bin/review-code/review-status-handler.sh get-find-data "$SESSION_ID")
+find_data=$(~/.claude/skills/review-code/scripts/review-status-handler.sh get-find-data "$SESSION_ID")
 display_target=$(echo "$find_data" | jq -r ".display_target")
 file_path=$(echo "$find_data" | jq -r ".file_info.file_path")
 file_exists=$(echo "$find_data" | jq -r ".file_info.file_exists")
@@ -223,7 +223,7 @@ echo "Has branch review: $has_branch_review"
 echo "Branch review path: $branch_review_path"
 echo "Needs rename: $needs_rename"
 echo "PR number: $pr_number"
-~/.claude/bin/review-code/review-status-handler.sh cleanup "$SESSION_ID"
+~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "$SESSION_ID"
 '
 ```
 
@@ -275,27 +275,27 @@ Then stop - do not proceed with review agents.
 
 ### Handler: "ready"
 
-If STATUS is "ready", get all the review data from the session and display the summary (replace `<SESSION_ID>` with the actual session ID):
+If STATUS is "ready", get the session file path and read data directly from the file (replace `<SESSION_ID>` with the actual session ID):
 
 ```bash
 bash -c '
 SESSION_ID="<SESSION_ID>"
-review_data=$(~/.claude/bin/review-code/review-status-handler.sh get-ready-data "$SESSION_ID")
-display_summary=$(echo "$review_data" | jq -r ".display_summary")
+SESSION_FILE=$(~/.claude/skills/review-code/scripts/review-status-handler.sh get-session-file "$SESSION_ID")
+display_summary=$(jq -r ".display_summary" "$SESSION_FILE")
 echo "$display_summary"
 '
 ```
 
 This displays the pre-formatted summary showing what will be reviewed.
 
-**All subsequent operations will use the same SESSION_ID to read from the cached session data.**
+**All subsequent operations will use the same SESSION_FILE to read from the cached session data.**
 
 **Ask user to confirm (unless --force was specified):**
 
 Check if the `force` flag is set in the session data:
 
 ```bash
-force_flag=$(echo "$review_data" | jq -r ".force // false")
+force_flag=$(jq -r ".force // false" "$SESSION_FILE")
 ```
 
 If `force_flag` is `true`, skip the confirmation and proceed directly with the review below.
@@ -312,18 +312,16 @@ If user selects "Cancel", exit without proceeding.
 
 If user selects "Yes, review these changes" (or if `force_flag` is `true`), continue with the review below.
 
-**Check for existing review and branch review (replace `<SESSION_ID>` with the actual session ID):**
+**Check for existing review and branch review (using `$SESSION_FILE` from above):**
 
 ```bash
-~/.claude/bin/review-code/review-status-handler.sh \
-  get-ready-data <SESSION_ID> | \
-  jq -r '{
-    existing: (if .file_info.file_exists == true then .file_info.file_path else null end),
-    has_branch_review: (.file_info.has_branch_review // false),
-    branch_review_path: (.file_info.branch_review_path // null),
-    needs_rename: (.file_info.needs_rename // false),
-    pr_number: (.file_info.pr_number // null)
-  }'
+jq -r '{
+  existing: (if .file_info.file_exists == true then .file_info.file_path else null end),
+  has_branch_review: (.file_info.has_branch_review // false),
+  branch_review_path: (.file_info.branch_review_path // null),
+  needs_rename: (.file_info.needs_rename // false),
+  pr_number: (.file_info.pr_number // null)
+}' "$SESSION_FILE"
 ```
 
 **If `has_branch_review` is true (both PR and branch reviews exist):**
@@ -361,33 +359,27 @@ If user selects "Migrate and continue":
 
 Use AskUserQuestion to ask what to do with the existing review.
 
-**Extract the data needed for building agent context (replace `<SESSION_ID>` with the actual session ID):**
+**Extract the data needed for building agent context (using `$SESSION_FILE` from above):**
 
-All subsequent extractions use the SAME SESSION_ID (no re-running orchestrator). Save the session data to a variable for reuse:
+All subsequent extractions use the SAME SESSION_FILE (no re-running orchestrator). Extract individual fields as needed using jq directly on the file:
+- `mode=$(jq -r ".mode" "$SESSION_FILE")`
+- `diff=$(jq -r ".diff" "$SESSION_FILE")`
+- `file_metadata=$(jq -r ".file_metadata" "$SESSION_FILE")`
+- `review_context=$(jq -r ".review_context" "$SESSION_FILE")`
+- `git_context=$(jq -r ".git" "$SESSION_FILE")`
+- `languages=$(jq -r ".languages" "$SESSION_FILE")`
+- `review_file=$(jq -r ".file_info.file_path" "$SESSION_FILE")`
 
-```bash
-review_data=$(~/.claude/bin/review-code/review-status-handler.sh get-ready-data <SESSION_ID>)
-```
-
-Then extract individual fields as needed using jq:
-- `mode=$(echo "$review_data" | jq -r ".mode")`
-- `diff=$(echo "$review_data" | jq -r ".diff")`
-- `file_metadata=$(echo "$review_data" | jq -r ".file_metadata")`
-- `review_context=$(echo "$review_data" | jq -r ".review_context")`
-- `git_context=$(echo "$review_data" | jq -r ".git")`
-- `languages=$(echo "$review_data" | jq -r ".languages")`
-- `review_file=$(echo "$review_data" | jq -r ".file_info.file_path")`
-
-**Extract mode-specific fields from the cached session (using the `$review_data` variable from above):**
+**Extract mode-specific fields from the cached session (using `$SESSION_FILE`):**
 
 Extract mode-specific fields as needed:
-- **For PR mode:** `pr=$(echo "$review_data" | jq -r ".pr // empty")`
+- **For PR mode:** `pr=$(jq -r ".pr // empty" "$SESSION_FILE")`
 - **For branch/commit/range modes:**
-  - `branch=$(echo "$review_data" | jq -r ".branch // empty")`
-  - `base_branch=$(echo "$review_data" | jq -r ".base_branch // empty")`
-  - `commit=$(echo "$review_data" | jq -r ".commit // empty")`
-  - `range=$(echo "$review_data" | jq -r ".range // empty")`
-- **For area-specific reviews:** `area=$(echo "$review_data" | jq -r ".area // empty")`
+  - `branch=$(jq -r ".branch // empty" "$SESSION_FILE")`
+  - `base_branch=$(jq -r ".base_branch // empty" "$SESSION_FILE")`
+  - `commit=$(jq -r ".commit // empty" "$SESSION_FILE")`
+  - `range=$(jq -r ".range // empty" "$SESSION_FILE")`
+- **For area-specific reviews:** `area=$(jq -r ".area // empty" "$SESSION_FILE")`
 
 ### Gather Architectural Context
 
@@ -517,11 +509,10 @@ Use the Task tool with `subagent_type` set to the agent name, passing the full c
 **If no area specified (comprehensive review)**:
 
 First, check if this is frontend code by inspecting the languages data
-(using the `$review_data` variable from above):
+(using `$SESSION_FILE` from above):
 
 ```bash
-has_frontend=$(echo "$review_data" | \
-  jq -r ".languages.has_frontend // false")
+has_frontend=$(jq -r ".languages.has_frontend // false" "$SESSION_FILE")
 ```
 
 **Always invoke these 7 core agents in PARALLEL using the Task tool:**
@@ -606,11 +597,11 @@ If this is a PR review and the reviewer is NOT the PR author, generate suggested
 
 **Check if suggested comments should be generated:**
 
-Extract from session data (using the `$review_data` variable):
+Extract from session data (using `$SESSION_FILE`):
 
 ```bash
-is_own_pr=$(echo "$review_data" | jq -r '.is_own_pr // false')
-inline_comments=$(echo "$review_data" | jq '.pr.comments.inline // []')
+is_own_pr=$(jq -r '.is_own_pr // false' "$SESSION_FILE")
+inline_comments=$(jq '.pr.comments.inline // []' "$SESSION_FILE")
 ```
 
 **If `is_own_pr` is "false":**
@@ -708,7 +699,7 @@ After the review is complete, cleanup the session (replace `<SESSION_ID>` with t
 ```bash
 bash -c '
 SESSION_ID="<SESSION_ID>"
-~/.claude/bin/review-code/review-status-handler.sh cleanup "$SESSION_ID"
+~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "$SESSION_ID"
 echo "Session cleaned up: $SESSION_ID"
 '
 ```

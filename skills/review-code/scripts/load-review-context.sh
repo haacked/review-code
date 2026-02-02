@@ -42,8 +42,14 @@ debug_time "04-context-loading" "start"
 EXTERNAL_CONTEXT_PATH="${CONTEXT_PATH:-}"
 
 # Load config if available (installed mode)
-CONFIG_FILE="${HOME}/.claude/review-code.env"
-if [[ -f "${CONFIG_FILE}" ]]; then
+# Check new location first, fall back to old location for backward compatibility
+CONFIG_FILE=""
+if [[ -f "${HOME}/.claude/skills/review-code/.env" ]]; then
+    CONFIG_FILE="${HOME}/.claude/skills/review-code/.env"
+elif [[ -f "${HOME}/.claude/review-code.env" ]]; then
+    CONFIG_FILE="${HOME}/.claude/review-code.env"
+fi
+if [[ -n "${CONFIG_FILE}" ]]; then
     load_config_safely "${CONFIG_FILE}"
 fi
 

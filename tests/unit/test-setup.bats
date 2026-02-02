@@ -59,18 +59,13 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
-@test "setup: has install_commands function" {
-    run bash -c "grep -q '^install_commands()' '$PROJECT_ROOT/bin/setup'"
+@test "setup: has install_skill function" {
+    run bash -c "grep -q '^install_skill()' '$PROJECT_ROOT/bin/setup'"
     [ "$status" -eq 0 ]
 }
 
 @test "setup: has install_agents function" {
     run bash -c "grep -q '^install_agents()' '$PROJECT_ROOT/bin/setup'"
-    [ "$status" -eq 0 ]
-}
-
-@test "setup: has install_scripts function" {
-    run bash -c "grep -q '^install_scripts()' '$PROJECT_ROOT/bin/setup'"
     [ "$status" -eq 0 ]
 }
 
@@ -201,26 +196,26 @@ setup() {
 }
 
 # =============================================================================
-# Script installation tests
+# Skill installation tests
 # =============================================================================
 
-@test "setup: install_scripts includes git-context.sh" {
-    run bash -c "grep -A50 'install_scripts()' '$PROJECT_ROOT/bin/setup' | grep -q 'git-context.sh'"
+@test "setup: install_skill copies SKILL.md" {
+    run bash -c "grep -A80 'install_skill()' '$PROJECT_ROOT/bin/setup' | grep -q 'SKILL.md'"
     [ "$status" -eq 0 ]
 }
 
-@test "setup: install_scripts includes review-orchestrator.sh" {
-    run bash -c "grep -A50 'install_scripts()' '$PROJECT_ROOT/bin/setup' | grep -q 'review-orchestrator.sh'"
+@test "setup: install_skill makes scripts executable" {
+    run bash -c "grep -A80 'install_skill()' '$PROJECT_ROOT/bin/setup' | grep -q 'chmod +x'"
     [ "$status" -eq 0 ]
 }
 
-@test "setup: install_scripts makes scripts executable" {
-    run bash -c "grep -A50 'install_scripts()' '$PROJECT_ROOT/bin/setup' | grep -q 'chmod +x'"
+@test "setup: install_skill copies uninstall script" {
+    run bash -c "grep -A80 'install_skill()' '$PROJECT_ROOT/bin/setup' | grep -q 'uninstall.sh'"
     [ "$status" -eq 0 ]
 }
 
-@test "setup: install_scripts copies uninstall script" {
-    run bash -c "grep -A50 'install_scripts()' '$PROJECT_ROOT/bin/setup' | grep -q 'uninstall.sh'"
+@test "setup: install_skill creates scripts directory" {
+    run bash -c "grep -A80 'install_skill()' '$PROJECT_ROOT/bin/setup' | grep -q 'scripts'"
     [ "$status" -eq 0 ]
 }
 
@@ -243,8 +238,8 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
-@test "setup: main calls install_commands" {
-    run bash -c "grep -A100 '^main()' '$PROJECT_ROOT/bin/setup' | grep -q 'install_commands'"
+@test "setup: main calls install_skill" {
+    run bash -c "grep -A100 '^main()' '$PROJECT_ROOT/bin/setup' | grep -q 'install_skill'"
     [ "$status" -eq 0 ]
 }
 
@@ -253,12 +248,60 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
-@test "setup: main calls install_scripts" {
-    run bash -c "grep -A100 '^main()' '$PROJECT_ROOT/bin/setup' | grep -q 'install_scripts'"
+@test "setup: main calls install_context" {
+    run bash -c "grep -A100 '^main()' '$PROJECT_ROOT/bin/setup' | grep -q 'install_context'"
     [ "$status" -eq 0 ]
 }
 
-@test "setup: main calls install_context" {
-    run bash -c "grep -A100 '^main()' '$PROJECT_ROOT/bin/setup' | grep -q 'install_context'"
+# =============================================================================
+# migrate_old_config tests
+# =============================================================================
+
+@test "setup: has migrate_old_config function" {
+    run bash -c "grep -q '^migrate_old_config()' '$PROJECT_ROOT/bin/setup'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: main calls migrate_old_config" {
+    run bash -c "grep -A100 '^main()' '$PROJECT_ROOT/bin/setup' | grep -q 'migrate_old_config'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: migrate_old_config checks for old config file existence" {
+    run bash -c "grep -A20 '^migrate_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q 'OLD_CONFIG_FILE'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: migrate_old_config checks for new config file existence" {
+    run bash -c "grep -A20 '^migrate_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q 'CONFIG_FILE'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: migrate_old_config uses mv for migration" {
+    # Test that migration uses mv to move old config to new location
+    run bash -c "grep -A20 '^migrate_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q 'mv'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: migrate_old_config uses diff to compare configs" {
+    # Test that deduplication uses diff to compare old and new configs
+    run bash -c "grep -A20 '^migrate_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q 'diff -q'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: migrate_old_config removes duplicate old config" {
+    # Test that when configs are identical, old one is removed
+    run bash -c "grep -A20 '^migrate_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q 'rm.*OLD_CONFIG_FILE'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: migrate_old_config warns on conflict" {
+    # Test that when configs differ, a warning is issued
+    run bash -c "grep -A20 '^migrate_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q 'Both old and new config files exist with different content'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: migrate_old_config creates skill directory before migration" {
+    run bash -c "grep -A20 '^migrate_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q 'mkdir -p'"
     [ "$status" -eq 0 ]
 }

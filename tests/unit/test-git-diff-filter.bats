@@ -9,6 +9,7 @@ setup() {
     TEST_REPO=$(mktemp -d)
     cd "$TEST_REPO"
     git init
+    git config commit.gpgsign false
     git config user.email "test@example.com"
     git config user.name "Test User"
 
@@ -28,7 +29,7 @@ teardown() {
 # =============================================================================
 
 @test "git-diff-filter.sh: loads extended exclusion patterns" {
-    run bash -c "source '$PROJECT_ROOT/lib/git-diff-filter.sh' 2>&1 >/dev/null || true"
+    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh' 2>&1 >/dev/null || true"
     [ "$status" -eq 0 ]
 }
 
@@ -40,7 +41,7 @@ teardown() {
     echo "staged change" > file.txt
     git add file.txt
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>&1 >/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>&1 >/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"DIFF_TYPE:"* ]]
 }
@@ -53,7 +54,7 @@ teardown() {
     echo "staged change" > file.txt
     git add file.txt
 
-    run "$PROJECT_ROOT/lib/git-diff-filter.sh" 2>&1
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh" 2>&1
     [ "$status" -eq 0 ]
     [[ "$output" == *"DIFF_TYPE: staged"* ]]
 }
@@ -67,7 +68,7 @@ teardown() {
     echo "normal change" > file.txt
     git add file.txt
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     # Should not contain lock file diff
     [[ "$output" != *"package-lock.json"* ]]
@@ -82,7 +83,7 @@ teardown() {
 @test "git-diff-filter.sh: filters unstaged changes" {
     echo "unstaged change" > file.txt
 
-    run "$PROJECT_ROOT/lib/git-diff-filter.sh" 2>&1
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh" 2>&1
     [ "$status" -eq 0 ]
     [[ "$output" == *"DIFF_TYPE: unstaged"* ]]
 }
@@ -94,7 +95,7 @@ teardown() {
     # Also modify a normal file
     echo "normal change" > file.txt
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     # Should not contain minified file diff
     [[ "$output" != *"app.min.js"* ]]
@@ -111,7 +112,7 @@ teardown() {
     git add file.txt
     git commit -m "Feature change"
 
-    run "$PROJECT_ROOT/lib/git-diff-filter.sh" 2>&1
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh" 2>&1
     [ "$status" -eq 0 ]
     [[ "$output" == *"DIFF_TYPE: branch"* ]]
 }
@@ -128,7 +129,7 @@ teardown() {
     git add .
     git commit -m "Feature change"
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     # Should not contain build output diff
     [[ "$output" != *"dist/app.js"* ]]
@@ -143,7 +144,7 @@ teardown() {
     echo "change" > file.txt
     git add file.txt
 
-    run "$PROJECT_ROOT/lib/git-diff-filter.sh" 2>&1
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh" 2>&1
     [ "$status" -eq 0 ]
     # Verify it ran (exact diff validation would be fragile)
 }
@@ -153,7 +154,7 @@ teardown() {
     echo "change" > file.txt
     git add file.txt
 
-    run "$PROJECT_ROOT/lib/git-diff-filter.sh" 2>&1
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh" 2>&1
     [ "$status" -eq 0 ]
 }
 
@@ -162,7 +163,7 @@ teardown() {
 # =============================================================================
 
 @test "git-diff-filter.sh: handles no changes gracefully" {
-    run "$PROJECT_ROOT/lib/git-diff-filter.sh" 2>&1
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh" 2>&1
     [ "$status" -eq 0 ]
 }
 
@@ -174,7 +175,7 @@ teardown() {
     echo "test" > file.txt
     git add file.txt
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>&1 >/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>&1 >/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"DIFF_TYPE: staged"* ]]
 }
@@ -183,7 +184,7 @@ teardown() {
     echo "test change" > file.txt
     git add file.txt
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"diff --git"* ]] || [[ "$output" == *"@@"* ]]
 }
@@ -197,7 +198,7 @@ teardown() {
     echo "lock" > Cargo.lock
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"main.rs"* ]]
     [[ "$output" != *"Cargo.lock"* ]]
@@ -208,7 +209,7 @@ teardown() {
     echo "lock" > pnpm-lock.yaml
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"app.ts"* ]]
     [[ "$output" != *"pnpm-lock.yaml"* ]]
@@ -219,7 +220,7 @@ teardown() {
     echo "lock" > yarn.lock
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"index.js"* ]]
     [[ "$output" != *"yarn.lock"* ]]
@@ -230,7 +231,7 @@ teardown() {
     echo "lock" > uv.lock
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"main.py"* ]]
     [[ "$output" != *"uv.lock"* ]]
@@ -241,7 +242,7 @@ teardown() {
     echo "lock" > poetry.lock
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"app.py"* ]]
     [[ "$output" != *"poetry.lock"* ]]
@@ -252,7 +253,7 @@ teardown() {
     echo "lock" > Gemfile.lock
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"app.rb"* ]]
     [[ "$output" != *"Gemfile.lock"* ]]
@@ -263,7 +264,7 @@ teardown() {
     echo "lock" > Pipfile.lock
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"main.py"* ]]
     [[ "$output" != *"Pipfile.lock"* ]]
@@ -274,7 +275,7 @@ teardown() {
     echo "lock" > composer.lock
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"index.php"* ]]
     [[ "$output" != *"composer.lock"* ]]
@@ -285,7 +286,7 @@ teardown() {
     echo "checksums" > go.sum
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"main.go"* ]]
     [[ "$output" != *"go.sum"* ]]
@@ -300,7 +301,7 @@ teardown() {
     echo "snapshot" > app.test.js.snap
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"app.test.js"* ]]
     [[ "$output" != *".snap"* ]]
@@ -311,7 +312,7 @@ teardown() {
     echo "snapshot" > test.ambr
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"test.py"* ]]
     [[ "$output" != *".ambr"* ]]
@@ -323,7 +324,7 @@ teardown() {
     echo "snapshot" > __snapshots__/test.snap
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"test.spec.ts"* ]]
     [[ "$output" != *"__snapshots__"* ]]
@@ -338,7 +339,7 @@ teardown() {
     echo "compiled" > app.pyc
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"app.py"* ]]
     [[ "$output" != *".pyc"* ]]
@@ -350,7 +351,7 @@ teardown() {
     echo "cached" > __pycache__/main.cpython-39.pyc
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"main.py"* ]]
     [[ "$output" != *"__pycache__"* ]]
@@ -363,7 +364,7 @@ teardown() {
     echo "map" > style.css.map
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"app.js"* ]]
     [[ "$output" == *"style.css"* ]]
@@ -376,7 +377,7 @@ teardown() {
     echo "wasm binary" > output.wasm
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"main.rs"* ]]
     [[ "$output" != *".wasm"* ]]
@@ -392,7 +393,7 @@ teardown() {
     echo "generated" > .generated/types.ts
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"src.ts"* ]]
     [[ "$output" != *".generated"* ]]
@@ -404,7 +405,7 @@ teardown() {
     echo "binary" > target/release/app
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"main.rs"* ]]
     [[ "$output" != *"target/"* ]]
@@ -415,7 +416,7 @@ teardown() {
     echo "buildinfo" > .tsbuildinfo
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"index.ts"* ]]
     [[ "$output" != *".tsbuildinfo"* ]]
@@ -427,7 +428,7 @@ teardown() {
     echo "cached" > .next/cache/data.json
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"page.tsx"* ]]
     [[ "$output" != *".next"* ]]
@@ -439,7 +440,7 @@ teardown() {
     echo "built" > out/index.html
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"index.html"* ]]
     [[ "$output" != *"out/"* ]]
@@ -454,7 +455,7 @@ teardown() {
     echo "DS_Store data" > .DS_Store
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"app.js"* ]]
     [[ "$output" != *".DS_Store"* ]]
@@ -466,7 +467,7 @@ teardown() {
     echo "swo" > app.js.swo
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"app.js"* ]]
     [[ "$output" != *".swp"* ]]
@@ -478,7 +479,7 @@ teardown() {
     echo "backup" > app.js~
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"diff.*app.js"* ]] || [[ "$output" == *"app.js"* ]]
     [[ "$output" != *"app.js~"* ]]
@@ -493,7 +494,7 @@ teardown() {
     echo "minified" > styles.min.css
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"styles.css"* ]]
     [[ "$output" != *"styles.min.css"* ]]
@@ -510,7 +511,7 @@ teardown() {
     echo "{}" > pnpm-lock.yaml
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"app.js"* ]]
     [[ "$output" != *"package-lock.json"* ]]
@@ -527,7 +528,7 @@ teardown() {
     echo "built" > dist/output.js
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     # Should include source files
     [[ "$output" == *"app.js"* ]]
@@ -543,7 +544,7 @@ teardown() {
     echo "lock" > yarn.lock
     git add .
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-filter.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-filter.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     # Output should be empty or just whitespace
     [ -z "$output" ] || [[ "$output" =~ ^[[:space:]]*$ ]]

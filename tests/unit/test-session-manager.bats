@@ -11,7 +11,7 @@ setup() {
     export CLAUDE_SESSION_DIR="$SESSION_DIR"
 
     # Source the session manager
-    source "$PROJECT_ROOT/lib/session-manager.sh"
+    source "$PROJECT_ROOT/skills/review-code/scripts/session-manager.sh"
 }
 
 teardown() {

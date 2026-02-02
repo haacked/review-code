@@ -192,7 +192,7 @@ Loads repo-specific workflows and requirements:
 
 Reviews are saved to a configurable location. The default is `~/dev/ai/reviews/{org}/{repo}/{pr-number-or-branch}.md`.
 
-To change the path, edit `~/.claude/review-code.env`:
+To change the path, edit `~/.claude/skills/review-code/.env`:
 
 ```bash
 REVIEW_ROOT_PATH="$HOME/my-custom-path/reviews"
@@ -273,8 +273,8 @@ Helper scripts and context files remain in `~/.dotfiles` for future use.
 
 ### Config file not being read
 
-- Check file exists: `ls -la ~/.claude/review-code.env`
-- Check syntax: `cat ~/.claude/review-code.env`
+- Check file exists: `ls -la ~/.claude/skills/review-code/.env`
+- Check syntax: `cat ~/.claude/skills/review-code/.env`
 - Ensure `REVIEW_ROOT_PATH` is set correctly
 
 ## Next Steps

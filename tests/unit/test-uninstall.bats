@@ -39,18 +39,13 @@ setup() {
 # Function existence tests
 # =============================================================================
 
-@test "uninstall.sh: has remove_commands function" {
-    run bash -c "grep -q '^remove_commands()' '$PROJECT_ROOT/uninstall.sh'"
+@test "uninstall.sh: has remove_skill function" {
+    run bash -c "grep -q '^remove_skill()' '$PROJECT_ROOT/uninstall.sh'"
     [ "$status" -eq 0 ]
 }
 
 @test "uninstall.sh: has remove_agents function" {
     run bash -c "grep -q '^remove_agents()' '$PROJECT_ROOT/uninstall.sh'"
-    [ "$status" -eq 0 ]
-}
-
-@test "uninstall.sh: has remove_scripts function" {
-    run bash -c "grep -q '^remove_scripts()' '$PROJECT_ROOT/uninstall.sh'"
     [ "$status" -eq 0 ]
 }
 
@@ -117,18 +112,18 @@ setup() {
 # Script removal tests
 # =============================================================================
 
-@test "uninstall.sh: removes review-code directory" {
-    run bash -c "grep -A20 'remove_scripts()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'bin/review-code'"
+@test "uninstall.sh: removes skill directory" {
+    run bash -c "grep -A30 'remove_skill()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'skills/review-code'"
     [ "$status" -eq 0 ]
 }
 
-@test "uninstall.sh: uses rm -rf for review-code directory" {
-    run bash -c "grep -A20 'remove_scripts()' '$PROJECT_ROOT/uninstall.sh' | grep 'review-code' | grep -q 'rm -rf'"
+@test "uninstall.sh: uses rm -rf for skill directory" {
+    run bash -c "grep -A30 'remove_skill()' '$PROJECT_ROOT/uninstall.sh' | grep 'skills/review-code' | grep -q 'rm -rf'"
     [ "$status" -eq 0 ]
 }
 
 @test "uninstall.sh: removes uninstall script itself" {
-    run bash -c "grep -A50 'remove_scripts()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'uninstall-review-code.sh'"
+    run bash -c "grep -A50 'remove_skill()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'uninstall-review-code.sh'"
     [ "$status" -eq 0 ]
 }
 
@@ -137,17 +132,17 @@ setup() {
 # =============================================================================
 
 @test "uninstall.sh: prompts before removing context files" {
-    run bash -c "grep -A20 'remove_context_files()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'read -p'"
+    run bash -c "grep -A35 'remove_context_files()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'read -p'"
     [ "$status" -eq 0 ]
 }
 
 @test "uninstall.sh: prompts before removing config" {
-    run bash -c "grep -A20 'remove_config()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'read -p'"
+    run bash -c "grep -A35 'remove_config()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'read -p'"
     [ "$status" -eq 0 ]
 }
 
 @test "uninstall.sh: mentions preserving reviews" {
-    run bash -c "grep -A20 'remove_context_files()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'reviews will be preserved'"
+    run bash -c "grep -A35 'remove_context_files()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'reviews will be preserved'"
     [ "$status" -eq 0 ]
 }
 
@@ -174,18 +169,13 @@ setup() {
 # Workflow tests
 # =============================================================================
 
-@test "uninstall.sh: main calls remove_commands" {
-    run bash -c "grep -A50 '^main()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'remove_commands'"
+@test "uninstall.sh: main calls remove_skill" {
+    run bash -c "grep -A50 '^main()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'remove_skill'"
     [ "$status" -eq 0 ]
 }
 
 @test "uninstall.sh: main calls remove_agents" {
     run bash -c "grep -A50 '^main()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'remove_agents'"
-    [ "$status" -eq 0 ]
-}
-
-@test "uninstall.sh: main calls remove_scripts" {
-    run bash -c "grep -A50 '^main()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'remove_scripts'"
     [ "$status" -eq 0 ]
 }
 

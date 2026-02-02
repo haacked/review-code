@@ -97,7 +97,7 @@ Mock GitHub PR data for testing PR review flows:
 # In BATS tests
 @test "Language detection handles Python/Flask" {
     diff_content=$(cat "$PROJECT_ROOT/tests/fixtures/diffs/python-flask.diff")
-    result=$(echo "$diff_content" | "$PROJECT_ROOT/lib/code-language-detect.sh")
+    result=$(echo "$diff_content" | "$PROJECT_ROOT/skills/review-code/scripts/code-language-detect.sh")
 
     # Should detect Python and Flask
     echo "$result" | jq -e '.languages[] | select(. == "python")' > /dev/null
@@ -118,7 +118,7 @@ Mock GitHub PR data for testing PR review flows:
     }
     export -f gh
 
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" "456"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" "456"
     [ "$status" -eq 0 ]
 }
 ```
@@ -133,7 +133,7 @@ Mock GitHub PR data for testing PR review flows:
     git commit -m "Add special chars"
 
     # Should handle without errors
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" "HEAD~1..HEAD"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" "HEAD~1..HEAD"
     [ "$status" -eq 0 ]
 }
 ```

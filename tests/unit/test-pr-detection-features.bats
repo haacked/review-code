@@ -16,7 +16,7 @@ setup() {
     TEST_GIT_DIR="$(mktemp -d)"
 
     # Source the script to get access to functions
-    source "$PROJECT_ROOT/lib/parse-review-arg.sh"
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh"
 }
 
 teardown() {
@@ -30,6 +30,7 @@ teardown() {
 setup_test_git_repo() {
     cd "$TEST_GIT_DIR"
     git init -q
+    git config commit.gpgsign false
     git config user.email "test@example.com"
     git config user.name "Test User"
 
@@ -185,14 +186,14 @@ setup_test_git_repo() {
 
 @test "full parse flow: PR URL goes through detection" {
     # Test that PR URL detection works in the context of parse script
-    run bash -c "source '$PROJECT_ROOT/lib/parse-review-arg.sh' && arg='https://github.com/test/repo/pull/789' && file_pattern='' && detect_pr"
+    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh' && arg='https://github.com/test/repo/pull/789' && file_pattern='' && detect_pr"
     [ "$status" -eq 0 ]
     [[ "$output" == *'"pr_number":"789"'* ]]
 }
 
 @test "full parse flow: branch detection works" {
     # Test branch detection path
-    run bash -c "source '$PROJECT_ROOT/lib/parse-review-arg.sh' && arg='main' && file_pattern='' && detect_git_ref"
+    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh' && arg='main' && file_pattern='' && detect_git_ref"
     # Should detect main as a git ref (exit 0) or detect ambiguity
     # Status depends on current repo state, so we just check it doesn't crash
     [ "$status" -ge 0 ]

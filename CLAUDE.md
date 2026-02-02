@@ -4,8 +4,8 @@
 
 This repo contains the source files for the `/review-code` skill:
 
-- `commands/` - Skill definition files (markdown)
-- `lib/` - Bash scripts that implement the skill
+- `skills/review-code/SKILL.md` - Skill definition
+- `skills/review-code/scripts/` - Bash scripts that implement the skill
 - `agents/` - Agent definitions (YAML)
 - `context/` - Review context files
 - `bin/` - Development utilities (fmt, lint, test, setup)
@@ -14,7 +14,7 @@ This repo contains the source files for the `/review-code` skill:
 
 **Never edit files in `~/.claude/` directly.** Always edit the source files in this repo.
 
-The files in `~/.claude/bin/review-code/` are installed copies. To update them after making changes:
+The files in `~/.claude/skills/review-code/` are installed copies. To update them after making changes:
 
 ```bash
 bin/setup
