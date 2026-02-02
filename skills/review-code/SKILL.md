@@ -31,6 +31,7 @@ Run specialized code review agent(s) with comprehensive context on local changes
 
 - `--force` or `-f` - Skip the confirmation prompt and proceed directly with review
 - `--draft` or `-d` - Create a pending GitHub review with inline comments (PR mode only)
+- `--self` - Allow creating draft review on your own PR (for testing)
 
 **Optional File Pattern:**
 
@@ -80,6 +81,7 @@ Examples:
 - `/review-code 123 --draft` - Review PR #123 and create draft review
 - `/review-code 123 --draft --force` - Review PR without confirmation and create draft
 - `/review-code 123 -d -f` - Short form, review PR #123, skip confirmation, create draft
+- `/review-code 123 --draft --self` - Create draft review on your own PR (for testing)
 
 ---
 
@@ -709,13 +711,14 @@ If `--draft` was specified and this is a PR review (not own PR), create a pendin
 ```bash
 draft_mode=$(jq -r '.draft // false' "$SESSION_FILE")
 is_own_pr=$(jq -r '.is_own_pr // false' "$SESSION_FILE")
+self_mode=$(jq -r '.self // false' "$SESSION_FILE")
 mode=$(jq -r '.mode' "$SESSION_FILE")
 ```
 
 **Only proceed if ALL conditions are true:**
 - `draft_mode` is "true"
 - `mode` is "pr"
-- `is_own_pr` is "false"
+- `is_own_pr` is "false" OR `self_mode` is "true"
 
 If any condition fails, skip draft review creation.
 

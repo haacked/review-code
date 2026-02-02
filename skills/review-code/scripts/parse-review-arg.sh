@@ -10,6 +10,7 @@ set -euo pipefail
 FORCE_MODE="false"
 FIND_MODE="false"
 DRAFT_MODE="false"
+SELF_MODE="false"
 remaining_args=()
 
 for arg_item in "$@"; do
@@ -17,6 +18,8 @@ for arg_item in "$@"; do
         FORCE_MODE="true"
     elif [[ "${arg_item}" == "--draft" ]] || [[ "${arg_item}" == "-d" ]]; then
         DRAFT_MODE="true"
+    elif [[ "${arg_item}" == "--self" ]]; then
+        SELF_MODE="true"
     else
         remaining_args+=("${arg_item}")
     fi
@@ -144,6 +147,11 @@ build_json_output() {
     # Add draft_mode if enabled
     if [[ "${DRAFT_MODE}" == "true" ]]; then
         jq_args+=("--arg" "draft_mode" "true")
+    fi
+
+    # Add self_mode if enabled
+    if [[ "${SELF_MODE}" == "true" ]]; then
+        jq_args+=("--arg" "self_mode" "true")
     fi
 
     jq -nc "${jq_args[@]}" "${jq_filter}"
