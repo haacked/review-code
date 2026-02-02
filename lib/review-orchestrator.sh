@@ -297,6 +297,21 @@ build_review_data() {
         pr_json="null"
     fi
 
+    # Detect if reviewing own PR (for suggested comments feature)
+    # Default to "false" (show suggested comments) - only suppress when we can
+    # confirm the reviewer is the PR author. This "fail open" approach ensures
+    # API failures don't hide the feature.
+    local reviewer_username=""
+    local is_own_pr="false"
+    if [[ -n "${pr_context}" ]]; then
+        local pr_author
+        pr_author=$(echo "${pr_context}" | jq -r '.author // ""')
+        reviewer_username=$(gh api user --jq '.login' 2> /dev/null || echo "")
+        if [[ -n "${reviewer_username}" && -n "${pr_author}" && "${reviewer_username}" == "${pr_author}" ]]; then
+            is_own_pr="true"
+        fi
+    fi
+
     local -a jq_args=(
         -n
         --arg mode "${mode}"
@@ -309,6 +324,8 @@ build_review_data() {
         --argjson summary "${summary}"
         --arg display "${display_summary}"
         --argjson pr "${pr_json}"
+        --arg reviewer_username "${reviewer_username}"
+        --arg is_own_pr "${is_own_pr}"
     )
 
     # Add mode-specific arguments
@@ -333,7 +350,7 @@ build_review_data() {
             next_step: "gather_architectural_context"
         }
         + (if $force_mode == "true" then {force: true} else {} end)
-        + (if $pr != null then {pr: $pr} else {} end)
+        + (if $pr != null then {pr: $pr, reviewer_username: $reviewer_username, is_own_pr: ($is_own_pr == "true")} else {} end)
         + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")))')
     debug_save_json "07-final-output" "output.json" <<< "${final_output}"
     debug_time "07-final-output" "end"

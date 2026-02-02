@@ -600,6 +600,107 @@ Review complete!
 You can open it directly: file://$review_file
 ```
 
+### Generate Suggested Comments (PR Mode Only)
+
+If this is a PR review and the reviewer is NOT the PR author, generate suggested inline comments for the review file. This helps the reviewer quickly identify what comments to post on the PR.
+
+**Check if suggested comments should be generated:**
+
+Extract from session data (using the `$review_data` variable):
+
+```bash
+is_own_pr=$(echo "$review_data" | jq -r '.is_own_pr // false')
+inline_comments=$(echo "$review_data" | jq '.pr.comments.inline // []')
+```
+
+**If `is_own_pr` is "false":**
+
+When combining agent findings into the review document, add a "Suggested Comments" section with the following:
+
+1. **Extract findings with locations**: From each agent's output, identify findings that have a specific file path and line number.
+
+2. **Check against existing comments**: For each finding, check if there are existing inline comments (from `$inline_comments`) that:
+   - Are on the same file
+   - Are within 5 lines of the finding
+   - Address the same issue (use your judgment on semantic similarity)
+
+3. **Categorize findings**:
+   - **New comment**: No existing comment addresses this issue
+   - **Build upon existing**: Existing comment is related but incomplete
+   - **Already covered**: Existing comment fully addresses the finding
+
+4. **Format the section** following this structure:
+
+```markdown
+---
+
+## Suggested Comments
+
+These suggestions are for posting as inline PR review comments.
+
+### New Comments
+
+For each finding that needs a new comment:
+
+#### `<file_path>:<line_number>`
+
+```text
+<suggested comment text - clear, constructive, and actionable>
+```
+
+*From: <Agent Name> (<confidence>% confidence)*
+
+---
+
+### Build Upon Existing
+
+For findings where there's a related but incomplete existing comment:
+
+#### `<file_path>:<line_number>`
+
+**Existing comment by @<author>:**
+> <quote the existing comment>
+
+**Add to discussion:**
+
+```text
+<suggested addition that builds on the existing comment>
+```
+
+*From: <Agent Name> (<confidence>% confidence)*
+
+---
+
+### Already Covered
+
+List findings where existing comments are sufficient:
+
+- `<file_path>:<line_number>` - @<author>'s comment adequately addresses <brief description>
+
+---
+
+### Summary
+
+| Status | Count |
+|--------|-------|
+| New comments | X |
+| Build upon existing | Y |
+| Already covered | Z |
+```
+
+5. **Append to review file**: Add the "Suggested Comments" section after the main review content.
+
+6. **Display summary to user**: After saving, show a brief summary:
+
+```
+Suggested Comments:
+- X new comments to consider posting
+- Y comments that build on existing discussion
+- Z findings already covered by existing comments
+
+See the review file for copy/paste ready comments.
+```
+
 ### Cleanup Session
 
 After the review is complete, cleanup the session (replace `<SESSION_ID>` with the actual session ID):
