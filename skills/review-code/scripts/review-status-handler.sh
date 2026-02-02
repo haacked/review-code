@@ -33,8 +33,8 @@ find_orchestrator() {
         echo "${SCRIPT_DIR}/review-orchestrator.sh"
     elif [[ -f "${SCRIPT_DIR}/../review-orchestrator.sh" ]]; then
         echo "${SCRIPT_DIR}/../review-orchestrator.sh"
-    elif [[ -f ~/.claude/bin/review-code/review-orchestrator.sh ]]; then
-        echo ~/.claude/bin/review-code/review-orchestrator.sh
+    elif [[ -f ~/.claude/skills/review-code/scripts/review-orchestrator.sh ]]; then
+        echo ~/.claude/skills/review-code/scripts/review-orchestrator.sh
     else
         echo "ERROR: Cannot find review-orchestrator.sh" >&2
         exit 1
@@ -204,9 +204,21 @@ case "${ACTION}" in
         echo "Old sessions cleaned up"
         ;;
 
+    "get-session-file")
+        # Get the path to the session file for direct jq access
+        # This avoids control character corruption when piping through bash variables
+        SESSION_ID="${1:-}"
+        if [[ -z "${SESSION_ID}" ]]; then
+            echo "ERROR: Session ID required" >&2
+            exit 1
+        fi
+
+        session_file "${SESSION_ID}"
+        ;;
+
     *)
         echo "ERROR: Unknown action: ${ACTION}" >&2
-        echo "Valid actions: init, get-status, get-ready-data, get-find-data, get-error-data, get-ambiguous-data, get-prompt-data, get-prompt-pull-data, cleanup, cleanup-old" >&2
+        echo "Valid actions: init, get-status, get-ready-data, get-find-data, get-error-data, get-ambiguous-data, get-prompt-data, get-prompt-pull-data, get-session-file, cleanup, cleanup-old" >&2
         exit 1
         ;;
 esac

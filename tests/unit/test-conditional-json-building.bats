@@ -24,6 +24,7 @@ teardown() {
 setup_test_git_repo() {
     cd "$TEST_GIT_DIR"
     git init -q
+    git config commit.gpgsign false
     git config user.email "test@example.com"
     git config user.name "Test User"
 
@@ -50,7 +51,7 @@ setup_test_git_repo() {
     git checkout -b feature-no-pr 2>/dev/null || true
 
     # Stay on feature branch with no PR context
-    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' '' 2>/dev/null"
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh' '' 2>/dev/null"
     [ "$status" -eq 0 ]
 
     # Output should be valid JSON
@@ -61,7 +62,7 @@ setup_test_git_repo() {
     setup_test_git_repo
     git checkout -b feature-no-pr 2>/dev/null || true
 
-    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' '' 2>/dev/null"
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh' '' 2>/dev/null"
     [ "$status" -eq 0 ]
 
     # Should have status field
@@ -77,7 +78,7 @@ setup_test_git_repo() {
     git commit --allow-empty -m "Test" 2>/dev/null || true
 
     # Get review data (will be prompt status due to uncommitted state)
-    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' '' 2>/dev/null"
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh' '' 2>/dev/null"
     [ "$status" -eq 0 ]
 
     # Should be valid JSON
@@ -93,7 +94,7 @@ setup_test_git_repo() {
 # =============================================================================
 
 @test "git-context: produces valid JSON" {
-    run bash -c "cd '$PROJECT_ROOT' && ./lib/git-context.sh"
+    run bash -c "cd '$PROJECT_ROOT' && ./skills/review-code/scripts/git-context.sh"
     [ "$status" -eq 0 ]
 
     # Validate JSON structure
@@ -101,7 +102,7 @@ setup_test_git_repo() {
 }
 
 @test "git-context: includes required fields" {
-    run bash -c "cd '$PROJECT_ROOT' && ./lib/git-context.sh"
+    run bash -c "cd '$PROJECT_ROOT' && ./skills/review-code/scripts/git-context.sh"
     [ "$status" -eq 0 ]
 
     # Check for required fields
@@ -112,7 +113,7 @@ setup_test_git_repo() {
 }
 
 @test "git-context: org and repo are not empty" {
-    run bash -c "cd '$PROJECT_ROOT' && ./lib/git-context.sh"
+    run bash -c "cd '$PROJECT_ROOT' && ./skills/review-code/scripts/git-context.sh"
     [ "$status" -eq 0 ]
 
     org=$(echo "$output" | jq -r '.org')
@@ -132,7 +133,7 @@ setup_test_git_repo() {
 
     # Test that providing a PR number triggers PR context fetching
     # This may fail if gh not available or PR doesn't exist, but shouldn't crash
-    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' 'https://github.com/haacked/review-code/pull/1' 2>/dev/null"
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh' 'https://github.com/haacked/review-code/pull/1' 2>/dev/null"
 
     # Should exit with 0 or gracefully handle missing PR
     [ "$status" -eq 0 ] || [ "$status" -eq 1 ]
@@ -148,7 +149,7 @@ setup_test_git_repo() {
 # =============================================================================
 
 @test "orchestrator: handles invalid input gracefully" {
-    run bash -c "cd '$PROJECT_ROOT' && ./lib/review-orchestrator.sh 'invalid-ref-xyz-123' 2>/dev/null"
+    run bash -c "cd '$PROJECT_ROOT' && ./skills/review-code/scripts/review-orchestrator.sh 'invalid-ref-xyz-123' 2>/dev/null"
 
     # Should fail gracefully with error status or error JSON
     if [ "$status" -eq 0 ]; then
@@ -161,7 +162,7 @@ setup_test_git_repo() {
     setup_test_git_repo
     git checkout -b feature-no-pr 2>/dev/null || true
 
-    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' '' 2>/dev/null"
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh' '' 2>/dev/null"
     [ "$status" -eq 0 ]
 
     # Should return valid JSON
@@ -176,7 +177,7 @@ setup_test_git_repo() {
     # Get current HEAD commit
     commit=$(git rev-parse HEAD)
 
-    run bash -c "cd '$PROJECT_ROOT' && ./lib/review-orchestrator.sh '$commit' 2>/dev/null"
+    run bash -c "cd '$PROJECT_ROOT' && ./skills/review-code/scripts/review-orchestrator.sh '$commit' 2>/dev/null"
 
     # Should succeed or return valid error JSON
     [ "$status" -eq 0 ] || [ "$status" -eq 1 ]
@@ -196,7 +197,7 @@ setup_test_git_repo() {
     git checkout -q -b feature-branch
 
     # Test with main branch (from temp repo)
-    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' 'main' 2>/dev/null"
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh' 'main' 2>/dev/null"
 
     # Should succeed with valid JSON
     [ "$status" -eq 0 ]
@@ -212,7 +213,7 @@ setup_test_git_repo() {
         skip "gh CLI not available"
     fi
 
-    run bash -c "cd '$PROJECT_ROOT' && source lib/helpers/git-helpers.sh && get_git_org_repo"
+    run bash -c "cd '$PROJECT_ROOT' && source skills/review-code/scripts/helpers/git-helpers.sh && get_git_org_repo"
     [ "$status" -eq 0 ]
 
     # Should return org|repo format
@@ -221,7 +222,7 @@ setup_test_git_repo() {
 
 @test "get_git_org_repo: works without gh CLI" {
     # Test fallback to git URL parsing
-    run bash -c "cd '$PROJECT_ROOT' && PATH=/usr/bin:/bin source lib/helpers/git-helpers.sh && get_git_org_repo"
+    run bash -c "cd '$PROJECT_ROOT' && PATH=/usr/bin:/bin source skills/review-code/scripts/helpers/git-helpers.sh && get_git_org_repo"
     [ "$status" -eq 0 ]
 
     # Should return org|repo format (or unknown|unknown)
@@ -229,7 +230,7 @@ setup_test_git_repo() {
 }
 
 @test "get_git_org_repo: returns lowercase org" {
-    run bash -c "cd '$PROJECT_ROOT' && source lib/helpers/git-helpers.sh && get_git_org_repo"
+    run bash -c "cd '$PROJECT_ROOT' && source skills/review-code/scripts/helpers/git-helpers.sh && get_git_org_repo"
     [ "$status" -eq 0 ]
 
     org="${output%|*}"
@@ -250,7 +251,7 @@ setup_test_git_repo() {
     git commit -q -m "Second commit"
 
     # Use a range to ensure ready status (not ambiguous)
-    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' 'HEAD~1..HEAD' 2>/dev/null"
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh' 'HEAD~1..HEAD' 2>/dev/null"
     [ "$status" -eq 0 ]
 
     # Should have display_summary field
@@ -266,7 +267,7 @@ setup_test_git_repo() {
     git commit -q -m "Second commit"
 
     # Use a range to ensure ready status
-    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' 'HEAD~1..HEAD' 2>/dev/null"
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh' 'HEAD~1..HEAD' 2>/dev/null"
     [ "$status" -eq 0 ]
 
     display_summary=$(echo "$output" | jq -r '.display_summary')
@@ -282,7 +283,7 @@ setup_test_git_repo() {
     git commit -q -m "Second commit"
 
     # Use a range to ensure ready status
-    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' 'HEAD~1..HEAD' 2>/dev/null"
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh' 'HEAD~1..HEAD' 2>/dev/null"
     [ "$status" -eq 0 ]
 
     display_summary=$(echo "$output" | jq -r '.display_summary')
@@ -298,7 +299,7 @@ setup_test_git_repo() {
     git commit -q -m "Second commit"
 
     # Use a range to ensure ready status
-    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' 'HEAD~1..HEAD' 2>/dev/null"
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh' 'HEAD~1..HEAD' 2>/dev/null"
     [ "$status" -eq 0 ]
 
     # Extract both display_summary and file_path
@@ -318,7 +319,7 @@ setup_test_git_repo() {
     git commit -q -m "Second commit"
 
     # Use a range to ensure ready status
-    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' 'HEAD~1..HEAD' 2>/dev/null"
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh' 'HEAD~1..HEAD' 2>/dev/null"
     [ "$status" -eq 0 ]
 
     display_summary=$(echo "$output" | jq -r '.display_summary')
@@ -336,7 +337,7 @@ setup_test_git_repo() {
     git commit -q -m "Second commit"
 
     # Use a range to ensure ready status
-    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/lib/review-orchestrator.sh' 'HEAD~1..HEAD' 2>/dev/null"
+    run bash -c "cd '$TEST_GIT_DIR' && '$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh' 'HEAD~1..HEAD' 2>/dev/null"
     [ "$status" -eq 0 ]
 
     display_summary=$(echo "$output" | jq -r '.display_summary')

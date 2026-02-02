@@ -11,7 +11,7 @@ setup() {
     TEST_GIT_DIR="$(mktemp -d)"
 
     # Source the script to get access to functions
-    source "$PROJECT_ROOT/lib/parse-review-arg.sh"
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh"
 }
 
 teardown() {
@@ -25,6 +25,7 @@ teardown() {
 setup_test_git_repo() {
     cd "$TEST_GIT_DIR"
     git init -q
+    git config commit.gpgsign false
     git config user.email "test@example.com"
     git config user.name "Test User"
 
@@ -327,7 +328,7 @@ reset_globals() {
 
 @test "find mode: FIND_MODE is false by default" {
     # Re-source to reset FIND_MODE
-    source "$PROJECT_ROOT/lib/parse-review-arg.sh"
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh"
     [ "$FIND_MODE" = "false" ]
 }
 
@@ -408,40 +409,40 @@ reset_globals() {
 
 @test "force mode: FORCE_MODE is false by default" {
     # Re-source with no args to reset FORCE_MODE
-    source "$PROJECT_ROOT/lib/parse-review-arg.sh"
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh"
     [ "$FORCE_MODE" = "false" ]
 }
 
 @test "force mode: --force as first argument sets FORCE_MODE" {
     # Source with --force as first arg, 123 as second
-    source "$PROJECT_ROOT/lib/parse-review-arg.sh" "--force" "123"
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "--force" "123"
     [ "$FORCE_MODE" = "true" ]
     [ "$arg" = "123" ]
 }
 
 @test "force mode: -f as first argument sets FORCE_MODE" {
     # Source with -f as first arg
-    source "$PROJECT_ROOT/lib/parse-review-arg.sh" "-f" "main"
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "-f" "main"
     [ "$FORCE_MODE" = "true" ]
     [ "$arg" = "main" ]
 }
 
 @test "force mode: --force as second argument sets FORCE_MODE" {
     # Source with target first, then --force
-    source "$PROJECT_ROOT/lib/parse-review-arg.sh" "main" "--force"
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "main" "--force"
     [ "$FORCE_MODE" = "true" ]
     [ "$arg" = "main" ]
 }
 
 @test "force mode: -f as second argument sets FORCE_MODE" {
-    source "$PROJECT_ROOT/lib/parse-review-arg.sh" "123" "-f"
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "123" "-f"
     [ "$FORCE_MODE" = "true" ]
     [ "$arg" = "123" ]
 }
 
 @test "force mode: --force with file pattern preserves pattern" {
     # /review-code --force main "*.py"
-    source "$PROJECT_ROOT/lib/parse-review-arg.sh" "--force" "main" "*.py"
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "--force" "main" "*.py"
     [ "$FORCE_MODE" = "true" ]
     [ "$arg" = "main" ]
     [ "$file_pattern" = "*.py" ]
@@ -449,7 +450,7 @@ reset_globals() {
 
 @test "force mode: target --force pattern preserves both" {
     # /review-code main --force "*.py"
-    source "$PROJECT_ROOT/lib/parse-review-arg.sh" "main" "--force" "*.py"
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "main" "--force" "*.py"
     [ "$FORCE_MODE" = "true" ]
     [ "$arg" = "main" ]
     [ "$file_pattern" = "*.py" ]
@@ -506,21 +507,21 @@ reset_globals() {
 # =============================================================================
 
 @test "force + find: --force find 123 parses correctly" {
-    source "$PROJECT_ROOT/lib/parse-review-arg.sh" "--force" "find" "123"
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "--force" "find" "123"
     [ "$FORCE_MODE" = "true" ]
     [ "$FIND_MODE" = "true" ]
     [ "$arg" = "123" ]
 }
 
 @test "force + find: find --force 123 parses correctly" {
-    source "$PROJECT_ROOT/lib/parse-review-arg.sh" "find" "--force" "123"
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "find" "--force" "123"
     [ "$FORCE_MODE" = "true" ]
     [ "$FIND_MODE" = "true" ]
     [ "$arg" = "123" ]
 }
 
 @test "force + find: -f find main parses correctly" {
-    source "$PROJECT_ROOT/lib/parse-review-arg.sh" "-f" "find" "main"
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "-f" "find" "main"
     [ "$FORCE_MODE" = "true" ]
     [ "$FIND_MODE" = "true" ]
     [ "$arg" = "main" ]

@@ -12,8 +12,9 @@ source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 source "${SCRIPT_DIR}/helpers/config-helpers.sh"
 #
 # Configuration:
-#   Reads review root path from ~/.claude/review-code.env
-#   Defaults to ~/dev/ai/reviews if config file doesn't exist
+#   Reads review root path from ~/.claude/skills/review-code/.env
+#   Falls back to ~/.claude/review-code.env for backward compatibility
+#   Defaults to ~/dev/ai/reviews if no config file exists
 #
 # Arguments:
 #   --org ORG: GitHub organization (optional, extracts from git if not provided)
@@ -297,9 +298,16 @@ main() {
     fi
 
     # Load review root path from config, default to ~/dev/ai/reviews
+    # Check new location first, fall back to old location for backward compatibility
     local review_root="${HOME}/dev/ai/reviews"
-    if [[ -f "${HOME}/.claude/review-code.env" ]]; then
-        load_config_safely "${HOME}/.claude/review-code.env"
+    local config_file=""
+    if [[ -f "${HOME}/.claude/skills/review-code/.env" ]]; then
+        config_file="${HOME}/.claude/skills/review-code/.env"
+    elif [[ -f "${HOME}/.claude/review-code.env" ]]; then
+        config_file="${HOME}/.claude/review-code.env"
+    fi
+    if [[ -n "${config_file}" ]]; then
+        load_config_safely "${config_file}"
         review_root="${REVIEW_ROOT_PATH:-${HOME}/dev/ai/reviews}"
     fi
 

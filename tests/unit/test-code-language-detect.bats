@@ -4,7 +4,7 @@
 setup() {
     TEST_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")" && pwd)"
     PROJECT_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
-    SCRIPT="$PROJECT_ROOT/lib/code-language-detect.sh"
+    SCRIPT="$PROJECT_ROOT/skills/review-code/scripts/code-language-detect.sh"
 }
 
 @test "code-language-detect.sh exists and is executable" {

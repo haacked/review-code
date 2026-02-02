@@ -11,12 +11,18 @@ debug_test_env() {
     echo "TEST_TEMP_DIR: ${TEST_TEMP_DIR:-not set}" >&2
     echo "OSTYPE: $OSTYPE" >&2
 
-    if [ -f "$HOME/.claude/review-code.env" ]; then
-        echo "Config file exists at: $HOME/.claude/review-code.env" >&2
+    # Check new config location
+    if [ -f "$HOME/.claude/skills/review-code/.env" ]; then
+        echo "Config file exists at: $HOME/.claude/skills/review-code/.env" >&2
+        echo "Config contents:" >&2
+        cat "$HOME/.claude/skills/review-code/.env" >&2
+    # Check old config location (for backward compatibility)
+    elif [ -f "$HOME/.claude/review-code.env" ]; then
+        echo "Config file exists at (old location): $HOME/.claude/review-code.env" >&2
         echo "Config contents:" >&2
         cat "$HOME/.claude/review-code.env" >&2
     else
-        echo "No config file at: $HOME/.claude/review-code.env" >&2
+        echo "No config file found" >&2
     fi
 
     if [ -n "${CANONICAL_REVIEW_PATH:-}" ]; then

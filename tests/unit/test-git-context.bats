@@ -9,6 +9,7 @@ setup() {
     TEST_REPO=$(mktemp -d)
     cd "$TEST_REPO"
     git init
+    git config commit.gpgsign false
     git config user.email "test@example.com"
     git config user.name "Test User"
 
@@ -32,7 +33,7 @@ teardown() {
 
 @test "git-context.sh: fails outside git repository" {
     cd /tmp
-    run "$PROJECT_ROOT/lib/git-context.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-context.sh"
     [ "$status" -eq 1 ]
 }
 
@@ -41,7 +42,7 @@ teardown() {
 # =============================================================================
 
 @test "git-context.sh: outputs valid JSON" {
-    run "$PROJECT_ROOT/lib/git-context.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-context.sh"
     [ "$status" -eq 0 ]
 
     # Validate JSON structure
@@ -49,7 +50,7 @@ teardown() {
 }
 
 @test "git-context.sh: includes org field" {
-    run "$PROJECT_ROOT/lib/git-context.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-context.sh"
     [ "$status" -eq 0 ]
 
     org=$(echo "$output" | jq -r '.org')
@@ -57,7 +58,7 @@ teardown() {
 }
 
 @test "git-context.sh: includes repo field" {
-    run "$PROJECT_ROOT/lib/git-context.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-context.sh"
     [ "$status" -eq 0 ]
 
     repo=$(echo "$output" | jq -r '.repo')
@@ -65,7 +66,7 @@ teardown() {
 }
 
 @test "git-context.sh: includes branch field" {
-    run "$PROJECT_ROOT/lib/git-context.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-context.sh"
     [ "$status" -eq 0 ]
 
     branch=$(echo "$output" | jq -r '.branch')
@@ -73,7 +74,7 @@ teardown() {
 }
 
 @test "git-context.sh: includes commit field" {
-    run "$PROJECT_ROOT/lib/git-context.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-context.sh"
     [ "$status" -eq 0 ]
 
     commit=$(echo "$output" | jq -r '.commit')
@@ -81,7 +82,7 @@ teardown() {
 }
 
 @test "git-context.sh: includes working_dir field" {
-    run "$PROJECT_ROOT/lib/git-context.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-context.sh"
     [ "$status" -eq 0 ]
 
     working_dir=$(echo "$output" | jq -r '.working_dir')
@@ -89,7 +90,7 @@ teardown() {
 }
 
 @test "git-context.sh: includes has_changes field" {
-    run "$PROJECT_ROOT/lib/git-context.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-context.sh"
     [ "$status" -eq 0 ]
 
     has_changes=$(echo "$output" | jq -r '.has_changes')
@@ -101,7 +102,7 @@ teardown() {
 # =============================================================================
 
 @test "git-context.sh: detects no changes in clean repo" {
-    run "$PROJECT_ROOT/lib/git-context.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-context.sh"
     [ "$status" -eq 0 ]
 
     has_changes=$(echo "$output" | jq -r '.has_changes')
@@ -111,7 +112,7 @@ teardown() {
 @test "git-context.sh: detects unstaged changes" {
     echo "modified" > file.txt
 
-    run "$PROJECT_ROOT/lib/git-context.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-context.sh"
     [ "$status" -eq 0 ]
 
     has_changes=$(echo "$output" | jq -r '.has_changes')
@@ -122,7 +123,7 @@ teardown() {
     echo "staged" > file.txt
     git add file.txt
 
-    run "$PROJECT_ROOT/lib/git-context.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-context.sh"
     [ "$status" -eq 0 ]
 
     has_changes=$(echo "$output" | jq -r '.has_changes')
@@ -132,7 +133,7 @@ teardown() {
 @test "git-context.sh: detects untracked files" {
     echo "untracked" > newfile.txt
 
-    run "$PROJECT_ROOT/lib/git-context.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-context.sh"
     [ "$status" -eq 0 ]
 
     has_changes=$(echo "$output" | jq -r '.has_changes')
@@ -146,7 +147,7 @@ teardown() {
 @test "git-context.sh: detects current branch" {
     git checkout -b feature-branch
 
-    run "$PROJECT_ROOT/lib/git-context.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-context.sh"
     [ "$status" -eq 0 ]
 
     branch=$(echo "$output" | jq -r '.branch')
@@ -159,19 +160,19 @@ teardown() {
 
 @test "git-context.sh: can be sourced without executing main" {
     # Source the script - should not produce output
-    output=$(cd "$TEST_REPO" && source "$PROJECT_ROOT/lib/git-context.sh" 2>&1)
+    output=$(cd "$TEST_REPO" && source "$PROJECT_ROOT/skills/review-code/scripts/git-context.sh" 2>&1)
 
     # Sourcing should not produce any output (main not executed)
     [ -z "$output" ]
 
     # Verify main function exists after sourcing
     cd "$TEST_REPO"
-    source "$PROJECT_ROOT/lib/git-context.sh"
+    source "$PROJECT_ROOT/skills/review-code/scripts/git-context.sh"
     declare -F main > /dev/null
 }
 
 @test "git-context.sh: executes main when run directly" {
-    run "$PROJECT_ROOT/lib/git-context.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-context.sh"
     [ "$status" -eq 0 ]
 
     # Should produce JSON output when executed directly

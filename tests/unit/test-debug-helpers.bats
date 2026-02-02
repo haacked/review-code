@@ -8,7 +8,7 @@ setup() {
     export PROJECT_ROOT
 
     # Load the debug helpers
-    source "$PROJECT_ROOT/lib/helpers/debug-helpers.sh"
+    source "$PROJECT_ROOT/skills/review-code/scripts/helpers/debug-helpers.sh"
 
     # Create temp directory for testing
     TEST_DEBUG_DIR=$(mktemp -d)

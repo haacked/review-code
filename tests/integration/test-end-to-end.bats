@@ -10,6 +10,7 @@ setup() {
     TEST_REPO=$(mktemp -d)
     cd "$TEST_REPO"
     git init
+    git config commit.gpgsign false
     git config user.email "test@example.com"
     git config user.name "Test User"
     git remote add origin "https://github.com/testorg/testrepo.git"
@@ -42,7 +43,7 @@ EOF
     echo "# comment" >> app.py
 
     # Run the orchestrator (it should detect local mode with unstaged changes)
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
 
     # Should succeed
     [ "$status" -eq 0 ]
@@ -75,7 +76,7 @@ EOF
     git add component.tsx
 
     # Run the orchestrator
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
 
     # Should succeed
     [ "$status" -eq 0 ]
@@ -109,7 +110,7 @@ EOF
     git commit -m "Third commit"
 
     # Review the last two commits
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" "HEAD~2..HEAD"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" "HEAD~2..HEAD"
 
     # Should succeed
     [ "$status" -eq 0 ]
@@ -134,7 +135,7 @@ EOF
     git commit -m "Second commit"
 
     # Review using HEAD~1..HEAD syntax (this tests our -- separator fix)
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" "HEAD~1..HEAD"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" "HEAD~1..HEAD"
 
     # Should succeed (previously failed before -- fix)
     [ "$status" -eq 0 ]
@@ -163,7 +164,7 @@ EOF
     git checkout main
 
     # Review the feature branch
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" feature
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" feature
 
     # Should succeed
     [ "$status" -eq 0 ]
@@ -201,7 +202,7 @@ EOF
     git checkout main
 
     # Review the branch
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" multi-lang
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" multi-lang
 
     # Should succeed
     [ "$status" -eq 0 ]
@@ -233,7 +234,7 @@ EOF
     git checkout main
 
     # Review only Python files from the branch
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" "feature-files" "*.py"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" "feature-files" "*.py"
 
     # Should succeed
     [ "$status" -eq 0 ]
@@ -253,7 +254,7 @@ EOF
 
 @test "E2E: Invalid range returns clear error" {
     # Try to review invalid range
-    run bash -c "'$PROJECT_ROOT/lib/review-orchestrator.sh' 'invalid-ref..HEAD' 2>&1"
+    run bash -c "'$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh' 'invalid-ref..HEAD' 2>&1"
 
     # Should fail
     [ "$status" -eq 1 ]
@@ -265,7 +266,7 @@ EOF
 
 @test "E2E: No changes returns clear error" {
     # On main with no uncommitted changes - should error
-    run bash -c "'$PROJECT_ROOT/lib/review-orchestrator.sh' 2>&1"
+    run bash -c "'$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh' 2>&1"
 
     # Should fail
     [ "$status" -eq 1 ]
@@ -289,7 +290,7 @@ EOF
     echo "more" >> change.txt
 
     # Review current branch (ambiguous - branch or uncommitted?)
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" feature
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" feature
 
     # Should succeed but with prompt status
     [ "$status" -eq 0 ]
@@ -313,7 +314,7 @@ EOF
     echo "modified" >> test.py
 
     # Run orchestrator
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
 
     # Should succeed
     [ "$status" -eq 0 ]
@@ -332,7 +333,7 @@ EOF
     echo "test" > test.txt
 
     # Run orchestrator
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
 
     # Even if it fails, output should be valid JSON
     echo "$output" | jq -e '.' > /dev/null

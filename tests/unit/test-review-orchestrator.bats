@@ -9,6 +9,7 @@ setup() {
     TEST_REPO=$(mktemp -d)
     cd "$TEST_REPO"
     git init
+    git config commit.gpgsign false
     git config user.email "test@example.com"
     git config user.name "Test User"
     git remote add origin "https://github.com/testorg/testrepo.git"
@@ -30,13 +31,13 @@ teardown() {
 
 @test "review-orchestrator.sh: handles parse errors" {
     # Invalid argument that parse-review-arg will reject
-    run bash -c "'$PROJECT_ROOT/lib/review-orchestrator.sh' 'invalid!' 2>&1"
+    run bash -c "'$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh' 'invalid!' 2>&1"
     [ "$status" -eq 1 ]
 }
 
 @test "review-orchestrator.sh: outputs JSON status on error" {
     # Pass invalid argument
-    run bash -c "'$PROJECT_ROOT/lib/review-orchestrator.sh' 'invalid!' 2>&1"
+    run bash -c "'$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh' 'invalid!' 2>&1"
     [ "$status" -eq 1 ]
     # Should be valid JSON
     echo "$output" | jq -e '.status == "error"' > /dev/null || true
@@ -50,7 +51,7 @@ teardown() {
     # Create uncommitted changes
     echo "change" > file.txt
 
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
     # Should output valid JSON
     echo "$output" | jq -e '.status == "ready"'
@@ -58,7 +59,7 @@ teardown() {
 
 @test "review-orchestrator.sh: local mode includes git context" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.git.org'
     echo "$output" | jq -e '.git.repo'
@@ -66,35 +67,35 @@ teardown() {
 
 @test "review-orchestrator.sh: local mode includes diff" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.diff'
 }
 
 @test "review-orchestrator.sh: local mode includes languages" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.languages'
 }
 
 @test "review-orchestrator.sh: local mode includes file_metadata" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.file_metadata'
 }
 
 @test "review-orchestrator.sh: local mode includes file_info" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.file_info'
 }
 
 @test "review-orchestrator.sh: file_path can be extracted with jq navigation" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
 
     # This is the pattern used in commands/review-code.md
@@ -111,7 +112,7 @@ teardown() {
 
 @test "review-orchestrator.sh: file_exists can be extracted with jq navigation" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
 
     # Extract file_exists directly from review_data
@@ -123,7 +124,7 @@ teardown() {
 
 @test "review-orchestrator.sh: local mode errors with no changes" {
     # Clean repo with no changes
-    run bash -c "'$PROJECT_ROOT/lib/review-orchestrator.sh' 2>&1"
+    run bash -c "'$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh' 2>&1"
     if [ "$status" -ne 1 ]; then
         echo "Status: $status"
         echo "Output: $output"
@@ -138,7 +139,7 @@ teardown() {
 
 @test "review-orchestrator.sh: handles area mode" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" security
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" security
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.mode == "local"'
     echo "$output" | jq -e '.area == "security"'
@@ -146,7 +147,7 @@ teardown() {
 
 @test "review-orchestrator.sh: area mode includes area field" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" performance
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" performance
     [ "$status" -eq 0 ]
     area=$(echo "$output" | jq -r '.area')
     [ "$area" = "performance" ]
@@ -157,27 +158,27 @@ teardown() {
 # =============================================================================
 
 @test "review-orchestrator.sh: returns ambiguous for commit refs" {
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" HEAD
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" HEAD
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.status == "ambiguous"'
     echo "$output" | jq -e '.ref_type == "commit"'
 }
 
 @test "review-orchestrator.sh: ambiguous commit includes arg" {
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" HEAD
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" HEAD
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.arg == "HEAD"'
 }
 
 @test "review-orchestrator.sh: ambiguous includes reason" {
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" HEAD
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" HEAD
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.reason'
     [[ "$(echo "$output" | jq -r '.reason')" == *"unclear"* ]]
 }
 
 @test "review-orchestrator.sh: ambiguous includes base_branch" {
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" HEAD
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" HEAD
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.base_branch'
 }
@@ -192,7 +193,7 @@ teardown() {
     git add file2.txt
     git commit -m "Second commit"
 
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" "HEAD~1..HEAD"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" "HEAD~1..HEAD"
     if [ "$status" -ne 0 ]; then
         echo "Status: $status"
         echo "Output: $output"
@@ -206,7 +207,7 @@ teardown() {
     git add file2.txt
     git commit -m "Second commit"
 
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" "HEAD~1..HEAD"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" "HEAD~1..HEAD"
     [ "$status" -eq 0 ]
     range=$(echo "$output" | jq -r '.range')
     [ "$range" = "HEAD~1..HEAD" ]
@@ -217,7 +218,7 @@ teardown() {
     git add file2.txt
     git commit -m "Second commit"
 
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" "HEAD~1..HEAD"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" "HEAD~1..HEAD"
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.diff'
 }
@@ -236,7 +237,7 @@ teardown() {
     # Switch back to main so "feature" is not the current branch
     git checkout main
 
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" feature
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" feature
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.mode == "branch"'
 }
@@ -250,7 +251,7 @@ teardown() {
     # Switch back to main so "feature" is not the current branch
     git checkout main
 
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" feature
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" feature
     [ "$status" -eq 0 ]
     branch=$(echo "$output" | jq -r '.branch')
     base=$(echo "$output" | jq -r '.base_branch')
@@ -264,14 +265,14 @@ teardown() {
 
 @test "review-orchestrator.sh: outputs valid JSON" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.' > /dev/null
 }
 
 @test "review-orchestrator.sh: includes status field" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
     status=$(echo "$output" | jq -r '.status')
     [ "$status" = "ready" ]
@@ -279,14 +280,14 @@ teardown() {
 
 @test "review-orchestrator.sh: includes mode field" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.mode'
 }
 
 @test "review-orchestrator.sh: includes next_step field" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
     next_step=$(echo "$output" | jq -r '.next_step')
     [ "$next_step" = "gather_architectural_context" ]
@@ -300,7 +301,7 @@ teardown() {
     echo "change" > file.txt
     echo "other" > other.txt
 
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" "" "*.txt"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" "" "*.txt"
     [ "$status" -eq 0 ]
     # Should succeed (pattern is passed through)
 }
@@ -311,14 +312,14 @@ teardown() {
 
 @test "review-orchestrator.sh: integrates with parse-review-arg" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
     # Should successfully parse and execute
 }
 
 @test "review-orchestrator.sh: integrates with git-context" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
     # Should include git context
     echo "$output" | jq -e '.git.org == "testorg"'
@@ -327,7 +328,7 @@ teardown() {
 
 @test "review-orchestrator.sh: integrates with code-language-detect" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
     # Should include language detection
     echo "$output" | jq -e '.languages'
@@ -335,7 +336,7 @@ teardown() {
 
 @test "review-orchestrator.sh: integrates with pre-review-context" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
     # Should include file metadata
     echo "$output" | jq -e '.file_metadata'
@@ -343,7 +344,7 @@ teardown() {
 
 @test "review-orchestrator.sh: integrates with review-file-path" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
     # Should include file info
     echo "$output" | jq -e '.file_info.file_path'
@@ -351,7 +352,7 @@ teardown() {
 
 @test "review-orchestrator.sh: integrates with load-review-context" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
     # Should include review context (may be empty)
     echo "$output" | jq -e 'has("review_context")'
@@ -362,7 +363,7 @@ teardown() {
 # =============================================================================
 
 @test "review-orchestrator.sh: returns ambiguous for commit refs (HEAD)" {
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" HEAD
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" HEAD
     [ "$status" -eq 0 ]
     # HEAD is ambiguous - returns ambiguous status for user to clarify
     status_value=$(echo "$output" | jq -r '.status')
@@ -374,7 +375,7 @@ teardown() {
     git add file2.txt
     git commit -m "Second commit"
 
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" "HEAD~1..HEAD"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" "HEAD~1..HEAD"
     [ "$status" -eq 0 ]
     diff=$(echo "$output" | jq -r '.diff')
     [[ "$diff" == *"DIFF_TYPE:"* ]]
@@ -389,7 +390,7 @@ teardown() {
     # Switch back to main so "feature" is not the current branch
     git checkout main
 
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" feature
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" feature
     [ "$status" -eq 0 ]
     diff=$(echo "$output" | jq -r '.diff')
     [[ "$diff" == *"DIFF_TYPE:"* ]]
@@ -397,7 +398,7 @@ teardown() {
 
 @test "review-orchestrator.sh: local mode uses git-diff-filter correctly" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
     diff=$(echo "$output" | jq -r '.diff')
     [[ "$diff" == *"DIFF_TYPE:"* ]]
@@ -409,14 +410,14 @@ teardown() {
 
 @test "review-orchestrator.sh: can be sourced without executing main" {
     # Source the script - should not produce output
-    output=$(cd "$TEST_REPO" && source "$PROJECT_ROOT/lib/review-orchestrator.sh" 2>&1)
+    output=$(cd "$TEST_REPO" && source "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" 2>&1)
 
     # Sourcing should not produce any output (main not executed)
     [ -z "$output" ]
 
     # Verify main function exists after sourcing
     cd "$TEST_REPO"
-    source "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    source "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     declare -F main > /dev/null
 }
 
@@ -424,7 +425,7 @@ teardown() {
     # Create a change so orchestrator has something to review
     echo "change" > file.txt
 
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
 
     # Should produce JSON output when executed directly
@@ -439,7 +440,7 @@ teardown() {
     # Create a change so we have something to find
     echo "change" > file.txt
 
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" find
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" find
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.status == "find"'
 }
@@ -447,7 +448,7 @@ teardown() {
 @test "review-orchestrator.sh: find mode includes file_info" {
     echo "change" > file.txt
 
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" find
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" find
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.file_info.file_path'
     # file_exists can be true or false, so just check it's a boolean
@@ -457,7 +458,7 @@ teardown() {
 @test "review-orchestrator.sh: find mode includes display_target" {
     echo "change" > file.txt
 
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" find
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" find
     [ "$status" -eq 0 ]
     display_target=$(echo "$output" | jq -r '.display_target')
     [ -n "$display_target" ]
@@ -467,7 +468,7 @@ teardown() {
 @test "review-orchestrator.sh: find mode does not include diff" {
     echo "change" > file.txt
 
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" find
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" find
     [ "$status" -eq 0 ]
     # Find mode should NOT include diff - it's an early exit
     diff_value=$(echo "$output" | jq -r '.diff // "not_present"')
@@ -475,7 +476,7 @@ teardown() {
 }
 
 @test "review-orchestrator.sh: find mode with PR number" {
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" find 123
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" find 123
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.status == "find"'
     # Display target should mention PR
@@ -493,7 +494,7 @@ teardown() {
     # Switch back to main
     git checkout main
 
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" find find-test-branch
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" find find-test-branch
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.status == "find"'
     display_target=$(echo "$output" | jq -r '.display_target')
@@ -502,7 +503,7 @@ teardown() {
 
 @test "review-orchestrator.sh: find mode on base branch with no changes" {
     # Clean repo with no changes - should work in find mode
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" find
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" find
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.status == "find"'
 }
@@ -510,7 +511,7 @@ teardown() {
 @test "review-orchestrator.sh: find mode file_info.file_path is absolute" {
     echo "change" > file.txt
 
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" find
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" find
     [ "$status" -eq 0 ]
     file_path=$(echo "$output" | jq -r '.file_info.file_path')
     [[ "$file_path" == /* ]]
@@ -519,7 +520,7 @@ teardown() {
 @test "review-orchestrator.sh: find mode file_exists is boolean string" {
     echo "change" > file.txt
 
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" find
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" find
     [ "$status" -eq 0 ]
     file_exists=$(echo "$output" | jq -r '.file_info.file_exists')
     [ "$file_exists" = "true" ] || [ "$file_exists" = "false" ]
@@ -531,7 +532,7 @@ teardown() {
 
 @test "review-orchestrator.sh: local mode does not include is_own_pr" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
     # Local mode has no PR context, so is_own_pr should not be in output
     has_is_own_pr=$(echo "$output" | jq 'has("is_own_pr")')
@@ -540,7 +541,7 @@ teardown() {
 
 @test "review-orchestrator.sh: local mode does not include reviewer_username" {
     echo "change" > file.txt
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
     # Local mode has no PR context, so reviewer_username should not be in output
     has_reviewer=$(echo "$output" | jq 'has("reviewer_username")')
@@ -554,7 +555,7 @@ teardown() {
     git commit -m "Feature"
     git checkout main
 
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" is-own-pr-test
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" is-own-pr-test
     [ "$status" -eq 0 ]
     # Branch mode has no PR context, so is_own_pr should not be in output
     has_is_own_pr=$(echo "$output" | jq 'has("is_own_pr")')
@@ -566,7 +567,7 @@ teardown() {
     git add file2.txt
     git commit -m "Second commit"
 
-    run "$PROJECT_ROOT/lib/review-orchestrator.sh" "HEAD~1..HEAD"
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" "HEAD~1..HEAD"
     [ "$status" -eq 0 ]
     # Range mode has no PR context, so is_own_pr should not be in output
     has_is_own_pr=$(echo "$output" | jq 'has("is_own_pr")')
@@ -575,7 +576,7 @@ teardown() {
 
 @test "review-orchestrator.sh: is_own_pr defaults to false when gh api fails" {
     # Source the script to access internal functions
-    source "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    source "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
 
     # Create a mock gh that fails for 'api user' but works for other commands
     mock_gh() {

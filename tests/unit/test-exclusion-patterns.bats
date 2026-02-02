@@ -4,7 +4,7 @@
 setup() {
     TEST_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")" && pwd)"
     PROJECT_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
-    SCRIPT="$PROJECT_ROOT/lib/helpers/exclusion-patterns.sh"
+    SCRIPT="$PROJECT_ROOT/skills/review-code/scripts/helpers/exclusion-patterns.sh"
 }
 
 @test "exclusion-patterns.sh exists and is executable" {

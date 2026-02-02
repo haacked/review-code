@@ -9,6 +9,7 @@ setup() {
     TEST_REPO=$(mktemp -d)
     cd "$TEST_REPO"
     git init
+    git config commit.gpgsign false
     git config user.email "test@example.com"
     git config user.name "Test User"
 
@@ -29,7 +30,7 @@ teardown() {
 
 @test "git-diff-context.sh: fails outside git repository" {
     cd /tmp
-    run "$PROJECT_ROOT/lib/git-diff-context.sh"
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-diff-context.sh"
     [ "$status" -eq 1 ]
     [[ "$output" == *"Not in a git repository"* ]]
 }
@@ -40,7 +41,7 @@ teardown() {
 
 @test "git-diff-context.sh: detects main branch" {
     # We're already on main from setup
-    run bash -c "source '$PROJECT_ROOT/lib/git-diff-context.sh' && get_main_branch"
+    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/git-diff-context.sh' && get_main_branch"
     [ "$status" -eq 0 ]
     [ "$output" = "main" ]
 }
@@ -48,7 +49,7 @@ teardown() {
 @test "git-diff-context.sh: detects master branch" {
     # Rename main to master
     git branch -m main master
-    run bash -c "source '$PROJECT_ROOT/lib/git-diff-context.sh' && get_main_branch"
+    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/git-diff-context.sh' && get_main_branch"
     [ "$status" -eq 0 ]
     [ "$output" = "master" ]
 }
@@ -58,8 +59,9 @@ teardown() {
     TEST_REPO2=$(mktemp -d)
     cd "$TEST_REPO2"
     git init
+    git config commit.gpgsign false
     git checkout -b feature
-    run bash -c "source '$PROJECT_ROOT/lib/git-diff-context.sh' && get_main_branch"
+    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/git-diff-context.sh' && get_main_branch"
     [ "$status" -eq 0 ]
     [ "$output" = "main" ]
     rm -rf "$TEST_REPO2"
@@ -74,7 +76,7 @@ teardown() {
     echo "staged" > file.txt
     git add file.txt
 
-    run "$PROJECT_ROOT/lib/git-diff-context.sh" 2>&1
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-diff-context.sh" 2>&1
     [ "$status" -eq 0 ]
     [[ "$output" == *"DIFF_TYPE: staged"* ]]
 }
@@ -83,7 +85,7 @@ teardown() {
     # Create unstaged changes
     echo "unstaged" > file.txt
 
-    run "$PROJECT_ROOT/lib/git-diff-context.sh" 2>&1
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-diff-context.sh" 2>&1
     [ "$status" -eq 0 ]
     [[ "$output" == *"DIFF_TYPE: unstaged"* ]]
 }
@@ -95,14 +97,14 @@ teardown() {
     git add file.txt
     git commit -m "Feature change"
 
-    run "$PROJECT_ROOT/lib/git-diff-context.sh" 2>&1
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-diff-context.sh" 2>&1
     [ "$status" -eq 0 ]
     [[ "$output" == *"DIFF_TYPE: branch"* ]]
 }
 
 @test "git-diff-context.sh: fails when no changes found" {
     # Clean repository with no changes
-    run "$PROJECT_ROOT/lib/git-diff-context.sh" 2>&1
+    run "$PROJECT_ROOT/skills/review-code/scripts/git-diff-context.sh" 2>&1
     [ "$status" -eq 1 ]
     [[ "$output" == *"DIFF_TYPE: none"* ]]
     [[ "$output" == *"No changes found"* ]]
@@ -117,7 +119,7 @@ teardown() {
     git add file.txt
 
     # Capture stderr separately
-    run bash -c "$PROJECT_ROOT/lib/git-diff-context.sh 2>&1 >/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-context.sh 2>&1 >/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"DIFF_TYPE:"* ]]
 }
@@ -127,7 +129,7 @@ teardown() {
     git add file.txt
 
     # Capture stdout separately
-    run bash -c "$PROJECT_ROOT/lib/git-diff-context.sh 2>/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-context.sh 2>/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"diff --git"* ]]
 }
@@ -142,7 +144,7 @@ teardown() {
     git add file.txt
     git commit -m "Change"
 
-    run bash -c "$PROJECT_ROOT/lib/git-diff-context.sh 2>&1 >/dev/null"
+    run bash -c "$PROJECT_ROOT/skills/review-code/scripts/git-diff-context.sh 2>&1 >/dev/null"
     [ "$status" -eq 0 ]
     [[ "$output" == *"compared to main"* ]] || [[ "$output" == *"compared to master"* ]]
 }
