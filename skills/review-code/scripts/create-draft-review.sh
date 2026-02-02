@@ -245,7 +245,7 @@ main() {
         --arg review_url "${review_url}" \
         --argjson inline_count "${inline_count}" \
         --argjson summary_count "${unmapped_count}" \
-        --argjson replaced_existing "$(echo "${replaced_existing}" | jq -R 'if . == "true" then true else false end')" \
+        --argjson replaced_existing "${replaced_existing}" \
         '{
             success: $success,
             review_id: $review_id,
