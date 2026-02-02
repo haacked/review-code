@@ -599,6 +599,8 @@ Review complete!
 You can open it directly: file://$review_file
 ```
 
+**CRITICAL: Do NOT post the full review to GitHub.** The detailed review is saved to the markdown file only. If `--draft` mode is enabled, a separate draft review with inline comments will be created in the next step - but that draft should contain only brief inline comments, NOT the full review summary.
+
 ### Generate Suggested Comments (PR Mode Only)
 
 If this is a PR review and the reviewer is NOT the PR author, generate suggested inline comments for the review file. This helps the reviewer quickly identify what comments to post on the PR.
@@ -704,6 +706,13 @@ See the review file for copy/paste ready comments.
 
 If `--draft` was specified and this is a PR review (not own PR), create a pending GitHub review with inline comments.
 
+**CRITICAL RULES for draft reviews:**
+- The draft review contains ONLY inline comments at specific file:line locations
+- The review summary should be a brief 1-2 sentence overview, NOT the full review
+- The full detailed review stays in the markdown file only
+- NEVER use `gh pr review` directly - always use `create-draft-review.sh`
+- NEVER post the full review summary to GitHub
+
 **Check if draft mode is enabled:**
 
 ```bash
@@ -761,7 +770,7 @@ echo "$mapping_input" | ~/.claude/skills/review-code/scripts/diff-position-mappe
   "repo": "<repo from session>",
   "pr_number": <number from session>,
   "reviewer_username": "<reviewer from session>",
-  "summary": "<overall review summary>",
+  "summary": "<BRIEF 1-2 sentence summary, e.g. 'Code review with 3 suggestions. See inline comments.'>",
   "comments": [
     {"path": "file.ts", "position": 23, "body": "Clean comment text"}
   ],
@@ -769,6 +778,9 @@ echo "$mapping_input" | ~/.claude/skills/review-code/scripts/diff-position-mappe
     {"description": "General finding that couldn't be mapped to diff"}
   ]
 }
+```
+
+**IMPORTANT**: The `summary` field should be a brief overview (1-2 sentences), NOT the full review. Example: "Code review complete with 3 inline suggestions for improved error handling." The detailed findings are in the markdown file.
 ```
 
 7. **Create the pending review**:
@@ -808,6 +820,13 @@ If failed, show the error and suggest using the review file manually.
 - **Own PR**: "Cannot create draft review on your own pull request"
 - **No mappable comments**: Create review with summary only, warn user
 - **API failure**: Display error, suggest using review file manually
+
+**What NOT to do:**
+- ❌ Do NOT use `gh pr review` or `gh api` directly to create reviews
+- ❌ Do NOT post the full review summary as the review body
+- ❌ Do NOT skip the `create-draft-review.sh` script
+- ✅ DO save detailed review to markdown file
+- ✅ DO use `create-draft-review.sh` with brief summary + inline comments only
 
 ### Cleanup Session
 
