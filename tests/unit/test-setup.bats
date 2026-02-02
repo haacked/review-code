@@ -252,3 +252,56 @@ setup() {
     run bash -c "grep -A100 '^main()' '$PROJECT_ROOT/bin/setup' | grep -q 'install_context'"
     [ "$status" -eq 0 ]
 }
+
+# =============================================================================
+# migrate_old_config tests
+# =============================================================================
+
+@test "setup: has migrate_old_config function" {
+    run bash -c "grep -q '^migrate_old_config()' '$PROJECT_ROOT/bin/setup'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: main calls migrate_old_config" {
+    run bash -c "grep -A100 '^main()' '$PROJECT_ROOT/bin/setup' | grep -q 'migrate_old_config'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: migrate_old_config checks for old config file existence" {
+    run bash -c "grep -A20 '^migrate_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q 'OLD_CONFIG_FILE'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: migrate_old_config checks for new config file existence" {
+    run bash -c "grep -A20 '^migrate_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q 'CONFIG_FILE'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: migrate_old_config uses mv for migration" {
+    # Test that migration uses mv to move old config to new location
+    run bash -c "grep -A20 '^migrate_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q 'mv'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: migrate_old_config uses diff to compare configs" {
+    # Test that deduplication uses diff to compare old and new configs
+    run bash -c "grep -A20 '^migrate_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q 'diff -q'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: migrate_old_config removes duplicate old config" {
+    # Test that when configs are identical, old one is removed
+    run bash -c "grep -A20 '^migrate_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q 'rm.*OLD_CONFIG_FILE'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: migrate_old_config warns on conflict" {
+    # Test that when configs differ, a warning is issued
+    run bash -c "grep -A20 '^migrate_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q 'Both old and new config files exist with different content'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: migrate_old_config creates skill directory before migration" {
+    run bash -c "grep -A20 '^migrate_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q 'mkdir -p'"
+    [ "$status" -eq 0 ]
+}
