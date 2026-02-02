@@ -89,6 +89,8 @@ Examples:
 
 **NOTE**: Uses session-based caching to run the orchestrator once and reuse the data across multiple bash invocations. This reduces token usage by ~60%.
 
+**⚠️ CRITICAL**: This skill MUST follow the structured session flow below. If session initialization fails, STOP and inform the user. NEVER improvise by running review agents manually or posting to GitHub directly - this can cause unintended side effects like submitting reviews that should be drafts.
+
 ### Step 1: Initialize Session
 
 Initialize the review session by running the orchestrator and caching the result:
@@ -102,6 +104,22 @@ echo "Session: $SESSION_ID, Status: $STATUS"
 The `--force` and `-f` flags are handled automatically by the orchestrator. When present, the session data will include `"force": true`.
 
 This creates a session and outputs the status. Based on the status, proceed to the appropriate handler below.
+
+**CRITICAL: If session initialization fails, STOP IMMEDIATELY.**
+
+Check for these failure conditions:
+- `SESSION_ID` is empty
+- Command outputs errors (jq parse errors, "ERROR:", etc.)
+- `STATUS` is empty or not one of: `error`, `ambiguous`, `prompt`, `prompt_pull`, `find`, `ready`
+
+**If ANY of these occur:**
+1. Tell the user: "Session initialization failed. Please check the error output above."
+2. **DO NOT attempt to run the review manually or improvise.**
+3. **DO NOT use `gh pr review` or any GitHub API calls directly.**
+4. **DO NOT run review agents without a valid session.**
+5. Suggest the user run the command again or check for issues.
+
+This safeguard exists because when the session flow breaks, falling back to manual review posting can accidentally submit reviews instead of keeping them as drafts.
 
 **IMPORTANT**: Save the `$SESSION_ID` value from the output - you'll need it for all subsequent operations.
 
