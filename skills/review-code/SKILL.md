@@ -94,11 +94,9 @@ Examples:
 Initialize the review session by running the orchestrator and caching the result:
 
 ```bash
-bash -c '
-SESSION_ID=$(~/.claude/skills/review-code/scripts/review-status-handler.sh init "'"$ARGUMENTS"'")
+SESSION_ID=$(~/.claude/skills/review-code/scripts/review-status-handler.sh init $ARGUMENTS)
 STATUS=$(~/.claude/skills/review-code/scripts/review-status-handler.sh get-status "$SESSION_ID")
 echo "Session: $SESSION_ID, Status: $STATUS"
-'
 ```
 
 The `--force` and `-f` flags are handled automatically by the orchestrator. When present, the session data will include `"force": true`.
