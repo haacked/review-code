@@ -298,16 +298,17 @@ build_review_data() {
     fi
 
     # Detect if reviewing own PR (for suggested comments feature)
+    # Default to "false" (show suggested comments) - only suppress when we can
+    # confirm the reviewer is the PR author. This "fail open" approach ensures
+    # API failures don't hide the feature.
     local reviewer_username=""
-    local is_own_pr="true"
+    local is_own_pr="false"
     if [[ -n "${pr_context}" ]]; then
         local pr_author
         pr_author=$(echo "${pr_context}" | jq -r '.author // ""')
         reviewer_username=$(gh api user --jq '.login' 2> /dev/null || echo "")
-        if [[ -n "${reviewer_username}" && -n "${pr_author}" ]]; then
-            if [[ "${reviewer_username}" != "${pr_author}" ]]; then
-                is_own_pr="false"
-            fi
+        if [[ -n "${reviewer_username}" && -n "${pr_author}" && "${reviewer_username}" == "${pr_author}" ]]; then
+            is_own_pr="true"
         fi
     fi
 
