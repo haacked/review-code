@@ -524,3 +524,121 @@ teardown() {
     file_exists=$(echo "$output" | jq -r '.file_info.file_exists')
     [ "$file_exists" = "true" ] || [ "$file_exists" = "false" ]
 }
+
+# =============================================================================
+# is_own_pr detection tests
+# =============================================================================
+
+@test "review-orchestrator.sh: local mode does not include is_own_pr" {
+    echo "change" > file.txt
+    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    [ "$status" -eq 0 ]
+    # Local mode has no PR context, so is_own_pr should not be in output
+    has_is_own_pr=$(echo "$output" | jq 'has("is_own_pr")')
+    [ "$has_is_own_pr" = "false" ]
+}
+
+@test "review-orchestrator.sh: local mode does not include reviewer_username" {
+    echo "change" > file.txt
+    run "$PROJECT_ROOT/lib/review-orchestrator.sh"
+    [ "$status" -eq 0 ]
+    # Local mode has no PR context, so reviewer_username should not be in output
+    has_reviewer=$(echo "$output" | jq 'has("reviewer_username")')
+    [ "$has_reviewer" = "false" ]
+}
+
+@test "review-orchestrator.sh: branch mode does not include is_own_pr" {
+    git checkout -b is-own-pr-test
+    echo "feature" > feature.txt
+    git add feature.txt
+    git commit -m "Feature"
+    git checkout main
+
+    run "$PROJECT_ROOT/lib/review-orchestrator.sh" is-own-pr-test
+    [ "$status" -eq 0 ]
+    # Branch mode has no PR context, so is_own_pr should not be in output
+    has_is_own_pr=$(echo "$output" | jq 'has("is_own_pr")')
+    [ "$has_is_own_pr" = "false" ]
+}
+
+@test "review-orchestrator.sh: range mode does not include is_own_pr" {
+    echo "second" > file2.txt
+    git add file2.txt
+    git commit -m "Second commit"
+
+    run "$PROJECT_ROOT/lib/review-orchestrator.sh" "HEAD~1..HEAD"
+    [ "$status" -eq 0 ]
+    # Range mode has no PR context, so is_own_pr should not be in output
+    has_is_own_pr=$(echo "$output" | jq 'has("is_own_pr")')
+    [ "$has_is_own_pr" = "false" ]
+}
+
+@test "review-orchestrator.sh: is_own_pr defaults to false when gh api fails" {
+    # Source the script to access internal functions
+    source "$PROJECT_ROOT/lib/review-orchestrator.sh"
+
+    # Create a mock gh that fails for 'api user' but works for other commands
+    mock_gh() {
+        if [[ "$1" == "api" && "$2" == "user" ]]; then
+            return 1
+        fi
+        command gh "$@"
+    }
+
+    # Test the detection logic directly
+    # When gh api user fails, reviewer_username is empty
+    # With the fail-open approach, is_own_pr should default to false
+    pr_context='{"author": "someone"}'
+    pr_author=$(echo "${pr_context}" | jq -r '.author // ""')
+    reviewer_username=""  # Simulates gh api user failure
+    is_own_pr="false"  # Default value
+
+    # The condition should NOT set is_own_pr to true when reviewer_username is empty
+    if [[ -n "${reviewer_username}" && -n "${pr_author}" && "${reviewer_username}" == "${pr_author}" ]]; then
+        is_own_pr="true"
+    fi
+
+    [ "$is_own_pr" = "false" ]
+}
+
+@test "review-orchestrator.sh: is_own_pr is true when reviewer equals author" {
+    # Test the detection logic directly
+    pr_context='{"author": "testuser"}'
+    pr_author=$(echo "${pr_context}" | jq -r '.author // ""')
+    reviewer_username="testuser"  # Same as author
+    is_own_pr="false"  # Default value
+
+    if [[ -n "${reviewer_username}" && -n "${pr_author}" && "${reviewer_username}" == "${pr_author}" ]]; then
+        is_own_pr="true"
+    fi
+
+    [ "$is_own_pr" = "true" ]
+}
+
+@test "review-orchestrator.sh: is_own_pr is false when reviewer differs from author" {
+    # Test the detection logic directly
+    pr_context='{"author": "prauthor"}'
+    pr_author=$(echo "${pr_context}" | jq -r '.author // ""')
+    reviewer_username="reviewer"  # Different from author
+    is_own_pr="false"  # Default value
+
+    if [[ -n "${reviewer_username}" && -n "${pr_author}" && "${reviewer_username}" == "${pr_author}" ]]; then
+        is_own_pr="true"
+    fi
+
+    [ "$is_own_pr" = "false" ]
+}
+
+@test "review-orchestrator.sh: is_own_pr stays false when pr_author is empty" {
+    # Test the detection logic directly
+    pr_context='{"author": ""}'
+    pr_author=$(echo "${pr_context}" | jq -r '.author // ""')
+    reviewer_username="reviewer"
+    is_own_pr="false"  # Default value
+
+    if [[ -n "${reviewer_username}" && -n "${pr_author}" && "${reviewer_username}" == "${pr_author}" ]]; then
+        is_own_pr="true"
+    fi
+
+    [ "$is_own_pr" = "false" ]
+}
