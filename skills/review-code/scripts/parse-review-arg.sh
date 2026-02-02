@@ -9,11 +9,14 @@ set -euo pipefail
 # This ensures flags can appear anywhere and remaining args are properly ordered
 FORCE_MODE="false"
 FIND_MODE="false"
+DRAFT_MODE="false"
 remaining_args=()
 
 for arg_item in "$@"; do
     if [[ "${arg_item}" == "--force" ]] || [[ "${arg_item}" == "-f" ]]; then
         FORCE_MODE="true"
+    elif [[ "${arg_item}" == "--draft" ]] || [[ "${arg_item}" == "-d" ]]; then
+        DRAFT_MODE="true"
     else
         remaining_args+=("${arg_item}")
     fi
@@ -136,6 +139,11 @@ build_json_output() {
     # Add force_mode if enabled
     if [[ "${FORCE_MODE}" == "true" ]]; then
         jq_args+=("--arg" "force_mode" "true")
+    fi
+
+    # Add draft_mode if enabled
+    if [[ "${DRAFT_MODE}" == "true" ]]; then
+        jq_args+=("--arg" "draft_mode" "true")
     fi
 
     jq -nc "${jq_args[@]}" "${jq_filter}"

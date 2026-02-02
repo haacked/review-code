@@ -30,6 +30,7 @@ Run specialized code review agent(s) with comprehensive context on local changes
 **Optional Flags:**
 
 - `--force` or `-f` - Skip the confirmation prompt and proceed directly with review
+- `--draft` or `-d` - Create a pending GitHub review with inline comments (PR mode only)
 
 **Optional File Pattern:**
 
@@ -72,6 +73,13 @@ Examples:
 - `/review-code --force` - Review local changes without confirmation
 - `/review-code https://github.com/org/repo/pull/123 --force` - Review PR without confirmation
 - `/review-code -f feature-branch` - Short form, review branch without confirmation
+
+**With --draft flag (create pending GitHub review):**
+
+- `/review-code https://github.com/org/repo/pull/123 --draft` - Review PR and create draft review on GitHub
+- `/review-code 123 --draft` - Review PR #123 and create draft review
+- `/review-code 123 --draft --force` - Review PR without confirmation and create draft
+- `/review-code 123 -d -f` - Short form, review PR #123, skip confirmation, create draft
 
 ---
 
@@ -691,6 +699,114 @@ Suggested Comments:
 
 See the review file for copy/paste ready comments.
 ```
+
+### Create Draft Review (--draft flag)
+
+If `--draft` was specified and this is a PR review (not own PR), create a pending GitHub review with inline comments.
+
+**Check if draft mode is enabled:**
+
+```bash
+draft_mode=$(jq -r '.draft // false' "$SESSION_FILE")
+is_own_pr=$(jq -r '.is_own_pr // false' "$SESSION_FILE")
+mode=$(jq -r '.mode' "$SESSION_FILE")
+```
+
+**Only proceed if ALL conditions are true:**
+- `draft_mode` is "true"
+- `mode` is "pr"
+- `is_own_pr` is "false"
+
+If any condition fails, skip draft review creation.
+
+**If conditions are met:**
+
+1. **Extract suggested comments from the review**: Parse the "Suggested Comments" section to get:
+   - File path
+   - Line number
+   - Comment body (without metadata like agent name/confidence)
+
+   Look for the pattern in the review file:
+   ```
+   #### `<file_path>:<line_number>`
+   ```text
+   <comment body>
+   ```
+   ```
+
+2. **Get the diff for position mapping**:
+
+```bash
+diff=$(jq -r '.diff' "$SESSION_FILE")
+```
+
+3. **Build targets for position mapping**: Create JSON with file:line targets from extracted comments.
+
+4. **Map line numbers to diff positions**: Use the diff-position-mapper script.
+
+```bash
+echo "$mapping_input" | ~/.claude/skills/review-code/scripts/diff-position-mapper.sh
+```
+
+5. **Separate mappable vs unmappable comments**:
+   - Mappable: Comments with valid diff positions (will be inline comments)
+   - Unmappable: Comments where line not in diff (will go in summary)
+
+6. **Build input for create-draft-review.sh**:
+
+```json
+{
+  "owner": "<org from session>",
+  "repo": "<repo from session>",
+  "pr_number": <number from session>,
+  "reviewer_username": "<reviewer from session>",
+  "summary": "<overall review summary>",
+  "comments": [
+    {"path": "file.ts", "position": 23, "body": "Clean comment text"}
+  ],
+  "unmapped_comments": [
+    {"description": "General finding that couldn't be mapped to diff"}
+  ]
+}
+```
+
+7. **Create the pending review**:
+
+```bash
+echo "$draft_input" | ~/.claude/skills/review-code/scripts/create-draft-review.sh
+```
+
+8. **Display result to user**:
+
+If successful:
+```
+Draft review created on GitHub!
+
+🔗 Review: <review_url>
+
+Summary:
+- Inline comments: X
+- Summary comments: Y
+
+{If amended}:
+- Comments kept (updated wording): K
+- New comments added: N
+- Outdated comments removed: R
+
+The review is in PENDING state. Visit GitHub to:
+- Edit or remove any comments
+- Add additional comments
+- Submit with Approve/Request Changes/Comment
+```
+
+If failed, show the error and suggest using the review file manually.
+
+**Error handling:**
+
+- **Not PR mode**: "The --draft flag only works when reviewing a pull request"
+- **Own PR**: "Cannot create draft review on your own pull request"
+- **No mappable comments**: Create review with summary only, warn user
+- **API failure**: Display error, suggest using review file manually
 
 ### Cleanup Session
 
