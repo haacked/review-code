@@ -92,3 +92,29 @@ load_config_safely() {
 
     return 0
 }
+
+# Get the review root path from configuration
+# Usage: review_root=$(get_review_root)
+#
+# Loads the REVIEW_ROOT_PATH from the configuration file if it exists,
+# otherwise returns the default path ~/dev/ai/reviews
+#
+# Returns:
+#   The review root path on stdout
+get_review_root() {
+    local review_root="${HOME}/dev/ai/reviews"
+    local config_file=""
+
+    if [[ -f "${HOME}/.claude/skills/review-code/.env" ]]; then
+        config_file="${HOME}/.claude/skills/review-code/.env"
+    elif [[ -f "${HOME}/.claude/review-code.env" ]]; then
+        config_file="${HOME}/.claude/review-code.env"
+    fi
+
+    if [[ -n "${config_file}" ]]; then
+        load_config_safely "${config_file}"
+        review_root="${REVIEW_ROOT_PATH:-${HOME}/dev/ai/reviews}"
+    fi
+
+    echo "${review_root}"
+}

@@ -88,17 +88,8 @@ main() {
     fi
 
     # Load review root path from config
-    local review_root="${HOME}/dev/ai/reviews"
-    local config_file=""
-    if [[ -f "${HOME}/.claude/skills/review-code/.env" ]]; then
-        config_file="${HOME}/.claude/skills/review-code/.env"
-    elif [[ -f "${HOME}/.claude/review-code.env" ]]; then
-        config_file="${HOME}/.claude/review-code.env"
-    fi
-    if [[ -n "${config_file}" ]]; then
-        load_config_safely "${config_file}"
-        review_root="${REVIEW_ROOT_PATH:-${HOME}/dev/ai/reviews}"
-    fi
+    local review_root
+    review_root=$(get_review_root)
 
     # Check for review file
     local review_file="${review_root}/${org}/${repo}/pr-${pr_number}.md"
@@ -158,8 +149,9 @@ main() {
     else
         review_file_mtime=$(stat -c '%Y' "${review_file}")
     fi
-    local review_file_date
-    review_file_date=$(date -r "${review_file_mtime}" -u +"%Y-%m-%dT%H:%M:%SZ" 2> /dev/null || date -d "@${review_file_mtime}" -u +"%Y-%m-%dT%H:%M:%SZ" 2> /dev/null)
+    # Use epoch seconds for reliable date comparison (ISO 8601 string comparison
+    # fails when GitHub API returns +00:00 vs Z suffix)
+    local review_file_epoch="${review_file_mtime}"
 
     # Get commits on the PR
     local pr_commits
@@ -175,12 +167,19 @@ main() {
     # Get the list of files changed in commits after the review
     local files_changed_after_review="[]"
     while IFS= read -r commit_json; do
-        local commit_sha commit_date
+        local commit_sha commit_date commit_epoch
         commit_sha=$(echo "${commit_json}" | jq -r '.sha')
         commit_date=$(echo "${commit_json}" | jq -r '.date')
 
+        # Convert commit date to epoch seconds for reliable comparison
+        if [[ "${OSTYPE}" == "darwin"* ]]; then
+            commit_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "${commit_date%+00:00}Z" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%S%z" "${commit_date}" +%s 2>/dev/null || echo "0")
+        else
+            commit_epoch=$(date -d "${commit_date}" +%s 2>/dev/null || echo "0")
+        fi
+
         # Check if commit is after review file creation
-        if [[ "${commit_date}" > "${review_file_date}" ]]; then
+        if [[ "${commit_epoch}" -gt "${review_file_epoch}" ]]; then
             # Get files changed in this commit
             local commit_files
             commit_files=$(gh api "repos/${org}/${repo}/commits/${commit_sha}" --jq '[.files[].filename]' 2> /dev/null || echo "[]")

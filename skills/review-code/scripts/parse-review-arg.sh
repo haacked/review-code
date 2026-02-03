@@ -41,7 +41,8 @@ if [[ "${arg}" == "find" ]]; then
 fi
 
 # Check for 'learn' mode - if present, shift remaining args
-if [[ "${arg}" == "learn" ]]; then
+# Note: Don't activate learn mode if find mode is already active (handles 'find learn' collision)
+if [[ "${arg}" == "learn" ]] && [[ "${FIND_MODE}" != "true" ]]; then
     LEARN_MODE="true"
     arg="${remaining_args[1]:-}"
     file_pattern="${remaining_args[2]:-}"

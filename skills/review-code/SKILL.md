@@ -885,15 +885,40 @@ This removes the temporary session files and frees up disk space.
 
 ## Handler: "learn"
 
-The learn mode analyzes PR review outcomes to improve future reviews. It has three submodes based on the parsed arguments.
+The learn mode analyzes PR review outcomes to improve future reviews. It uses the learn orchestrator to coordinate workflow.
 
-### Determine Learn Submode
+### Initialize Learn Mode
 
-Extract the learn submode from the parse result:
+Extract the learn submode from the parse result and run the orchestrator:
 
 ```bash
 LEARN_SUBMODE=$(echo "$PARSE_RESULT" | jq -r '.learn_submode')
 PR_NUMBER=$(echo "$PARSE_RESULT" | jq -r '.pr_number // empty')
+
+# Run orchestrator based on submode
+case "$LEARN_SUBMODE" in
+    single)
+        LEARN_RESULT=$(~/.claude/skills/review-code/scripts/learn-orchestrator.sh single "$PR_NUMBER")
+        ;;
+    batch)
+        LEARN_RESULT=$(~/.claude/skills/review-code/scripts/learn-orchestrator.sh batch)
+        ;;
+    apply)
+        LEARN_RESULT=$(~/.claude/skills/review-code/scripts/learn-orchestrator.sh apply)
+        ;;
+esac
+
+STATUS=$(echo "$LEARN_RESULT" | jq -r '.status')
+```
+
+If STATUS is "error", display the error and stop:
+
+```bash
+if [[ "$STATUS" == "error" ]]; then
+    ERROR_MSG=$(echo "$LEARN_RESULT" | jq -r '.error')
+    echo "Error: $ERROR_MSG"
+    # Stop processing
+fi
 ```
 
 Based on `LEARN_SUBMODE`, proceed to the appropriate handler:
@@ -902,19 +927,13 @@ Based on `LEARN_SUBMODE`, proceed to the appropriate handler:
 
 Analyze a specific PR's outcomes.
 
-**Step 1: Run cross-reference analysis**
+**Step 1: Display cross-reference summary**
+
+Extract and display the summary from the orchestrator result:
 
 ```bash
-LEARN_DATA=$(~/.claude/skills/review-code/scripts/learn-from-pr.sh "$PR_NUMBER")
-```
-
-**Step 2: Display cross-reference summary**
-
-Extract and display the summary:
-
-```bash
-echo "$LEARN_DATA" | jq -r '
-"📊 Cross-Reference Summary for PR #\(.pr_number)
+echo "$LEARN_RESULT" | jq -r '
+"📊 Cross-Reference Summary for PR #\(.summary.pr_number)
 
 **Claude'\''s Findings (\(.summary.claude_total) total):**
 - \(.summary.claude_addressed) likely addressed in subsequent commits ✓
@@ -924,7 +943,15 @@ echo "$LEARN_DATA" | jq -r '
 **Other Reviewers Found (\(.summary.other_total) total):**
 - \(.summary.other_caught_by_claude) also caught by Claude ✓
 - \(.summary.other_missed_by_claude) Claude missed
+
+Prompts needed: \(.summary.prompts_count)
 "'
+```
+
+Extract the full learn data for processing:
+
+```bash
+LEARN_DATA=$(echo "$LEARN_RESULT" | jq '.learn_data')
 ```
 
 **Step 3: Process prompts for uncertain items**
@@ -1026,11 +1053,13 @@ Run '/review-code learn --apply' when ready to update context files.
 
 Analyze all unanalyzed PRs with existing reviews.
 
-**Step 1: Find unanalyzed PRs**
+**Step 1: Check orchestrator result**
+
+The orchestrator already ran in the initialization step. Extract the data:
 
 ```bash
-UNANALYZED=$(~/.claude/skills/review-code/scripts/learn-batch.sh --limit 5)
-COUNT=$(echo "$UNANALYZED" | jq 'length')
+COUNT=$(echo "$LEARN_RESULT" | jq '.count')
+UNANALYZED=$(echo "$LEARN_RESULT" | jq '.prs')
 ```
 
 **Step 2: Check if any PRs to analyze**
@@ -1047,7 +1076,7 @@ To create reviews for analysis:
 
 **Step 3: Process each PR**
 
-For each PR in the batch:
+For each PR in the batch, run the single analysis:
 
 ```bash
 while read -r PR_JSON; do
@@ -1056,10 +1085,13 @@ while read -r PR_JSON; do
     REPO=$(echo "$PR_JSON" | jq -r '.repo')
 
     echo "Analyzing PR #$PR_NUM ($ORG/$REPO)..."
+
+    # Run single analysis for this PR
+    SINGLE_RESULT=$(~/.claude/skills/review-code/scripts/learn-orchestrator.sh single "$PR_NUM" --org "$ORG" --repo "$REPO")
 done < <(echo "$UNANALYZED" | jq -c '.[]')
 ```
 
-For each PR, run the "single" submode flow (Steps 1-5 above).
+For each PR, follow the "single" submode flow (user prompts for uncertain items).
 
 After each PR, ask if the user wants to continue:
 
@@ -1089,11 +1121,13 @@ Run '/review-code learn --apply' to update context files.
 
 Synthesize accumulated learnings into context file updates.
 
-**Step 1: Analyze learnings**
+**Step 1: Check orchestrator result**
+
+The orchestrator already ran in the initialization step. Extract the data:
 
 ```bash
-PROPOSALS=$(~/.claude/skills/review-code/scripts/learn-apply.sh)
-ACTIONABLE=$(echo "$PROPOSALS" | jq '.summary.actionable_proposals')
+ACTIONABLE=$(echo "$LEARN_RESULT" | jq '.actionable')
+PROPOSALS=$(echo "$LEARN_RESULT" | jq '.proposals')
 ```
 
 **Step 2: Check if any proposals**

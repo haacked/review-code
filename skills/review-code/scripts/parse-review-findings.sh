@@ -30,6 +30,32 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Source error helpers
 source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 
+# Helper function to save a finding to the findings JSON array
+# Args: $1=agent, $2=confidence, $3=file, $4=line, $5=description
+# Uses: findings variable (must be in scope)
+# Modifies: findings variable
+save_finding() {
+    local agent="$1"
+    local conf="$2"
+    local file="$3"
+    local line="$4"
+    local desc="$5"
+
+    desc=$(echo "${desc}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | head -c 500)
+    findings=$(echo "${findings}" | jq --arg agent "${agent}" \
+        --arg conf "${conf}" \
+        --arg file "${file}" \
+        --arg line "${line}" \
+        --arg desc "${desc}" \
+        '. + [{
+            agent: $agent,
+            confidence: ($conf | tonumber),
+            file: $file,
+            line: ($line | tonumber),
+            description: $desc
+        }]')
+}
+
 main() {
     local review_file="${1:-}"
 
@@ -57,19 +83,7 @@ main() {
         if [[ "${line}" =~ ^##[[:space:]]+(Security|Performance|Correctness|Maintainability|Testing|Compatibility|Architecture|Frontend)[[:space:]]+Review ]]; then
             # Save any pending finding before switching sections
             if [[ "${in_finding}" == true ]] && [[ -n "${finding_file}" ]] && [[ -n "${finding_description}" ]]; then
-                finding_description=$(echo "${finding_description}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | head -c 500)
-                findings=$(echo "${findings}" | jq --arg agent "${current_agent:-unknown}" \
-                    --arg conf "${current_confidence:-0}" \
-                    --arg file "${finding_file}" \
-                    --arg line "${finding_line}" \
-                    --arg desc "${finding_description}" \
-                    '. + [{
-                        agent: $agent,
-                        confidence: ($conf | tonumber),
-                        file: $file,
-                        line: ($line | tonumber),
-                        description: $desc
-                    }]')
+                save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file}" "${finding_line}" "${finding_description}"
                 in_finding=false
             fi
             current_agent=$(echo "${BASH_REMATCH[1]}" | tr '[:upper:]' '[:lower:]')
@@ -85,19 +99,7 @@ main() {
         if [[ "${line}" =~ ^\#{3,4}[[:space:]]+\`([^:]+):([0-9]+)\` ]]; then
             # Save previous finding if exists
             if [[ "${in_finding}" == true ]] && [[ -n "${finding_file}" ]] && [[ -n "${finding_description}" ]]; then
-                finding_description=$(echo "${finding_description}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | head -c 500)
-                findings=$(echo "${findings}" | jq --arg agent "${current_agent:-unknown}" \
-                    --arg conf "${current_confidence:-0}" \
-                    --arg file "${finding_file}" \
-                    --arg line "${finding_line}" \
-                    --arg desc "${finding_description}" \
-                    '. + [{
-                        agent: $agent,
-                        confidence: ($conf | tonumber),
-                        file: $file,
-                        line: ($line | tonumber),
-                        description: $desc
-                    }]')
+                save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file}" "${finding_line}" "${finding_description}"
             fi
 
             finding_file="${BASH_REMATCH[1]}"
@@ -112,19 +114,7 @@ main() {
         if [[ "${line}" =~ ^-[[:space:]]+\*\*\`([^:]+):([0-9]+)\`\*\*:[[:space:]]*(.*)$ ]]; then
             # Save previous finding if needed
             if [[ "${in_finding}" == true ]] && [[ -n "${finding_file}" ]] && [[ -n "${finding_description}" ]]; then
-                finding_description=$(echo "${finding_description}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | head -c 500)
-                findings=$(echo "${findings}" | jq --arg agent "${current_agent:-unknown}" \
-                    --arg conf "${current_confidence:-0}" \
-                    --arg file "${finding_file}" \
-                    --arg line "${finding_line}" \
-                    --arg desc "${finding_description}" \
-                    '. + [{
-                        agent: $agent,
-                        confidence: ($conf | tonumber),
-                        file: $file,
-                        line: ($line | tonumber),
-                        description: $desc
-                    }]')
+                save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file}" "${finding_line}" "${finding_description}"
             fi
 
             finding_file="${BASH_REMATCH[1]}"
@@ -137,19 +127,7 @@ main() {
             fi
 
             # This pattern includes the description inline, so save it immediately
-            finding_description=$(echo "${finding_description}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | head -c 500)
-            findings=$(echo "${findings}" | jq --arg agent "${current_agent:-unknown}" \
-                --arg conf "${current_confidence:-0}" \
-                --arg file "${finding_file}" \
-                --arg line "${finding_line}" \
-                --arg desc "${finding_description}" \
-                '. + [{
-                    agent: $agent,
-                    confidence: ($conf | tonumber),
-                    file: $file,
-                    line: ($line | tonumber),
-                    description: $desc
-                }]')
+            save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file}" "${finding_line}" "${finding_description}"
 
             finding_file=""
             finding_line=""
@@ -159,23 +137,26 @@ main() {
             continue
         fi
 
-        # Pattern 3: [Agent 85%] description (file.py:123)
+        # Pattern 3: **Location**: `path/to/file.py:123`
+        if [[ "${line}" =~ ^\*\*Location\*\*:[[:space:]]*\`([^:]+):([0-9]+)\` ]]; then
+            # Save previous finding if exists
+            if [[ "${in_finding}" == true ]] && [[ -n "${finding_file}" ]] && [[ -n "${finding_description}" ]]; then
+                save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file}" "${finding_line}" "${finding_description}"
+            fi
+
+            finding_file="${BASH_REMATCH[1]}"
+            finding_line="${BASH_REMATCH[2]}"
+            finding_description=""
+            current_confidence=""
+            in_finding=true
+            continue
+        fi
+
+        # Pattern 4: [Agent 85%] description (file.py:123)
         if [[ "${line}" =~ \[(Security|Performance|Correctness|Maintainability|Testing|Compatibility|Architecture|Frontend)[[:space:]]+([0-9]+)%\][[:space:]]+(.+)[[:space:]]+\(([^:]+):([0-9]+)\) ]]; then
             # Save previous finding if needed
             if [[ "${in_finding}" == true ]] && [[ -n "${finding_file}" ]] && [[ -n "${finding_description}" ]]; then
-                finding_description=$(echo "${finding_description}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | head -c 500)
-                findings=$(echo "${findings}" | jq --arg agent "${current_agent:-unknown}" \
-                    --arg conf "${current_confidence:-0}" \
-                    --arg file "${finding_file}" \
-                    --arg line "${finding_line}" \
-                    --arg desc "${finding_description}" \
-                    '. + [{
-                        agent: $agent,
-                        confidence: ($conf | tonumber),
-                        file: $file,
-                        line: ($line | tonumber),
-                        description: $desc
-                    }]')
+                save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file}" "${finding_line}" "${finding_description}"
             fi
 
             local agent_name
@@ -186,19 +167,7 @@ main() {
             finding_line="${BASH_REMATCH[5]}"
 
             # Save this finding immediately (inline pattern)
-            finding_description=$(echo "${finding_description}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | head -c 500)
-            findings=$(echo "${findings}" | jq --arg agent "${agent_name}" \
-                --arg conf "${current_confidence}" \
-                --arg file "${finding_file}" \
-                --arg line "${finding_line}" \
-                --arg desc "${finding_description}" \
-                '. + [{
-                    agent: $agent,
-                    confidence: ($conf | tonumber),
-                    file: $file,
-                    line: ($line | tonumber),
-                    description: $desc
-                }]')
+            save_finding "${agent_name}" "${current_confidence}" "${finding_file}" "${finding_line}" "${finding_description}"
 
             finding_file=""
             finding_line=""
@@ -229,19 +198,7 @@ main() {
 
     # Handle any remaining finding at end of file
     if [[ "${in_finding}" == true ]] && [[ -n "${finding_file}" ]] && [[ -n "${finding_description}" ]]; then
-        finding_description=$(echo "${finding_description}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | head -c 500)
-        findings=$(echo "${findings}" | jq --arg agent "${current_agent:-unknown}" \
-            --arg conf "${current_confidence:-0}" \
-            --arg file "${finding_file}" \
-            --arg line "${finding_line}" \
-            --arg desc "${finding_description}" \
-            '. + [{
-                agent: $agent,
-                confidence: ($conf | tonumber),
-                file: $file,
-                line: ($line | tonumber),
-                description: $desc
-            }]')
+        save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file}" "${finding_line}" "${finding_description}"
     fi
 
     echo "${findings}"
