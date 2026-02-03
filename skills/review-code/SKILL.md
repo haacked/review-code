@@ -30,6 +30,8 @@ Run specialized code review agent(s) with comprehensive context on local changes
 **Optional Flags:**
 
 - `--force` or `-f` - Skip the confirmation prompt and proceed directly with review
+- `--draft` or `-d` - Create a pending GitHub review with inline comments (PR mode only)
+- `--self` - Allow creating draft review on your own PR (for testing)
 
 **Optional File Pattern:**
 
@@ -73,27 +75,51 @@ Examples:
 - `/review-code https://github.com/org/repo/pull/123 --force` - Review PR without confirmation
 - `/review-code -f feature-branch` - Short form, review branch without confirmation
 
+**With --draft flag (create pending GitHub review):**
+
+- `/review-code https://github.com/org/repo/pull/123 --draft` - Review PR and create draft review on GitHub
+- `/review-code 123 --draft` - Review PR #123 and create draft review
+- `/review-code 123 --draft --force` - Review PR without confirmation and create draft
+- `/review-code 123 -d -f` - Short form, review PR #123, skip confirmation, create draft
+- `/review-code 123 --draft --self` - Create draft review on your own PR (for testing)
+
 ---
 
 ## Implementation
 
 **NOTE**: Uses session-based caching to run the orchestrator once and reuse the data across multiple bash invocations. This reduces token usage by ~60%.
 
+**⚠️ CRITICAL**: This skill MUST follow the structured session flow below. If session initialization fails, STOP and inform the user. NEVER improvise by running review agents manually or posting to GitHub directly - this can cause unintended side effects like submitting reviews that should be drafts.
+
 ### Step 1: Initialize Session
 
 Initialize the review session by running the orchestrator and caching the result:
 
 ```bash
-bash -c '
-SESSION_ID=$(~/.claude/skills/review-code/scripts/review-status-handler.sh init "'"$ARGUMENTS"'")
+SESSION_ID=$(~/.claude/skills/review-code/scripts/review-status-handler.sh init $ARGUMENTS)
 STATUS=$(~/.claude/skills/review-code/scripts/review-status-handler.sh get-status "$SESSION_ID")
 echo "Session: $SESSION_ID, Status: $STATUS"
-'
 ```
 
 The `--force` and `-f` flags are handled automatically by the orchestrator. When present, the session data will include `"force": true`.
 
 This creates a session and outputs the status. Based on the status, proceed to the appropriate handler below.
+
+**CRITICAL: If session initialization fails, STOP IMMEDIATELY.**
+
+Check for these failure conditions:
+- `SESSION_ID` is empty
+- Command outputs errors (jq parse errors, "ERROR:", etc.)
+- `STATUS` is empty or not one of: `error`, `ambiguous`, `prompt`, `prompt_pull`, `find`, `ready`
+
+**If ANY of these occur:**
+1. Tell the user: "Session initialization failed. Please check the error output above."
+2. **DO NOT attempt to run the review manually or improvise.**
+3. **DO NOT use `gh pr review` or any GitHub API calls directly.**
+4. **DO NOT run review agents without a valid session.**
+5. Suggest the user run the command again or check for issues.
+
+This safeguard exists because when the session flow breaks, falling back to manual review posting can accidentally submit reviews instead of keeping them as drafts.
 
 **IMPORTANT**: Save the `$SESSION_ID` value from the output - you'll need it for all subsequent operations.
 
@@ -591,6 +617,8 @@ Review complete!
 You can open it directly: file://$review_file
 ```
 
+**CRITICAL: Do NOT post the full review to GitHub.** The detailed review is saved to the markdown file only. If `--draft` mode is enabled, a separate draft review with inline comments will be created in the next step - but that draft should contain only brief inline comments, NOT the full review summary.
+
 ### Generate Suggested Comments (PR Mode Only)
 
 If this is a PR review and the reviewer is NOT the PR author, generate suggested inline comments for the review file. This helps the reviewer quickly identify what comments to post on the PR.
@@ -691,6 +719,132 @@ Suggested Comments:
 
 See the review file for copy/paste ready comments.
 ```
+
+### Create Draft Review (--draft flag)
+
+If `--draft` was specified and this is a PR review (not own PR), create a pending GitHub review with inline comments.
+
+**CRITICAL RULES for draft reviews:**
+- The draft review contains ONLY inline comments at specific file:line locations
+- The review summary should be a brief 1-2 sentence overview, NOT the full review
+- The full detailed review stays in the markdown file only
+- NEVER use `gh pr review` directly - always use `create-draft-review.sh`
+- NEVER post the full review summary to GitHub
+
+**Check if draft mode is enabled:**
+
+```bash
+draft_mode=$(jq -r '.draft // false' "$SESSION_FILE")
+is_own_pr=$(jq -r '.is_own_pr // false' "$SESSION_FILE")
+self_mode=$(jq -r '.self // false' "$SESSION_FILE")
+mode=$(jq -r '.mode' "$SESSION_FILE")
+```
+
+**Only proceed if ALL conditions are true:**
+- `draft_mode` is "true"
+- `mode` is "pr"
+- `is_own_pr` is "false" OR `self_mode` is "true"
+
+If any condition fails, skip draft review creation.
+
+**If conditions are met:**
+
+1. **Extract suggested comments from the review**: Parse the "Suggested Comments" section to get:
+   - File path
+   - Line number
+   - Comment body (without metadata like agent name/confidence)
+
+   Look for the pattern in the review file:
+   ```
+   #### `<file_path>:<line_number>`
+   ```text
+   <comment body>
+   ```
+   ```
+
+2. **Get the diff for position mapping**:
+
+```bash
+diff=$(jq -r '.diff' "$SESSION_FILE")
+```
+
+3. **Build targets for position mapping**: Create JSON with file:line targets from extracted comments.
+
+4. **Map line numbers to diff positions**: Use the diff-position-mapper script.
+
+```bash
+echo "$mapping_input" | ~/.claude/skills/review-code/scripts/diff-position-mapper.sh
+```
+
+5. **Separate mappable vs unmappable comments**:
+   - Mappable: Comments with valid diff positions (will be inline comments)
+   - Unmappable: Comments where line not in diff (will go in summary)
+
+6. **Build input for create-draft-review.sh**:
+
+```json
+{
+  "owner": "<org from session>",
+  "repo": "<repo from session>",
+  "pr_number": <number from session>,
+  "reviewer_username": "<reviewer from session>",
+  "summary": "<BRIEF 1-2 sentence summary, e.g. 'Code review with 3 suggestions. See inline comments.'>",
+  "comments": [
+    {"path": "file.ts", "position": 23, "body": "Clean comment text"}
+  ],
+  "unmapped_comments": [
+    {"description": "General finding that couldn't be mapped to diff"}
+  ]
+}
+```
+
+**IMPORTANT**: The `summary` field should be a brief overview (1-2 sentences), NOT the full review. Example: "Code review complete with 3 inline suggestions for improved error handling." The detailed findings are in the markdown file.
+```
+
+7. **Create the pending review**:
+
+```bash
+echo "$draft_input" | ~/.claude/skills/review-code/scripts/create-draft-review.sh
+```
+
+8. **Display result to user**:
+
+If successful:
+```
+Draft review created on GitHub!
+
+🔗 Review: <review_url>
+
+Summary:
+- Inline comments: X
+- Summary comments: Y
+
+{If amended}:
+- Comments kept (updated wording): K
+- New comments added: N
+- Outdated comments removed: R
+
+The review is in PENDING state. Visit GitHub to:
+- Edit or remove any comments
+- Add additional comments
+- Submit with Approve/Request Changes/Comment
+```
+
+If failed, show the error and suggest using the review file manually.
+
+**Error handling:**
+
+- **Not PR mode**: "The --draft flag only works when reviewing a pull request"
+- **Own PR**: "Cannot create draft review on your own pull request"
+- **No mappable comments**: Create review with summary only, warn user
+- **API failure**: Display error, suggest using review file manually
+
+**What NOT to do:**
+- ❌ Do NOT use `gh pr review` or `gh api` directly to create reviews
+- ❌ Do NOT post the full review summary as the review body
+- ❌ Do NOT skip the `create-draft-review.sh` script
+- ✅ DO save detailed review to markdown file
+- ✅ DO use `create-draft-review.sh` with brief summary + inline comments only
 
 ### Cleanup Session
 

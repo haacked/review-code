@@ -9,11 +9,17 @@ set -euo pipefail
 # This ensures flags can appear anywhere and remaining args are properly ordered
 FORCE_MODE="false"
 FIND_MODE="false"
+DRAFT_MODE="false"
+SELF_MODE="false"
 remaining_args=()
 
 for arg_item in "$@"; do
     if [[ "${arg_item}" == "--force" ]] || [[ "${arg_item}" == "-f" ]]; then
         FORCE_MODE="true"
+    elif [[ "${arg_item}" == "--draft" ]] || [[ "${arg_item}" == "-d" ]]; then
+        DRAFT_MODE="true"
+    elif [[ "${arg_item}" == "--self" ]]; then
+        SELF_MODE="true"
     else
         remaining_args+=("${arg_item}")
     fi
@@ -111,6 +117,9 @@ build_json_output() {
     local mode=$1
     shift
 
+    # Validate draft mode compatibility before building output
+    validate_draft_mode "${mode}"
+
     local -a jq_args=("--arg" "mode" "${mode}")
     # shellcheck disable=SC2016  # $ARGS is a jq variable, not a shell variable
     local jq_filter='$ARGS.named'
@@ -138,6 +147,16 @@ build_json_output() {
         jq_args+=("--arg" "force_mode" "true")
     fi
 
+    # Add draft_mode if enabled
+    if [[ "${DRAFT_MODE}" == "true" ]]; then
+        jq_args+=("--arg" "draft_mode" "true")
+    fi
+
+    # Add self_mode if enabled
+    if [[ "${SELF_MODE}" == "true" ]]; then
+        jq_args+=("--arg" "self_mode" "true")
+    fi
+
     jq -nc "${jq_args[@]}" "${jq_filter}"
 }
 
@@ -146,6 +165,16 @@ build_json_error() {
     local error_msg=$1
     jq -nc --arg mode "error" --arg error "${error_msg}" \
         '{mode: $mode, error: $error}' >&2
+}
+
+# Helper: Validate draft mode is only used with PR mode
+# Exits with error if draft flag used with incompatible mode
+validate_draft_mode() {
+    local mode=$1
+    if [[ "${DRAFT_MODE}" == "true" ]] && [[ "${mode}" != "pr" ]]; then
+        build_json_error "--draft flag only works when reviewing a PR. Use '/review-code <pr_number>' with --draft"
+        exit 1
+    fi
 }
 
 # Detector: Check for area-specific review keywords

@@ -1,0 +1,16 @@
+[
+  {
+    "id": 111111,
+    "path": "src/utils.ts",
+    "line": 5,
+    "position": 5,
+    "body": "Consider adding input validation here"
+  },
+  {
+    "id": 222222,
+    "path": "src/utils.ts",
+    "line": 10,
+    "position": 10,
+    "body": "This could be simplified"
+  }
+]

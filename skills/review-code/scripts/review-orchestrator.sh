@@ -42,6 +42,10 @@ main() {
     pattern=$(echo "${parse_result}" | jq -r '.file_pattern // empty')
     local force_mode
     force_mode=$(echo "${parse_result}" | jq -r '.force_mode // "false"')
+    local draft_mode
+    draft_mode=$(echo "${parse_result}" | jq -r '.draft_mode // "false"')
+    local self_mode
+    self_mode=$(echo "${parse_result}" | jq -r '.self_mode // "false"')
 
     # Extract org/repo early for git-based modes
     # Cache git org/repo to avoid redundant operations
@@ -331,8 +335,10 @@ build_review_data() {
     # Add mode-specific arguments
     jq_args+=("$@")
 
-    # Add force_mode to jq args
+    # Add force_mode, draft_mode, and self_mode to jq args
     jq_args+=(--arg force_mode "${force_mode}")
+    jq_args+=(--arg draft_mode "${draft_mode}")
+    jq_args+=(--arg self_mode "${self_mode}")
 
     # Single jq invocation with conditional pr field
     final_output=$(jq "${jq_args[@]}" \
@@ -350,6 +356,8 @@ build_review_data() {
             next_step: "gather_architectural_context"
         }
         + (if $force_mode == "true" then {force: true} else {} end)
+        + (if $draft_mode == "true" then {draft: true} else {} end)
+        + (if $self_mode == "true" then {self: true} else {} end)
         + (if $pr != null then {pr: $pr, reviewer_username: $reviewer_username, is_own_pr: ($is_own_pr == "true")} else {} end)
         + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")))')
     debug_save_json "07-final-output" "output.json" <<< "${final_output}"
