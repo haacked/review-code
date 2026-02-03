@@ -129,18 +129,6 @@ main() {
         }]
     ' 2> /dev/null || echo "[]")
 
-    # Fetch reviews (approve, request changes, comment)
-    local reviews
-    reviews=$(gh api "repos/${org}/${repo}/pulls/${pr_number}/reviews" --jq '
-        [.[] | select(.state != "PENDING") | {
-            id: .id,
-            author: .user.login,
-            state: .state,
-            body: .body,
-            submitted_at: .submitted_at
-        }]
-    ' 2> /dev/null || echo "[]")
-
     # Get commits after the review was created
     # Find the earliest review timestamp
     local review_file_mtime
