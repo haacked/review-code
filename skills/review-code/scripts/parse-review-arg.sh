@@ -11,6 +11,8 @@ FORCE_MODE="false"
 FIND_MODE="false"
 DRAFT_MODE="false"
 SELF_MODE="false"
+APPLY_MODE="false"
+LEARN_MODE="false"
 remaining_args=()
 
 for arg_item in "$@"; do
@@ -20,6 +22,8 @@ for arg_item in "$@"; do
         DRAFT_MODE="true"
     elif [[ "${arg_item}" == "--self" ]]; then
         SELF_MODE="true"
+    elif [[ "${arg_item}" == "--apply" ]]; then
+        APPLY_MODE="true"
     else
         remaining_args+=("${arg_item}")
     fi
@@ -32,6 +36,13 @@ file_pattern="${remaining_args[1]:-}"
 # Check for 'find' mode - if present, shift remaining args
 if [[ "${arg}" == "find" ]]; then
     FIND_MODE="true"
+    arg="${remaining_args[1]:-}"
+    file_pattern="${remaining_args[2]:-}"
+fi
+
+# Check for 'learn' mode - if present, shift remaining args
+if [[ "${arg}" == "learn" ]]; then
+    LEARN_MODE="true"
     arg="${remaining_args[1]:-}"
     file_pattern="${remaining_args[2]:-}"
 fi
@@ -157,6 +168,16 @@ build_json_output() {
         jq_args+=("--arg" "self_mode" "true")
     fi
 
+    # Add learn_mode if enabled
+    if [[ "${LEARN_MODE}" == "true" ]]; then
+        jq_args+=("--arg" "learn_mode" "true")
+    fi
+
+    # Add apply_mode if enabled
+    if [[ "${APPLY_MODE}" == "true" ]]; then
+        jq_args+=("--arg" "apply_mode" "true")
+    fi
+
     jq -nc "${jq_args[@]}" "${jq_filter}"
 }
 
@@ -173,6 +194,47 @@ validate_draft_mode() {
     local mode=$1
     if [[ "${DRAFT_MODE}" == "true" ]] && [[ "${mode}" != "pr" ]]; then
         build_json_error "--draft flag only works when reviewing a PR. Use '/review-code <pr_number>' with --draft"
+        exit 1
+    fi
+}
+
+# Helper: Validate apply mode is only used with learn mode
+# Exits with error if apply flag used without learn mode
+validate_apply_mode() {
+    if [[ "${APPLY_MODE}" == "true" ]] && [[ "${LEARN_MODE}" != "true" ]]; then
+        build_json_error "--apply flag only works with learn mode. Use '/review-code learn --apply'"
+        exit 1
+    fi
+}
+
+# Detector: Check for learn mode
+# Returns: 0 if detected (outputs JSON), 1 if not detected
+detect_learn_mode() {
+    [[ "${LEARN_MODE}" != "true" ]] && return 1
+
+    # Validate apply mode is only used with learn
+    validate_apply_mode
+
+    # Determine learn sub-mode based on arguments
+    if [[ "${APPLY_MODE}" == "true" ]]; then
+        # Apply mode: synthesize learnings into context updates
+        build_json_output "learn" "learn_submode" "apply"
+        return 0
+    elif [[ -n "${arg}" ]] && [[ "${arg}" =~ ^[0-9]+$ ]]; then
+        # Single PR mode: learn from specific PR
+        build_json_output "learn" "learn_submode" "single" "pr_number" "${arg}"
+        return 0
+    elif [[ -n "${arg}" ]] && [[ "${arg}" =~ ^https://github.com/[^/]+/[^/]+/pull/([0-9]+) ]]; then
+        # PR URL mode: extract PR number from URL
+        local pr_number="${BASH_REMATCH[1]}"
+        build_json_output "learn" "learn_submode" "single" "pr_number" "${pr_number}" "pr_url" "${arg}"
+        return 0
+    elif [[ -z "${arg}" ]]; then
+        # Batch mode: analyze all unanalyzed PRs with reviews
+        build_json_output "learn" "learn_submode" "batch"
+        return 0
+    else
+        build_json_error "Invalid argument for learn mode: ${arg}. Use a PR number, PR URL, or no argument for batch mode."
         exit 1
     fi
 }
@@ -422,6 +484,14 @@ detect_no_arg() {
 
 # Main execution (only run if script is executed directly, not sourced)
 if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
+    # Validate --apply flag is only used with learn mode (early check)
+    validate_apply_mode
+
+    # 0. Learn Mode (Highest Priority - before review modes)
+    if detect_learn_mode; then
+        exit 0
+    fi
+
     # 1. Special Keywords (Highest Priority)
     if detect_area_keyword; then
         exit 0
