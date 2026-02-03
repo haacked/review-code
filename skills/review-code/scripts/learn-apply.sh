@@ -47,6 +47,14 @@ main() {
     while [[ $# -gt 0 ]]; do
         case $1 in
             --threshold)
+                if [[ $# -lt 2 ]]; then
+                    error "Missing value for --threshold"
+                    exit 1
+                fi
+                if ! [[ "$2" =~ ^[0-9]+$ ]] || [[ "$2" -le 0 ]]; then
+                    error "--threshold must be a positive integer, got: \"$2\""
+                    exit 1
+                fi
                 threshold="$2"
                 shift 2
                 ;;
