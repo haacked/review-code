@@ -82,9 +82,12 @@ main() {
 
     # Group learnings by type and context
     # Key = type + language + framework (if any)
+    # Note: sort_by is required before group_by because jq's group_by only groups
+    # consecutive elements with the same key
     local grouped
     grouped=$(echo "${learnings}" | jq '
-        group_by(.type + "_" + (.context.language // "unknown") + "_" + (.context.framework // "none"))
+        sort_by(.type, (.context.language // "unknown"), (.context.framework // "none"))
+        | group_by(.type + "_" + (.context.language // "unknown") + "_" + (.context.framework // "none"))
         | map({
             key: .[0].type + "_" + (.[0].context.language // "unknown") + "_" + (.[0].context.framework // "none"),
             type: .[0].type,
