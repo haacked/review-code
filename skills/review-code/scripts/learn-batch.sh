@@ -41,10 +41,26 @@ main() {
     while [[ $# -gt 0 ]]; do
         case $1 in
             --limit)
+                if [[ $# -lt 2 ]]; then
+                    error "Missing value for --limit"
+                    exit 1
+                fi
+                if ! [[ "$2" =~ ^[0-9]+$ ]] || [[ "$2" -le 0 ]]; then
+                    error "--limit must be a positive integer, got: \"$2\""
+                    exit 1
+                fi
                 limit="$2"
                 shift 2
                 ;;
             --days)
+                if [[ $# -lt 2 ]]; then
+                    error "Missing value for --days"
+                    exit 1
+                fi
+                if ! [[ "$2" =~ ^[0-9]+$ ]] || [[ "$2" -le 0 ]]; then
+                    error "--days must be a positive integer, got: \"$2\""
+                    exit 1
+                fi
                 days="$2"
                 shift 2
                 ;;
