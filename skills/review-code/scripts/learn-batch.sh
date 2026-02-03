@@ -126,8 +126,9 @@ main() {
         fi
 
         # Check if already analyzed
+        # Use // {} to handle missing repo key gracefully instead of relying on error suppression
         local repo_key="${org}/${repo}"
-        if echo "${analyzed_data}" | jq -e --arg key "${repo_key}" --arg pr "${pr_number}" '.[$key][$pr] != null' > /dev/null 2>&1; then
+        if echo "${analyzed_data}" | jq -e --arg key "${repo_key}" --arg pr "${pr_number}" '(.[$key] // {})[$pr] != null' > /dev/null 2>&1; then
             continue
         fi
 
