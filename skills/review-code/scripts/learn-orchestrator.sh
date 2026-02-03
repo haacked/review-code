@@ -30,32 +30,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 source "${SCRIPT_DIR}/helpers/config-helpers.sh"
 
-# Output JSON result
-output_json() {
-    local status="$1"
-    shift
-    local json="{\"status\":\"${status}\""
-
-    # Add key-value pairs
-    while [[ $# -ge 2 ]]; do
-        local key="$1"
-        local value="$2"
-        shift 2
-
-        # Check if value is already JSON (starts with { or [)
-        if [[ "${value}" =~ ^[\{\[] ]]; then
-            json="${json},\"${key}\":${value}"
-        else
-            # Escape the value for JSON
-            value=$(echo "${value}" | jq -Rs '.')
-            json="${json},\"${key}\":${value}"
-        fi
-    done
-
-    json="${json}}"
-    echo "${json}"
-}
-
 # Output JSON error
 output_error() {
     local message="$1"
