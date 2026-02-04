@@ -81,6 +81,14 @@ main() {
         analyzed_data=$(cat "${analyzed_file}")
     fi
 
+    # Load PR status cache (stores merge status to avoid repeated API calls)
+    local cache_file="${LEARNINGS_DIR}/status-cache.json"
+    local cache_data="{}"
+    if [[ -f "${cache_file}" ]]; then
+        cache_data=$(cat "${cache_file}")
+    fi
+    local cache_updated=false
+
     # Calculate cutoff date
     local cutoff_date
     cutoff_date=$(days_ago_iso "${days}")
@@ -124,15 +132,72 @@ main() {
             continue
         fi
 
-        # Check PR state and merge date via GitHub API
-        local pr_data
-        pr_data=$(gh api "repos/${org}/${repo}/pulls/${pr_number}" --jq '{state: .state, merged_at: .merged_at}' 2> /dev/null || echo '{"state":"unknown","merged_at":null}')
+        # Check PR state and merge date (use cache to avoid repeated API calls)
+        local cached_entry
+        cached_entry=$(echo "${cache_data}" | jq -r --arg key "${repo_key}" --arg pr "${pr_number}" '.[$key][$pr] // empty')
 
-        local pr_merged_at
-        pr_merged_at=$(echo "${pr_data}" | jq -r '.merged_at // empty')
+        local pr_merged_at=""
+        local pr_state=""
+
+        if [[ -n "${cached_entry}" ]]; then
+            # Check if cache entry is usable
+            local cached_state cached_merged_at cached_at
+            cached_state=$(echo "${cached_entry}" | jq -r '.state // empty')
+            cached_merged_at=$(echo "${cached_entry}" | jq -r '.merged_at // empty')
+            cached_at=$(echo "${cached_entry}" | jq -r '.cached_at // empty')
+
+            if [[ "${cached_state}" == "merged" ]]; then
+                # Merged PRs are cached forever
+                pr_merged_at="${cached_merged_at}"
+                pr_state="merged"
+            elif [[ -n "${cached_at}" ]]; then
+                # Open/closed PRs: check if cache is less than 1 hour old
+                local cached_epoch current_epoch
+                cached_epoch=$(iso_to_epoch "${cached_at}")
+                current_epoch=$(date +%s)
+                local cache_age=$((current_epoch - cached_epoch))
+
+                if [[ ${cache_age} -lt 3600 ]]; then
+                    # Cache is fresh, use cached state
+                    pr_state="${cached_state}"
+                    pr_merged_at="${cached_merged_at}"
+                fi
+            fi
+        fi
+
+        # If not cached or cache expired, fetch from API
+        if [[ -z "${pr_state}" ]]; then
+            local pr_data
+            pr_data=$(gh api "repos/${org}/${repo}/pulls/${pr_number}" --jq '{state: .state, merged_at: .merged_at}' 2> /dev/null || echo '{"state":"unknown","merged_at":null}')
+
+            pr_merged_at=$(echo "${pr_data}" | jq -r '.merged_at // empty')
+            local api_state
+            api_state=$(echo "${pr_data}" | jq -r '.state // "unknown"')
+
+            # Determine state for caching
+            if [[ -n "${pr_merged_at}" ]] && [[ "${pr_merged_at}" != "null" ]]; then
+                pr_state="merged"
+            else
+                pr_state="${api_state}"
+                pr_merged_at=""
+            fi
+
+            # Update cache
+            local now_iso
+            now_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            cache_data=$(echo "${cache_data}" | jq \
+                --arg key "${repo_key}" \
+                --arg pr "${pr_number}" \
+                --arg state "${pr_state}" \
+                --arg merged_at "${pr_merged_at}" \
+                --arg cached_at "${now_iso}" \
+                'if .[$key] == null then .[$key] = {} else . end |
+                 .[$key][$pr] = {state: $state, merged_at: (if $merged_at == "" then null else $merged_at end), cached_at: $cached_at}')
+            cache_updated=true
+        fi
 
         # Skip if not merged
-        if [[ -z "${pr_merged_at}" ]] || [[ "${pr_merged_at}" == "null" ]]; then
+        if [[ "${pr_state}" != "merged" ]] || [[ -z "${pr_merged_at}" ]]; then
             continue
         fi
 
@@ -158,6 +223,11 @@ main() {
 
         count=$((count + 1))
     done < <(find "${review_root}" -name "pr-*.md" -type f 2> /dev/null | sort -r)
+
+    # Save cache if updated
+    if [[ "${cache_updated}" == true ]]; then
+        echo "${cache_data}" > "${cache_file}"
+    fi
 
     echo "${unanalyzed_prs}"
 }
