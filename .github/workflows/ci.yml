@@ -30,8 +30,8 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y jq shellcheck
 
-        # Install bats-core (pinned version for supply chain security)
-        sudo npm install -g bats@1.10.0
+        # Install bats-core (1.11.1 includes IFS fix for test compatibility)
+        sudo npm install -g bats@1.11.1
 
         # Verify installations
         echo "=== Dependency Versions ==="
