@@ -36,6 +36,18 @@ output_error() {
     jq -n --arg msg "${message}" '{"status":"error","error":$msg}'
 }
 
+# Check if JSON response contains an error field, output and exit if so
+# Usage: check_json_error <json_data>
+check_json_error() {
+    local json_data="$1"
+    if echo "${json_data}" | jq -e '.error' > /dev/null 2>&1; then
+        local err_msg
+        err_msg=$(echo "${json_data}" | jq -r '.error')
+        output_error "${err_msg}"
+        exit 1
+    fi
+}
+
 # Handle single PR analysis
 handle_single() {
     local pr_number=""
@@ -79,13 +91,7 @@ handle_single() {
         exit 1
     fi
 
-    # Check if it's an error response
-    if echo "${learn_data}" | jq -e '.error' > /dev/null 2>&1; then
-        local err_msg
-        err_msg=$(echo "${learn_data}" | jq -r '.error')
-        output_error "${err_msg}"
-        exit 1
-    fi
+    check_json_error "${learn_data}"
 
     # Extract summary for display
     local summary
@@ -139,13 +145,7 @@ handle_batch() {
         exit 1
     fi
 
-    # Check if it's an error response
-    if echo "${unanalyzed}" | jq -e '.error' > /dev/null 2>&1; then
-        local err_msg
-        err_msg=$(echo "${unanalyzed}" | jq -r '.error')
-        output_error "${err_msg}"
-        exit 1
-    fi
+    check_json_error "${unanalyzed}"
 
     local count
     count=$(echo "${unanalyzed}" | jq 'length')
@@ -187,13 +187,7 @@ handle_apply() {
         exit 1
     fi
 
-    # Check if it's an error response
-    if echo "${proposals}" | jq -e '.error' > /dev/null 2>&1; then
-        local err_msg
-        err_msg=$(echo "${proposals}" | jq -r '.error')
-        output_error "${err_msg}"
-        exit 1
-    fi
+    check_json_error "${proposals}"
 
     local actionable
     actionable=$(echo "${proposals}" | jq '.summary.actionable_proposals')
