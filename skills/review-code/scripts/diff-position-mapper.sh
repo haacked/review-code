@@ -30,6 +30,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/helpers/error-helpers.sh
 source "${SCRIPT_DIR}/helpers/error-helpers.sh"
+# shellcheck source=lib/helpers/json-helpers.sh
+source "${SCRIPT_DIR}/helpers/json-helpers.sh"
 
 # Parse the diff and build a lookup table mapping file paths and line numbers to positions
 # The position is the 1-based line number within the unified diff, counting from the first @@
@@ -172,10 +174,7 @@ main() {
     input=$(cat)
 
     # Validate input
-    if ! echo "${input}" | jq empty 2>/dev/null; then
-        error "Invalid JSON input"
-        exit 1
-    fi
+    validate_json "${input}" || exit 1
 
     # Extract diff and targets
     local diff targets
