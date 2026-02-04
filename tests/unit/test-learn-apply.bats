@@ -86,13 +86,9 @@ EOF
 }
 
 @test "learn-apply.sh: accepts valid --threshold" {
-    # Create empty learnings file
     touch "$MOCK_LEARNINGS_DIR/index.jsonl"
 
-    # Override SCRIPT_DIR to use mock learnings
-    SCRIPT_DIR="$TEST_DIR" run bash -c "
-        mkdir -p '$TEST_DIR/../learnings'
-        touch '$TEST_DIR/../learnings/index.jsonl'
+    run bash -c "
         source '$PROJECT_ROOT/skills/review-code/scripts/learn-apply.sh'
         LEARNINGS_DIR='$MOCK_LEARNINGS_DIR'
         main --threshold 5
@@ -106,7 +102,7 @@ EOF
 
 @test "learn-apply.sh: returns empty proposals when no learnings file exists" {
     # Don't create index.jsonl
-    SCRIPT_DIR="$TEST_DIR" run bash -c "
+    run bash -c "
         source '$PROJECT_ROOT/skills/review-code/scripts/learn-apply.sh'
         LEARNINGS_DIR='$MOCK_LEARNINGS_DIR'
         main
@@ -119,7 +115,7 @@ EOF
 @test "learn-apply.sh: returns empty proposals when learnings file is empty" {
     touch "$MOCK_LEARNINGS_DIR/index.jsonl"
 
-    SCRIPT_DIR="$TEST_DIR" run bash -c "
+    run bash -c "
         source '$PROJECT_ROOT/skills/review-code/scripts/learn-apply.sh'
         LEARNINGS_DIR='$MOCK_LEARNINGS_DIR'
         main
@@ -136,7 +132,7 @@ EOF
 @test "learn-apply.sh: produces valid JSON output" {
     touch "$MOCK_LEARNINGS_DIR/index.jsonl"
 
-    SCRIPT_DIR="$TEST_DIR" run bash -c "
+    run bash -c "
         source '$PROJECT_ROOT/skills/review-code/scripts/learn-apply.sh'
         LEARNINGS_DIR='$MOCK_LEARNINGS_DIR'
         main
@@ -150,7 +146,7 @@ EOF
 @test "learn-apply.sh: summary contains required fields" {
     touch "$MOCK_LEARNINGS_DIR/index.jsonl"
 
-    SCRIPT_DIR="$TEST_DIR" run bash -c "
+    run bash -c "
         source '$PROJECT_ROOT/skills/review-code/scripts/learn-apply.sh'
         LEARNINGS_DIR='$MOCK_LEARNINGS_DIR'
         main
@@ -176,8 +172,6 @@ EOF
         LEARNINGS_DIR='$MOCK_LEARNINGS_DIR'
         main
     "
-    echo '# DEBUG status=' "$status" >&3
-    echo '# DEBUG output=' "$output" >&3
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.summary.grouped_patterns >= 1' > /dev/null
 }
@@ -187,7 +181,7 @@ EOF
     create_learning "false_positive" "python" "null" "FP 1" >> "$MOCK_LEARNINGS_DIR/index.jsonl"
     create_learning "false_positive" "python" "null" "FP 2" >> "$MOCK_LEARNINGS_DIR/index.jsonl"
 
-    SCRIPT_DIR="$TEST_DIR" run bash -c "
+    run bash -c "
         source '$PROJECT_ROOT/skills/review-code/scripts/learn-apply.sh'
         LEARNINGS_DIR='$MOCK_LEARNINGS_DIR'
         main
@@ -203,7 +197,7 @@ EOF
     create_learning "false_positive" "python" "null" "FP 2" >> "$MOCK_LEARNINGS_DIR/index.jsonl"
 
     # Use threshold of 2
-    SCRIPT_DIR="$TEST_DIR" run bash -c "
+    run bash -c "
         source '$PROJECT_ROOT/skills/review-code/scripts/learn-apply.sh'
         LEARNINGS_DIR='$MOCK_LEARNINGS_DIR'
         main --threshold 2
@@ -221,7 +215,7 @@ EOF
     create_learning "false_positive" "python" "null" "FP 1" >> "$MOCK_LEARNINGS_DIR/index.jsonl"
     create_learning "false_positive" "python" "null" "FP 2" >> "$MOCK_LEARNINGS_DIR/index.jsonl"
 
-    SCRIPT_DIR="$TEST_DIR" run bash -c "
+    run bash -c "
         source '$PROJECT_ROOT/skills/review-code/scripts/learn-apply.sh'
         LEARNINGS_DIR='$MOCK_LEARNINGS_DIR'
         main --threshold 2
@@ -234,7 +228,7 @@ EOF
     create_learning "missed_pattern" "javascript" "null" "Missed 1" >> "$MOCK_LEARNINGS_DIR/index.jsonl"
     create_learning "missed_pattern" "javascript" "null" "Missed 2" >> "$MOCK_LEARNINGS_DIR/index.jsonl"
 
-    SCRIPT_DIR="$TEST_DIR" run bash -c "
+    run bash -c "
         source '$PROJECT_ROOT/skills/review-code/scripts/learn-apply.sh'
         LEARNINGS_DIR='$MOCK_LEARNINGS_DIR'
         main --threshold 2
@@ -247,7 +241,7 @@ EOF
     create_learning "valid_catch" "go" "null" "Valid 1" >> "$MOCK_LEARNINGS_DIR/index.jsonl"
     create_learning "valid_catch" "go" "null" "Valid 2" >> "$MOCK_LEARNINGS_DIR/index.jsonl"
 
-    SCRIPT_DIR="$TEST_DIR" run bash -c "
+    run bash -c "
         source '$PROJECT_ROOT/skills/review-code/scripts/learn-apply.sh'
         LEARNINGS_DIR='$MOCK_LEARNINGS_DIR'
         main --threshold 2
@@ -260,7 +254,7 @@ EOF
     create_learning "deferred" "rust" "null" "Deferred 1" >> "$MOCK_LEARNINGS_DIR/index.jsonl"
     create_learning "deferred" "rust" "null" "Deferred 2" >> "$MOCK_LEARNINGS_DIR/index.jsonl"
 
-    SCRIPT_DIR="$TEST_DIR" run bash -c "
+    run bash -c "
         source '$PROJECT_ROOT/skills/review-code/scripts/learn-apply.sh'
         LEARNINGS_DIR='$MOCK_LEARNINGS_DIR'
         main --threshold 2
@@ -277,7 +271,7 @@ EOF
     create_learning "false_positive" "python" "null" "FP 1" >> "$MOCK_LEARNINGS_DIR/index.jsonl"
     create_learning "false_positive" "python" "null" "FP 2" >> "$MOCK_LEARNINGS_DIR/index.jsonl"
 
-    SCRIPT_DIR="$TEST_DIR" run bash -c "
+    run bash -c "
         source '$PROJECT_ROOT/skills/review-code/scripts/learn-apply.sh'
         LEARNINGS_DIR='$MOCK_LEARNINGS_DIR'
         main --threshold 2
@@ -290,7 +284,7 @@ EOF
     create_learning "false_positive" "python" "django" "Django FP 1" >> "$MOCK_LEARNINGS_DIR/index.jsonl"
     create_learning "false_positive" "python" "django" "Django FP 2" >> "$MOCK_LEARNINGS_DIR/index.jsonl"
 
-    SCRIPT_DIR="$TEST_DIR" run bash -c "
+    run bash -c "
         source '$PROJECT_ROOT/skills/review-code/scripts/learn-apply.sh'
         LEARNINGS_DIR='$MOCK_LEARNINGS_DIR'
         main --threshold 2
@@ -309,7 +303,7 @@ EOF
     create_learning "false_positive" "javascript" "null" "JS FP 1" >> "$MOCK_LEARNINGS_DIR/index.jsonl"
     create_learning "false_positive" "python" "null" "Python FP 2" >> "$MOCK_LEARNINGS_DIR/index.jsonl"
 
-    SCRIPT_DIR="$TEST_DIR" run bash -c "
+    run bash -c "
         source '$PROJECT_ROOT/skills/review-code/scripts/learn-apply.sh'
         LEARNINGS_DIR='$MOCK_LEARNINGS_DIR'
         main --threshold 2
@@ -328,7 +322,7 @@ EOF
     create_learning "false_positive" "python" "null" "FP 1" >> "$MOCK_LEARNINGS_DIR/index.jsonl"
     create_learning "false_positive" "python" "null" "FP 2" >> "$MOCK_LEARNINGS_DIR/index.jsonl"
 
-    SCRIPT_DIR="$TEST_DIR" run bash -c "
+    run bash -c "
         source '$PROJECT_ROOT/skills/review-code/scripts/learn-apply.sh'
         LEARNINGS_DIR='$MOCK_LEARNINGS_DIR'
         main --threshold 2
