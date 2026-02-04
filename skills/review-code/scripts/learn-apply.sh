@@ -70,12 +70,9 @@ main() {
         exit 0
     fi
 
-    # Read all learnings
-    local learnings="[]"
-    while IFS= read -r line; do
-        [[ -z "${line}" ]] && continue
-        learnings=$(echo "${learnings}" | jq --argjson l "${line}" '. + [$l]')
-    done < "${learnings_file}"
+    # Read all learnings using jq slurp (O(n) instead of O(n²) bash loop)
+    local learnings
+    learnings=$(jq -s '[.[] | select(. != null)]' "${learnings_file}" 2>/dev/null || echo "[]")
 
     local total_learnings
     total_learnings=$(echo "${learnings}" | jq 'length')

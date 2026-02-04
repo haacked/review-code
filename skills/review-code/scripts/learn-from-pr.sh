@@ -242,29 +242,19 @@ main() {
             }]')
     done < <(echo "${review_comments}" | jq -c '.[]')
 
-    # Determine which findings need user prompts
-    local prompts_needed="[]"
-
-    # Claude findings that weren't addressed - ask if false positive
-    while IFS= read -r finding_json; do
-        local addressed
-        addressed=$(echo "${finding_json}" | jq -r '.addressed')
-        if [[ "${addressed}" == "not_modified" ]]; then
-            prompts_needed=$(echo "${prompts_needed}" | jq --argjson finding "${finding_json}" \
-                '. + [{type: "unaddressed", finding: $finding}]')
-        fi
-    done < <(echo "${claude_results}" | jq -c '.[]')
-
-    # Other reviewer findings that Claude missed - ask if should learn
-    while IFS= read -r finding_json; do
-        local claude_caught addressed
-        claude_caught=$(echo "${finding_json}" | jq -r '.claude_caught')
-        addressed=$(echo "${finding_json}" | jq -r '.addressed')
-        if [[ "${claude_caught}" == "false" ]] && [[ "${addressed}" == "likely" ]]; then
-            prompts_needed=$(echo "${prompts_needed}" | jq --argjson finding "${finding_json}" \
-                '. + [{type: "missed", finding: $finding}]')
-        fi
-    done < <(echo "${other_findings}" | jq -c '.[]')
+    # Determine which findings need user prompts using jq filters
+    # (avoids O(n²) bash loops with repeated jq calls)
+    local prompts_needed
+    prompts_needed=$(jq -n \
+        --argjson claude "${claude_results}" \
+        --argjson other "${other_findings}" \
+        '
+        # Claude findings that were not addressed - ask if false positive
+        [$claude[] | select(.addressed == "not_modified") | {type: "unaddressed", finding: .}]
+        +
+        # Other reviewer findings that Claude missed - ask if should learn
+        [$other[] | select(.claude_caught == false and .addressed == "likely") | {type: "missed", finding: .}]
+        ')
 
     # Build final output
     jq -n \
