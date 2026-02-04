@@ -26,9 +26,14 @@ jobs:
         git config --global user.email "ci@github.com"
         git config --global user.name "GitHub CI"
 
-        # Install all system dependencies
+        # Install system dependencies
         sudo apt-get update
-        sudo apt-get install -y jq shellcheck
+        sudo apt-get install -y shellcheck
+
+        # Install jq 1.7.1 (apt has older 1.6 which has syntax incompatibilities)
+        JQ_VERSION="1.7.1"
+        curl -fsSL "https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}/jq-linux-amd64" -o /tmp/jq
+        sudo install -m 755 /tmp/jq /usr/local/bin/jq
 
         # Install bats-core (1.11.1 includes IFS fix for test compatibility)
         sudo npm install -g bats@1.11.1
