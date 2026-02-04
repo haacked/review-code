@@ -214,7 +214,7 @@ teardown() {
     [ "$commit_epoch" -gt "$review_file_epoch" ]
 }
 
-@test "learn-from-pr.sh: date conversion works on macOS" {
+@test "learn-from-pr.sh: date conversion works on macOS with Z suffix" {
     if [[ "${OSTYPE}" != "darwin"* ]]; then
         skip "macOS-specific test"
     fi
@@ -222,6 +222,44 @@ teardown() {
     local commit_date="2024-01-15T10:30:00Z"
     local commit_epoch
     commit_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$commit_date" +%s 2>/dev/null)
+
+    [ -n "$commit_epoch" ]
+    [[ "$commit_epoch" =~ ^[0-9]+$ ]]
+}
+
+@test "learn-from-pr.sh: date conversion works on macOS with offset format" {
+    if [[ "${OSTYPE}" != "darwin"* ]]; then
+        skip "macOS-specific test"
+    fi
+
+    # Test the offset format that GitHub sometimes returns
+    local commit_date="2024-01-15T10:30:00+00:00"
+    local normalized_date
+    # Normalize +HH:MM to +HHMM for BSD date's %z format
+    normalized_date=$(echo "$commit_date" | sed -E 's/([+-][0-9]{2}):([0-9]{2})$/\1\2/')
+
+    [ "$normalized_date" = "2024-01-15T10:30:00+0000" ]
+
+    local commit_epoch
+    commit_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S%z" "$normalized_date" +%s 2>/dev/null)
+
+    [ -n "$commit_epoch" ]
+    [[ "$commit_epoch" =~ ^[0-9]+$ ]]
+}
+
+@test "learn-from-pr.sh: date conversion handles negative offset on macOS" {
+    if [[ "${OSTYPE}" != "darwin"* ]]; then
+        skip "macOS-specific test"
+    fi
+
+    local commit_date="2024-01-15T10:30:00-05:00"
+    local normalized_date
+    normalized_date=$(echo "$commit_date" | sed -E 's/([+-][0-9]{2}):([0-9]{2})$/\1\2/')
+
+    [ "$normalized_date" = "2024-01-15T10:30:00-0500" ]
+
+    local commit_epoch
+    commit_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S%z" "$normalized_date" +%s 2>/dev/null)
 
     [ -n "$commit_epoch" ]
     [[ "$commit_epoch" =~ ^[0-9]+$ ]]

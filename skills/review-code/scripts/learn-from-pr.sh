@@ -161,7 +161,19 @@ main() {
 
         # Convert commit date to epoch seconds for reliable comparison
         if [[ "${OSTYPE}" == "darwin"* ]]; then
-            commit_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "${commit_date%+00:00}Z" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%S%z" "${commit_date}" +%s 2>/dev/null || echo "0")
+            # BSD date requires specific format handling:
+            # - GitHub typically returns "2026-02-02T10:30:00Z" (Zulu time)
+            # - Sometimes returns "2026-02-02T10:30:00+00:00" (offset format)
+            # BSD date's %z expects +HHMM not +HH:MM
+            if [[ "${commit_date}" == *Z ]]; then
+                # Zulu time format - use directly
+                commit_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "${commit_date}" +%s 2>/dev/null || echo "0")
+            else
+                # Offset format (+HH:MM or -HH:MM) - normalize to +HHMM/-HHMM for BSD date
+                local normalized_date
+                normalized_date=$(echo "${commit_date}" | sed -E 's/([+-][0-9]{2}):([0-9]{2})$/\1\2/')
+                commit_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S%z" "${normalized_date}" +%s 2>/dev/null || echo "0")
+            fi
         else
             commit_epoch=$(date -d "${commit_date}" +%s 2>/dev/null || echo "0")
         fi
