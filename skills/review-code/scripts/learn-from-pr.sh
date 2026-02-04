@@ -169,12 +169,8 @@ main() {
     # Cross-reference Claude's findings with commit history
     local claude_results="[]"
     while IFS= read -r finding_json; do
-        local finding_file finding_line finding_desc finding_agent finding_conf
+        local finding_file
         finding_file=$(echo "${finding_json}" | jq -r '.file')
-        finding_line=$(echo "${finding_json}" | jq -r '.line')
-        finding_desc=$(echo "${finding_json}" | jq -r '.description')
-        finding_agent=$(echo "${finding_json}" | jq -r '.agent')
-        finding_conf=$(echo "${finding_json}" | jq -r '.confidence')
 
         # Check if this file was modified after the review
         local was_addressed="unknown"

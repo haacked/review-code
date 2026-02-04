@@ -128,8 +128,7 @@ main() {
         local pr_data
         pr_data=$(gh api "repos/${org}/${repo}/pulls/${pr_number}" --jq '{state: .state, merged_at: .merged_at}' 2> /dev/null || echo '{"state":"unknown","merged_at":null}')
 
-        local pr_state pr_merged_at
-        pr_state=$(echo "${pr_data}" | jq -r '.state')
+        local pr_merged_at
         pr_merged_at=$(echo "${pr_data}" | jq -r '.merged_at // empty')
 
         # Skip if not merged
