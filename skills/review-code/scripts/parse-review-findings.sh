@@ -56,6 +56,15 @@ save_finding() {
         }]')
 }
 
+# Flush any pending finding to the findings array
+# Uses parent scope variables: in_finding, finding_file, finding_description,
+#   finding_line, current_agent, current_confidence, findings
+flush_pending_finding() {
+    if [[ "${in_finding}" == true ]] && [[ -n "${finding_file}" ]] && [[ -n "${finding_description}" ]]; then
+        save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file}" "${finding_line}" "${finding_description}"
+    fi
+}
+
 main() {
     local review_file="${1:-}"
 
@@ -81,11 +90,8 @@ main() {
     while IFS= read -r line || [[ -n "${line}" ]]; do
         # Detect agent section headers (## Security Review, ## Performance Review, etc.)
         if [[ "${line}" =~ ^##[[:space:]]+(Security|Performance|Correctness|Maintainability|Testing|Compatibility|Architecture|Frontend)[[:space:]]+Review ]]; then
-            # Save any pending finding before switching sections
-            if [[ "${in_finding}" == true ]] && [[ -n "${finding_file}" ]] && [[ -n "${finding_description}" ]]; then
-                save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file}" "${finding_line}" "${finding_description}"
-                in_finding=false
-            fi
+            flush_pending_finding
+            in_finding=false
             current_agent=$(echo "${BASH_REMATCH[1]}" | tr '[:upper:]' '[:lower:]')
             finding_file=""
             finding_line=""
@@ -97,10 +103,7 @@ main() {
         # Detect file:line reference patterns
         # Pattern 1: #### `path/to/file.py:123`
         if [[ "${line}" =~ ^\#{3,4}[[:space:]]+\`([^:]+):([0-9]+)\` ]]; then
-            # Save previous finding if exists
-            if [[ "${in_finding}" == true ]] && [[ -n "${finding_file}" ]] && [[ -n "${finding_description}" ]]; then
-                save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file}" "${finding_line}" "${finding_description}"
-            fi
+            flush_pending_finding
 
             finding_file="${BASH_REMATCH[1]}"
             finding_line="${BASH_REMATCH[2]}"
@@ -112,10 +115,7 @@ main() {
 
         # Pattern 2: - **`path/to/file.py:123`**: description
         if [[ "${line}" =~ ^-[[:space:]]+\*\*\`([^:]+):([0-9]+)\`\*\*:[[:space:]]*(.*)$ ]]; then
-            # Save previous finding if needed
-            if [[ "${in_finding}" == true ]] && [[ -n "${finding_file}" ]] && [[ -n "${finding_description}" ]]; then
-                save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file}" "${finding_line}" "${finding_description}"
-            fi
+            flush_pending_finding
 
             finding_file="${BASH_REMATCH[1]}"
             finding_line="${BASH_REMATCH[2]}"
@@ -139,10 +139,7 @@ main() {
 
         # Pattern 3: **Location**: `path/to/file.py:123`
         if [[ "${line}" =~ ^\*\*Location\*\*:[[:space:]]*\`([^:]+):([0-9]+)\` ]]; then
-            # Save previous finding if exists
-            if [[ "${in_finding}" == true ]] && [[ -n "${finding_file}" ]] && [[ -n "${finding_description}" ]]; then
-                save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file}" "${finding_line}" "${finding_description}"
-            fi
+            flush_pending_finding
 
             finding_file="${BASH_REMATCH[1]}"
             finding_line="${BASH_REMATCH[2]}"
@@ -154,10 +151,7 @@ main() {
 
         # Pattern 4: [Agent 85%] description (file.py:123)
         if [[ "${line}" =~ \[(Security|Performance|Correctness|Maintainability|Testing|Compatibility|Architecture|Frontend)[[:space:]]+([0-9]+)%\][[:space:]]+(.+)[[:space:]]+\(([^:]+):([0-9]+)\) ]]; then
-            # Save previous finding if needed
-            if [[ "${in_finding}" == true ]] && [[ -n "${finding_file}" ]] && [[ -n "${finding_description}" ]]; then
-                save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file}" "${finding_line}" "${finding_description}"
-            fi
+            flush_pending_finding
 
             local agent_name
             agent_name=$(echo "${BASH_REMATCH[1]}" | tr '[:upper:]' '[:lower:]')
@@ -197,9 +191,7 @@ main() {
     done < "${review_file}"
 
     # Handle any remaining finding at end of file
-    if [[ "${in_finding}" == true ]] && [[ -n "${finding_file}" ]] && [[ -n "${finding_description}" ]]; then
-        save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file}" "${finding_line}" "${finding_description}"
-    fi
+    flush_pending_finding
 
     echo "${findings}"
 }
