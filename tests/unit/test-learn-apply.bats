@@ -171,11 +171,13 @@ EOF
     create_learning "false_positive" "python" "null" "FP 2" >> "$MOCK_LEARNINGS_DIR/index.jsonl"
     create_learning "false_positive" "python" "null" "FP 3" >> "$MOCK_LEARNINGS_DIR/index.jsonl"
 
-    SCRIPT_DIR="$TEST_DIR" run bash -c "
+    run bash -c "
         source '$PROJECT_ROOT/skills/review-code/scripts/learn-apply.sh'
         LEARNINGS_DIR='$MOCK_LEARNINGS_DIR'
         main
     "
+    echo '# DEBUG status=' "$status" >&3
+    echo '# DEBUG output=' "$output" >&3
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.summary.grouped_patterns >= 1' > /dev/null
 }
