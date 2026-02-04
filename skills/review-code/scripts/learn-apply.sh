@@ -91,7 +91,7 @@ main() {
         sort_by([.type, (.context.language // "unknown"), (.context.framework // "none")])
         | group_by(.type + "_" + (.context.language // "unknown") + "_" + (.context.framework // "none"))
         | map({
-            key: .[0].type + "_" + (.[0].context.language // "unknown") + "_" + (.[0].context.framework // "none"),
+            key: (.[0].type + "_" + (.[0].context.language // "unknown") + "_" + (.[0].context.framework // "none")),
             type: .[0].type,
             language: (.[0].context.language // "unknown"),
             framework: (.[0].context.framework // null),
