@@ -349,7 +349,7 @@ EOF
     # Validate JSON structure
     echo "$output" | jq . > /dev/null
     echo "$output" | jq -e 'type == "array"' > /dev/null
-    echo "$output" | jq -e 'all(. | has("agent", "confidence", "file", "line", "description"))' > /dev/null
+    echo "$output" | jq -e 'all(.[]; has("agent") and has("confidence") and has("file") and has("line") and has("description"))' > /dev/null
 }
 
 @test "parse-review-findings.sh: can be sourced without executing main" {
