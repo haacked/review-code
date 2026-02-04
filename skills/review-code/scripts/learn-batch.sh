@@ -31,6 +31,7 @@ LEARNINGS_DIR="${SCRIPT_DIR}/../learnings"
 
 # Source helpers
 source "${SCRIPT_DIR}/helpers/error-helpers.sh"
+source "${SCRIPT_DIR}/helpers/validation-helpers.sh"
 source "${SCRIPT_DIR}/helpers/config-helpers.sh"
 
 main() {
@@ -45,10 +46,7 @@ main() {
                     error "Missing value for --limit"
                     exit 1
                 fi
-                if ! [[ "$2" =~ ^[0-9]+$ ]] || [[ "$2" -le 0 ]]; then
-                    error "--limit must be a positive integer, got: \"$2\""
-                    exit 1
-                fi
+                require_positive_int "--limit" "$2"
                 limit="$2"
                 shift 2
                 ;;
@@ -57,10 +55,7 @@ main() {
                     error "Missing value for --days"
                     exit 1
                 fi
-                if ! [[ "$2" =~ ^[0-9]+$ ]] || [[ "$2" -le 0 ]]; then
-                    error "--days must be a positive integer, got: \"$2\""
-                    exit 1
-                fi
+                require_positive_int "--days" "$2"
                 days="$2"
                 shift 2
                 ;;

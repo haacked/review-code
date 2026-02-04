@@ -39,6 +39,7 @@ LEARNINGS_DIR="${SCRIPT_DIR}/../learnings"
 
 # Source helpers
 source "${SCRIPT_DIR}/helpers/error-helpers.sh"
+source "${SCRIPT_DIR}/helpers/validation-helpers.sh"
 
 main() {
     local threshold=3
@@ -51,10 +52,7 @@ main() {
                     error "Missing value for --threshold"
                     exit 1
                 fi
-                if ! [[ "$2" =~ ^[0-9]+$ ]] || [[ "$2" -le 0 ]]; then
-                    error "--threshold must be a positive integer, got: \"$2\""
-                    exit 1
-                fi
+                require_positive_int "--threshold" "$2"
                 threshold="$2"
                 shift 2
                 ;;
