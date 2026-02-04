@@ -88,7 +88,7 @@ main() {
     # consecutive elements with the same key
     local grouped
     grouped=$(echo "${learnings}" | jq '
-        sort_by(.type, (.context.language // "unknown"), (.context.framework // "none"))
+        sort_by([.type, (.context.language // "unknown"), (.context.framework // "none")])
         | group_by(.type + "_" + (.context.language // "unknown") + "_" + (.context.framework // "none"))
         | map({
             key: .[0].type + "_" + (.[0].context.language // "unknown") + "_" + (.[0].context.framework // "none"),
