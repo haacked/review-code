@@ -53,6 +53,7 @@ target/
 # Learning data (created per-installation, not committed)
 skills/review-code/learnings/index.jsonl
 skills/review-code/learnings/analyzed.json
+skills/review-code/learnings/status-cache.json
 
 # Package manager files (not applicable here, but good to have)
 node_modules/
