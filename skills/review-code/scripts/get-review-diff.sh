@@ -9,9 +9,6 @@ source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 
 set -euo pipefail
 
-# Get the directory where this script lives
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 # Source shared exclusion patterns
 source "${SCRIPT_DIR}/helpers/exclusion-patterns.sh"
 

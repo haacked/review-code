@@ -526,3 +526,115 @@ reset_globals() {
     [ "$FIND_MODE" = "true" ]
     [ "$arg" = "main" ]
 }
+
+# =============================================================================
+# detect_learn_mode tests
+# =============================================================================
+
+@test "learn mode: LEARN_MODE is false by default" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh"
+    [ "$LEARN_MODE" = "false" ]
+}
+
+@test "learn mode: detect_learn_mode returns 1 when LEARN_MODE is false" {
+    LEARN_MODE="false"
+    arg=""
+    file_pattern=""
+    run detect_learn_mode
+    [ "$status" -eq 1 ]
+}
+
+@test "learn mode: learn keyword sets LEARN_MODE" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "learn"
+    [ "$LEARN_MODE" = "true" ]
+}
+
+@test "learn mode: batch mode with no argument" {
+    LEARN_MODE="true"
+    APPLY_MODE="false"
+    arg=""
+    file_pattern=""
+    run detect_learn_mode
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"mode":"learn"'* ]]
+    [[ "$output" == *'"learn_submode":"batch"'* ]]
+}
+
+@test "learn mode: single PR mode with number" {
+    LEARN_MODE="true"
+    APPLY_MODE="false"
+    arg="123"
+    file_pattern=""
+    run detect_learn_mode
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"mode":"learn"'* ]]
+    [[ "$output" == *'"learn_submode":"single"'* ]]
+    [[ "$output" == *'"pr_number":"123"'* ]]
+}
+
+@test "learn mode: single PR mode with GitHub URL" {
+    LEARN_MODE="true"
+    APPLY_MODE="false"
+    arg="https://github.com/haacked/review-code/pull/42"
+    file_pattern=""
+    run detect_learn_mode
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"mode":"learn"'* ]]
+    [[ "$output" == *'"learn_submode":"single"'* ]]
+    [[ "$output" == *'"pr_number":"42"'* ]]
+    [[ "$output" == *'"pr_url":'* ]]
+}
+
+@test "learn mode: apply mode" {
+    LEARN_MODE="true"
+    APPLY_MODE="true"
+    arg=""
+    file_pattern=""
+    run detect_learn_mode
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"mode":"learn"'* ]]
+    [[ "$output" == *'"learn_submode":"apply"'* ]]
+}
+
+@test "learn mode: invalid argument returns error" {
+    LEARN_MODE="true"
+    APPLY_MODE="false"
+    arg="invalid-argument"
+    file_pattern=""
+    run detect_learn_mode
+    [ "$status" -eq 1 ]
+    [[ "$output" == *'"error":'* ]]
+}
+
+@test "learn mode: learn 123 parses correctly" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "learn" "123"
+    [ "$LEARN_MODE" = "true" ]
+    [ "$arg" = "123" ]
+}
+
+@test "learn mode: learn --apply parses correctly" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "learn" "--apply"
+    [ "$LEARN_MODE" = "true" ]
+    [ "$APPLY_MODE" = "true" ]
+}
+
+@test "learn mode: --force learn 123 parses correctly" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "--force" "learn" "123"
+    [ "$FORCE_MODE" = "true" ]
+    [ "$LEARN_MODE" = "true" ]
+    [ "$arg" = "123" ]
+}
+
+@test "find + learn collision: find learn treats learn as target, not mode" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "find" "learn"
+    [ "$FIND_MODE" = "true" ]
+    [ "$LEARN_MODE" = "false" ]
+    [ "$arg" = "learn" ]
+}
+
+@test "find + learn collision: find mode with learn branch name" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "find" "learn"
+    # In find mode, 'learn' should be treated as a target (branch/ref name)
+    [ "$FIND_MODE" = "true" ]
+    [ "$LEARN_MODE" = "false" ]
+}

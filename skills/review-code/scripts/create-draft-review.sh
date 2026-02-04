@@ -39,6 +39,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/helpers/error-helpers.sh
 source "${SCRIPT_DIR}/helpers/error-helpers.sh"
+# shellcheck source=lib/helpers/json-helpers.sh
+source "${SCRIPT_DIR}/helpers/json-helpers.sh"
 
 # Validate a required field
 # Args: $1 = value, $2 = field name
@@ -164,10 +166,7 @@ main() {
     input=$(cat)
 
     # Validate input
-    if ! echo "${input}" | jq empty 2>/dev/null; then
-        error "Invalid JSON input"
-        exit 1
-    fi
+    validate_json "${input}" || exit 1
 
     # Extract fields
     local owner repo pr_number reviewer summary comments unmapped_comments

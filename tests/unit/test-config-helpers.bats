@@ -283,3 +283,101 @@ EOF
     load_config_safely "$TEST_TEMP_DIR/config.env"
     [ "$REVIEW_ROOT_PATH" = "/tmp/second" ]
 }
+
+# =============================================================================
+# get_review_root tests
+# =============================================================================
+
+@test "get_review_root: returns default when no config file exists" {
+    # Use a temp HOME with no config files
+    local FAKE_HOME="$TEST_TEMP_DIR/fakehome"
+    mkdir -p "$FAKE_HOME"
+
+    HOME="$FAKE_HOME" run get_review_root
+
+    [ "$status" -eq 0 ]
+    [ "$output" = "$FAKE_HOME/dev/ai/reviews" ]
+}
+
+@test "get_review_root: uses primary config path when it exists" {
+    local FAKE_HOME="$TEST_TEMP_DIR/fakehome"
+    mkdir -p "$FAKE_HOME/.claude/skills/review-code"
+
+    cat > "$FAKE_HOME/.claude/skills/review-code/.env" << 'EOF'
+REVIEW_ROOT_PATH="/custom/review/path"
+EOF
+    chmod 600 "$FAKE_HOME/.claude/skills/review-code/.env"
+
+    HOME="$FAKE_HOME" run get_review_root
+
+    [ "$status" -eq 0 ]
+    [ "$output" = "/custom/review/path" ]
+}
+
+@test "get_review_root: uses fallback config path when primary doesn't exist" {
+    local FAKE_HOME="$TEST_TEMP_DIR/fakehome"
+    mkdir -p "$FAKE_HOME/.claude"
+
+    cat > "$FAKE_HOME/.claude/review-code.env" << 'EOF'
+REVIEW_ROOT_PATH="/fallback/review/path"
+EOF
+    chmod 600 "$FAKE_HOME/.claude/review-code.env"
+
+    HOME="$FAKE_HOME" run get_review_root
+
+    [ "$status" -eq 0 ]
+    [ "$output" = "/fallback/review/path" ]
+}
+
+@test "get_review_root: primary config takes precedence over fallback" {
+    local FAKE_HOME="$TEST_TEMP_DIR/fakehome"
+    mkdir -p "$FAKE_HOME/.claude/skills/review-code"
+
+    # Create both config files
+    cat > "$FAKE_HOME/.claude/skills/review-code/.env" << 'EOF'
+REVIEW_ROOT_PATH="/primary/path"
+EOF
+    chmod 600 "$FAKE_HOME/.claude/skills/review-code/.env"
+
+    cat > "$FAKE_HOME/.claude/review-code.env" << 'EOF'
+REVIEW_ROOT_PATH="/fallback/path"
+EOF
+    chmod 600 "$FAKE_HOME/.claude/review-code.env"
+
+    HOME="$FAKE_HOME" run get_review_root
+
+    [ "$status" -eq 0 ]
+    [ "$output" = "/primary/path" ]
+}
+
+@test "get_review_root: returns default when config exists but REVIEW_ROOT_PATH not set" {
+    local FAKE_HOME="$TEST_TEMP_DIR/fakehome"
+    mkdir -p "$FAKE_HOME/.claude/skills/review-code"
+
+    # Create config with different variable
+    cat > "$FAKE_HOME/.claude/skills/review-code/.env" << 'EOF'
+CONTEXT_PATH="/some/context/path"
+EOF
+    chmod 600 "$FAKE_HOME/.claude/skills/review-code/.env"
+
+    HOME="$FAKE_HOME" run get_review_root
+
+    [ "$status" -eq 0 ]
+    [ "$output" = "$FAKE_HOME/dev/ai/reviews" ]
+}
+
+@test "get_review_root: handles empty REVIEW_ROOT_PATH by using default" {
+    local FAKE_HOME="$TEST_TEMP_DIR/fakehome"
+    mkdir -p "$FAKE_HOME/.claude/skills/review-code"
+
+    cat > "$FAKE_HOME/.claude/skills/review-code/.env" << 'EOF'
+REVIEW_ROOT_PATH=
+EOF
+    chmod 600 "$FAKE_HOME/.claude/skills/review-code/.env"
+
+    HOME="$FAKE_HOME" run get_review_root
+
+    [ "$status" -eq 0 ]
+    # Empty value should fall back to default via ${REVIEW_ROOT_PATH:-default}
+    [ "$output" = "$FAKE_HOME/dev/ai/reviews" ]
+}

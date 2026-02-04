@@ -30,11 +30,11 @@
 set -euo pipefail
 
 # Source debug helpers
-SCRIPT_DIR_EARLY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/helpers/debug-helpers.sh
-source "${SCRIPT_DIR_EARLY}/helpers/debug-helpers.sh"
+source "${SCRIPT_DIR}/helpers/debug-helpers.sh"
 # shellcheck source=lib/helpers/config-helpers.sh
-source "${SCRIPT_DIR_EARLY}/helpers/config-helpers.sh"
+source "${SCRIPT_DIR}/helpers/config-helpers.sh"
 
 debug_time "04-context-loading" "start"
 
@@ -53,8 +53,7 @@ if [[ -n "${CONFIG_FILE}" ]]; then
     load_config_safely "${CONFIG_FILE}"
 fi
 
-# Get the directory where this script lives and derive context directory
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Derive context directory from script location
 REVIEW_CODE_DIR="$(dirname "${SCRIPT_DIR}")"
 
 # Use CONTEXT_PATH from (1) external env, (2) config file, or (3) relative path

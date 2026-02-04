@@ -1,6 +1,6 @@
 ---
 description: Run specialized code review agents on code changes or pull requests
-argument-hint: [find|pr|commit|branch|range|area]
+argument-hint: [find|learn|pr|commit|branch|range|area]
 ---
 
 Run specialized code review agent(s) with comprehensive context on local changes or pull requests.
@@ -11,6 +11,10 @@ Run specialized code review agent(s) with comprehensive context on local changes
   - `find` - Find review for current branch/PR
   - `find <pr-number>` - Find review for specific PR (e.g., `find 123`)
   - `find <branch>` - Find review for specific branch (e.g., `find feature-branch`)
+- `learn` - Learn from PR review outcomes to improve future reviews
+  - `learn <pr-number>` - Analyze outcomes of a specific PR (e.g., `learn 123`)
+  - `learn` - Batch analyze all unanalyzed PRs with existing reviews
+  - `learn --apply` - Apply accumulated learnings to context files
 - `<pr-url>` - Review Pull Request by URL - works from anywhere (e.g., `https://github.com/org/repo/pull/123`)
   - Uses `gh` CLI to fetch PR context from GitHub
   - No git repository required - review any PR without cloning
@@ -61,6 +65,12 @@ Examples:
 - `/review-code find 123` - Find review for PR #123
 - `/review-code find feature-branch` - Find review for a specific branch
 
+**Learn from review outcomes:**
+
+- `/review-code learn 123` - Analyze what happened after reviewing PR #123
+- `/review-code learn` - Batch analyze all recently merged PRs with reviews
+- `/review-code learn --apply` - Apply accumulated learnings to improve future reviews
+
 **With file patterns:**
 
 - `/review-code 356ded2..HEAD "*.sh"` - Review only shell script changes in range
@@ -90,6 +100,17 @@ Examples:
 **NOTE**: Uses session-based caching to run the orchestrator once and reuse the data across multiple bash invocations. This reduces token usage by ~60%.
 
 **⚠️ CRITICAL**: This skill MUST follow the structured session flow below. If session initialization fails, STOP and inform the user. NEVER improvise by running review agents manually or posting to GitHub directly - this can cause unintended side effects like submitting reviews that should be drafts.
+
+### Step 0: Check for Learn Mode
+
+Before initializing a review session, check if this is a learn command:
+
+```bash
+PARSE_RESULT=$(~/.claude/skills/review-code/scripts/parse-review-arg.sh $ARGUMENTS)
+MODE=$(echo "$PARSE_RESULT" | jq -r '.mode')
+```
+
+If MODE is "learn", skip to the **Handler: "learn"** section below. Otherwise, continue with Step 1.
 
 ### Step 1: Initialize Session
 
@@ -859,3 +880,342 @@ echo "Session cleaned up: $SESSION_ID"
 ```
 
 This removes the temporary session files and frees up disk space.
+
+---
+
+## Handler: "learn"
+
+The learn mode analyzes PR review outcomes to improve future reviews. It uses the learn orchestrator to coordinate workflow.
+
+### Initialize Learn Mode
+
+Extract the learn submode from the parse result and run the orchestrator:
+
+```bash
+LEARN_SUBMODE=$(echo "$PARSE_RESULT" | jq -r '.learn_submode')
+PR_NUMBER=$(echo "$PARSE_RESULT" | jq -r '.pr_number // empty')
+
+# Run orchestrator based on submode
+case "$LEARN_SUBMODE" in
+    single)
+        LEARN_RESULT=$(~/.claude/skills/review-code/scripts/learn-orchestrator.sh single "$PR_NUMBER")
+        ;;
+    batch)
+        LEARN_RESULT=$(~/.claude/skills/review-code/scripts/learn-orchestrator.sh batch)
+        ;;
+    apply)
+        LEARN_RESULT=$(~/.claude/skills/review-code/scripts/learn-orchestrator.sh apply)
+        ;;
+esac
+
+STATUS=$(echo "$LEARN_RESULT" | jq -r '.status')
+```
+
+If STATUS is "error", display the error and stop:
+
+```bash
+if [[ "$STATUS" == "error" ]]; then
+    ERROR_MSG=$(echo "$LEARN_RESULT" | jq -r '.error')
+    echo "Error: $ERROR_MSG"
+    # Stop processing
+fi
+```
+
+Based on `LEARN_SUBMODE`, proceed to the appropriate handler:
+
+### Learn Submode: "single"
+
+Analyze a specific PR's outcomes.
+
+**Step 1: Display cross-reference summary**
+
+Extract and display the summary from the orchestrator result:
+
+```bash
+echo "$LEARN_RESULT" | jq -r '
+"📊 Cross-Reference Summary for PR #\(.summary.pr_number)
+
+**Claude'\''s Findings (\(.summary.claude_total) total):**
+- \(.summary.claude_addressed) likely addressed in subsequent commits ✓
+- \(.summary.claude_not_addressed) not modified after review
+- \(.summary.claude_total - .summary.claude_addressed - .summary.claude_not_addressed) unclear
+
+**Other Reviewers Found (\(.summary.other_total) total):**
+- \(.summary.other_caught_by_claude) also caught by Claude ✓
+- \(.summary.other_missed_by_claude) Claude missed
+
+Prompts needed: \(.summary.prompts_count)
+"'
+```
+
+Extract the full learn data for processing:
+
+```bash
+LEARN_DATA=$(echo "$LEARN_RESULT" | jq '.learn_data')
+```
+
+**Step 3: Process prompts for uncertain items**
+
+For each item in `prompts_needed`, ask the user interactively:
+
+**For "unaddressed" findings (Claude found, not modified):**
+
+Use AskUserQuestion:
+- Question: "Claude flagged this issue, but the file wasn't modified. What happened?"
+- Display the finding details: file, line, description, agent, confidence
+- Options:
+  1. "False positive" - Claude was wrong, this doesn't need fixing
+  2. "Correct but deferred" - Valid issue, but postponed for later
+  3. "Correct but low priority" - Valid but not worth changing
+  4. "Skip" - Don't record this learning
+
+**For "missed" findings (other reviewer found, Claude missed):**
+
+Use AskUserQuestion:
+- Question: "Another reviewer found this issue that Claude missed. Should Claude learn to detect this?"
+- Display the finding details: file, line, description, author
+- Options:
+  1. "Yes, add to patterns" - Claude should catch this in future reviews
+  2. "No, too specific" - This was a one-off case
+  3. "Skip" - Don't record this learning
+
+**Step 4: Record learnings**
+
+For each user response (except "Skip"), create a learning record:
+
+```json
+{
+  "timestamp": "2026-02-02T10:30:00Z",
+  "pr_number": 123,
+  "org": "from learn_data",
+  "repo": "from learn_data",
+  "type": "false_positive | missed_pattern | valid_catch | deferred",
+  "source": "claude | other_reviewer",
+  "agent": "from finding",
+  "finding": {
+    "file": "from finding",
+    "line": "from finding",
+    "description": "from finding"
+  },
+  "context": {
+    "language": "detect from file extension",
+    "framework": "if known"
+  },
+  "user_feedback": "user's selection reason if any"
+}
+```
+
+Append the learning to the index file:
+
+```bash
+LEARNINGS_DIR=~/.claude/skills/review-code/learnings
+mkdir -p "$LEARNINGS_DIR"
+echo "$LEARNING_JSON" >> "$LEARNINGS_DIR/index.jsonl"
+```
+
+**Step 5: Mark PR as analyzed**
+
+Update the analyzed.json tracker:
+
+```bash
+ANALYZED_FILE="$LEARNINGS_DIR/analyzed.json"
+ORG=$(echo "$LEARN_DATA" | jq -r '.org')
+REPO=$(echo "$LEARN_DATA" | jq -r '.repo')
+
+# Read existing or create new
+if [[ -f "$ANALYZED_FILE" ]]; then
+    ANALYZED=$(cat "$ANALYZED_FILE")
+else
+    ANALYZED='{}'
+fi
+
+# Update with this PR
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+ANALYZED=$(echo "$ANALYZED" | jq --arg key "$ORG/$REPO" --arg pr "$PR_NUMBER" --arg ts "$TIMESTAMP" \
+    '.[$key] //= {} | .[$key][$pr] = $ts')
+
+echo "$ANALYZED" > "$ANALYZED_FILE"
+```
+
+**Step 6: Display completion**
+
+```
+✅ Learning complete for PR #123
+
+Learnings recorded:
+- 2 false positives
+- 1 missed pattern added
+
+Run '/review-code learn --apply' when ready to update context files.
+```
+
+### Learn Submode: "batch"
+
+Analyze all unanalyzed PRs with existing reviews.
+
+**Step 1: Check orchestrator result**
+
+The orchestrator already ran in the initialization step. Extract the data:
+
+```bash
+COUNT=$(echo "$LEARN_RESULT" | jq '.count')
+UNANALYZED=$(echo "$LEARN_RESULT" | jq '.prs')
+```
+
+**Step 2: Check if any PRs to analyze**
+
+If COUNT is 0:
+```
+No unanalyzed PRs found with existing reviews.
+
+To create reviews for analysis:
+1. Run '/review-code <pr-number>' on PRs
+2. Wait for PRs to be merged
+3. Run '/review-code learn' to analyze outcomes
+```
+
+**Step 3: Process each PR**
+
+For each PR in the batch, run the single analysis:
+
+```bash
+while read -r PR_JSON; do
+    PR_NUM=$(echo "$PR_JSON" | jq -r '.pr_number')
+    ORG=$(echo "$PR_JSON" | jq -r '.org')
+    REPO=$(echo "$PR_JSON" | jq -r '.repo')
+
+    echo "Analyzing PR #$PR_NUM ($ORG/$REPO)..."
+
+    # Run single analysis for this PR
+    SINGLE_RESULT=$(~/.claude/skills/review-code/scripts/learn-orchestrator.sh single "$PR_NUM" --org "$ORG" --repo "$REPO")
+done < <(echo "$UNANALYZED" | jq -c '.[]')
+```
+
+For each PR, follow the "single" submode flow (user prompts for uncertain items).
+
+After each PR, ask if the user wants to continue:
+
+Use AskUserQuestion:
+- Question: "Continue to next PR?"
+- Options:
+  1. "Yes, analyze next PR"
+  2. "Stop here"
+
+If user selects "Stop here", exit the batch loop.
+
+**Step 4: Display batch summary**
+
+```
+📊 Batch Analysis Complete
+
+PRs analyzed: 3/5
+Learnings recorded: 7 total
+- 3 false positives
+- 2 deferred issues
+- 2 missed patterns
+
+Run '/review-code learn --apply' to update context files.
+```
+
+### Learn Submode: "apply"
+
+Synthesize accumulated learnings into context file updates.
+
+**Step 1: Check orchestrator result**
+
+The orchestrator already ran in the initialization step. Extract the data:
+
+```bash
+ACTIONABLE=$(echo "$LEARN_RESULT" | jq '.actionable')
+PROPOSALS=$(echo "$LEARN_RESULT" | jq '.proposals')
+```
+
+**Step 2: Check if any proposals**
+
+If ACTIONABLE is 0:
+```
+No patterns ready for context updates.
+
+Requirements:
+- At least 3 occurrences of the same pattern type
+- Learnings must share language/framework context
+
+Current learnings: X total
+Grouped patterns: Y
+Patterns meeting threshold: 0
+
+Continue collecting learnings with '/review-code learn <pr>'
+```
+
+**Step 3: Present each proposal**
+
+For each proposal in `proposals`:
+
+Display the proposal:
+```
+📝 Proposed Context Update
+
+**Target file:** context/languages/python.md
+**Section:** ## Python Patterns
+**Based on:** 4 learnings
+
+**Proposed content:**
+```
+<proposed content from script>
+```
+
+This pattern was identified from PRs: #123, #456, #789, #101
+```
+
+Use AskUserQuestion:
+- Question: "Apply this update to the context file?"
+- Options:
+  1. "Apply" - Add this content to the context file
+  2. "Edit first" - Let me modify the content before applying
+  3. "Skip" - Don't add this pattern
+  4. "Stop" - Stop processing proposals
+
+**If "Apply":**
+
+1. Check if target file exists
+2. If not, create it with a header
+3. Append the proposed content
+4. Confirm: "Added to context/languages/python.md"
+
+**If "Edit first":**
+
+1. Display the proposed content in a code block
+2. Ask user to provide edited version
+3. Apply the edited version
+
+**If "Skip":**
+
+Continue to next proposal.
+
+**If "Stop":**
+
+Exit the apply loop.
+
+**Step 4: Clear applied learnings (optional)**
+
+After applying proposals, ask:
+
+Use AskUserQuestion:
+- Question: "Clear the learnings that were applied?"
+- Options:
+  1. "Yes, clear applied" - Remove learnings that were used in applied proposals
+  2. "No, keep all" - Keep learnings for future reference
+
+If "Yes", filter out the applied learnings from index.jsonl.
+
+**Step 5: Display apply summary**
+
+```
+✅ Context Updates Applied
+
+Files updated:
+- context/languages/python.md (2 patterns)
+- context/frameworks/django.md (1 pattern)
+
+These improvements will be used in future reviews.
+```

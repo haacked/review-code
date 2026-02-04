@@ -297,19 +297,9 @@ main() {
         fi
     fi
 
-    # Load review root path from config, default to ~/dev/ai/reviews
-    # Check new location first, fall back to old location for backward compatibility
-    local review_root="${HOME}/dev/ai/reviews"
-    local config_file=""
-    if [[ -f "${HOME}/.claude/skills/review-code/.env" ]]; then
-        config_file="${HOME}/.claude/skills/review-code/.env"
-    elif [[ -f "${HOME}/.claude/review-code.env" ]]; then
-        config_file="${HOME}/.claude/review-code.env"
-    fi
-    if [[ -n "${config_file}" ]]; then
-        load_config_safely "${config_file}"
-        review_root="${REVIEW_ROOT_PATH:-${HOME}/dev/ai/reviews}"
-    fi
+    # Load review root path from config
+    local review_root
+    review_root=$(get_review_root)
 
     # Resolve review_root to canonical path to handle symlinks consistently
     # Create the directory if it doesn't exist (needed for canonical resolution)
