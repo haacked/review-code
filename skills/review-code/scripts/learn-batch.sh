@@ -33,6 +33,7 @@ LEARNINGS_DIR="${SCRIPT_DIR}/../learnings"
 source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 source "${SCRIPT_DIR}/helpers/validation-helpers.sh"
 source "${SCRIPT_DIR}/helpers/config-helpers.sh"
+source "${SCRIPT_DIR}/helpers/date-helpers.sh"
 
 main() {
     local limit=10
@@ -82,11 +83,7 @@ main() {
 
     # Calculate cutoff date
     local cutoff_date
-    if [[ "${OSTYPE}" == "darwin"* ]]; then
-        cutoff_date=$(date -v-"${days}"d -u +"%Y-%m-%dT%H:%M:%SZ")
-    else
-        cutoff_date=$(date -d "${days} days ago" -u +"%Y-%m-%dT%H:%M:%SZ")
-    fi
+    cutoff_date=$(days_ago_iso "${days}")
 
     # Find all PR review files
     local unanalyzed_prs="[]"

@@ -31,6 +31,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 source "${SCRIPT_DIR}/helpers/git-helpers.sh"
 source "${SCRIPT_DIR}/helpers/config-helpers.sh"
+source "${SCRIPT_DIR}/helpers/date-helpers.sh"
 
 main() {
     local pr_identifier="${1:-}"
@@ -130,16 +131,10 @@ main() {
     ' 2> /dev/null || echo "[]")
 
     # Get commits after the review was created
-    # Find the earliest review timestamp
-    local review_file_mtime
-    if [[ "${OSTYPE}" == "darwin"* ]]; then
-        review_file_mtime=$(stat -f '%m' "${review_file}")
-    else
-        review_file_mtime=$(stat -c '%Y' "${review_file}")
-    fi
     # Use epoch seconds for reliable date comparison (ISO 8601 string comparison
     # fails when GitHub API returns +00:00 vs Z suffix)
-    local review_file_epoch="${review_file_mtime}"
+    local review_file_epoch
+    review_file_epoch=$(get_file_mtime "${review_file}")
 
     # Get commits on the PR
     local pr_commits
@@ -160,23 +155,7 @@ main() {
         commit_date=$(echo "${commit_json}" | jq -r '.date')
 
         # Convert commit date to epoch seconds for reliable comparison
-        if [[ "${OSTYPE}" == "darwin"* ]]; then
-            # BSD date requires specific format handling:
-            # - GitHub typically returns "2026-02-02T10:30:00Z" (Zulu time)
-            # - Sometimes returns "2026-02-02T10:30:00+00:00" (offset format)
-            # BSD date's %z expects +HHMM not +HH:MM
-            if [[ "${commit_date}" == *Z ]]; then
-                # Zulu time format - use directly
-                commit_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "${commit_date}" +%s 2>/dev/null || echo "0")
-            else
-                # Offset format (+HH:MM or -HH:MM) - normalize to +HHMM/-HHMM for BSD date
-                local normalized_date
-                normalized_date=$(echo "${commit_date}" | sed -E 's/([+-][0-9]{2}):([0-9]{2})$/\1\2/')
-                commit_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S%z" "${normalized_date}" +%s 2>/dev/null || echo "0")
-            fi
-        else
-            commit_epoch=$(date -d "${commit_date}" +%s 2>/dev/null || echo "0")
-        fi
+        commit_epoch=$(iso_to_epoch "${commit_date}")
 
         # Check if commit is after review file creation
         if [[ "${commit_epoch}" -gt "${review_file_epoch}" ]]; then
