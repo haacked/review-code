@@ -159,77 +159,40 @@ main() {
         files_changed_after_review="[]"
     fi
 
-    # Cross-reference Claude's findings with commit history
-    local claude_results="[]"
-    while IFS= read -r finding_json; do
-        local finding_file
-        finding_file=$(echo "${finding_json}" | jq -r '.file')
+    # Cross-reference Claude's findings with commit history using jq
+    # For each finding, check if its file was modified after the review
+    local claude_results
+    claude_results=$(jq -n \
+        --argjson findings "${claude_findings}" \
+        --argjson changed "${files_changed_after_review}" \
+        '[$findings[] | . + {
+            addressed: (if ($changed | index(.file)) != null then "likely" else "not_modified" end)
+        }]')
 
-        # Check if this file was modified after the review
-        local was_addressed="unknown"
-        if echo "${files_changed_after_review}" | jq -e --arg f "${finding_file}" 'index($f) != null' > /dev/null 2>&1; then
-            was_addressed="likely"
-        else
-            was_addressed="not_modified"
-        fi
-
-        claude_results=$(echo "${claude_results}" | jq --argjson finding "${finding_json}" \
-            --arg addressed "${was_addressed}" \
-            '. + [($finding + {addressed: $addressed})]')
-    done < <(echo "${claude_findings}" | jq -c '.[]')
-
-    # Extract findings from other reviewers
-    local other_findings="[]"
-    while IFS= read -r comment_json; do
-        local comment_path comment_line comment_body comment_author
-        comment_path=$(echo "${comment_json}" | jq -r '.path // empty')
-        comment_line=$(echo "${comment_json}" | jq -r '.line // 0')
-        comment_body=$(echo "${comment_json}" | jq -r '.body // empty')
-        comment_author=$(echo "${comment_json}" | jq -r '.author // empty')
-
-        # Skip comments without file paths (general PR comments)
-        [[ -z "${comment_path}" ]] && continue
-
-        # Check if file was modified after this comment
-        local was_addressed="unknown"
-        if echo "${files_changed_after_review}" | jq -e --arg f "${comment_path}" 'index($f) != null' > /dev/null 2>&1; then
-            was_addressed="likely"
-        else
-            was_addressed="not_modified"
-        fi
-
-        # Check if Claude caught this (same file, within 10 lines)
-        local claude_caught="false"
-        while IFS= read -r claude_finding; do
-            local cf_file cf_line
-            cf_file=$(echo "${claude_finding}" | jq -r '.file')
-            cf_line=$(echo "${claude_finding}" | jq -r '.line')
-
-            if [[ "${cf_file}" == "${comment_path}" ]]; then
-                local line_diff=$((comment_line - cf_line))
-                if [[ ${line_diff#-} -le 10 ]]; then
-                    claude_caught="true"
-                    break
-                fi
-            fi
-        done < <(echo "${claude_findings}" | jq -c '.[]')
-
-        other_findings=$(echo "${other_findings}" | jq \
-            --arg path "${comment_path}" \
-            --arg line "${comment_line}" \
-            --arg body "${comment_body}" \
-            --arg author "${comment_author}" \
-            --arg addressed "${was_addressed}" \
-            --arg claude_caught "${claude_caught}" \
-            '. + [{
-                file: $path,
-                line: ($line | tonumber),
-                description: $body,
-                author: $author,
+    # Extract findings from other reviewers and check if Claude caught them
+    # This replaces O(n*m) bash loops with a single jq filter
+    local other_findings
+    other_findings=$(jq -n \
+        --argjson comments "${review_comments}" \
+        --argjson claude "${claude_findings}" \
+        --argjson changed "${files_changed_after_review}" \
+        '
+        # Filter to comments with file paths and transform
+        [$comments[] | select(.path != null and .path != "") |
+            # Compute addressed status
+            . as $c |
+            (if ($changed | index($c.path)) != null then "likely" else "not_modified" end) as $addressed |
+            # Check if Claude caught this (same file, within 10 lines)
+            ([$claude[] | select(.file == $c.path and ((.line - $c.line) | fabs) <= 10)] | length > 0) as $caught |
+            {
+                file: $c.path,
+                line: ($c.line // 0),
+                description: ($c.body // ""),
+                author: ($c.author // ""),
                 addressed: $addressed,
-                claude_caught: ($claude_caught == "true")
-            }]')
-    done < <(echo "${review_comments}" | jq -c '.[]')
+                claude_caught: $caught
+            }
+        ]')
 
     # Determine which findings need user prompts using jq filters
     # (avoids O(n²) bash loops with repeated jq calls)
