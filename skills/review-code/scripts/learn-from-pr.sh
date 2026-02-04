@@ -130,41 +130,34 @@ main() {
         }]
     ' 2> /dev/null || echo "[]")
 
-    # Get commits after the review was created
+    # Determine files changed after the review was created
     # Use epoch seconds for reliable date comparison (ISO 8601 string comparison
     # fails when GitHub API returns +00:00 vs Z suffix)
     local review_file_epoch
     review_file_epoch=$(get_file_mtime "${review_file}")
 
-    # Get commits on the PR
-    local pr_commits
-    pr_commits=$(gh api "repos/${org}/${repo}/pulls/${pr_number}/commits" --jq '
-        [.[] | {
-            sha: .sha,
-            message: .commit.message,
-            date: .commit.committer.date,
-            files: []
-        }]
-    ' 2> /dev/null || echo "[]")
-
-    # Get the list of files changed in commits after the review
-    local files_changed_after_review="[]"
-    while IFS= read -r commit_json; do
-        local commit_sha commit_date commit_epoch
-        commit_sha=$(echo "${commit_json}" | jq -r '.sha')
-        commit_date=$(echo "${commit_json}" | jq -r '.date')
-
-        # Convert commit date to epoch seconds for reliable comparison
+    # Check if any commits are after the review file creation
+    # Using the commits data already fetched in pr_data to avoid extra API calls
+    local has_commits_after_review=false
+    while IFS= read -r commit_date; do
+        [[ -z "${commit_date}" ]] && continue
+        local commit_epoch
         commit_epoch=$(iso_to_epoch "${commit_date}")
-
-        # Check if commit is after review file creation
         if [[ "${commit_epoch}" -gt "${review_file_epoch}" ]]; then
-            # Get files changed in this commit
-            local commit_files
-            commit_files=$(gh api "repos/${org}/${repo}/commits/${commit_sha}" --jq '[.files[].filename]' 2> /dev/null || echo "[]")
-            files_changed_after_review=$(echo "${files_changed_after_review}" | jq --argjson files "${commit_files}" '. + $files | unique')
+            has_commits_after_review=true
+            break
         fi
-    done < <(echo "${pr_commits}" | jq -c '.[]')
+    done < <(echo "${pr_data}" | jq -r '.commits[].committedDate // empty')
+
+    # If commits exist after review, use the PR's file list as files potentially modified
+    # This is a conservative approximation - we assume any PR file could have been touched
+    # in post-review commits, avoiding N additional API calls to fetch per-commit file lists
+    local files_changed_after_review
+    if [[ "${has_commits_after_review}" == true ]]; then
+        files_changed_after_review=$(echo "${pr_data}" | jq '[.files[].path]')
+    else
+        files_changed_after_review="[]"
+    fi
 
     # Cross-reference Claude's findings with commit history
     local claude_results="[]"
