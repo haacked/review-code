@@ -1,5 +1,17 @@
 # React Framework Guidelines
 
+## Patterns to Detect
+
+Flag these patterns in React/TypeScript code:
+
+- **Callback parameter mismatch**: When callers pass parameters to a callback but the callback signature doesn't use them, or the callback is empty while callers appear to expect behavior. This indicates a disconnect between intent and implementation.
+- **Missing ARIA on collapsibles**: Collapsible/expandable UI elements need `aria-expanded` and `aria-controls` attributes for screen reader accessibility.
+- **Inconsistent sortable/collapsible state**: Components with sortable or collapsible items need consistent state management. New items should auto-expand when similar components do.
+- **Unbounded in-memory structures**: Caches, lists, or maps that accumulate entries without cleanup mechanisms create potential memory leaks.
+- **Orphaned producers**: When removing code that consumes a field/method, check if the producer code becomes dead code.
+- **Test coverage for new parameters**: When adding new parameters or overloads to functions, verify existing tests cover the new code paths.
+- **Browser API compatibility**: APIs like `crypto.randomUUID()` require secure context and may not work in all browsers. Prefer established library functions.
+
 ## React Component Architecture
 
 **Critical Issues:**

@@ -1,38 +1,12 @@
 #!/usr/bin/env bats
-# Simplified tests for bin/setup
+# Tests for bin/setup
+#
+# Note: The setup script no longer uses config files.
+# It installs everything to ~/.claude/skills/review-code/ with fixed paths.
 
 setup() {
     PROJECT_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
     export PROJECT_ROOT
-}
-
-# =============================================================================
-# Core security tests - Safe config loading
-# =============================================================================
-
-@test "setup: does not use 'source' for config loading" {
-    run bash -c "grep -A50 'load_config_safely()' '$PROJECT_ROOT/bin/setup' | grep -v '^#' | grep -q '^[[:space:]]*source '"
-    [ "$status" -ne 0 ]
-}
-
-@test "setup: validates config key format with regex" {
-    run bash -c "grep -A50 'load_config_safely()' '$PROJECT_ROOT/bin/setup' | grep -q '\[A-Z_\]\[A-Z0-9_\]'"
-    [ "$status" -eq 0 ]
-}
-
-@test "setup: uses case statement for safe variable assignment" {
-    run bash -c "grep -A50 'load_config_safely()' '$PROJECT_ROOT/bin/setup' | grep -q 'case.*in'"
-    [ "$status" -eq 0 ]
-}
-
-@test "setup: load_config_safely checks file ownership" {
-    run bash -c "grep -A50 'load_config_safely()' '$PROJECT_ROOT/bin/setup' | grep -q 'file_owner'"
-    [ "$status" -eq 0 ]
-}
-
-@test "setup: load_config_safely checks world-writable permissions" {
-    run bash -c "grep -A50 'load_config_safely()' '$PROJECT_ROOT/bin/setup' | grep -q 'world-writable'"
-    [ "$status" -eq 0 ]
 }
 
 # =============================================================================
@@ -46,16 +20,6 @@ setup() {
 
 @test "setup: has verify_repo_structure function" {
     run bash -c "grep -q '^verify_repo_structure()' '$PROJECT_ROOT/bin/setup'"
-    [ "$status" -eq 0 ]
-}
-
-@test "setup: has load_config_safely function" {
-    run bash -c "grep -q '^load_config_safely()' '$PROJECT_ROOT/bin/setup'"
-    [ "$status" -eq 0 ]
-}
-
-@test "setup: has create_config function" {
-    run bash -c "grep -q '^create_config()' '$PROJECT_ROOT/bin/setup'"
     [ "$status" -eq 0 ]
 }
 
@@ -76,6 +40,16 @@ setup() {
 
 @test "setup: has main function" {
     run bash -c "grep -q '^main()' '$PROJECT_ROOT/bin/setup'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: has cleanup_old_config function" {
+    run bash -c "grep -q '^cleanup_old_config()' '$PROJECT_ROOT/bin/setup'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: has smart merge functions" {
+    run bash -c "grep -q '^merge_markdown_sections()' '$PROJECT_ROOT/bin/setup'"
     [ "$status" -eq 0 ]
 }
 
@@ -171,27 +145,27 @@ setup() {
 # =============================================================================
 
 @test "setup: install_context creates languages directory" {
-    run bash -c "grep -A100 'install_context()' '$PROJECT_ROOT/bin/setup' | grep -q 'languages'"
+    run bash -c "grep -A200 'install_context()' '$PROJECT_ROOT/bin/setup' | grep -q 'languages'"
     [ "$status" -eq 0 ]
 }
 
 @test "setup: install_context creates frameworks directory" {
-    run bash -c "grep -A100 'install_context()' '$PROJECT_ROOT/bin/setup' | grep -q 'frameworks'"
+    run bash -c "grep -A200 'install_context()' '$PROJECT_ROOT/bin/setup' | grep -q 'frameworks'"
     [ "$status" -eq 0 ]
 }
 
 @test "setup: install_context creates orgs directory" {
-    run bash -c "grep -A100 'install_context()' '$PROJECT_ROOT/bin/setup' | grep -q 'orgs'"
+    run bash -c "grep -A200 'install_context()' '$PROJECT_ROOT/bin/setup' | grep -q 'orgs'"
     [ "$status" -eq 0 ]
 }
 
-@test "setup: install_context backs up modified files" {
-    run bash -c "grep -A100 'install_context()' '$PROJECT_ROOT/bin/setup' | grep -q '.bak'"
+@test "setup: install_context uses smart merge" {
+    run bash -c "grep -A200 'install_context()' '$PROJECT_ROOT/bin/setup' | grep -q 'merge_markdown_sections'"
     [ "$status" -eq 0 ]
 }
 
 @test "setup: install_context compares file checksums" {
-    run bash -c "grep -A100 'install_context()' '$PROJECT_ROOT/bin/setup' | grep -q 'get_file_checksum'"
+    run bash -c "grep -A200 'install_context()' '$PROJECT_ROOT/bin/setup' | grep -q 'get_file_checksum'"
     [ "$status" -eq 0 ]
 }
 
@@ -219,6 +193,16 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
+@test "setup: install_skill creates reviews directory" {
+    run bash -c "grep -A80 'install_skill()' '$PROJECT_ROOT/bin/setup' | grep -q 'reviews'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: install_skill creates learnings directory" {
+    run bash -c "grep -A80 'install_skill()' '$PROJECT_ROOT/bin/setup' | grep -q 'learnings'"
+    [ "$status" -eq 0 ]
+}
+
 # =============================================================================
 # Workflow tests
 # =============================================================================
@@ -233,8 +217,8 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
-@test "setup: main calls create_config" {
-    run bash -c "grep -A100 '^main()' '$PROJECT_ROOT/bin/setup' | grep -q 'create_config'"
+@test "setup: main calls cleanup_old_config" {
+    run bash -c "grep -A100 '^main()' '$PROJECT_ROOT/bin/setup' | grep -q 'cleanup_old_config'"
     [ "$status" -eq 0 ]
 }
 
@@ -254,54 +238,55 @@ setup() {
 }
 
 # =============================================================================
-# migrate_old_config tests
+# Smart merge tests
 # =============================================================================
 
-@test "setup: has migrate_old_config function" {
-    run bash -c "grep -q '^migrate_old_config()' '$PROJECT_ROOT/bin/setup'"
+@test "setup: has get_section_headers function" {
+    run bash -c "grep -q '^get_section_headers()' '$PROJECT_ROOT/bin/setup'"
     [ "$status" -eq 0 ]
 }
 
-@test "setup: main calls migrate_old_config" {
-    run bash -c "grep -A100 '^main()' '$PROJECT_ROOT/bin/setup' | grep -q 'migrate_old_config'"
+@test "setup: has has_section function" {
+    run bash -c "grep -q '^has_section()' '$PROJECT_ROOT/bin/setup'"
     [ "$status" -eq 0 ]
 }
 
-@test "setup: migrate_old_config checks for old config file existence" {
-    run bash -c "grep -A20 '^migrate_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q 'OLD_CONFIG_FILE'"
+@test "setup: has extract_section function" {
+    run bash -c "grep -q '^extract_section()' '$PROJECT_ROOT/bin/setup'"
     [ "$status" -eq 0 ]
 }
 
-@test "setup: migrate_old_config checks for new config file existence" {
-    run bash -c "grep -A20 '^migrate_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q 'CONFIG_FILE'"
+@test "setup: merge_markdown_sections uses get_section_headers" {
+    run bash -c "grep -A30 '^merge_markdown_sections()' '$PROJECT_ROOT/bin/setup' | grep -q 'get_section_headers'"
     [ "$status" -eq 0 ]
 }
 
-@test "setup: migrate_old_config uses mv for migration" {
-    # Test that migration uses mv to move old config to new location
-    run bash -c "grep -A20 '^migrate_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q 'mv'"
+@test "setup: merge_markdown_sections uses has_section" {
+    run bash -c "grep -A30 '^merge_markdown_sections()' '$PROJECT_ROOT/bin/setup' | grep -q 'has_section'"
     [ "$status" -eq 0 ]
 }
 
-@test "setup: migrate_old_config uses diff to compare configs" {
-    # Test that deduplication uses diff to compare old and new configs
-    run bash -c "grep -A20 '^migrate_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q 'diff -q'"
+# =============================================================================
+# Installation path tests
+# =============================================================================
+
+@test "setup: uses SKILL_DIR under ~/.claude/skills/review-code" {
+    run bash -c "grep -q 'SKILL_DIR=\"\${CLAUDE_DIR}/skills/review-code\"' '$PROJECT_ROOT/bin/setup'"
     [ "$status" -eq 0 ]
 }
 
-@test "setup: migrate_old_config removes duplicate old config" {
-    # Test that when configs are identical, old one is removed
-    run bash -c "grep -A20 '^migrate_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q 'rm.*OLD_CONFIG_FILE'"
+@test "setup: context is installed to skill directory" {
+    run bash -c "grep -A10 'install_context()' '$PROJECT_ROOT/bin/setup' | grep -q 'SKILL_DIR.*context'"
     [ "$status" -eq 0 ]
 }
 
-@test "setup: migrate_old_config warns on conflict" {
-    # Test that when configs differ, a warning is issued
-    run bash -c "grep -A20 '^migrate_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q 'Both old and new config files exist with different content'"
-    [ "$status" -eq 0 ]
+@test "setup: no longer uses .env config file" {
+    # Verify setup doesn't create .env files anymore
+    run bash -c "grep -q 'create_config' '$PROJECT_ROOT/bin/setup'"
+    [ "$status" -ne 0 ]
 }
 
-@test "setup: migrate_old_config creates skill directory before migration" {
-    run bash -c "grep -A20 '^migrate_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q 'mkdir -p'"
+@test "setup: cleans up deprecated config files" {
+    run bash -c "grep -A20 'cleanup_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q '.env'"
     [ "$status" -eq 0 ]
 }

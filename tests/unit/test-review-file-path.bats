@@ -12,12 +12,13 @@ setup() {
     TEST_TEMP_DIR=$(cd "$TEST_TEMP_DIR" && pwd -P)
     export HOME="$TEST_TEMP_DIR"
 
-    # Setup minimal git config with canonical path
-    mkdir -p "$TEST_TEMP_DIR/.claude/skills/review-code"
-    # Create reviews directory and get its canonical path to ensure consistency
-    mkdir -p "$TEST_TEMP_DIR/reviews"
-    CANONICAL_REVIEW_PATH=$(cd "$TEST_TEMP_DIR/reviews" && pwd -P)
-    echo "REVIEW_ROOT_PATH=\"$CANONICAL_REVIEW_PATH\"" > "$TEST_TEMP_DIR/.claude/skills/review-code/.env"
+    # Setup skill directory structure (reviews path is now fixed at ~/.claude/skills/review-code/reviews)
+    mkdir -p "$TEST_TEMP_DIR/.claude/skills/review-code/reviews"
+    mkdir -p "$TEST_TEMP_DIR/.claude/skills/review-code/context"
+    mkdir -p "$TEST_TEMP_DIR/.claude/skills/review-code/learnings"
+
+    # Set expected review root path for tests
+    EXPECTED_REVIEW_ROOT="$TEST_TEMP_DIR/.claude/skills/review-code/reviews"
 }
 
 teardown() {
@@ -139,10 +140,9 @@ teardown() {
 @test "path safety: file path is within review root" {
     result=$("$SCRIPT" --org "myorg" --repo "myrepo" "test")
     file_path=$(echo "$result" | jq -r '.file_path')
-    review_root="$TEST_TEMP_DIR/reviews"
 
-    # Ensure file_path starts with review_root
-    [[ "$file_path" == "$review_root"* ]]
+    # Ensure file_path starts with expected review root
+    [[ "$file_path" == "$EXPECTED_REVIEW_ROOT"* ]]
 }
 
 @test "path safety: creates org/repo directory structure" {
@@ -172,8 +172,8 @@ teardown() {
 
 @test "file existence: reports true when file exists" {
     # Create the file first
-    mkdir -p "$TEST_TEMP_DIR/reviews/myorg/myrepo"
-    touch "$TEST_TEMP_DIR/reviews/myorg/myrepo/test.md"
+    mkdir -p "$EXPECTED_REVIEW_ROOT/myorg/myrepo"
+    touch "$EXPECTED_REVIEW_ROOT/myorg/myrepo/test.md"
 
     result=$("$SCRIPT" --org "myorg" --repo "myrepo" "test")
     echo "$result" | jq -e '.file_exists == true'
@@ -181,8 +181,8 @@ teardown() {
 
 @test "file existence: detects old branch-based PR file and sets needs_rename" {
     # Create old branch-based file
-    mkdir -p "$TEST_TEMP_DIR/reviews/myorg/myrepo"
-    touch "$TEST_TEMP_DIR/reviews/myorg/myrepo/main.md"
+    mkdir -p "$EXPECTED_REVIEW_ROOT/myorg/myrepo"
+    touch "$EXPECTED_REVIEW_ROOT/myorg/myrepo/main.md"
 
     # Mock git to return 'main' as current branch
     # Note: This test is simplified since we can't easily mock git in BATS
@@ -226,30 +226,23 @@ teardown() {
 }
 
 # ============================================================================
-# Configuration Tests
+# Path Resolution Tests
 # ============================================================================
 
-@test "config: uses default review root when config doesn't exist" {
-    # Remove config file (both new and old locations)
-    rm -f "$TEST_TEMP_DIR/.claude/skills/review-code/.env"
-    rm -f "$TEST_TEMP_DIR/.claude/review-code.env"
-
-    # Create the default directory structure so verify_path_safety doesn't fail
-    mkdir -p "$TEST_TEMP_DIR/dev/ai"
-
+@test "path: uses fixed review root under skill directory" {
     result=$("$SCRIPT" --org "myorg" --repo "myrepo" "test")
     file_path=$(echo "$result" | jq -r '.file_path')
 
-    # Should use default: ~/dev/ai/reviews
-    [[ "$file_path" == "$TEST_TEMP_DIR/dev/ai/reviews"* ]]
+    # Should use fixed path: ~/.claude/skills/review-code/reviews
+    [[ "$file_path" == "$TEST_TEMP_DIR/.claude/skills/review-code/reviews"* ]]
 }
 
-@test "config: uses REVIEW_ROOT_PATH from config file" {
+@test "path: review root is consistent" {
     result=$("$SCRIPT" --org "myorg" --repo "myrepo" "test")
     file_path=$(echo "$result" | jq -r '.file_path')
 
-    # Should use configured path from setup
-    [[ "$file_path" == "$TEST_TEMP_DIR/reviews"* ]]
+    # Should use expected review root from setup
+    [[ "$file_path" == "$EXPECTED_REVIEW_ROOT"* ]]
 }
 
 # ============================================================================
@@ -308,8 +301,8 @@ teardown() {
 @test "security: prevents symlink attacks by checking canonical paths" {
     # Create a symlink outside review root
     mkdir -p "$TEST_TEMP_DIR/outside"
-    mkdir -p "$TEST_TEMP_DIR/reviews/myorg"
-    ln -s "$TEST_TEMP_DIR/outside" "$TEST_TEMP_DIR/reviews/myorg/evil-symlink"
+    mkdir -p "$EXPECTED_REVIEW_ROOT/myorg"
+    ln -s "$TEST_TEMP_DIR/outside" "$EXPECTED_REVIEW_ROOT/myorg/evil-symlink"
 
     # Try to use the symlinked repo
     run "$SCRIPT" --org "myorg" --repo "evil-symlink" "test"
@@ -318,7 +311,7 @@ teardown() {
     if [ "$status" -eq 0 ]; then
         file_path=$(echo "$output" | jq -r '.file_path')
         # The path should still be under reviews even if symlink exists
-        [[ "$file_path" == "$TEST_TEMP_DIR/reviews"* ]]
+        [[ "$file_path" == "$EXPECTED_REVIEW_ROOT"* ]]
     fi
 }
 
@@ -332,7 +325,7 @@ teardown() {
     deep_repo="new-repo"
 
     # Verify directories don't exist
-    [ ! -d "$TEST_TEMP_DIR/reviews/$deep_org" ]
+    [ ! -d "$EXPECTED_REVIEW_ROOT/$deep_org" ]
 
     # Run script - should create parent directories
     run "$SCRIPT" --org "$deep_org" --repo "$deep_repo" "test-pr"
@@ -346,7 +339,7 @@ teardown() {
 
 @test "review-file-path.sh: handles already existing directories" {
     # Create directories first
-    mkdir -p "$TEST_TEMP_DIR/reviews/existing-org/existing-repo"
+    mkdir -p "$EXPECTED_REVIEW_ROOT/existing-org/existing-repo"
 
     # Run script - should work fine with existing directories
     run "$SCRIPT" --org "existing-org" --repo "existing-repo" "test-pr"
@@ -358,7 +351,7 @@ teardown() {
 
 @test "review-file-path.sh: fails gracefully when mkdir fails" {
     # Create a read-only directory to prevent mkdir from succeeding
-    readonly_dir="$TEST_TEMP_DIR/reviews/readonly-org"
+    readonly_dir="$EXPECTED_REVIEW_ROOT/readonly-org"
     mkdir -p "$readonly_dir"
     chmod 444 "$readonly_dir"
 
@@ -402,8 +395,8 @@ teardown() {
 
 @test "branch fallback: finds PR file when branch file doesn't exist and gh returns PR" {
     # Create a PR review file but not a branch file
-    mkdir -p "$TEST_TEMP_DIR/reviews/myorg/myrepo"
-    touch "$TEST_TEMP_DIR/reviews/myorg/myrepo/pr-999.md"
+    mkdir -p "$EXPECTED_REVIEW_ROOT/myorg/myrepo"
+    touch "$EXPECTED_REVIEW_ROOT/myorg/myrepo/pr-999.md"
 
     # Create a mock gh script that returns PR 999 for any branch
     mock_gh="$TEST_TEMP_DIR/bin/gh"
@@ -429,7 +422,7 @@ EOF
 
 @test "branch fallback: returns branch file path when no PR exists" {
     # Create just the directory, no files
-    mkdir -p "$TEST_TEMP_DIR/reviews/myorg/myrepo"
+    mkdir -p "$EXPECTED_REVIEW_ROOT/myorg/myrepo"
 
     # Create a mock gh script that returns empty (no PR)
     mock_gh="$TEST_TEMP_DIR/bin/gh"
@@ -453,9 +446,9 @@ EOF
 
 @test "branch fallback: PR takes precedence when both exist, flags branch review" {
     # Create BOTH a branch file and PR file
-    mkdir -p "$TEST_TEMP_DIR/reviews/myorg/myrepo"
-    touch "$TEST_TEMP_DIR/reviews/myorg/myrepo/existing-branch.md"
-    touch "$TEST_TEMP_DIR/reviews/myorg/myrepo/pr-888.md"
+    mkdir -p "$EXPECTED_REVIEW_ROOT/myorg/myrepo"
+    touch "$EXPECTED_REVIEW_ROOT/myorg/myrepo/existing-branch.md"
+    touch "$EXPECTED_REVIEW_ROOT/myorg/myrepo/pr-888.md"
 
     # Create a mock gh script that returns PR 888
     mock_gh="$TEST_TEMP_DIR/bin/gh"
@@ -483,8 +476,8 @@ EOF
 
 @test "branch fallback: handles branch names with slashes" {
     # Create a PR review file for a branch with slashes
-    mkdir -p "$TEST_TEMP_DIR/reviews/myorg/myrepo"
-    touch "$TEST_TEMP_DIR/reviews/myorg/myrepo/pr-777.md"
+    mkdir -p "$EXPECTED_REVIEW_ROOT/myorg/myrepo"
+    touch "$EXPECTED_REVIEW_ROOT/myorg/myrepo/pr-777.md"
 
     # Create a mock gh script that returns PR 777
     mock_gh="$TEST_TEMP_DIR/bin/gh"
@@ -510,8 +503,8 @@ EOF
 @test "branch fallback: uses unsanitized branch name for gh CLI when identifier is empty" {
     # This tests the bug where branch_to_check used the sanitized branch name
     # (haacked-feature) instead of the original (haacked/feature) for gh pr list
-    mkdir -p "$TEST_TEMP_DIR/reviews/myorg/myrepo"
-    touch "$TEST_TEMP_DIR/reviews/myorg/myrepo/pr-666.md"
+    mkdir -p "$EXPECTED_REVIEW_ROOT/myorg/myrepo"
+    touch "$EXPECTED_REVIEW_ROOT/myorg/myrepo/pr-666.md"
 
     # Create a mock git that returns a branch with slashes
     mock_git="$TEST_TEMP_DIR/bin/git"
@@ -565,8 +558,8 @@ EOF
 
 @test "branch fallback: sets needs_rename when branch review exists but no PR review" {
     # Create only a branch file, no PR file
-    mkdir -p "$TEST_TEMP_DIR/reviews/myorg/myrepo"
-    touch "$TEST_TEMP_DIR/reviews/myorg/myrepo/my-feature.md"
+    mkdir -p "$EXPECTED_REVIEW_ROOT/myorg/myrepo"
+    touch "$EXPECTED_REVIEW_ROOT/myorg/myrepo/my-feature.md"
 
     # Create a mock gh script that returns PR 555
     mock_gh="$TEST_TEMP_DIR/bin/gh"
@@ -601,8 +594,8 @@ EOF
 }
 
 @test "json output: has_branch_review is false when no branch review exists" {
-    mkdir -p "$TEST_TEMP_DIR/reviews/myorg/myrepo"
-    touch "$TEST_TEMP_DIR/reviews/myorg/myrepo/pr-123.md"
+    mkdir -p "$EXPECTED_REVIEW_ROOT/myorg/myrepo"
+    touch "$EXPECTED_REVIEW_ROOT/myorg/myrepo/pr-123.md"
 
     # Create a mock gh script that returns PR 123
     mock_gh="$TEST_TEMP_DIR/bin/gh"
