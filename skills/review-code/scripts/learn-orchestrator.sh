@@ -26,9 +26,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Source helpers (error-helpers first, then alphabetical)
+# Source helpers
 source "${SCRIPT_DIR}/helpers/error-helpers.sh"
-source "${SCRIPT_DIR}/helpers/config-helpers.sh"
 
 # Output JSON error
 output_error() {
