@@ -37,7 +37,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LEARNINGS_DIR="${SCRIPT_DIR}/../learnings"
 
-# Source helpers
+# Source helpers (error-helpers first, then alphabetical)
 source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 source "${SCRIPT_DIR}/helpers/validation-helpers.sh"
 

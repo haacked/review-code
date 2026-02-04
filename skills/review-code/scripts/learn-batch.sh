@@ -29,11 +29,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LEARNINGS_DIR="${SCRIPT_DIR}/../learnings"
 
-# Source helpers
+# Source helpers (error-helpers first, then alphabetical)
 source "${SCRIPT_DIR}/helpers/error-helpers.sh"
-source "${SCRIPT_DIR}/helpers/validation-helpers.sh"
 source "${SCRIPT_DIR}/helpers/config-helpers.sh"
 source "${SCRIPT_DIR}/helpers/date-helpers.sh"
+source "${SCRIPT_DIR}/helpers/validation-helpers.sh"
 
 main() {
     local limit=10
