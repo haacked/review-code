@@ -340,3 +340,238 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *'"inline_count": 0'* ]]
 }
+
+# =============================================================================
+# Comment validation tests
+# =============================================================================
+
+@test "create-draft-review: filters comments missing path field" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": [{"position": 10, "body": "Missing path"}]}'
+    run bash -c "echo '$input' | '$SCRIPT' 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"1 comments filtered out"* ]]
+    [[ "$output" == *'"inline_count": 0'* ]]
+}
+
+@test "create-draft-review: filters comments missing position field" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": [{"path": "file.ts", "body": "Missing position"}]}'
+    run bash -c "echo '$input' | '$SCRIPT' 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"1 comments filtered out"* ]]
+    [[ "$output" == *'"inline_count": 0'* ]]
+}
+
+@test "create-draft-review: filters comments missing body field" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": [{"path": "file.ts", "position": 5}]}'
+    run bash -c "echo '$input' | '$SCRIPT' 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"1 comments filtered out"* ]]
+    [[ "$output" == *'"inline_count": 0'* ]]
+}
+
+@test "create-draft-review: filters comments with null path" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": [{"path": null, "position": 5, "body": "Null path"}]}'
+    run bash -c "echo '$input' | '$SCRIPT' 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"1 comments filtered out"* ]]
+    [[ "$output" == *'"inline_count": 0'* ]]
+}
+
+@test "create-draft-review: filters comments with null position" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": [{"path": "file.ts", "position": null, "body": "Null position"}]}'
+    run bash -c "echo '$input' | '$SCRIPT' 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"1 comments filtered out"* ]]
+    [[ "$output" == *'"inline_count": 0'* ]]
+}
+
+@test "create-draft-review: filters comments with null body" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": [{"path": "file.ts", "position": 5, "body": null}]}'
+    run bash -c "echo '$input' | '$SCRIPT' 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"1 comments filtered out"* ]]
+    [[ "$output" == *'"inline_count": 0'* ]]
+}
+
+@test "create-draft-review: keeps valid comments when filtering invalid ones" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": [
+        {"path": "good.ts", "position": 5, "body": "Valid comment"},
+        {"position": 10, "body": "Missing path"},
+        {"path": "also-good.ts", "position": 15, "body": "Another valid"}
+    ]}'
+    run bash -c "echo '$input' | '$SCRIPT' 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"1 comments filtered out"* ]]
+    [[ "$output" == *'"inline_count": 2'* ]]
+}
+
+@test "create-draft-review: no warning when all comments are valid" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": [
+        {"path": "a.ts", "position": 1, "body": "Comment 1"},
+        {"path": "b.ts", "position": 2, "body": "Comment 2"},
+        {"path": "c.ts", "position": 3, "body": "Comment 3"}
+    ]}'
+    run bash -c "echo '$input' | '$SCRIPT' 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"filtered out"* ]]
+    [[ "$output" == *'"inline_count": 3'* ]]
+}
+
+@test "create-draft-review: handles all comments being invalid" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": [
+        {"position": 5, "body": "Missing path"},
+        {"path": "file.ts", "body": "Missing position"}
+    ]}'
+    run bash -c "echo '$input' | '$SCRIPT' 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"2 comments filtered out"* ]]
+    [[ "$output" == *'"inline_count": 0'* ]]
+    [[ "$output" == *'"success": true'* ]]
+}
+
+@test "create-draft-review: treats empty string body as valid" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": [{"path": "file.ts", "position": 5, "body": ""}]}'
+    run bash -c "echo '$input' | '$SCRIPT' 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"filtered out"* ]]
+    [[ "$output" == *'"inline_count": 1'* ]]
+}
+
+@test "create-draft-review: logs filtered comments to stderr" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": [{"position": 10, "body": "No path here"}]}'
+    run bash -c "echo '$input' | '$SCRIPT' 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Filtered comments:"* ]]
+}
