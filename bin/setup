@@ -281,9 +281,13 @@ merge_markdown_sections() {
 
     # Get sections from source that don't exist in destination
     local new_sections_added=0
+    local section_headers
+    section_headers=$(get_section_headers "${src}")
+
     while IFS= read -r section; do
         [[ -z "${section}" ]] && continue
 
+        # shellcheck disable=SC2310 # has_section returning non-zero is expected behavior
         if ! has_section "${dst}" "${section}"; then
             # Section doesn't exist in destination - append it
             local section_content
@@ -295,7 +299,7 @@ merge_markdown_sections() {
                 new_sections_added=$((new_sections_added + 1))
             fi
         fi
-    done < <(get_section_headers "${src}")
+    done <<< "${section_headers}"
 
     echo "${new_sections_added}"
 }
