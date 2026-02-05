@@ -109,6 +109,35 @@ Examples:
 
 4. **Follow the structured session flow** - If session initialization fails, STOP and inform the user. NEVER run review agents manually or post to GitHub directly.
 
+### Pre-flight: Clear Context
+
+Code reviews are context-heavy operations and work best with a fresh context.
+
+**If `--force` flag is specified:**
+- If this conversation has substantial history (more than a few exchanges), tell the user:
+  "For best results, run `/clear` first, then re-run the review command."
+- Stop here - do not proceed until context is cleared.
+- If the context is already minimal (new conversation or just started), proceed with Step 0.
+
+**If `--force` is NOT specified:**
+
+Use AskUserQuestion:
+- Question: "Code reviews work best with a fresh context. Clear conversation history before starting?"
+- Options:
+  1. "Yes, clear and review (Recommended)" - Clear context, then start the review
+     Description: "Ensures clean review without prior conversation influencing results"
+  2. "No, continue anyway" - Keep current context and proceed
+     Description: "Use only if you need to reference earlier conversation"
+
+If user selects "Yes, clear and review":
+- Tell the user: "Please run `/clear` and then run the review command again."
+- Stop here - do not proceed with the review.
+
+If user selects "No, continue anyway", proceed with Step 0.
+
+**Skip this prompt entirely if:**
+- This is a `find` or `learn` command (lightweight operations that don't need fresh context)
+
 ### Step 0: Check for Learn Mode
 
 Before initializing a review session, check if this is a learn command:
