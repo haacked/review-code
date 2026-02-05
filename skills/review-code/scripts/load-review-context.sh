@@ -38,30 +38,8 @@ source "${SCRIPT_DIR}/helpers/config-helpers.sh"
 
 debug_time "04-context-loading" "start"
 
-# Save any externally-set CONTEXT_PATH (for tests)
-EXTERNAL_CONTEXT_PATH="${CONTEXT_PATH:-}"
-
-# Load config if available (installed mode)
-# Check new location first, fall back to old location for backward compatibility
-CONFIG_FILE=""
-if [[ -f "${HOME}/.claude/skills/review-code/.env" ]]; then
-    CONFIG_FILE="${HOME}/.claude/skills/review-code/.env"
-elif [[ -f "${HOME}/.claude/review-code.env" ]]; then
-    CONFIG_FILE="${HOME}/.claude/review-code.env"
-fi
-if [[ -n "${CONFIG_FILE}" ]]; then
-    load_config_safely "${CONFIG_FILE}"
-fi
-
-# Derive context directory from script location
-REVIEW_CODE_DIR="$(dirname "${SCRIPT_DIR}")"
-
-# Use CONTEXT_PATH from (1) external env, (2) config file, or (3) relative path
-if [[ -n "${EXTERNAL_CONTEXT_PATH}" ]]; then
-    CONTEXT_DIR="${EXTERNAL_CONTEXT_PATH}"
-else
-    CONTEXT_DIR="${CONTEXT_PATH:-${REVIEW_CODE_DIR}/context}"
-fi
+# Get context directory - allow override via CONTEXT_PATH for tests
+CONTEXT_DIR="${CONTEXT_PATH:-$(get_context_path)}"
 
 # Read JSON from stdin
 lang_info=$(cat)

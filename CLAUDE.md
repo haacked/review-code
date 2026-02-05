@@ -6,9 +6,47 @@ This repo contains the source files for the `/review-code` skill:
 
 - `skills/review-code/SKILL.md` - Skill definition
 - `skills/review-code/scripts/` - Bash scripts that implement the skill
-- `agents/` - Agent definitions (YAML)
-- `context/` - Review context files
+- `skills/review-code/context/` - Base context files (languages, frameworks, orgs)
+- `skills/review-code/learnings/` - Learning system documentation
+- `agents/` - Agent definitions
 - `bin/` - Development utilities (fmt, lint, test, setup)
+
+## Architecture
+
+**In the repository:**
+
+```
+skills/review-code/
+    SKILL.md                          # Skill definition
+    scripts/                          # Helper scripts
+    context/                          # Base context files (shipped to users)
+        languages/
+        frameworks/
+        orgs/
+    learnings/                        # Learning system docs
+agents/                               # Review agent definitions
+```
+
+**Installed at `~/.claude/skills/review-code/`:**
+
+```
+~/.claude/skills/review-code/
+    SKILL.md
+    scripts/
+    context/                          # Base + user learnings (merged)
+        languages/
+        frameworks/
+        orgs/
+    reviews/                          # Review outputs (org/repo/pr.md)
+        posthog/
+            posthog/
+                pr-123.md
+    learnings/                        # Learning index
+        index.jsonl
+        analyzed.json
+```
+
+**Key insight:** The repo structure mirrors the installed structure. During setup, `skills/review-code/` is copied to `~/.claude/skills/review-code/`. User learnings applied to installed context are preserved through smart merge - new sections from base are added, but existing sections (which may contain learned patterns) are kept.
 
 ## Important: Edit Source Files Only
 
@@ -20,7 +58,7 @@ The files in `~/.claude/skills/review-code/` are installed copies. To update the
 bin/setup
 ```
 
-This copies the source files to the appropriate locations in `~/.claude/`.
+This copies the source files to the appropriate locations and uses smart merge for context files to preserve user learnings.
 
 ## Testing Changes
 

@@ -8,7 +8,7 @@
 #
 # Description:
 #   Removes review-code files from ~/.claude/ directory
-#   Optionally removes context files and configuration
+#   Optionally preserves reviews
 
 set -euo pipefail
 
@@ -18,11 +18,10 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-# Directories
+# Directories - all paths are now fixed under the skill directory
 CLAUDE_DIR="${HOME}/.claude"
 SKILL_DIR="${CLAUDE_DIR}/skills/review-code"
-CONFIG_FILE="${SKILL_DIR}/.env"
-OLD_CONFIG_FILE="${CLAUDE_DIR}/review-code.env"
+REVIEWS_DIR="${SKILL_DIR}/reviews"
 
 info() {
     echo -e "${GREEN}✓${NC} $1"
@@ -34,59 +33,6 @@ warn() {
 
 error() {
     echo -e "${RED}✗${NC} $1"
-}
-
-# Safely load configuration from file without executing arbitrary code
-load_config_safely() {
-    local config_file="$1"
-
-    [[ ! -f "${config_file}" ]] && return 0
-
-    # Validate file permissions for security
-    local file_owner
-    local file_perms
-
-    if [[ "${OSTYPE}" == "darwin"* ]]; then
-        file_owner=$(stat -f '%u' "${config_file}" 2> /dev/null)
-        file_perms=$(stat -f '%Lp' "${config_file}" 2> /dev/null)
-    else
-        file_owner=$(stat -c '%u' "${config_file}" 2> /dev/null)
-        file_perms=$(stat -c '%a' "${config_file}" 2> /dev/null)
-    fi
-
-    # shellcheck disable=SC2312  # id command failure is critical and will be caught
-    if [[ "${file_owner}" != "$(id -u)" ]]; then
-        error "Config file not owned by current user: ${config_file}"
-        return 1
-    fi
-
-    local world_perms=$((file_perms % 10))
-    if [[ $((world_perms & 2)) -ne 0 ]]; then
-        error "Config file is world-writable: ${config_file}"
-        error "Fix with: chmod o-w ${config_file}"
-        return 1
-    fi
-
-    # Parse configuration safely
-    while IFS='=' read -r key value; do
-        [[ "${key}" =~ ^[[:space:]]*# ]] && continue
-        [[ -z "${key}" ]] && continue
-        [[ ! "${key}" =~ ^[A-Z_][A-Z0-9_]*$ ]] && continue
-
-        value="${value#\"}"
-        value="${value%\"}"
-        value="${value#\'}"
-        value="${value%\'}"
-
-        case "${key}" in
-            REVIEW_ROOT_PATH) export REVIEW_ROOT_PATH="${value}" ;;
-            CONTEXT_PATH) export CONTEXT_PATH="${value}" ;;
-            DIFF_CONTEXT_LINES) export DIFF_CONTEXT_LINES="${value}" ;;
-            *) ;; # Ignore unknown keys for forward compatibility
-        esac
-    done < "${config_file}"
-
-    return 0
 }
 
 remove_skill() {
@@ -151,73 +97,46 @@ remove_agents() {
     fi
 }
 
-remove_context_files() {
-    # Check new location first, fall back to old location
-    local active_config=""
-    if [[ -f "${CONFIG_FILE}" ]]; then
-        active_config="${CONFIG_FILE}"
-    elif [[ -f "${OLD_CONFIG_FILE}" ]]; then
-        active_config="${OLD_CONFIG_FILE}"
-    else
+preserve_reviews() {
+    # Check if there are reviews to preserve
+    if [[ ! -d "${REVIEWS_DIR}" ]]; then
         return
     fi
-
-    # Load config to find context path
-    load_config_safely "${active_config}"
-    local context_path="${CONTEXT_PATH:-}"
-
-    if [[ -z "${context_path}" ]] || [[ ! -d "${context_path}" ]]; then
+    local dir_contents
+    dir_contents=$(ls -A "${REVIEWS_DIR}" 2>/dev/null) || true
+    if [[ -z "${dir_contents}" ]]; then
         return
     fi
 
     echo ""
-    echo "Context files location: ${context_path}"
-    read -p "Remove context files? (reviews will be preserved) [y/N] " -n 1 -r
+    echo "Reviews found at: ${REVIEWS_DIR}"
+    read -p "Preserve reviews before uninstalling? [Y/n] " -n 1 -r
     echo ""
 
-    if [[ ${REPLY} =~ ^[Yy]$ ]]; then
-        rm -rf "${context_path}"
-        info "Removed context files"
+    if [[ ! ${REPLY} =~ ^[Nn]$ ]]; then
+        local backup_dir
+        backup_dir="${HOME}/review-code-backup-$(date +%Y%m%d-%H%M%S)"
+        mkdir -p "${backup_dir}"
+        cp -r "${REVIEWS_DIR}" "${backup_dir}/"
+        info "Reviews backed up to: ${backup_dir}/reviews"
     else
-        info "Kept context files at ${context_path}"
+        warn "Reviews will be removed with skill directory"
     fi
 }
 
-remove_config() {
-    local removed=0
+cleanup_old_config_files() {
+    # Remove any deprecated config files that may still exist
+    local old_config_files=(
+        "${SKILL_DIR}/.env"
+        "${CLAUDE_DIR}/review-code.env"
+    )
 
-    # Remove new config location
-    if [[ -f "${CONFIG_FILE}" ]]; then
-        read -p "Remove configuration file (${CONFIG_FILE})? [y/N] " -n 1 -r
-        echo ""
-
-        if [[ ${REPLY} =~ ^[Yy]$ ]]; then
-            rm "${CONFIG_FILE}"
-            info "Removed configuration file"
-            removed=1
-        else
-            info "Kept configuration file"
+    for config_file in "${old_config_files[@]}"; do
+        if [[ -f "${config_file}" ]]; then
+            rm -f "${config_file}"
+            info "Removed deprecated config: ${config_file}"
         fi
-    fi
-
-    # Also remove old config location if it exists
-    if [[ -f "${OLD_CONFIG_FILE}" ]]; then
-        if [[ ${removed} -eq 1 ]]; then
-            # Already removed new config, just remove old one silently
-            rm "${OLD_CONFIG_FILE}"
-            info "Removed old configuration file"
-        else
-            read -p "Remove old configuration file (${OLD_CONFIG_FILE})? [y/N] " -n 1 -r
-            echo ""
-
-            if [[ ${REPLY} =~ ^[Yy]$ ]]; then
-                rm "${OLD_CONFIG_FILE}"
-                info "Removed old configuration file"
-            else
-                info "Kept old configuration file"
-            fi
-        fi
-    fi
+    done
 }
 
 remove_old_installation() {
@@ -243,16 +162,16 @@ main() {
     echo "═══════════════════════════════════════════════════════"
     echo ""
 
+    # Ask about preserving reviews before removing skill
+    preserve_reviews
+
     # Remove components
     info "Removing review-code components…"
     remove_skill
     remove_agents
 
-    # Ask about context files
-    remove_context_files
-
-    # Ask about config
-    remove_config
+    # Clean up any old config files
+    cleanup_old_config_files
 
     # Check for old installation
     remove_old_installation

@@ -1,3 +1,12 @@
+## Patterns to Detect
+
+Flag these patterns in Rust code:
+
+- **Error type masking**: Converting all error types to a single `Ok(None)` or generic error masks infrastructure issues. Connection failures vs key-not-found should be distinguished for monitoring and alerting.
+- **Pass-through without validation**: Data from external sources (cache, API) passed through without validating structure. Malformed data silently accepted, potentially causing downstream issues.
+- **Accidental feature removal**: During refactors or migrations, verify existing functionality isn't accidentally removed. Compare old vs new behavior for feature parity.
+- **Avoidable clone via reordering**: Unnecessary `clone()` calls can often be avoided by reordering operations - perform non-consuming operations first, then move the value.
+
 ## Dependency Management
 
 **Critical checks:**

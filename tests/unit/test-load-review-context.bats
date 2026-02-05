@@ -310,23 +310,17 @@ teardown() {
 }
 
 # =============================================================================
-# Config file location tests
+# Context path resolution tests
 # =============================================================================
 
-@test "load-review-context.sh: checks new config location first" {
-    # Verify the script checks the new skills/.env location first
-    run bash -c "grep -A10 'Load config if available' '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh' | grep -q 'skills/review-code/.env'"
+@test "load-review-context.sh: uses get_context_path for default path" {
+    # Verify the script calls get_context_path for default context resolution
+    run bash -c "grep -q 'get_context_path' '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh'"
     [ "$status" -eq 0 ]
 }
 
-@test "load-review-context.sh: falls back to old config location" {
-    # Verify the script falls back to old review-code.env location
-    run bash -c "grep -A10 'Load config if available' '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh' | grep -q 'review-code.env'"
-    [ "$status" -eq 0 ]
-}
-
-@test "load-review-context.sh: uses elif for config fallback" {
-    # Verify fallback uses elif (only loads from one location, not both)
-    run bash -c "grep -A10 'Load config if available' '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh' | grep -q 'elif'"
+@test "load-review-context.sh: allows CONTEXT_PATH override" {
+    # Verify the script allows CONTEXT_PATH environment variable override
+    run bash -c "grep -q 'CONTEXT_PATH:-' '$PROJECT_ROOT/skills/review-code/scripts/load-review-context.sh'"
     [ "$status" -eq 0 ]
 }
