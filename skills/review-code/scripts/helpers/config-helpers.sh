@@ -49,10 +49,3 @@ get_context_path() {
 get_learnings_dir() {
     echo "$(get_skill_dir)/learnings"
 }
-
-# Legacy function for backward compatibility
-# Safely load configuration from file - now a no-op since config is no longer used
-load_config_safely() {
-    # No longer needed - paths are now fixed relative to skill directory
-    return 0
-}

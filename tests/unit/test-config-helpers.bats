@@ -27,28 +27,6 @@ teardown() {
     [ -d "$TEST_TEMP_DIR" ] && rm -rf "$TEST_TEMP_DIR"
 }
 
-# === load_config_safely (Legacy - Now No-Op) ===
-
-@test "load_config_safely: is a no-op that returns 0" {
-    # load_config_safely is now a no-op since we no longer use config files
-    run load_config_safely "/any/path.env"
-    [ "$status" -eq 0 ]
-}
-
-@test "load_config_safely: returns 0 for non-existent file" {
-    run load_config_safely "$TEST_TEMP_DIR/nonexistent.env"
-    [ "$status" -eq 0 ]
-}
-
-@test "load_config_safely: returns 0 for any file" {
-    cat > "$TEST_TEMP_DIR/config.env" << 'EOF'
-REVIEW_ROOT_PATH="/tmp/reviews"
-EOF
-
-    run load_config_safely "$TEST_TEMP_DIR/config.env"
-    [ "$status" -eq 0 ]
-}
-
 # === get_review_root ===
 
 @test "get_review_root: returns fixed path under skill directory" {
