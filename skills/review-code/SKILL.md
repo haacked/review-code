@@ -114,10 +114,8 @@ Examples:
 Code reviews are context-heavy operations and work best with a fresh context.
 
 **If `--force` flag is specified:**
-- If this conversation has substantial history (more than a few exchanges), tell the user:
-  "For best results, run `/clear` first, then re-run the review command."
-- Stop here - do not proceed until context is cleared.
-- If the context is already minimal (new conversation or just started), proceed with Step 0.
+- Skip the context clear prompt entirely and proceed with Step 0.
+- The `--force` flag indicates the user wants to proceed without confirmations (typically automation in a clean context).
 
 **If `--force` is NOT specified:**
 
@@ -138,16 +136,16 @@ If user selects "No, continue anyway", proceed with Step 0.
 **Skip this prompt entirely if:**
 - This is a `find` or `learn` command (lightweight operations that don't need fresh context)
 
-### Step 0: Check for Learn Mode
-
-Before initializing a review session, check if this is a learn command:
-
+**Note:** To determine if the command is `find` or `learn`, parse the arguments first:
 ```bash
 PARSE_RESULT=$(~/.claude/skills/review-code/scripts/parse-review-arg.sh $ARGUMENTS)
 MODE=$(echo "$PARSE_RESULT" | jq -r '.mode')
 ```
+If MODE is "find" or "learn", skip the pre-flight prompt and proceed directly to the appropriate handler.
 
-If MODE is "learn", skip to the **Handler: "learn"** section below. Otherwise, continue with Step 1.
+### Step 0: Check for Learn Mode
+
+Using the PARSE_RESULT from pre-flight, check if MODE is "learn". If so, skip to the **Handler: "learn"** section below. Otherwise, continue with Step 1.
 
 ### Step 1: Initialize Session
 
