@@ -33,7 +33,7 @@ Run specialized code review agent(s) with comprehensive context on local changes
 
 **Optional Flags:**
 
-- `--force` or `-f` - Skip the confirmation prompt and proceed directly with review
+- `--force` or `-f` - Skip the pre-flight context clear prompt
 - `--draft` or `-d` - Create a pending GitHub review with inline comments (PR mode only)
 - `--self` - Allow creating draft review on your own PR (for testing)
 
@@ -79,11 +79,11 @@ Examples:
 - `/review-code https://github.com/org/repo/pull/123 "src/**/*.ts"` - Review only TypeScript files in PR
 - `/review-code security "*.rs"` - Security review of only Rust files (local)
 
-**With --force flag (skip confirmation):**
+**With --force flag (skip context clear prompt):**
 
-- `/review-code --force` - Review local changes without confirmation
-- `/review-code https://github.com/org/repo/pull/123 --force` - Review PR without confirmation
-- `/review-code -f feature-branch` - Short form, review branch without confirmation
+- `/review-code --force` - Review local changes without context clear prompt
+- `/review-code https://github.com/org/repo/pull/123 --force` - Review PR without context clear prompt
+- `/review-code -f feature-branch` - Short form, review branch without context clear prompt
 
 **With --draft flag (create pending GitHub review):**
 
@@ -372,27 +372,7 @@ This displays the pre-formatted summary showing what will be reviewed.
 
 **All subsequent operations will use the same SESSION_FILE to read from the cached session data.**
 
-**Ask user to confirm (unless --force was specified):**
-
-Check if the `force` flag is set in the session data:
-
-```bash
-force_flag=$(jq -r ".force // false" "$SESSION_FILE")
-```
-
-If `force_flag` is `true`, skip the confirmation and proceed directly with the review below.
-
-Otherwise, use AskUserQuestion:
-- Question: "Proceed with code review of these changes?"
-- Options:
-  1. "Yes, review these changes" - Proceed with the review
-     Description: "Run comprehensive code review agents on the changes above"
-  2. "Cancel" - Exit without reviewing
-     Description: "Stop and return without running review"
-
-If user selects "Cancel", exit without proceeding.
-
-If user selects "Yes, review these changes" (or if `force_flag` is `true`), continue with the review below.
+Proceed directly with the review.
 
 **Check for existing review and branch review (using `$SESSION_FILE` from above):**
 
