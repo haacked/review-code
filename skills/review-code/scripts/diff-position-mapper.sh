@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# diff-position-mapper.sh - Map file line numbers to diff positions for GitHub API
+# diff-position-mapper.sh - Map file line numbers to diff line/side for GitHub API
 #
-# GitHub's PR review comment API requires a "position" that represents the
-# line number in the unified diff, counting from the first "@@" hunk header.
-# This script maps file:line targets to their corresponding diff positions.
+# GitHub's PR review comment API accepts either deprecated "position" or the
+# preferred "line" + "side" parameters. This script maps file:line targets
+# to their corresponding line numbers and side (RIGHT for new file lines).
 #
 # Usage:
 #   echo '<json_input>' | diff-position-mapper.sh
@@ -20,8 +20,8 @@
 # Output JSON:
 #   {
 #     "mappings": [
-#       {"path": "src/auth.ts", "line": 42, "position": 23, "side": "RIGHT"},
-#       {"path": "src/utils.ts", "line": 15, "position": null, "error": "line not in diff"}
+#       {"path": "src/auth.ts", "line": 42, "side": "RIGHT"},
+#       {"path": "src/utils.ts", "line": 15, "line": null, "error": "line not in diff"}
 #     ]
 #   }
 
@@ -33,11 +33,11 @@ source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 # shellcheck source=lib/helpers/json-helpers.sh
 source "${SCRIPT_DIR}/helpers/json-helpers.sh"
 
-# Parse the diff and build a lookup table mapping file paths and line numbers to positions
-# The position is the 1-based line number within the unified diff, counting from the first @@
+# Parse the diff and build a lookup table mapping file paths and line numbers
+# Lines that appear in the diff (added or context lines) are mapped with their side
 #
 # Args: $1 = diff content
-# Output: JSON object with structure: { "file/path.ts": { "42": {"position": 5, "side": "RIGHT"}, ... }, ... }
+# Output: JSON object with structure: { "file/path.ts": { "42": {"line": 42, "side": "RIGHT"}, ... }, ... }
 build_position_map() {
     local diff="$1"
 
@@ -104,6 +104,9 @@ build_position_map() {
     # Context line (space prefix) - both sides have this line
     /^ / {
         position++
+        if (!first_line) printf ","
+        first_line = 0
+        printf "\n    \"%d\": {\"line\": %d, \"side\": \"RIGHT\"}", new_line, new_line
         old_line++
         new_line++
         next
@@ -114,7 +117,7 @@ build_position_map() {
         position++
         if (!first_line) printf ","
         first_line = 0
-        printf "\n    \"%d\": {\"position\": %d, \"side\": \"RIGHT\"}", new_line, position
+        printf "\n    \"%d\": {\"line\": %d, \"side\": \"RIGHT\"}", new_line, new_line
         new_line++
         next
     }
@@ -156,10 +159,10 @@ lookup_position() {
 
         if [[ "${file_exists}" == "false" ]]; then
             jq -n --arg path "${path}" --argjson line "${line}" \
-                '{path: $path, line: $line, position: null, error: "file not in diff"}'
+                '{path: $path, line: $line, error: "file not in diff"}'
         else
             jq -n --arg path "${path}" --argjson line "${line}" \
-                '{path: $path, line: $line, position: null, error: "line not in diff"}'
+                '{path: $path, line: $line, error: "line not in diff"}'
         fi
     else
         # Return the position info with path and line included

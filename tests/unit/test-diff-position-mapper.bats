@@ -71,10 +71,10 @@ setup() {
     run bash -c "echo '$input' | '$SCRIPT'"
     [ "$status" -eq 0 ]
 
-    # Line 1 in a new file has position 2 (position 1 is the @@ hunk header)
-    local position
-    position=$(echo "$output" | jq -r '.mappings[0].position')
-    [ "$position" = "2" ]
+    # Line 1 in a new file should map to line 1
+    local line
+    line=$(echo "$output" | jq -r '.mappings[0].line')
+    [ "$line" = "1" ]
 }
 
 @test "diff-position-mapper: maps multiple lines in same file" {
@@ -139,7 +139,7 @@ setup() {
     [ "$error" = "line not in diff" ]
 }
 
-@test "diff-position-mapper: returns null position for unmapped lines" {
+@test "diff-position-mapper: returns error for unmapped lines" {
     local diff
     diff=$(cat "$FIXTURES_DIR/simple-single-file.diff")
     local input
@@ -148,9 +148,9 @@ setup() {
     run bash -c "echo '$input' | '$SCRIPT'"
     [ "$status" -eq 0 ]
 
-    local position
-    position=$(echo "$output" | jq '.mappings[0].position')
-    [ "$position" = "null" ]
+    local error
+    error=$(echo "$output" | jq -r '.mappings[0].error')
+    [ "$error" = "line not in diff" ]
 }
 
 # =============================================================================
@@ -166,10 +166,10 @@ setup() {
     run bash -c "echo '$input' | '$SCRIPT'"
     [ "$status" -eq 0 ]
 
-    # Should successfully map the first line
-    local position
-    position=$(echo "$output" | jq -r '.mappings[0].position')
-    [ "$position" != "null" ]
+    # Should successfully map the first line (no error means it was mapped)
+    local error
+    error=$(echo "$output" | jq -r '.mappings[0].error // "none"')
+    [ "$error" = "none" ]
 }
 
 # =============================================================================

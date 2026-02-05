@@ -103,7 +103,7 @@ preserve_reviews() {
         return
     fi
     local dir_contents
-    dir_contents=$(ls -A "${REVIEWS_DIR}" 2>/dev/null) || true
+    dir_contents=$(ls -A "${REVIEWS_DIR}" 2> /dev/null) || true
     if [[ -z "${dir_contents}" ]]; then
         return
     fi

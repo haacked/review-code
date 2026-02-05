@@ -804,16 +804,16 @@ If any condition fails, skip draft review creation.
 diff=$(jq -r '.diff' "$SESSION_FILE")
 ```
 
-3. **Build targets for position mapping**: Create JSON with file:line targets from extracted comments.
+3. **Build targets for line mapping**: Create JSON with file:line targets from extracted comments.
 
-4. **Map line numbers to diff positions**: Use the diff-position-mapper script.
+4. **Map line numbers to diff lines**: Use the diff-position-mapper script.
 
 ```bash
 echo "$mapping_input" | ~/.claude/skills/review-code/scripts/diff-position-mapper.sh
 ```
 
 5. **Separate mappable vs unmappable comments**:
-   - Mappable: Comments with valid diff positions (will be inline comments)
+   - Mappable: Comments with valid line mappings (will be inline comments)
    - Unmappable: Comments where line not in diff (will go in summary)
 
 6. **Build input for create-draft-review.sh**:
@@ -826,7 +826,7 @@ echo "$mapping_input" | ~/.claude/skills/review-code/scripts/diff-position-mappe
   "reviewer_username": "<reviewer from session>",
   "summary": "<BRIEF 1-2 sentence summary, e.g. 'Code review with 3 suggestions. See inline comments.'>",
   "comments": [
-    {"path": "file.ts", "position": 23, "body": "Clean comment text"}
+    {"path": "file.ts", "line": 42, "side": "RIGHT", "body": "Clean comment text"}
   ],
   "unmapped_comments": [
     {"description": "General finding that couldn't be mapped to diff"}
@@ -835,7 +835,18 @@ echo "$mapping_input" | ~/.claude/skills/review-code/scripts/diff-position-mappe
 ```
 
 **IMPORTANT**: The `summary` field should be a brief overview (1-2 sentences), NOT the full review. Example: "Code review complete with 3 inline suggestions for improved error handling." The detailed findings are in the markdown file.
+
+**Code Suggestions:**
+
+When recommending a code change, use GitHub's suggestion syntax in the comment body:
+
+````markdown
+```suggestion
+replacement code here
 ```
+````
+
+This renders as an "Apply suggestion" button that the PR author can click to commit the change.
 
 7. **Create the pending review**:
 

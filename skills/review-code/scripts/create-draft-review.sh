@@ -16,8 +16,8 @@
 #     "reviewer_username": "haacked",
 #     "summary": "Overall review summary...",
 #     "comments": [
-#       {"path": "src/auth.ts", "position": 23, "body": "Consider..."},
-#       {"path": "src/utils.ts", "position": 15, "body": "This could..."}
+#       {"path": "src/auth.ts", "line": 42, "side": "RIGHT", "body": "Consider..."},
+#       {"path": "src/utils.ts", "line": 15, "side": "RIGHT", "body": "This could..."}
 #     ],
 #     "unmapped_comments": [
 #       {"description": "Test coverage could be improved for X, Y, Z"}
@@ -172,13 +172,13 @@ main() {
 
     # Validate comments have required fields and filter out invalid ones
     local valid_comments invalid_count
-    valid_comments=$(echo "${comments}" | jq -c '[.[] | select(.path != null and .position != null and .body != null)]')
-    invalid_count=$(echo "${comments}" | jq '[.[] | select(.path == null or .position == null or .body == null)] | length')
+    valid_comments=$(echo "${comments}" | jq -c '[.[] | select(.path != null and .line != null and .body != null)]')
+    invalid_count=$(echo "${comments}" | jq '[.[] | select(.path == null or .line == null or .body == null)] | length')
 
     if [[ "${invalid_count}" -gt 0 ]]; then
-        warning "${invalid_count} comments filtered out due to missing path, position, or body"
+        warning "${invalid_count} comments filtered out due to missing path, line, or body"
         echo "Filtered comments:" >&2
-        echo "${comments}" | jq -c '.[] | select(.path == null or .position == null or .body == null)' >&2
+        echo "${comments}" | jq -c '.[] | select(.path == null or .line == null or .body == null)' >&2
     fi
 
     # Use validated comments
