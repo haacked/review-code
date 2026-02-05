@@ -571,6 +571,16 @@ EOF
     teardown_smart_merge
 }
 
+@test "setup: has process_context_file function" {
+    run bash -c "grep -q '^process_context_file()' '$PROJECT_ROOT/bin/setup'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: install_context uses process_context_file" {
+    run bash -c "grep -A100 'install_context()' '$PROJECT_ROOT/bin/setup' | grep -q 'process_context_file'"
+    [ "$status" -eq 0 ]
+}
+
 # =============================================================================
 # Installation path tests
 # =============================================================================

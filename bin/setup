@@ -304,6 +304,43 @@ merge_markdown_sections() {
     echo "${new_sections_added}"
 }
 
+# Process a single context file with smart merge
+# Args: $1=src, $2=dst, $3=display_name (for logging)
+# Outputs: "new", "updated", "merged", or "preserved" on stdout
+process_context_file() {
+    local src="$1"
+    local dst="$2"
+    local display_name="$3"
+
+    if [[ ! -f "${dst}" ]]; then
+        cp "${src}" "${dst}"
+        echo "new"
+        return
+    fi
+
+    local src_sum dst_sum
+    src_sum=$(get_file_checksum "${src}")
+    dst_sum=$(get_file_checksum "${dst}")
+
+    if [[ "${src_sum}" == "${dst_sum}" ]]; then
+        # Files identical - no action needed
+        echo "updated"
+        return
+    fi
+
+    # Files differ - try smart merge
+    local sections_added
+    sections_added=$(merge_markdown_sections "${src}" "${dst}")
+
+    if [[ "${sections_added}" -gt 0 ]]; then
+        debug "Merged ${sections_added} new section(s): ${display_name}"
+        echo "merged"
+    else
+        # No new sections to add, preserve user's version
+        echo "preserved"
+    fi
+}
+
 install_context() {
     local context_src="${SCRIPT_DIR}/skills/review-code/context"
     local context_dst="${SKILL_DIR}/context"
@@ -324,34 +361,14 @@ install_context() {
         local filename
         filename=$(basename "${src}")
         local dst="${context_dst}/languages/${filename}"
-
-        if [[ -f "${dst}" ]]; then
-            local src_sum dst_sum
-            src_sum=$(get_file_checksum "${src}")
-            dst_sum=$(get_file_checksum "${dst}")
-
-            if [[ "${src_sum}" != "${dst_sum}" ]]; then
-                # Files differ - try smart merge
-                local sections_added
-                sections_added=$(merge_markdown_sections "${src}" "${dst}")
-
-                if [[ "${sections_added}" -gt 0 ]]; then
-                    debug "Merged ${sections_added} new section(s): languages/${filename}"
-                    merged=$((merged + 1))
-                else
-                    # No new sections to add, preserve user's version
-                    preserved=$((preserved + 1))
-                fi
-            else
-                # Files identical, just update
-                cp "${src}" "${dst}"
-                updated=$((updated + 1))
-            fi
-        else
-            # New file
-            cp "${src}" "${dst}"
-            new=$((new + 1))
-        fi
+        local result
+        result=$(process_context_file "${src}" "${dst}" "languages/${filename}")
+        case "${result}" in
+            new) new=$((new + 1)) ;;
+            updated) updated=$((updated + 1)) ;;
+            merged) merged=$((merged + 1)) ;;
+            preserved) preserved=$((preserved + 1)) ;;
+        esac
     done
 
     # Copy framework context files with smart merge
@@ -360,33 +377,17 @@ install_context() {
         local filename
         filename=$(basename "${src}")
         local dst="${context_dst}/frameworks/${filename}"
-
-        if [[ -f "${dst}" ]]; then
-            local src_sum dst_sum
-            src_sum=$(get_file_checksum "${src}")
-            dst_sum=$(get_file_checksum "${dst}")
-
-            if [[ "${src_sum}" != "${dst_sum}" ]]; then
-                local sections_added
-                sections_added=$(merge_markdown_sections "${src}" "${dst}")
-
-                if [[ "${sections_added}" -gt 0 ]]; then
-                    debug "Merged ${sections_added} new section(s): frameworks/${filename}"
-                    merged=$((merged + 1))
-                else
-                    preserved=$((preserved + 1))
-                fi
-            else
-                cp "${src}" "${dst}"
-                updated=$((updated + 1))
-            fi
-        else
-            cp "${src}" "${dst}"
-            new=$((new + 1))
-        fi
+        local result
+        result=$(process_context_file "${src}" "${dst}" "frameworks/${filename}")
+        case "${result}" in
+            new) new=$((new + 1)) ;;
+            updated) updated=$((updated + 1)) ;;
+            merged) merged=$((merged + 1)) ;;
+            preserved) preserved=$((preserved + 1)) ;;
+        esac
     done
 
-    # Copy org context directories (recursive) - these are less likely to have user edits
+    # Copy org context directories (recursive)
     if [[ -d "${context_src}/orgs" ]]; then
         for org_dir in "${context_src}/orgs/"*; do
             [[ -d "${org_dir}" ]] || continue
@@ -400,30 +401,14 @@ install_context() {
                 local filename
                 filename=$(basename "${src}")
                 local dst="${context_dst}/orgs/${org_name}/${filename}"
-
-                if [[ -f "${dst}" ]]; then
-                    local src_sum dst_sum
-                    src_sum=$(get_file_checksum "${src}")
-                    dst_sum=$(get_file_checksum "${dst}")
-
-                    if [[ "${src_sum}" != "${dst_sum}" ]]; then
-                        local sections_added
-                        sections_added=$(merge_markdown_sections "${src}" "${dst}")
-
-                        if [[ "${sections_added}" -gt 0 ]]; then
-                            debug "Merged ${sections_added} new section(s): orgs/${org_name}/${filename}"
-                            merged=$((merged + 1))
-                        else
-                            preserved=$((preserved + 1))
-                        fi
-                    else
-                        cp "${src}" "${dst}"
-                        updated=$((updated + 1))
-                    fi
-                else
-                    cp "${src}" "${dst}"
-                    new=$((new + 1))
-                fi
+                local result
+                result=$(process_context_file "${src}" "${dst}" "orgs/${org_name}/${filename}")
+                case "${result}" in
+                    new) new=$((new + 1)) ;;
+                    updated) updated=$((updated + 1)) ;;
+                    merged) merged=$((merged + 1)) ;;
+                    preserved) preserved=$((preserved + 1)) ;;
+                esac
             done
 
             # Copy repo-specific context if exists
@@ -434,30 +419,14 @@ install_context() {
                     local filename
                     filename=$(basename "${src}")
                     local dst="${context_dst}/orgs/${org_name}/repos/${filename}"
-
-                    if [[ -f "${dst}" ]]; then
-                        local src_sum dst_sum
-                        src_sum=$(get_file_checksum "${src}")
-                        dst_sum=$(get_file_checksum "${dst}")
-
-                        if [[ "${src_sum}" != "${dst_sum}" ]]; then
-                            local sections_added
-                            sections_added=$(merge_markdown_sections "${src}" "${dst}")
-
-                            if [[ "${sections_added}" -gt 0 ]]; then
-                                debug "Merged ${sections_added} new section(s): orgs/${org_name}/repos/${filename}"
-                                merged=$((merged + 1))
-                            else
-                                preserved=$((preserved + 1))
-                            fi
-                        else
-                            cp "${src}" "${dst}"
-                            updated=$((updated + 1))
-                        fi
-                    else
-                        cp "${src}" "${dst}"
-                        new=$((new + 1))
-                    fi
+                    local result
+                    result=$(process_context_file "${src}" "${dst}" "orgs/${org_name}/repos/${filename}")
+                    case "${result}" in
+                        new) new=$((new + 1)) ;;
+                        updated) updated=$((updated + 1)) ;;
+                        merged) merged=$((merged + 1)) ;;
+                        preserved) preserved=$((preserved + 1)) ;;
+                    esac
                 done
             fi
         done
