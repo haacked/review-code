@@ -131,30 +131,23 @@ create_pending_review() {
     tmpfile=$(mktemp)
     trap "rm -f '${tmpfile}'" RETURN
 
-    if [[ "${comments_json}" == "[]" ]]; then
-        # No inline comments, just create review with body
-        if ! result=$(gh api --method POST "repos/${owner}/${repo}/pulls/${pr_number}/reviews" \
-            -f body="${body}" 2>"${tmpfile}"); then
-            error_output=$(<"${tmpfile}")
-            echo "API error: ${error_output}" >&2
-            return 1
-        fi
-    else
-        # Create review with inline comments using gh's JSON input support
-        # Use jq to build properly escaped JSON
-        local request_body
-        request_body=$(jq -n \
-            --arg body "${body}" \
-            --argjson comments "${comments_json}" \
-            '{body: $body, comments: $comments}')
+    # Always include the comments array (even if empty) to ensure the review
+    # stays in PENDING state. Without the comments field, GitHub immediately
+    # submits the review as COMMENTED.
+    local request_body
+    request_body=$(jq -n \
+        --arg body "${body}" \
+        --argjson comments "${comments_json}" \
+        '{body: $body, comments: $comments}')
 
-        if ! result=$(echo "${request_body}" | gh api --method POST \
-            "repos/${owner}/${repo}/pulls/${pr_number}/reviews" \
-            --input - 2>"${tmpfile}"); then
-            error_output=$(<"${tmpfile}")
-            echo "API error: ${error_output}" >&2
-            return 1
-        fi
+    if ! result=$(echo "${request_body}" | gh api --method POST \
+        "repos/${owner}/${repo}/pulls/${pr_number}/reviews" \
+        --input - 2>"${tmpfile}"); then
+        error_output=$(<"${tmpfile}")
+        echo "API error: ${error_output}" >&2
+        echo "Request body sent:" >&2
+        echo "${request_body}" | jq -c '.' >&2
+        return 1
     fi
 
     echo "${result}"
@@ -176,6 +169,20 @@ main() {
     reviewer=$(echo "${input}" | jq -r '.reviewer_username')
     summary=$(echo "${input}" | jq -r '.summary // ""')
     comments=$(echo "${input}" | jq -c '.comments // []')
+
+    # Validate comments have required fields and filter out invalid ones
+    local valid_comments invalid_count
+    valid_comments=$(echo "${comments}" | jq -c '[.[] | select(.path != null and .position != null and .body != null)]')
+    invalid_count=$(echo "${comments}" | jq '[.[] | select(.path == null or .position == null or .body == null)] | length')
+
+    if [[ "${invalid_count}" -gt 0 ]]; then
+        warning "${invalid_count} comments filtered out due to missing path, position, or body"
+        echo "Filtered comments:" >&2
+        echo "${comments}" | jq -c '.[] | select(.path == null or .position == null or .body == null)' >&2
+    fi
+
+    # Use validated comments
+    comments="${valid_comments}"
     unmapped_comments=$(echo "${input}" | jq -c '.unmapped_comments // []')
 
     # Validate required fields

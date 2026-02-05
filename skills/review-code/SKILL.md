@@ -99,7 +99,15 @@ Examples:
 
 **NOTE**: Uses session-based caching to run the orchestrator once and reuse the data across multiple bash invocations. This reduces token usage by ~60%.
 
-**⚠️ CRITICAL**: This skill MUST follow the structured session flow below. If session initialization fails, STOP and inform the user. NEVER improvise by running review agents manually or posting to GitHub directly - this can cause unintended side effects like submitting reviews that should be drafts.
+**⚠️ CRITICAL SAFEGUARDS** - These rules are NON-NEGOTIABLE:
+
+1. **NEVER improvise when errors occur** - If any step fails (API errors, script failures, etc.), STOP and inform the user. Do not try to work around failures by posting comments directly or using alternative methods.
+
+2. **NEVER submit reviews without explicit approval** - If the user asks to add comments to a pending review and you cannot amend it, ASK the user if they want to submit the current review first. Never submit on their behalf unless explicitly told to.
+
+3. **NEVER fall back to regular comments** - If `create-draft-review.sh` fails, do NOT post a regular comment as a workaround. This will submit the review instead of keeping it pending.
+
+4. **Follow the structured session flow** - If session initialization fails, STOP and inform the user. NEVER run review agents manually or post to GitHub directly.
 
 ### Step 0: Check for Learn Mode
 
@@ -858,14 +866,21 @@ If failed, show the error and suggest using the review file manually.
 - **Not PR mode**: "The --draft flag only works when reviewing a pull request"
 - **Own PR**: "Cannot create draft review on your own pull request"
 - **No mappable comments**: Create review with summary only, warn user
-- **API failure**: Display error, suggest using review file manually
+- **API failure (HTTP 422, etc.)**:
+  1. Display the error message to the user
+  2. Tell them: "Draft review creation failed. The review has been saved to the markdown file."
+  3. Suggest: "You can copy comments from the review file and post them manually on GitHub."
+  4. **STOP HERE** - Do NOT attempt to post comments using `gh pr review` or any other method as a fallback. This will submit the review instead of keeping it pending.
 
 **What NOT to do:**
 - ❌ Do NOT use `gh pr review` or `gh api` directly to create reviews
 - ❌ Do NOT post the full review summary as the review body
 - ❌ Do NOT skip the `create-draft-review.sh` script
+- ❌ **NEVER fall back to posting a regular comment when draft review fails** - if the API fails, STOP and tell the user. Do not try to work around the failure by posting a comment directly.
+- ❌ **NEVER submit a pending review without explicit user approval** - if the user asks to add comments to a pending review and you cannot amend it, ASK the user if they want to submit the current review first. Never submit on their behalf.
 - ✅ DO save detailed review to markdown file
 - ✅ DO use `create-draft-review.sh` with brief summary + inline comments only
+- ✅ DO stop and inform the user when errors occur - let them decide how to proceed
 
 ### Cleanup Session
 
