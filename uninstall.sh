@@ -21,9 +21,7 @@ NC='\033[0m'
 # Directories - all paths are now fixed under the skill directory
 CLAUDE_DIR="${HOME}/.claude"
 SKILL_DIR="${CLAUDE_DIR}/skills/review-code"
-CONTEXT_DIR="${SKILL_DIR}/context"
 REVIEWS_DIR="${SKILL_DIR}/reviews"
-LEARNINGS_DIR="${SKILL_DIR}/learnings"
 
 info() {
     echo -e "${GREEN}✓${NC} $1"
@@ -101,7 +99,12 @@ remove_agents() {
 
 preserve_reviews() {
     # Check if there are reviews to preserve
-    if [[ ! -d "${REVIEWS_DIR}" ]] || [[ -z "$(ls -A "${REVIEWS_DIR}" 2> /dev/null)" ]]; then
+    if [[ ! -d "${REVIEWS_DIR}" ]]; then
+        return
+    fi
+    local dir_contents
+    dir_contents=$(ls -A "${REVIEWS_DIR}" 2>/dev/null) || true
+    if [[ -z "${dir_contents}" ]]; then
         return
     fi
 
@@ -111,7 +114,8 @@ preserve_reviews() {
     echo ""
 
     if [[ ! ${REPLY} =~ ^[Nn]$ ]]; then
-        local backup_dir="${HOME}/review-code-backup-$(date +%Y%m%d-%H%M%S)"
+        local backup_dir
+        backup_dir="${HOME}/review-code-backup-$(date +%Y%m%d-%H%M%S)"
         mkdir -p "${backup_dir}"
         cp -r "${REVIEWS_DIR}" "${backup_dir}/"
         info "Reviews backed up to: ${backup_dir}/reviews"

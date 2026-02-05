@@ -368,6 +368,7 @@ install_context() {
             updated) updated=$((updated + 1)) ;;
             merged) merged=$((merged + 1)) ;;
             preserved) preserved=$((preserved + 1)) ;;
+            *) ;;
         esac
     done
 
@@ -384,6 +385,7 @@ install_context() {
             updated) updated=$((updated + 1)) ;;
             merged) merged=$((merged + 1)) ;;
             preserved) preserved=$((preserved + 1)) ;;
+            *) ;;
         esac
     done
 
@@ -408,6 +410,7 @@ install_context() {
                     updated) updated=$((updated + 1)) ;;
                     merged) merged=$((merged + 1)) ;;
                     preserved) preserved=$((preserved + 1)) ;;
+                    *) ;;
                 esac
             done
 
@@ -426,6 +429,7 @@ install_context() {
                         updated) updated=$((updated + 1)) ;;
                         merged) merged=$((merged + 1)) ;;
                         preserved) preserved=$((preserved + 1)) ;;
+                        *) ;;
                     esac
                 done
             fi
