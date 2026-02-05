@@ -159,13 +159,17 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
-@test "setup: install_context uses smart merge" {
-    run bash -c "grep -A200 'install_context()' '$PROJECT_ROOT/bin/setup' | grep -q 'merge_markdown_sections'"
+@test "setup: install_context uses smart merge via process_context_file" {
+    # install_context delegates to process_context_file which uses smart merge
+    run bash -c "grep -A200 'install_context()' '$PROJECT_ROOT/bin/setup' | grep -q 'process_context_file'"
+    [ "$status" -eq 0 ]
+    # Verify process_context_file uses merge_markdown_sections
+    run bash -c "grep -A50 'process_context_file()' '$PROJECT_ROOT/bin/setup' | grep -q 'merge_markdown_sections'"
     [ "$status" -eq 0 ]
 }
 
-@test "setup: install_context compares file checksums" {
-    run bash -c "grep -A200 'install_context()' '$PROJECT_ROOT/bin/setup' | grep -q 'get_file_checksum'"
+@test "setup: process_context_file compares file checksums" {
+    run bash -c "grep -A50 'process_context_file()' '$PROJECT_ROOT/bin/setup' | grep -q 'get_file_checksum'"
     [ "$status" -eq 0 ]
 }
 
