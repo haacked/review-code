@@ -131,9 +131,9 @@ create_pending_review() {
     tmpfile=$(mktemp)
     trap "rm -f '${tmpfile}'" RETURN
 
-    # Always include the comments array (even if empty) to ensure the review
-    # stays in PENDING state. Without the comments field, GitHub immediately
-    # submits the review as COMMENTED.
+    # Always use JSON format with comments array for consistency, whether
+    # comments are empty or not. This ensures uniform API request structure
+    # and predictable error handling.
     local request_body
     request_body=$(jq -n \
         --arg body "${body}" \
