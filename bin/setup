@@ -86,7 +86,7 @@ check_prerequisites() {
 }
 
 verify_repo_structure() {
-    local required_dirs=("skills/review-code" "agents" "context")
+    local required_dirs=("skills/review-code" "skills/review-code/context" "agents")
     local missing=()
 
     for dir in "${required_dirs[@]}"; do
@@ -301,7 +301,7 @@ merge_markdown_sections() {
 }
 
 install_context() {
-    local context_src="${SCRIPT_DIR}/context"
+    local context_src="${SCRIPT_DIR}/skills/review-code/context"
     local context_dst="${SKILL_DIR}/context"
 
     # Create context directories

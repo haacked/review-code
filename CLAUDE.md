@@ -6,9 +6,9 @@ This repo contains the source files for the `/review-code` skill:
 
 - `skills/review-code/SKILL.md` - Skill definition
 - `skills/review-code/scripts/` - Bash scripts that implement the skill
+- `skills/review-code/context/` - Base context files (languages, frameworks, orgs)
 - `skills/review-code/learnings/` - Learning system documentation
 - `agents/` - Agent definitions
-- `context/` - Base context files (languages, frameworks, orgs)
 - `bin/` - Development utilities (fmt, lint, test, setup)
 
 ## Architecture
@@ -16,13 +16,13 @@ This repo contains the source files for the `/review-code` skill:
 **In the repository:**
 
 ```
-context/                              # Base context files (shipped to users)
-    languages/
-    frameworks/
-    orgs/
 skills/review-code/
     SKILL.md                          # Skill definition
     scripts/                          # Helper scripts
+    context/                          # Base context files (shipped to users)
+        languages/
+        frameworks/
+        orgs/
     learnings/                        # Learning system docs
 agents/                               # Review agent definitions
 ```
@@ -46,7 +46,7 @@ agents/                               # Review agent definitions
         analyzed.json
 ```
 
-**Key insight:** The repo's `context/` is the base. During setup, it's merged into `~/.claude/skills/review-code/context/`. User learnings applied to installed context are preserved through smart merge - new sections from base are added, but existing sections (which may contain learned patterns) are kept.
+**Key insight:** The repo structure mirrors the installed structure. During setup, `skills/review-code/` is copied to `~/.claude/skills/review-code/`. User learnings applied to installed context are preserved through smart merge - new sections from base are added, but existing sections (which may contain learned patterns) are kept.
 
 ## Important: Edit Source Files Only
 
