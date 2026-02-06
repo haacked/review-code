@@ -21,7 +21,7 @@
 #   {
 #     "mappings": [
 #       {"path": "src/auth.ts", "line": 42, "side": "RIGHT"},
-#       {"path": "src/utils.ts", "line": 15, "line": null, "error": "line not in diff"}
+#       {"path": "src/utils.ts", "line": 15, "error": "line not in diff"}
 #     ]
 #   }
 
