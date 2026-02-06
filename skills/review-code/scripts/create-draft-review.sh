@@ -16,8 +16,8 @@
 #     "reviewer_username": "haacked",
 #     "summary": "Overall review summary...",
 #     "comments": [
-#       {"path": "src/auth.ts", "position": 23, "body": "Consider..."},
-#       {"path": "src/utils.ts", "position": 15, "body": "This could..."}
+#       {"path": "src/auth.ts", "line": 42, "side": "RIGHT", "body": "Consider..."},
+#       {"path": "src/utils.ts", "line": 15, "side": "RIGHT", "body": "This could..."}
 #     ],
 #     "unmapped_comments": [
 #       {"description": "Test coverage could be improved for X, Y, Z"}
@@ -171,14 +171,25 @@ main() {
     comments=$(echo "${input}" | jq -c '.comments // []')
 
     # Validate comments have required fields and filter out invalid ones
+    # Required: path, line, body
+    # Optional but validated: side (must be "LEFT" or "RIGHT" if present)
     local valid_comments invalid_count
-    valid_comments=$(echo "${comments}" | jq -c '[.[] | select(.path != null and .position != null and .body != null)]')
-    invalid_count=$(echo "${comments}" | jq '[.[] | select(.path == null or .position == null or .body == null)] | length')
+    valid_comments=$(echo "${comments}" | jq -c '[.[] | select(
+        .path != null and .line != null and .body != null and
+        (.side == null or .side == "LEFT" or .side == "RIGHT")
+    )]')
+    invalid_count=$(echo "${comments}" | jq '[.[] | select(
+        .path == null or .line == null or .body == null or
+        (.side != null and .side != "LEFT" and .side != "RIGHT")
+    )] | length')
 
     if [[ "${invalid_count}" -gt 0 ]]; then
-        warning "${invalid_count} comments filtered out due to missing path, position, or body"
+        warning "${invalid_count} comments filtered out due to missing required fields or invalid side value"
         echo "Filtered comments:" >&2
-        echo "${comments}" | jq -c '.[] | select(.path == null or .position == null or .body == null)' >&2
+        echo "${comments}" | jq -c '.[] | select(
+            .path == null or .line == null or .body == null or
+            (.side != null and .side != "LEFT" and .side != "RIGHT")
+        )' >&2
     fi
 
     # Use validated comments

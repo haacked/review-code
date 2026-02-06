@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# diff-position-mapper.sh - Map file line numbers to diff positions for GitHub API
+# diff-position-mapper.sh - Map file line numbers to diff line/side for GitHub API
 #
-# GitHub's PR review comment API requires a "position" that represents the
-# line number in the unified diff, counting from the first "@@" hunk header.
-# This script maps file:line targets to their corresponding diff positions.
+# GitHub's PR review comment API accepts either deprecated "position" or the
+# preferred "line" + "side" parameters. This script maps file:line targets
+# to their corresponding line numbers and side (RIGHT for new file lines).
 #
 # Usage:
 #   echo '<json_input>' | diff-position-mapper.sh
@@ -20,8 +20,8 @@
 # Output JSON:
 #   {
 #     "mappings": [
-#       {"path": "src/auth.ts", "line": 42, "position": 23, "side": "RIGHT"},
-#       {"path": "src/utils.ts", "line": 15, "position": null, "error": "line not in diff"}
+#       {"path": "src/auth.ts", "line": 42, "side": "RIGHT"},
+#       {"path": "src/utils.ts", "line": 15, "error": "line not in diff"}
 #     ]
 #   }
 
@@ -33,11 +33,11 @@ source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 # shellcheck source=lib/helpers/json-helpers.sh
 source "${SCRIPT_DIR}/helpers/json-helpers.sh"
 
-# Parse the diff and build a lookup table mapping file paths and line numbers to positions
-# The position is the 1-based line number within the unified diff, counting from the first @@
+# Parse the diff and build a lookup table mapping file paths and line numbers
+# Lines that appear in the diff (added or context lines) are mapped with their side
 #
 # Args: $1 = diff content
-# Output: JSON object with structure: { "file/path.ts": { "42": {"position": 5, "side": "RIGHT"}, ... }, ... }
+# Output: JSON object with structure: { "file/path.ts": { "42": {"line": 42, "side": "RIGHT"}, ... }, ... }
 build_position_map() {
     local diff="$1"
 
@@ -45,7 +45,6 @@ build_position_map() {
     echo "${diff}" | awk '
     BEGIN {
         current_file = ""
-        position = 0
         old_line = 0
         new_line = 0
         print "{"
@@ -69,7 +68,6 @@ build_position_map() {
             # Escape quotes in file path
             gsub(/"/, "\\\"", current_file)
             printf "  \"%s\": {", current_file
-            position = 0
             first_line = 1
         }
         next
@@ -94,7 +92,6 @@ build_position_map() {
             gsub(/[^0-9].*/, "", rest)
             old_line = rest + 0
         }
-        position++
         next
     }
 
@@ -102,8 +99,14 @@ build_position_map() {
     current_file == "" { next }
 
     # Context line (space prefix) - both sides have this line
+    # We map context lines to RIGHT because review comments target the new version
+    # of the file. While context lines exist in both old and new versions, GitHub
+    # displays them on the right side of split diff view, making RIGHT the natural
+    # choice for comment placement.
     /^ / {
-        position++
+        if (!first_line) printf ","
+        first_line = 0
+        printf "\n    \"%d\": {\"line\": %d, \"side\": \"RIGHT\"}", new_line, new_line
         old_line++
         new_line++
         next
@@ -111,17 +114,15 @@ build_position_map() {
 
     # Added line (+) - only in new file (RIGHT side)
     /^\+/ && !/^\+\+\+/ {
-        position++
         if (!first_line) printf ","
         first_line = 0
-        printf "\n    \"%d\": {\"position\": %d, \"side\": \"RIGHT\"}", new_line, position
+        printf "\n    \"%d\": {\"line\": %d, \"side\": \"RIGHT\"}", new_line, new_line
         new_line++
         next
     }
 
     # Removed line (-) - only in old file (LEFT side)
     /^-/ && !/^---/ {
-        position++
         old_line++
         next
     }
@@ -156,10 +157,10 @@ lookup_position() {
 
         if [[ "${file_exists}" == "false" ]]; then
             jq -n --arg path "${path}" --argjson line "${line}" \
-                '{path: $path, line: $line, position: null, error: "file not in diff"}'
+                '{path: $path, line: $line, error: "file not in diff"}'
         else
             jq -n --arg path "${path}" --argjson line "${line}" \
-                '{path: $path, line: $line, position: null, error: "line not in diff"}'
+                '{path: $path, line: $line, error: "line not in diff"}'
         fi
     else
         # Return the position info with path and line included
