@@ -575,3 +575,132 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *"Filtered comments:"* ]]
 }
+
+# =============================================================================
+# Side field validation tests
+# =============================================================================
+
+@test "create-draft-review: accepts comments with side RIGHT" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": [{"path": "file.ts", "line": 5, "side": "RIGHT", "body": "Comment"}]}'
+    run bash -c "echo '$input' | '$SCRIPT' 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"filtered out"* ]]
+    [[ "$output" == *'"inline_count": 1'* ]]
+}
+
+@test "create-draft-review: accepts comments with side LEFT" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": [{"path": "file.ts", "line": 5, "side": "LEFT", "body": "Comment"}]}'
+    run bash -c "echo '$input' | '$SCRIPT' 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"filtered out"* ]]
+    [[ "$output" == *'"inline_count": 1'* ]]
+}
+
+@test "create-draft-review: accepts comments without side field" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": [{"path": "file.ts", "line": 5, "body": "No side field"}]}'
+    run bash -c "echo '$input' | '$SCRIPT' 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"filtered out"* ]]
+    [[ "$output" == *'"inline_count": 1'* ]]
+}
+
+@test "create-draft-review: filters comments with invalid side value" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": [{"path": "file.ts", "line": 5, "side": "INVALID", "body": "Bad side"}]}'
+    run bash -c "echo '$input' | '$SCRIPT' 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"1 comments filtered out"* ]]
+    [[ "$output" == *'"inline_count": 0'* ]]
+}
+
+@test "create-draft-review: filters comments with lowercase side value" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    # GitHub API requires uppercase LEFT/RIGHT
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": [{"path": "file.ts", "line": 5, "side": "right", "body": "Lowercase side"}]}'
+    run bash -c "echo '$input' | '$SCRIPT' 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"1 comments filtered out"* ]]
+    [[ "$output" == *'"inline_count": 0'* ]]
+}
+
+@test "create-draft-review: keeps valid comments when filtering ones with bad side" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": [
+        {"path": "good.ts", "line": 5, "side": "RIGHT", "body": "Valid"},
+        {"path": "bad.ts", "line": 10, "side": "CENTER", "body": "Invalid side"},
+        {"path": "also-good.ts", "line": 15, "body": "No side is ok"}
+    ]}'
+    run bash -c "echo '$input' | '$SCRIPT' 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"1 comments filtered out"* ]]
+    [[ "$output" == *'"inline_count": 2'* ]]
+}

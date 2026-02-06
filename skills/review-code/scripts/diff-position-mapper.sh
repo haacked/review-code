@@ -102,6 +102,10 @@ build_position_map() {
     current_file == "" { next }
 
     # Context line (space prefix) - both sides have this line
+    # We map context lines to RIGHT because review comments target the new version
+    # of the file. While context lines exist in both old and new versions, GitHub
+    # displays them on the right side of split diff view, making RIGHT the natural
+    # choice for comment placement.
     /^ / {
         position++
         if (!first_line) printf ","

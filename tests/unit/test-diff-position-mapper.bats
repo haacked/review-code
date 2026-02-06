@@ -221,6 +221,67 @@ setup() {
 }
 
 # =============================================================================
+# Context line mapping tests
+# =============================================================================
+
+@test "diff-position-mapper: maps context lines (unchanged lines in diff)" {
+    # Context lines are lines with a space prefix in the diff - they appear in
+    # both old and new versions. The mapper should include them so comments can
+    # reference unchanged code visible in the diff view.
+    local diff
+    diff=$(cat "$FIXTURES_DIR/large-changes.diff")
+
+    # Line 1 in large-changes.diff is a context line: " {"
+    # (the opening brace of package.json, unchanged between versions)
+    local input
+    input=$(jq -n --arg d "$diff" '{diff: $d, targets: [{path: "package-lock.json", line: 1}]}')
+
+    run bash -c "echo '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+
+    # Context line should be mapped successfully (no error)
+    local error
+    error=$(echo "$output" | jq -r '.mappings[0].error // "none"')
+    [ "$error" = "none" ]
+
+    # Context lines map to RIGHT side
+    local side
+    side=$(echo "$output" | jq -r '.mappings[0].side')
+    [ "$side" = "RIGHT" ]
+
+    # Line number should be preserved
+    local line
+    line=$(echo "$output" | jq '.mappings[0].line')
+    [ "$line" = "1" ]
+}
+
+@test "diff-position-mapper: maps multiple context lines" {
+    local diff
+    diff=$(cat "$FIXTURES_DIR/large-changes.diff")
+
+    # Lines 1, 2, 3 are all context lines in the diff
+    local input
+    input=$(jq -n --arg d "$diff" '{diff: $d, targets: [
+        {path: "package-lock.json", line: 1},
+        {path: "package-lock.json", line: 2},
+        {path: "package-lock.json", line: 3}
+    ]}')
+
+    run bash -c "echo '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+
+    # All three context lines should be mapped successfully
+    local error_count
+    error_count=$(echo "$output" | jq '[.mappings[] | select(.error != null)] | length')
+    [ "$error_count" = "0" ]
+
+    # All should have side RIGHT
+    local right_count
+    right_count=$(echo "$output" | jq '[.mappings[] | select(.side == "RIGHT")] | length')
+    [ "$right_count" = "3" ]
+}
+
+# =============================================================================
 # Integration tests with realistic diffs
 # =============================================================================
 
