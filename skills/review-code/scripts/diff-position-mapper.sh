@@ -45,7 +45,6 @@ build_position_map() {
     echo "${diff}" | awk '
     BEGIN {
         current_file = ""
-        position = 0
         old_line = 0
         new_line = 0
         print "{"
@@ -69,7 +68,6 @@ build_position_map() {
             # Escape quotes in file path
             gsub(/"/, "\\\"", current_file)
             printf "  \"%s\": {", current_file
-            position = 0
             first_line = 1
         }
         next
@@ -94,7 +92,6 @@ build_position_map() {
             gsub(/[^0-9].*/, "", rest)
             old_line = rest + 0
         }
-        position++
         next
     }
 
@@ -107,7 +104,6 @@ build_position_map() {
     # displays them on the right side of split diff view, making RIGHT the natural
     # choice for comment placement.
     /^ / {
-        position++
         if (!first_line) printf ","
         first_line = 0
         printf "\n    \"%d\": {\"line\": %d, \"side\": \"RIGHT\"}", new_line, new_line
@@ -118,7 +114,6 @@ build_position_map() {
 
     # Added line (+) - only in new file (RIGHT side)
     /^\+/ && !/^\+\+\+/ {
-        position++
         if (!first_line) printf ","
         first_line = 0
         printf "\n    \"%d\": {\"line\": %d, \"side\": \"RIGHT\"}", new_line, new_line
@@ -128,7 +123,6 @@ build_position_map() {
 
     # Removed line (-) - only in old file (LEFT side)
     /^-/ && !/^---/ {
-        position++
         old_line++
         next
     }
