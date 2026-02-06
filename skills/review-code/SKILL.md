@@ -135,6 +135,7 @@ If user selects "No, continue anyway", proceed with Step 0.
 
 **Skip this prompt entirely if:**
 - This is a `find` or `learn` command (lightweight operations that don't need fresh context)
+- The context is already fresh (e.g., the user just ran `/clear` or this is the first command in the conversation)
 
 **Note:** To determine if the command is `find` or `learn`, parse the arguments first:
 ```bash
