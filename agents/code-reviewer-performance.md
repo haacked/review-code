@@ -20,6 +20,17 @@ Review code changes for performance issues in this priority order:
 - Missing connection pooling or improper pool configuration
 - Lock contention and transaction duration issues
 
+**N+1 Query Recommendations - Always Recommend Fixes:**
+
+When you find an N+1 pattern, recommend a concrete fix, not just observability:
+
+- ❌ "Add logging to track how often this happens" (weak - observability won't fix the issue)
+- ✅ "Batch these queries using `Model.objects.filter(id__in=ids)`" (strong - eliminates the N+1)
+- ✅ "Ensure the pre-loading logic captures all IDs that will be queried" (strong - prevents fallback)
+- ✅ "Use `select_related()`/`prefetch_related()` on the initial query" (strong - standard fix)
+
+If a fallback query exists because pre-loading might miss some IDs, the fix is to fix the pre-loading logic or batch the fallback, not to log when it happens.
+
 ### 2. **Algorithm Complexity** (Critical)
 
 - Quadratic or worse time complexity in hot paths
@@ -96,6 +107,17 @@ Review code changes for performance issues in this priority order:
 - **50-69%**: Probable inefficiency - concerning pattern (e.g., synchronous call in loop, unbounded cache)
 - **30-49%**: Possible optimization - depends on data volume (e.g., inefficient sort on small dataset)
 - **20-29%**: Micro-optimization - negligible impact (e.g., string concatenation vs StringBuilder)
+
+**N+1 Query Confidence - Special Cases:**
+
+Queries inside loops warrant **85%+ confidence** even when guarded by conditions:
+
+- **Fallback queries** (`if not in cache: query()`) - The fallback WILL be triggered; score 85-95%
+- **"Safety net" queries** with warning logs - If it logs, it happens; score 85-90%
+- **Cache miss patterns** - Cache misses are normal; score 90%+
+- **Two-phase ID extraction** - If IDs come from two sources, mismatches are likely; score 85%+
+
+Never reduce confidence just because a query is in a conditional path. Ask: "What makes this condition true?" If the answer involves data variability, external state, or edge cases, those will occur at scale.
 
 **Example Format:**
 ```

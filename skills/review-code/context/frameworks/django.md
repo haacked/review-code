@@ -7,6 +7,17 @@
 - Filtering in Python instead of database - chain filters in queryset
 - Missing database indexes on frequently queried fields
 
+**N+1 Query Detection - Common Disguises:**
+
+N+1 queries in "fallback" or "conditional" paths are just as serious as obvious ones. Watch for:
+
+- **Cache miss fallbacks**: `if id not in cache: Model.objects.filter(id=id).first()` inside a loop
+- **Conditional queries**: `if not preloaded: fetch_from_db()` where the condition triggers frequently
+- **"Safety net" queries**: Fallback queries with warning logs that suggest "this shouldn't happen" - if it can happen, it will happen at scale
+- **Two-phase loading**: Pre-loading with one method, then iterating with a different method that returns additional IDs not in the pre-load
+
+When you see a query inside a loop with an `if` guard, ask: "What conditions cause this query to execute, and how often do those conditions occur?" If the answer is "depends on data" or "edge cases", treat it as a likely N+1.
+
 **Optimization patterns:**
 
 - Use `only()` or `defer()` to limit loaded fields
