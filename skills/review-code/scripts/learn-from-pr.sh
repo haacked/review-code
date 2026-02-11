@@ -106,7 +106,7 @@ main() {
 
     # Fetch PR data from GitHub
     local pr_data
-    pr_data=$(gh pr view "${pr_number}" --repo "${org}/${repo}" --json number,title,state,mergedAt,createdAt,commits,files,reviews 2> /dev/null) || {
+    pr_data=$(DEBUG= gh pr view "${pr_number}" --repo "${org}/${repo}" --json number,title,state,mergedAt,createdAt,commits,files,reviews 2> /dev/null) || {
         error "Failed to fetch PR data from GitHub"
         exit 1
     }
@@ -118,7 +118,7 @@ main() {
 
     # Fetch review comments with threads
     local review_comments
-    review_comments=$(gh api "repos/${org}/${repo}/pulls/${pr_number}/comments" --jq '
+    review_comments=$(DEBUG= gh api "repos/${org}/${repo}/pulls/${pr_number}/comments" --jq '
         [.[] | {
             id: .id,
             path: .path,

@@ -449,7 +449,7 @@ detect_no_arg() {
     if command -v gh > /dev/null 2>&1; then
         # Get all open PRs for this branch
         local pr_numbers
-        pr_numbers=$(gh pr list --head "${current_branch}" --state open --json number --jq '.[].number' 2> /dev/null || echo "")
+        pr_numbers=$(DEBUG= gh pr list --head "${current_branch}" --state open --json number --jq '.[].number' 2> /dev/null || echo "")
 
         if [[ -n "${pr_numbers}" ]]; then
             local pr_array

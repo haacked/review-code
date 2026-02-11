@@ -170,7 +170,7 @@ main() {
         # If not cached or cache expired, fetch from API
         if [[ -z "${pr_state}" ]]; then
             local pr_data
-            pr_data=$(gh api "repos/${org}/${repo}/pulls/${pr_number}" --jq '{state: .state, merged_at: .merged_at}' 2> /dev/null || echo '{"state":"unknown","merged_at":null}')
+            pr_data=$(DEBUG= gh api "repos/${org}/${repo}/pulls/${pr_number}" --jq '{state: .state, merged_at: .merged_at}' 2> /dev/null || echo '{"state":"unknown","merged_at":null}')
 
             pr_merged_at=$(echo "${pr_data}" | jq -r '.merged_at // empty')
             local api_state

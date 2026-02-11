@@ -98,7 +98,7 @@ fetch_pr_metadata() {
         gh_cmd+=(--repo "${repo_spec}")
     fi
 
-    "${gh_cmd[@]}" --json number,title,body,url,author,headRefName,baseRefName,state
+    DEBUG= "${gh_cmd[@]}" --json number,title,body,url,author,headRefName,baseRefName,state
 }
 
 # Fetch PR diff
@@ -112,7 +112,7 @@ fetch_pr_diff() {
         gh_cmd+=(--repo "${repo_spec}")
     fi
 
-    "${gh_cmd[@]}"
+    DEBUG= "${gh_cmd[@]}"
 }
 
 # Fetch PR conversation comments (main discussion thread)
@@ -125,7 +125,7 @@ fetch_conversation_comments() {
     validate_pr_number "${pr_number}" || return 1
     validate_repo_spec "${repo_spec}" || return 1
 
-    gh api --paginate "repos/${repo_spec}/issues/${pr_number}/comments" \
+    DEBUG= gh api --paginate "repos/${repo_spec}/issues/${pr_number}/comments" \
         | jq -s 'add | [.[] | {id, author: .user.login, body, created_at, url: .html_url}]'
 }
 
@@ -139,7 +139,7 @@ fetch_inline_comments() {
     validate_pr_number "${pr_number}" || return 1
     validate_repo_spec "${repo_spec}" || return 1
 
-    gh api --paginate "repos/${repo_spec}/pulls/${pr_number}/comments" \
+    DEBUG= gh api --paginate "repos/${repo_spec}/pulls/${pr_number}/comments" \
         | jq -s 'add | [.[] | {id, author: .user.login, body, path, line, side, diff_hunk, created_at, in_reply_to_id, url: .html_url}]'
 }
 
@@ -153,7 +153,7 @@ fetch_reviews() {
         gh_cmd+=(--repo "${repo_spec}")
     fi
 
-    "${gh_cmd[@]}" | jq '.reviews | [.[] | {id, author: .author.login, state, body, submitted_at: .submittedAt}]'
+    DEBUG= "${gh_cmd[@]}" | jq '.reviews | [.[] | {id, author: .author.login, state, body, submitted_at: .submittedAt}]'
 }
 
 # Main logic
