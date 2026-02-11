@@ -310,7 +310,7 @@ build_review_data() {
     if [[ -n "${pr_context}" ]]; then
         local pr_author
         pr_author=$(echo "${pr_context}" | jq -r '.author // ""')
-        reviewer_username=$(gh api user --jq '.login' 2> /dev/null || echo "")
+        reviewer_username=$(DEBUG= gh api user --jq '.login' 2> /dev/null || echo "")
         if [[ -n "${reviewer_username}" && -n "${pr_author}" && "${reviewer_username}" == "${pr_author}" ]]; then
             is_own_pr="true"
         fi
