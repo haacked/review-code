@@ -527,6 +527,14 @@ $architectural_context
 **Language/Framework-Specific Guidelines:**
 $review_context
 
+**Accuracy Requirements:**
+For each finding you report:
+1. Quote the exact code you're referencing
+2. Verify the line number by reading the actual file with the Read tool
+3. Only flag code in the diff - do not flag pre-existing issues in unchanged code
+4. For bug claims: read surrounding code to confirm the behavior before reporting
+Do NOT report anything as a bug unless you've verified the behavior by reading the code.
+
 {If previous_review exists:}
 **Previous Review:**
 $previous_review
@@ -602,6 +610,31 @@ Agents to invoke:
 ### Collect and Present Results
 
 After all agents complete, combine their findings into a single review document.
+
+**Verify findings against the diff before including them in the final review.**
+
+After collecting findings from agents, validate that each finding references code actually in the diff. This catches wrong line numbers, findings about unrelated files, and stale references.
+
+**Step 1: Extract and validate.** For each agent's findings that reference a specific file and line, build a targets array and run it through the position mapper:
+
+```bash
+jq -n --arg diff "$(jq -r '.diff' "$SESSION_FILE")" --argjson targets "$TARGETS_JSON" \
+  '{diff: $diff, targets: $targets}' \
+  | ~/.claude/skills/review-code/scripts/diff-position-mapper.sh
+```
+
+Where `$TARGETS_JSON` is a JSON array of `{"path": "<file>", "line": <number>}` objects extracted from the agent findings.
+
+**Step 2: Handle results.** Check the `mappings` array in the output:
+
+- **Has `side` field** (line is in the diff): Include the finding as-is.
+- **Error: `"line not in diff"`** (file is in the diff but line is outside any hunk):
+  1. Resume the agent that produced this finding (using the agent ID from the Task tool).
+  2. Ask: "Your finding at `<file>:<line>` references a line outside the changed hunks in the diff. Is this finding still relevant to the changes (e.g., the issue interacts with the changed code), or should it be dropped?"
+  3. Include only if the agent confirms relevance and provides justification.
+- **Error: `"file not in diff"`**: Drop the finding. The file was not part of the changes.
+
+**Step 3: Spot-check bug claims.** For any remaining finding that claims a bug or incorrect behavior, use the Read tool to verify the claim is accurate before including it.
 
 **Format the review based on mode:**
 
