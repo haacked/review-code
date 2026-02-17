@@ -205,6 +205,17 @@ cache:
   ttl: 3600
 ```
 
+## Self-Challenge
+
+Before including any finding, argue against it:
+
+1. **What's the strongest case this isn't a breaking change?** Is the API internal? Was it added in this branch? Does any shipped code actually depend on the old behavior?
+2. **Can you point to a specific caller that would break?** Grep for call sites. "Someone might use this" is not enough.
+3. **Did you verify your assumptions?** Check if the changed code exists in the default branch — don't flag changes to code that hasn't shipped yet.
+4. **Is the argument against stronger than the argument for?** If so, drop it.
+
+**Drop the finding if** you can't identify a concrete consumer that would break, or the code was introduced in the current branch.
+
 ## Feedback Format
 
 **Severity Levels:**

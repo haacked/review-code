@@ -76,6 +76,17 @@ If a fallback query exists because pre-loading might miss some IDs, the fix is t
 - Large DOM operations causing reflows
 - Missing virtualization for long lists
 
+## Self-Challenge
+
+Before including any finding, argue against it:
+
+1. **What's the strongest case this doesn't matter?** Is this a cold path, small dataset, or one-time operation where the cost is negligible?
+2. **Can you quantify the impact?** "This could be slow" is not enough. Estimate the actual cost (query count, time complexity at realistic N, memory footprint).
+3. **Did you verify your assumptions?** Read the actual code — don't assume a loop contains a query without checking.
+4. **Is the argument against stronger than the argument for?** If so, drop it.
+
+**Drop the finding if** the performance impact is negligible at realistic scale, or the concern is speculative without measurable evidence.
+
 ## Feedback Format
 
 **Severity Levels:**

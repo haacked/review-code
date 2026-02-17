@@ -85,6 +85,8 @@ Review code changes for these maintainability concerns in priority order:
 - Excessive indirection layers (wrapper around wrapper)
 - **Manual reimplementation of built-in or library functionality**
 
+**When flagging over-engineering, include a concrete refactored version.** Show the before (current code, brief) and the after (proposed simpler version). Don't just say "this is too complex" — show "this 50-line function could be this 10-line function" with actual code.
+
 **SOLID Violations:**
 
 - Single Responsibility: Classes/functions doing multiple unrelated things
@@ -205,6 +207,17 @@ When reviewing new functions, actively compare them to existing functions in the
 - Return values ignored without comment
 - Flag parameters controlling behavior
 - Excessive method chaining
+
+## Self-Challenge
+
+Before including any finding, argue against it:
+
+1. **What's the strongest case this is fine?** Could the complexity be justified by the problem domain? Is the naming clear enough in context?
+2. **Can you point to the specific readability problem?** "This could be cleaner" is not enough. Identify what a future maintainer would misunderstand.
+3. **Did you verify your assumptions?** Read the surrounding code — don't flag naming or patterns without understanding local conventions.
+4. **Is the argument against stronger than the argument for?** If so, drop it.
+
+**Drop the finding if** the code is clear enough in its actual context, or the improvement is cosmetic rather than meaningful for maintainability.
 
 ## Feedback Format
 

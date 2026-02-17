@@ -74,6 +74,17 @@ Review code changes EXCLUSIVELY for these security concerns:
 - Prototype pollution in JavaScript
 - Insecure direct object references
 
+## Self-Challenge
+
+Before including any finding, argue against it:
+
+1. **What's the strongest case this is a false positive?** Is there a mitigation you haven't checked — a middleware, framework guard, or input sanitizer upstream?
+2. **Can you point to the specific vulnerable code path?** Trace from source to sink. "This could be vulnerable" is not enough.
+3. **Did you verify your assumptions?** Read the actual code — don't flag based on function names alone.
+4. **Is the argument against stronger than the argument for?** If so, drop it.
+
+**Drop the finding if** you can't trace a concrete attack path through the code, or the concern is theoretical without evidence.
+
 ## Feedback Format
 
 **Severity Levels:**

@@ -25,6 +25,8 @@ Review code changes EXCLUSIVELY for these high-level concerns:
 - Are we solving a problem that doesn't exist yet? (YAGNI)
 - Is this over-engineering for the current requirements?
 
+**Always show what simpler looks like.** When flagging unnecessary complexity, include a concrete alternative with actual code — not just "this could be simpler." The alternative should be concrete enough to copy-paste as a starting point.
+
 **Examples:**
 ```text
 ❌ BAD: Implementing full event sourcing for simple CRUD app
@@ -44,6 +46,16 @@ Review code changes EXCLUSIVELY for these high-level concerns:
 - Problem: Only need username/password auth
 - Simpler approach: Use Django's built-in auth
 - Impact: Remove 500 lines, use battle-tested code
+
+Current (45 lines):
+  class CustomOAuthProvider:
+      def authenticate(self, request): ...
+      def validate_token(self, token): ...
+      def refresh_token(self, token): ...
+
+Proposed (3 lines):
+  from django.contrib.auth import authenticate
+  user = authenticate(request, username=username, password=password)
 ```
 
 ### 2. **Minimal Changes Principle** (Critical)
@@ -290,6 +302,17 @@ Location: models.py:45-120
 - Rule: Abstract when you have 3+ similar implementations
 - Suggestion: Start concrete, refactor when pattern emerges
 ```
+
+## Self-Challenge
+
+Before including any finding, argue against it:
+
+1. **What's the strongest case this approach is correct?** Could the complexity be justified by constraints you're not seeing — performance requirements, backwards compatibility, or future plans mentioned in the PR?
+2. **Can you show a concrete simpler alternative?** "This could be simpler" is not enough. Show what simpler looks like.
+3. **Did you verify your assumptions?** Search the codebase for similar patterns — don't flag a pattern violation without checking if it's actually the established pattern.
+4. **Is the argument against stronger than the argument for?** If so, drop it.
+
+**Drop the finding if** you can't propose a concrete alternative, or the approach is consistent with how the codebase already solves similar problems.
 
 ## Feedback Format
 

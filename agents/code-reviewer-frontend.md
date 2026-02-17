@@ -128,6 +128,17 @@ Review code changes EXCLUSIVELY for these frontend concerns:
 
 Organization-specific frontend patterns (LemonUI, Scene patterns, feature flags) are loaded from org context files when reviewing code for that organization.
 
+## Self-Challenge
+
+Before including any finding, argue against it:
+
+1. **What's the strongest case this is fine?** Is the component simple enough that memoization is unnecessary? Is the accessibility concern irrelevant for this element's role?
+2. **Can you point to the specific problem?** "This component could be improved" is not enough. Identify the concrete user or developer impact.
+3. **Did you verify your assumptions?** Check the component's actual usage — don't flag re-render issues for components that render once.
+4. **Is the argument against stronger than the argument for?** If so, drop it.
+
+**Drop the finding if** the impact is negligible in practice, or the suggestion is a micro-optimization with no measurable benefit.
+
 ## Feedback Format
 
 **Severity Levels:**
