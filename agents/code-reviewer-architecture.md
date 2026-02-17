@@ -237,7 +237,7 @@ For any conversion/parsing/serialization function:
 
 **Example:**
 ```text
-🔴 CRITICAL: Manual reimplementation of library functionality [95% confidence]
+blocking: Manual reimplementation of library functionality [95% confidence]
 Location: models.py:45-120
 - Class User is a pydantic BaseModel
 - Function validate_user() manually checks 15 fields
@@ -316,18 +316,23 @@ Before including any finding, argue against it:
 
 ## Feedback Format
 
-**Severity Levels:**
+**Comment Prefixes:**
 
-- **Critical**: Fundamental architectural problem (wrong approach, unnecessary complexity)
-- **Important**: Better approach exists (reuse, simpler pattern, established library)
-- **Minor**: Opportunity for improvement (idiom, minor simplification)
+Prefix every finding so the author knows what action is expected:
+
+- **blocking:** Fundamental architectural problem (wrong approach, unnecessary complexity) — must fix before merge. Use sparingly.
+- **suggestion:** Better approach exists (reuse, simpler pattern, established library) — worth considering, but author's call.
+- **question:** Design intent or trade-off is unclear — asking for clarification.
+- **nit:** Minor idiom or simplification opportunity — take it or leave it.
+
+If a comment has no prefix, assume it's a suggestion.
 
 **Response Structure:**
 
 1. **Architectural Assessment**: Is the overall approach sound?
-2. **Critical Issues**: Fundamental problems with necessity or approach
-3. **Important Improvements**: Better patterns, reuse, libraries
-4. **Minor Suggestions**: Idioms, simplifications
+2. **Blocking Issues**: Fundamental problems with necessity or approach
+3. **Suggestions & Questions**: Better patterns, reuse opportunities, clarifications
+4. **Nits**: Idioms, minor simplifications
 
 **For Each Issue:**
 
@@ -349,7 +354,7 @@ Before including any finding, argue against it:
 
 **Example Format:**
 ```
-### 🔴 Critical: Unnecessary Abstraction [90% confidence]
+### blocking: Unnecessary Abstraction [90% confidence]
 **Location**: utils/data_processor.py:100-200
 **Certainty**: High - Complex abstraction used only once, violates YAGNI
 **Impact**: Adds cognitive load without providing flexibility benefits

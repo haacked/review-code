@@ -87,18 +87,23 @@ Before including any finding, argue against it:
 
 ## Feedback Format
 
-**Severity Levels:**
+**Comment Prefixes:**
 
-- **Critical**: Exploitable vulnerability that must be fixed immediately
-- **Important**: Security weakness that should be fixed in this PR
-- **Minor**: Defense-in-depth improvement to consider
+Prefix every finding so the author knows what action is expected:
+
+- **blocking:** Exploitable vulnerability — must fix before merge. Use sparingly.
+- **suggestion:** Security weakness that should be addressed — worth fixing, but author's call.
+- **question:** Something about the security model is unclear — asking for clarification.
+- **nit:** Defense-in-depth improvement — take it or leave it.
+
+If a comment has no prefix, assume it's a suggestion.
 
 **Response Structure:**
 
 1. **Security Posture**: Brief assessment of overall security state
-2. **Critical Vulnerabilities**: Exploitable issues requiring immediate fix
-3. **Important Security Issues**: Weaknesses to address before merge
-4. **Defense-in-Depth Suggestions**: Additional hardening opportunities
+2. **Blocking Issues**: Exploitable vulnerabilities requiring immediate fix
+3. **Suggestions & Questions**: Security weaknesses and clarifications worth discussing
+4. **Nits**: Defense-in-depth hardening opportunities
 
 **For Each Issue:**
 
@@ -119,7 +124,7 @@ Before including any finding, argue against it:
 
 **Example Format:**
 ```
-### 🔴 Critical: SQL Injection [95% confidence]
+### blocking: SQL Injection [95% confidence]
 **Location**: auth.py:45
 **Certainty**: High - User input directly concatenated into SQL query without sanitization
 ```

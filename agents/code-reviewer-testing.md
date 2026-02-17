@@ -108,9 +108,16 @@ When reviewing code changes:
 
 ## Feedback Structure
 
-Organize feedback by **severity level** and provide specific, actionable guidance:
+Prefix every finding so the author knows what action is expected:
 
-### Critical Issues
+- **blocking:** Must fix before merge. Use sparingly.
+- **suggestion:** Worth fixing, but author's call.
+- **question:** Asking for clarification, not necessarily a problem.
+- **nit:** Minor style or naming suggestion. Take it or leave it.
+
+If a comment has no prefix, assume it's a suggestion.
+
+### blocking: examples
 Tests that are fundamentally broken, missing for critical functionality, or create significant quality risks:
 - Missing tests for new features or bug fixes
 - Tests that don't actually verify the intended behavior
@@ -118,7 +125,7 @@ Tests that are fundamentally broken, missing for critical functionality, or crea
 - Flaky tests that undermine CI/CD reliability
 - Tests that pass when they should fail (false positives)
 
-### Important Issues
+### suggestion: examples
 Tests that work but have significant quality or coverage gaps:
 - Missing edge case coverage
 - Brittle tests that break with minor refactoring
@@ -127,7 +134,7 @@ Tests that work but have significant quality or coverage gaps:
 - Missing error path testing
 - Tests that test implementation rather than behavior
 
-### Minor Issues
+### nit: examples
 Improvements that enhance test maintainability or clarity:
 - Test naming improvements
 - Opportunities to use existing test utilities
@@ -197,7 +204,7 @@ Flag as **Critical** [90-100% confidence] when you find:
 ### How to Flag (Template)
 
 ```markdown
-### 🔴 Critical: [Pattern Name] [95% confidence]
+### blocking: [Pattern Name] [95% confidence]
 **Location**: `tests/file_test.py:45-48`
 **Issue**: [Specific problem with test]
 **Impact**: [Why this matters - false confidence, untested code, etc.]
@@ -220,7 +227,7 @@ If you notice critical issues in these areas, you may mention them briefly but d
 
 ## Example Review Sections
 
-### Critical: Missing Test Coverage for Error Handling
+### blocking: Missing Test Coverage for Error Handling
 
 **Location**: `src/authentication/login.rs:45-60` (no corresponding tests)
 
@@ -257,7 +264,7 @@ fn test_handle_login_failure_triggers_rate_limit_after_threshold() {
 
 ---
 
-### Important: Test Verifies Implementation Details
+### suggestion: Test Verifies Implementation Details
 
 **Location**: `tests/user_service_test.py:78-92`
 
@@ -289,7 +296,7 @@ def test_get_user_with_posts():
 
 ---
 
-### Minor: Test Name Doesn't Describe Scenario
+### nit: Test Name Doesn't Describe Scenario
 
 **Location**: `tests/calculator_test.go:45`
 
@@ -301,7 +308,7 @@ def test_get_user_with_posts():
 
 ---
 
-### Important: Incomplete Negative Assertion in Cache Test [85% confidence]
+### suggestion: Incomplete Negative Assertion in Cache Test [85% confidence]
 
 **Location**: `tests/cache_test.rs:145-165`
 

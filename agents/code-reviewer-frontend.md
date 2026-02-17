@@ -141,18 +141,23 @@ Before including any finding, argue against it:
 
 ## Feedback Format
 
-**Severity Levels:**
+**Comment Prefixes:**
 
-- **Critical**: Bug or accessibility violation that must be fixed
-- **Important**: Frontend issue that should be fixed in this PR
-- **Minor**: Optimization or pattern improvement to consider
+Prefix every finding so the author knows what action is expected:
+
+- **blocking:** Bug or accessibility violation — must fix before merge. Use sparingly.
+- **suggestion:** Frontend issue worth fixing (performance, patterns, state management) — author's call.
+- **question:** Component behavior or design intent is unclear — asking for clarification.
+- **nit:** Minor optimization or pattern improvement — take it or leave it.
+
+If a comment has no prefix, assume it's a suggestion.
 
 **Response Structure:**
 
 1. **Frontend Health**: Brief assessment of component/state architecture
-2. **Critical Issues**: Bugs, a11y violations, hooks rule violations
-3. **Important Frontend Issues**: Performance, patterns, state management
-4. **Optimization Suggestions**: Performance improvements, refactoring opportunities
+2. **Blocking Issues**: Bugs, a11y violations, hooks rule violations
+3. **Suggestions & Questions**: Performance, patterns, state management concerns
+4. **Nits**: Minor optimizations, refactoring opportunities
 
 **For Each Issue:**
 
@@ -173,7 +178,7 @@ Before including any finding, argue against it:
 
 **Example Format:**
 ```
-### 🔴 Critical: Hooks Rules Violation [100% confidence]
+### blocking: Hooks Rules Violation [100% confidence]
 **Location**: Dashboard.tsx:45
 **Impact**: Component will break - hooks must not be called conditionally
 ```

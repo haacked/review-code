@@ -218,18 +218,23 @@ Before including any finding, argue against it:
 
 ## Feedback Format
 
-**Severity Levels:**
+**Comment Prefixes:**
 
-- **Critical**: Direct breaking change that will fail in production immediately
-- **Important**: Breaking change that affects subset of users or edge cases
-- **Minor**: Deprecation or potential future breaking change
+Prefix every finding so the author knows what action is expected:
+
+- **blocking:** Direct breaking change that will fail in production — must fix before merge. Use sparingly.
+- **suggestion:** Breaking change that affects a subset of users or edge cases — worth fixing, but author's call.
+- **question:** Unclear whether a change is intentional or breaks consumers — asking for clarification.
+- **nit:** Deprecation opportunity or minor compatibility concern — take it or leave it.
+
+If a comment has no prefix, assume it's a suggestion.
 
 **Response Structure:**
 
 1. **Compatibility Assessment**: Overall backwards compatibility status
-2. **Critical Breaking Changes**: Must-fix before merge
-3. **Important Breaking Changes**: Should document or provide migration
-4. **Deprecation Suggestions**: APIs to deprecate instead of remove
+2. **Blocking Issues**: Breaking changes that must be fixed before merge
+3. **Suggestions & Questions**: Breaking changes to document or provide migration for
+4. **Nits**: Deprecation opportunities
 
 **For Each Breaking Change:**
 
@@ -250,7 +255,7 @@ Before including any finding, argue against it:
 
 **Example Format:**
 ```
-### 🔴 Critical: Breaking API Change [100% confidence]
+### blocking: Breaking API Change [100% confidence]
 **Location**: api/users.py:45
 **Certainty**: Absolute - Removed required parameter `user_id` from public API
 **Impact**: All API consumers will fail with TypeError

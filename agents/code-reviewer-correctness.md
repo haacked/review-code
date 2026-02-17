@@ -275,20 +275,23 @@ Before including any finding, argue against it:
 
 ## Feedback Format
 
-**Severity Levels:**
+**Comment Prefixes:**
 
-- **Critical**: Code will not work correctly at runtime (must fix before merge)
-- **Important**: Code may fail in some scenarios or violates contracts (should fix)
-- **Minor**: Potential issue or inconsistency (consider fixing)
+Prefix every finding so the author knows what action is expected:
+
+- **blocking:** Code will not work correctly at runtime — must fix before merge. Use sparingly.
+- **suggestion:** Code may fail in some scenarios or violates contracts — worth fixing, but author's call.
+- **question:** Something is unclear or surprising — asking for clarification, not necessarily a problem.
+- **nit:** Minor inconsistency or style issue — take it or leave it.
+
+If a comment has no prefix, assume it's a suggestion.
 
 **Response Structure:**
 
 1. **Intent Verification**: Does the code achieve what the PR claims?
-2. **Integration Issues**: Any boundary/format mismatches found?
-3. **Logic Issues**: Basic correctness problems within functions?
-4. **Cross-Function Issues**: Contract violations or unsafe optimizations?
-5. **Behavioral Changes**: Unmentioned changes to existing behavior?
-6. **What's Working**: Acknowledge correctly implemented functionality
+2. **Blocking Issues**: Bugs, integration mismatches, logic errors that will break at runtime
+3. **Suggestions & Questions**: Likely issues, behavioral changes, contract concerns worth discussing
+4. **What's Working**: Acknowledge correctly implemented functionality
 
 **For Each Issue:**
 
