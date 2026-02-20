@@ -74,20 +74,36 @@ Review code changes EXCLUSIVELY for these security concerns:
 - Prototype pollution in JavaScript
 - Insecure direct object references
 
+## Self-Challenge
+
+Before including any finding, argue against it:
+
+1. **What's the strongest case this is a false positive?** Is there a mitigation you haven't checked — a middleware, framework guard, or input sanitizer upstream?
+2. **Can you point to the specific vulnerable code path?** Trace from source to sink. "This could be vulnerable" is not enough.
+3. **Did you verify your assumptions?** Read the actual code — don't flag based on function names alone.
+4. **Is the argument against stronger than the argument for?** If so, drop it.
+
+**Drop the finding if** you can't trace a concrete attack path through the code, or the concern is theoretical without evidence.
+
 ## Feedback Format
 
-**Severity Levels:**
+**Comment Prefixes:**
 
-- **Critical**: Exploitable vulnerability that must be fixed immediately
-- **Important**: Security weakness that should be fixed in this PR
-- **Minor**: Defense-in-depth improvement to consider
+Prefix every finding so the author knows what action is expected:
+
+- **blocking:** Exploitable vulnerability — must fix before merge. Use sparingly.
+- **suggestion:** Security weakness that should be addressed — worth fixing, but author's call.
+- **question:** Something about the security model is unclear — asking for clarification.
+- **nit:** Defense-in-depth improvement — take it or leave it.
+
+If a comment has no prefix, assume it's a suggestion.
 
 **Response Structure:**
 
 1. **Security Posture**: Brief assessment of overall security state
-2. **Critical Vulnerabilities**: Exploitable issues requiring immediate fix
-3. **Important Security Issues**: Weaknesses to address before merge
-4. **Defense-in-Depth Suggestions**: Additional hardening opportunities
+2. **Blocking Issues**: Exploitable vulnerabilities requiring immediate fix
+3. **Suggestions & Questions**: Security weaknesses and clarifications worth discussing
+4. **Nits**: Defense-in-depth hardening opportunities
 
 **For Each Issue:**
 
@@ -108,7 +124,7 @@ Review code changes EXCLUSIVELY for these security concerns:
 
 **Example Format:**
 ```
-### 🔴 Critical: SQL Injection [95% confidence]
+### blocking: SQL Injection [95% confidence]
 **Location**: auth.py:45
 **Certainty**: High - User input directly concatenated into SQL query without sanitization
 ```

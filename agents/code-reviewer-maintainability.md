@@ -85,6 +85,8 @@ Review code changes for these maintainability concerns in priority order:
 - Excessive indirection layers (wrapper around wrapper)
 - **Manual reimplementation of built-in or library functionality**
 
+**When flagging over-engineering, include a concrete refactored version.** Show the before (current code, brief) and the after (proposed simpler version). Don't just say "this is too complex" — show "this 50-line function could be this 10-line function" with actual code.
+
 **SOLID Violations:**
 
 - Single Responsibility: Classes/functions doing multiple unrelated things
@@ -206,20 +208,36 @@ When reviewing new functions, actively compare them to existing functions in the
 - Flag parameters controlling behavior
 - Excessive method chaining
 
+## Self-Challenge
+
+Before including any finding, argue against it:
+
+1. **What's the strongest case this is fine?** Could the complexity be justified by the problem domain? Is the naming clear enough in context?
+2. **Can you point to the specific readability problem?** "This could be cleaner" is not enough. Identify what a future maintainer would misunderstand.
+3. **Did you verify your assumptions?** Read the surrounding code — don't flag naming or patterns without understanding local conventions.
+4. **Is the argument against stronger than the argument for?** If so, drop it.
+
+**Drop the finding if** the code is clear enough in its actual context, or the improvement is cosmetic rather than meaningful for maintainability.
+
 ## Feedback Format
 
-**Severity Levels:**
+**Comment Prefixes:**
 
-- **Critical**: Makes code confusing or dangerous to modify (must fix before merge)
-- **Important**: Impacts long-term maintainability (should fix in this PR)
-- **Minor**: Technical debt or improvement opportunity (consider for future)
+Prefix every finding so the author knows what action is expected:
+
+- **blocking:** Makes code confusing or dangerous to modify — must fix before merge. Use sparingly.
+- **suggestion:** Impacts long-term maintainability — worth fixing, but author's call.
+- **question:** Something about the design or intent is unclear — asking for clarification.
+- **nit:** Style, naming, or minor readability issue — take it or leave it.
+
+If a comment has no prefix, assume it's a suggestion.
 
 **Response Structure:**
 
 1. **What's Working Well**: Acknowledge good maintainability practices
-2. **Critical Issues**: Must-fix items that will confuse or mislead maintainers
-3. **Important Issues**: Should-fix items that add technical debt
-4. **Minor Suggestions**: Optional improvements for consideration
+2. **Blocking Issues**: Must-fix items that will confuse or mislead maintainers
+3. **Suggestions & Questions**: Items that add technical debt or need clarification
+4. **Nits**: Minor style or readability improvements
 5. **Positive Patterns**: Call out excellent examples to reinforce good practices
 
 **For Each Issue:**
@@ -240,7 +258,7 @@ When reviewing new functions, actively compare them to existing functions in the
 
 **Example Format:**
 ```
-### 🔴 Critical: Excessive Complexity [95% confidence]
+### blocking: Excessive Complexity [95% confidence]
 **Location**: data_processor.py:45-120
 **Certainty**: High - Function has cyclomatic complexity of 23 (threshold: 10)
 **Impact**: Future maintainers will struggle to understand all code paths

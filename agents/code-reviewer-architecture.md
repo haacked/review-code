@@ -25,6 +25,8 @@ Review code changes EXCLUSIVELY for these high-level concerns:
 - Are we solving a problem that doesn't exist yet? (YAGNI)
 - Is this over-engineering for the current requirements?
 
+**Always show what simpler looks like.** When flagging unnecessary complexity, include a concrete alternative with actual code — not just "this could be simpler." The alternative should be concrete enough to copy-paste as a starting point.
+
 **Examples:**
 ```text
 ❌ BAD: Implementing full event sourcing for simple CRUD app
@@ -44,6 +46,16 @@ Review code changes EXCLUSIVELY for these high-level concerns:
 - Problem: Only need username/password auth
 - Simpler approach: Use Django's built-in auth
 - Impact: Remove 500 lines, use battle-tested code
+
+Current (45 lines):
+  class CustomOAuthProvider:
+      def authenticate(self, request): ...
+      def validate_token(self, token): ...
+      def refresh_token(self, token): ...
+
+Proposed (3 lines):
+  from django.contrib.auth import authenticate
+  user = authenticate(request, username=username, password=password)
 ```
 
 ### 2. **Minimal Changes Principle** (Critical)
@@ -225,7 +237,7 @@ For any conversion/parsing/serialization function:
 
 **Example:**
 ```text
-🔴 CRITICAL: Manual reimplementation of library functionality [95% confidence]
+blocking: Manual reimplementation of library functionality [95% confidence]
 Location: models.py:45-120
 - Class User is a pydantic BaseModel
 - Function validate_user() manually checks 15 fields
@@ -291,20 +303,36 @@ Location: models.py:45-120
 - Suggestion: Start concrete, refactor when pattern emerges
 ```
 
+## Self-Challenge
+
+Before including any finding, argue against it:
+
+1. **What's the strongest case this approach is correct?** Could the complexity be justified by constraints you're not seeing — performance requirements, backwards compatibility, or future plans mentioned in the PR?
+2. **Can you show a concrete simpler alternative?** "This could be simpler" is not enough. Show what simpler looks like.
+3. **Did you verify your assumptions?** Search the codebase for similar patterns — don't flag a pattern violation without checking if it's actually the established pattern.
+4. **Is the argument against stronger than the argument for?** If so, drop it.
+
+**Drop the finding if** you can't propose a concrete alternative, or the approach is consistent with how the codebase already solves similar problems.
+
 ## Feedback Format
 
-**Severity Levels:**
+**Comment Prefixes:**
 
-- **Critical**: Fundamental architectural problem (wrong approach, unnecessary complexity)
-- **Important**: Better approach exists (reuse, simpler pattern, established library)
-- **Minor**: Opportunity for improvement (idiom, minor simplification)
+Prefix every finding so the author knows what action is expected:
+
+- **blocking:** Fundamental architectural problem (wrong approach, unnecessary complexity) — must fix before merge. Use sparingly.
+- **suggestion:** Better approach exists (reuse, simpler pattern, established library) — worth considering, but author's call.
+- **question:** Design intent or trade-off is unclear — asking for clarification.
+- **nit:** Minor idiom or simplification opportunity — take it or leave it.
+
+If a comment has no prefix, assume it's a suggestion.
 
 **Response Structure:**
 
 1. **Architectural Assessment**: Is the overall approach sound?
-2. **Critical Issues**: Fundamental problems with necessity or approach
-3. **Important Improvements**: Better patterns, reuse, libraries
-4. **Minor Suggestions**: Idioms, simplifications
+2. **Blocking Issues**: Fundamental problems with necessity or approach
+3. **Suggestions & Questions**: Better patterns, reuse opportunities, clarifications
+4. **Nits**: Idioms, minor simplifications
 
 **For Each Issue:**
 
@@ -326,7 +354,7 @@ Location: models.py:45-120
 
 **Example Format:**
 ```
-### 🔴 Critical: Unnecessary Abstraction [90% confidence]
+### blocking: Unnecessary Abstraction [90% confidence]
 **Location**: utils/data_processor.py:100-200
 **Certainty**: High - Complex abstraction used only once, violates YAGNI
 **Impact**: Adds cognitive load without providing flexibility benefits

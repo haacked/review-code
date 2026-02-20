@@ -205,7 +205,43 @@ Location: cache_service.py:89
 - Fix: Either expand `warm_cache()` or handle cache misses in `get_cached_user()`
 ```
 
-### 5. Utility Adoption (Important)
+### 5. Behavioral Change Analysis (Critical)
+
+**Every removed or modified line had a reason to exist. Verify the old behavior wasn't lost by accident.**
+
+When a diff removes or modifies code, analyze what behavior that code provided and whether the PR intentionally changes it:
+
+1. **Identify old behavior**: What did the removed/modified lines do?
+2. **Compare to new behavior**: What does the replacement code do differently?
+3. **Check the PR description**: Does it mention this behavioral change?
+4. **Trace callers**: Do callers or downstream systems depend on the old behavior?
+
+**Behavioral changes to look for:**
+- Changed default values or fallback behavior
+- Removed error handling, retries, or fallbacks
+- Altered return values, types, or shapes
+- Removed side effects (cache invalidation, logging, notifications, metrics)
+- Changed filtering, sorting, or ordering logic
+- Modified conditional logic that gates behavior
+- Removed or weakened validation
+
+**Example:**
+```text
+question: Unintended behavioral change [85% confidence]
+Location: cache_service.py:45
+- Before: get_user() returned cached result with 300s TTL
+- After: get_user() always queries the database (cache.get() call removed in refactor)
+- PR says: "Refactor cache service for clarity"
+- Impact: 10x increase in database queries for user lookups
+- Question: Was removing the cache intentional? The PR description doesn't mention it.
+```
+
+**Only flag when:**
+- The behavioral change isn't mentioned in the PR description
+- The old behavior served a clear purpose (performance, safety, correctness)
+- Callers or systems plausibly depend on the old behavior
+
+### 6. Utility Adoption (Important)
 
 **When helpers exist, verify they're actually used.**
 
@@ -226,21 +262,36 @@ Location: test_utils.rs:53
 - Fix: Use `team_token_hypercache_key(&team.api_token)` instead of inline format
 ```
 
+## Self-Challenge
+
+Before including any finding, argue against it:
+
+1. **What's the strongest case this is wrong?** Could the behavior be intentional? Is there context you're missing?
+2. **Can you point to specific code?** "It seems like" is not evidence. Cite the exact lines.
+3. **Did you verify your assumptions?** Read the actual code — don't assume based on function names or patterns.
+4. **Is the argument against stronger than the argument for?** If so, drop it.
+
+**Drop the finding if** you can't cite specific code confirming it, or the concern is speculative rather than evidence-based.
+
 ## Feedback Format
 
-**Severity Levels:**
+**Comment Prefixes:**
 
-- **Critical**: Code will not work correctly at runtime (must fix before merge)
-- **Important**: Code may fail in some scenarios or violates contracts (should fix)
-- **Minor**: Potential issue or inconsistency (consider fixing)
+Prefix every finding so the author knows what action is expected:
+
+- **blocking:** Code will not work correctly at runtime — must fix before merge. Use sparingly.
+- **suggestion:** Code may fail in some scenarios or violates contracts — worth fixing, but author's call.
+- **question:** Something is unclear or surprising — asking for clarification, not necessarily a problem.
+- **nit:** Minor inconsistency or style issue — take it or leave it.
+
+If a comment has no prefix, assume it's a suggestion.
 
 **Response Structure:**
 
 1. **Intent Verification**: Does the code achieve what the PR claims?
-2. **Integration Issues**: Any boundary/format mismatches found?
-3. **Logic Issues**: Basic correctness problems within functions?
-4. **Cross-Function Issues**: Contract violations or unsafe optimizations?
-5. **What's Working**: Acknowledge correctly implemented functionality
+2. **Blocking Issues**: Bugs, integration mismatches, logic errors that will break at runtime
+3. **Suggestions & Questions**: Likely issues, behavioral changes, contract concerns worth discussing
+4. **What's Working**: Acknowledge correctly implemented functionality
 
 **For Each Issue:**
 

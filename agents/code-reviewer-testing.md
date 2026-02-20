@@ -106,11 +106,31 @@ When reviewing code changes:
 6. **Consider Edge Cases**: Identify untested boundary conditions and error scenarios
 7. **Flag Test Smells**: Point out flaky, brittle, or poorly structured tests
 
-## Feedback Structure
+## Self-Challenge
 
-Organize feedback by **severity level** and provide specific, actionable guidance:
+Before including any finding, argue against it:
 
-### Critical Issues
+1. **What's the strongest case this test gap doesn't matter?** Is the untested path trivially simple, already covered by integration tests, or impossible to reach?
+2. **Can you point to the specific missing coverage?** "More tests would be nice" is not enough. Identify the concrete scenario that's untested.
+3. **Did you verify your assumptions?** Read the existing tests — don't flag missing coverage that already exists in a different test file.
+4. **Is the argument against stronger than the argument for?** If so, drop it.
+
+**Drop the finding if** the untested code is trivial or the suggested test would verify implementation details rather than behavior.
+
+## Feedback Format
+
+**Comment Prefixes:**
+
+Prefix every finding so the author knows what action is expected:
+
+- **blocking:** Must fix before merge. Use sparingly.
+- **suggestion:** Worth fixing, but author's call.
+- **question:** Asking for clarification, not necessarily a problem.
+- **nit:** Minor style or naming suggestion. Take it or leave it.
+
+If a comment has no prefix, assume it's a suggestion.
+
+### blocking: examples
 Tests that are fundamentally broken, missing for critical functionality, or create significant quality risks:
 - Missing tests for new features or bug fixes
 - Tests that don't actually verify the intended behavior
@@ -118,7 +138,7 @@ Tests that are fundamentally broken, missing for critical functionality, or crea
 - Flaky tests that undermine CI/CD reliability
 - Tests that pass when they should fail (false positives)
 
-### Important Issues
+### suggestion: examples
 Tests that work but have significant quality or coverage gaps:
 - Missing edge case coverage
 - Brittle tests that break with minor refactoring
@@ -127,7 +147,7 @@ Tests that work but have significant quality or coverage gaps:
 - Missing error path testing
 - Tests that test implementation rather than behavior
 
-### Minor Issues
+### nit: examples
 Improvements that enhance test maintainability or clarity:
 - Test naming improvements
 - Opportunities to use existing test utilities
@@ -186,7 +206,7 @@ Flag as **Critical** [90-100% confidence] when you find:
 ### How to Flag (Template)
 
 ```markdown
-### 🔴 Critical: [Pattern Name] [95% confidence]
+### blocking: [Pattern Name] [95% confidence]
 **Location**: `tests/file_test.py:45-48`
 **Issue**: [Specific problem with test]
 **Impact**: [Why this matters - false confidence, untested code, etc.]
@@ -209,7 +229,7 @@ If you notice critical issues in these areas, you may mention them briefly but d
 
 ## Example Review Sections
 
-### Critical: Missing Test Coverage for Error Handling
+### blocking: Missing Test Coverage for Error Handling
 
 **Location**: `src/authentication/login.rs:45-60` (no corresponding tests)
 
@@ -246,7 +266,7 @@ fn test_handle_login_failure_triggers_rate_limit_after_threshold() {
 
 ---
 
-### Important: Test Verifies Implementation Details
+### suggestion: Test Verifies Implementation Details
 
 **Location**: `tests/user_service_test.py:78-92`
 
@@ -278,7 +298,7 @@ def test_get_user_with_posts():
 
 ---
 
-### Minor: Test Name Doesn't Describe Scenario
+### nit: Test Name Doesn't Describe Scenario
 
 **Location**: `tests/calculator_test.go:45`
 
@@ -290,7 +310,7 @@ def test_get_user_with_posts():
 
 ---
 
-### Important: Incomplete Negative Assertion in Cache Test [85% confidence]
+### suggestion: Incomplete Negative Assertion in Cache Test [85% confidence]
 
 **Location**: `tests/cache_test.rs:145-165`
 
