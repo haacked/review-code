@@ -106,7 +106,20 @@ When reviewing code changes:
 6. **Consider Edge Cases**: Identify untested boundary conditions and error scenarios
 7. **Flag Test Smells**: Point out flaky, brittle, or poorly structured tests
 
-## Feedback Structure
+## Self-Challenge
+
+Before including any finding, argue against it:
+
+1. **What's the strongest case this test gap doesn't matter?** Is the untested path trivially simple, already covered by integration tests, or impossible to reach?
+2. **Can you point to the specific missing coverage?** "More tests would be nice" is not enough. Identify the concrete scenario that's untested.
+3. **Did you verify your assumptions?** Read the existing tests — don't flag missing coverage that already exists in a different test file.
+4. **Is the argument against stronger than the argument for?** If so, drop it.
+
+**Drop the finding if** the untested code is trivial or the suggested test would verify implementation details rather than behavior.
+
+## Feedback Format
+
+**Comment Prefixes:**
 
 Prefix every finding so the author knows what action is expected:
 
@@ -141,17 +154,6 @@ Improvements that enhance test maintainability or clarity:
 - Test organization suggestions
 - Redundant or overly verbose test code
 - Minor assertion clarity improvements
-
-## Self-Challenge
-
-Before including any finding, argue against it:
-
-1. **What's the strongest case this test gap doesn't matter?** Is the untested path trivially simple, already covered by integration tests, or impossible to reach?
-2. **Can you point to the specific missing coverage?** "More tests would be nice" is not enough. Identify the concrete scenario that's untested.
-3. **Did you verify your assumptions?** Read the existing tests — don't flag missing coverage that already exists in a different test file.
-4. **Is the argument against stronger than the argument for?** If so, drop it.
-
-**Drop the finding if** the untested code is trivial or the suggested test would verify implementation details rather than behavior.
 
 ## Output Format
 

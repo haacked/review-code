@@ -227,7 +227,7 @@ When a diff removes or modifies code, analyze what behavior that code provided a
 
 **Example:**
 ```text
-❌ Unintended behavioral change [85% confidence]
+question: Unintended behavioral change [85% confidence]
 Location: cache_service.py:45
 - Before: get_user() returned cached result with 300s TTL
 - After: get_user() always queries the database (cache.get() call removed in refactor)
