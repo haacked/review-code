@@ -30,10 +30,11 @@ get_git_org_repo() {
         local gh_data
         gh_data=$(gh repo view --json owner,name --jq '"\(.owner.login)|\(.name)"' 2> /dev/null || echo "")
         if [[ -n "${gh_data}" ]]; then
-            # Normalize org to lowercase for consistency
+            # Normalize to lowercase for case-insensitive comparison
             local org="${gh_data%|*}"
             local repo="${gh_data#*|}"
             org=$(echo "${org}" | tr '[:upper:]' '[:lower:]')
+            repo=$(echo "${repo}" | tr '[:upper:]' '[:lower:]')
             echo "${org}|${repo}"
             return 0
         fi
@@ -56,8 +57,9 @@ get_git_org_repo() {
         local org="${BASH_REMATCH[2]}"
         local repo="${BASH_REMATCH[3]}"
 
-        # Normalize org to lowercase (PostHog → posthog)
+        # Normalize to lowercase (PostHog → posthog)
         org=$(echo "${org}" | tr '[:upper:]' '[:lower:]')
+        repo=$(echo "${repo}" | tr '[:upper:]' '[:lower:]')
 
         # Remove .git suffix if present
         repo="${repo%.git}"
@@ -98,8 +100,9 @@ parse_pr_identifier() {
         local repo="${BASH_REMATCH[2]}"
         local pr_num="${BASH_REMATCH[3]}"
 
-        # Normalize org to lowercase
+        # Normalize to lowercase
         org=$(echo "${org}" | tr '[:upper:]' '[:lower:]')
+        repo=$(echo "${repo}" | tr '[:upper:]' '[:lower:]')
 
         echo "${org}|${repo}|pr-${pr_num}"
     elif [[ "${identifier}" =~ ^[0-9]+$ ]]; then

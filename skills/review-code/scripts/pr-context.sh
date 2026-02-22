@@ -20,6 +20,7 @@
 #     "head_ref": "haacked/fix-auth",
 #     "base_ref": "main",
 #     "state": "open",
+#     "is_fork": false,
 #     "diff": "diff content...",
 #     "comments": {
 #       "conversation": [...],  # PR discussion thread comments
@@ -101,7 +102,7 @@ fetch_pr_metadata() {
         gh_cmd+=(--repo "${repo_spec}")
     fi
 
-    "${gh_cmd[@]}" --json number,title,body,url,author,headRefName,baseRefName,state
+    "${gh_cmd[@]}" --json number,title,body,url,author,headRefName,baseRefName,state,isCrossRepository
 }
 
 # Fetch PR diff
@@ -215,6 +216,8 @@ main() {
     base_ref=$(echo "${metadata}" | jq -r '.baseRefName')
     local state
     state=$(echo "${metadata}" | jq -r '.state')
+    local is_fork
+    is_fork=$(echo "${metadata}" | jq -r '.isCrossRepository // false')
 
     # Extract org/repo from URL if not already set
     if [[ -z "${org}" ]]; then
@@ -222,6 +225,7 @@ main() {
             org="${BASH_REMATCH[1]}"
             repo="${BASH_REMATCH[2]}"
             org=$(echo "${org}" | tr '[:upper:]' '[:lower:]')
+            repo=$(echo "${repo}" | tr '[:upper:]' '[:lower:]')
         fi
     fi
 
@@ -273,6 +277,7 @@ main() {
     "head_ref": "${head_ref}",
     "base_ref": "${base_ref}",
     "state": "${state}",
+    "is_fork": ${is_fork},
     "diff": ${diff},
     "comments": {
         "conversation": ${conversation_comments},

@@ -362,7 +362,7 @@ build_review_data() {
         + (if $draft_mode == "true" then {draft: true} else {} end)
         + (if $self_mode == "true" then {self: true} else {} end)
         + (if $pr != null then {pr: $pr, reviewer_username: $reviewer_username, is_own_pr: ($is_own_pr == "true")} else {} end)
-        + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")))')
+        + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")) | with_entries(select(.value != "")))')
     debug_save_json "07-final-output" "output.json" <<< "${final_output}"
     debug_time "07-final-output" "end"
     debug_time "00-orchestrator" "end"
@@ -884,15 +884,19 @@ handle_pr_review() {
     local pr_data
     pr_data=$("${SCRIPT_DIR}/pr-context.sh" "${pr_identifier}")
 
-    local pr_number org repo head_ref
+    local pr_number org repo head_ref is_fork
     pr_number=$(echo "${pr_data}" | jq -r '.number')
     org=$(echo "${pr_data}" | jq -r '.org')
     repo=$(echo "${pr_data}" | jq -r '.repo')
     head_ref=$(echo "${pr_data}" | jq -r '.head_ref')
+    is_fork=$(echo "${pr_data}" | jq -r '.is_fork // false')
 
-    # Check if we're on the matching branch (enables richer local context)
-    # Conditions: in a git repo, repo matches PR's repo, branch matches PR's head branch
+    # Determine review mode based on local git state:
+    # 1. Fast path: in the same repo AND on the PR's branch (agents use Read tool)
+    # 2. Middle case: in the same repo but on a different branch (agents use git show)
+    # 3. Remote-only: not in the repo at all (agents work from diff only)
     local git_context=""
+    local file_ref=""
 
     if git rev-parse --git-dir > /dev/null 2>&1; then
         source "${SCRIPT_DIR}/helpers/git-helpers.sh"
@@ -904,16 +908,33 @@ handle_pr_review() {
         local current_branch
         current_branch=$(git branch --show-current 2> /dev/null || echo "")
 
-        # Normalize org names to lowercase for comparison
-        current_org=$(echo "${current_org}" | tr '[:upper:]' '[:lower:]')
-
-        if [[ "${current_org}" = "${org}" ]] && [[ "${current_repo}" = "${repo}" ]] && [[ "${current_branch}" = "${head_ref}" ]]; then
+        if [[ "${current_org}" = "${org}" ]] && [[ "${current_repo}" = "${repo}" ]]; then
             git_context=$("${SCRIPT_DIR}/git-context.sh")
+
+            if [[ "${current_branch}" != "${head_ref}" ]]; then
+                # Same repo, different branch. Fetch the PR ref so agents can
+                # read files via `git show <ref>:<path>` without checkout.
+                local fetch_err
+                if [[ "${is_fork}" == "true" ]]; then
+                    local pr_ref="refs/review/pr-${pr_number}"
+                    if fetch_err=$(git fetch origin "pull/${pr_number}/head:${pr_ref}" 2>&1); then
+                        file_ref="${pr_ref}"
+                    else
+                        warning "Failed to fetch PR ref for fork PR #${pr_number}: ${fetch_err}"
+                    fi
+                else
+                    if fetch_err=$(git fetch origin "${head_ref}" 2>&1); then
+                        file_ref="origin/${head_ref}"
+                    else
+                        warning "Failed to fetch origin/${head_ref}: ${fetch_err}"
+                    fi
+                fi
+            fi
         fi
     fi
 
-    # If not on fast path, construct a synthetic git_context with PR's org/repo
-    # Note: working_dir is null when not on fast path (no meaningful local directory)
+    # If not in the same repo, construct a synthetic git_context with PR's org/repo.
+    # working_dir is null since there's no meaningful local directory.
     if [[ -z "${git_context}" ]]; then
         git_context=$(jq -n \
             --arg org "${org}" \
@@ -934,7 +955,8 @@ handle_pr_review() {
     diff_content=$(echo "${pr_data}" | jq -r '.diff')
 
     build_review_data "pr" "${diff_content}" "${git_context}" "pr-${pr_number}" "${pr_data}" \
-        --arg mode_branch "${head_ref}"
+        --arg mode_branch "${head_ref}" \
+        --arg mode_file_ref "${file_ref}"
 }
 
 # Handle commit review
