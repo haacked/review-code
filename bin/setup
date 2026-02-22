@@ -521,24 +521,30 @@ check_permissions_configured() {
         return 1
     fi
 
-    # Check if the key permission is already configured (check both old and new paths)
-    if jq -e '.permissions.allow | index("Bash(~/.claude/skills/review-code/scripts/*:*)")' "${settings_file}" > /dev/null 2>&1; then
-        return 0
-    fi
+    # All required permissions must be present
+    local required_permissions=(
+        "Bash(~/.claude/skills/review-code/scripts/*:*)"
+        "Read(~/.claude/**)"
+    )
 
-    # Also check old path pattern for backwards compatibility
-    if jq -e '.permissions.allow | index("Bash(~/.claude/bin/review-code/*:*)")' "${settings_file}" > /dev/null 2>&1; then
-        return 0
-    fi
+    for perm in "${required_permissions[@]}"; do
+        if ! jq -e ".permissions.allow | index(\"${perm}\")" "${settings_file}" > /dev/null 2>&1; then
+            return 1
+        fi
+    done
 
-    return 1
+    return 0
 }
 
 prompt_configure_permissions() {
-    # Check if permissions are already configured
+    # Always run migration to clean up stale permissions from older versions
+    if [[ -f "${SCRIPT_DIR}/bin/manage-permissions" ]]; then
+        "${SCRIPT_DIR}/bin/manage-permissions" migrate
+    fi
+
+    # Check if all required permissions are already configured
     # shellcheck disable=SC2310  # Intentional conditional check
     if check_permissions_configured; then
-        echo ""
         info "Permissions already configured - skipping prompt"
         return
     fi

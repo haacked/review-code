@@ -2,9 +2,10 @@
 # bin/manage-permissions - Manage Claude Code permissions for review-code
 #
 # Usage:
-#   bin/manage-permissions add     # Add review-code permissions
-#   bin/manage-permissions remove  # Remove review-code permissions
-#   bin/manage-permissions status  # Check current permissions
+#   bin/manage-permissions add      # Add review-code permissions (also migrates stale ones)
+#   bin/manage-permissions remove   # Remove review-code permissions
+#   bin/manage-permissions status   # Check current permissions
+#   bin/manage-permissions migrate  # Remove stale permissions from older versions
 #
 # Description:
 #   Manages review-code script permissions in ~/.claude/settings.json
@@ -38,29 +39,29 @@ CLAUDE_DIR="${HOME}/.claude"
 SETTINGS_FILE="${CLAUDE_DIR}/settings.json"
 
 # Required permissions for review-code scripts
-# Note: Commands with variable assignments need their own patterns because
-# Claude Code matches from the beginning of the command string
 permissions=(
-    # Direct script invocation (new skill path)
+    # All review-code script invocations (direct calls, heredoc input)
     "Bash(~/.claude/skills/review-code/scripts/*:*)"
-    # Variable assignments that call scripts
-    "Bash(SESSION_ID=:*)"
-    "Bash(review_data=:*)"
-    # Temp file operations for session management
-    "Bash(ls -la /tmp/review-code:*)"
-    # Git operations
-    "Bash(git rev-parse:*)"
-    # File reading
+    # Reading skill files, session data, and review outputs
     "Read(~/.claude/**)"
 )
 
+# Stale permissions from older versions — remove during migration
+stale_permissions=(
+    "Bash(~/.claude/bin/review-code/*:*)"
+    "Bash(SESSION_ID=:*)"
+    "Bash(review_data=:*)"
+    "Bash(ls -la /tmp/review-code:*)"
+)
+
 show_usage() {
-    echo "Usage: bin/manage-permissions {add|remove|status}"
+    echo "Usage: bin/manage-permissions {add|remove|status|migrate}"
     echo ""
     echo "Commands:"
-    echo "  add     - Add review-code permissions to settings.json"
+    echo "  add     - Add review-code permissions (also removes stale ones)"
     echo "  remove  - Remove review-code permissions from settings.json"
     echo "  status  - Check which permissions are currently configured"
+    echo "  migrate - Remove stale permissions from older versions"
     echo ""
 }
 
@@ -87,8 +88,10 @@ create_settings_if_needed() {
 }
 
 cmd_add() {
-    echo ""
-    echo "This will add the following permissions to ${SETTINGS_FILE}:"
+    # Clean up stale permissions first
+    cmd_migrate
+
+    echo "Checking permissions to add in ${SETTINGS_FILE}:"
     echo ""
 
     # Check what needs to be added
@@ -266,6 +269,55 @@ cmd_status() {
         warn "Some permissions are missing (${missing_count} of ${#permissions[@]})"
         echo "  Run: bin/manage-permissions add"
     fi
+
+    # Check for stale permissions
+    local stale_count=0
+    for perm in "${stale_permissions[@]}"; do
+        if jq -e ".permissions.allow | index(\"${perm}\")" "${SETTINGS_FILE}" > /dev/null 2>&1; then
+            if [[ ${stale_count} -eq 0 ]]; then
+                echo ""
+                warn "Stale permissions found (from older versions):"
+            fi
+            echo "  ⚠ ${perm}"
+            stale_count=$((stale_count + 1))
+        fi
+    done
+
+    if [[ ${stale_count} -gt 0 ]]; then
+        echo ""
+        echo "  Run: bin/manage-permissions migrate"
+    fi
+
+    echo ""
+}
+
+cmd_migrate() {
+    echo ""
+    echo "Migrating permissions in ${SETTINGS_FILE}:"
+    echo ""
+
+    local removed=0
+
+    # Remove stale permissions
+    for perm in "${stale_permissions[@]}"; do
+        if jq -e ".permissions.allow | index(\"${perm}\")" "${SETTINGS_FILE}" > /dev/null 2>&1; then
+            if jq ".permissions.allow |= map(select(. != \"${perm}\"))" "${SETTINGS_FILE}" > "${SETTINGS_FILE}.tmp"; then
+                mv "${SETTINGS_FILE}.tmp" "${SETTINGS_FILE}"
+                echo "  - Removed stale: ${perm}"
+                removed=$((removed + 1))
+            else
+                error "Failed to remove stale permission: ${perm}"
+                rm -f "${SETTINGS_FILE}.tmp"
+            fi
+        fi
+    done
+
+    if [[ ${removed} -eq 0 ]]; then
+        info "No stale permissions to remove"
+    else
+        info "Removed ${removed} stale permission(s)"
+    fi
+
     echo ""
 }
 
@@ -284,6 +336,9 @@ case "${command}" in
         ;;
     status)
         cmd_status
+        ;;
+    migrate)
+        cmd_migrate
         ;;
     "")
         # No argument - default to add for backwards compatibility

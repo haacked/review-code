@@ -139,10 +139,10 @@ If user selects "No, continue anyway", proceed with Step 0.
 
 **Note:** To determine if the command is `find` or `learn`, parse the arguments first:
 ```bash
-PARSE_RESULT=$(~/.claude/skills/review-code/scripts/parse-review-arg.sh $ARGUMENTS)
-MODE=$(echo "$PARSE_RESULT" | jq -r '.mode')
+~/.claude/skills/review-code/scripts/parse-review-arg.sh $ARGUMENTS
 ```
-If MODE is "find" or "learn", skip the pre-flight prompt and proceed directly to the appropriate handler.
+Save the JSON output as `PARSE_RESULT`. Extract the `mode` field from it.
+If mode is "find" or "learn", skip the pre-flight prompt and proceed directly to the appropriate handler.
 
 ### Step 0: Check for Learn Mode
 
@@ -153,10 +153,16 @@ Using the PARSE_RESULT from pre-flight, check if MODE is "learn". If so, skip to
 Initialize the review session by running the orchestrator and caching the result:
 
 ```bash
-SESSION_ID=$(~/.claude/skills/review-code/scripts/review-status-handler.sh init $ARGUMENTS)
-STATUS=$(~/.claude/skills/review-code/scripts/review-status-handler.sh get-status "$SESSION_ID")
-echo "Session: $SESSION_ID, Status: $STATUS"
+~/.claude/skills/review-code/scripts/review-status-handler.sh init $ARGUMENTS
 ```
+
+Save the output as `SESSION_ID`. Then get the status:
+
+```bash
+~/.claude/skills/review-code/scripts/review-status-handler.sh get-status "<SESSION_ID>"
+```
+
+Save the output as `STATUS`.
 
 The `--force` and `-f` flags are handled automatically by the orchestrator. When present, the session data will include `"force": true`.
 
@@ -185,12 +191,13 @@ This safeguard exists because when the session flow breaks, falling back to manu
 If STATUS is "error", get the error message from the session (replace `<SESSION_ID>` with the actual session ID):
 
 ```bash
-bash -c '
-SESSION_ID="<SESSION_ID>"
-error_msg=$(~/.claude/skills/review-code/scripts/review-status-handler.sh get-error-data "$SESSION_ID")
-echo "Error: $error_msg"
-~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "$SESSION_ID"
-'
+~/.claude/skills/review-code/scripts/review-status-handler.sh get-error-data "<SESSION_ID>"
+```
+
+Display the error to the user. Then clean up the session:
+
+```bash
+~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
 ```
 
 Then stop - do not proceed with review.
@@ -200,17 +207,10 @@ Then stop - do not proceed with review.
 If STATUS is "ambiguous", get the disambiguation data from the session (replace `<SESSION_ID>` with the actual session ID):
 
 ```bash
-bash -c '
-SESSION_ID="<SESSION_ID>"
-data=$(~/.claude/skills/review-code/scripts/review-status-handler.sh get-ambiguous-data "$SESSION_ID")
-arg=$(echo "$data" | jq -r ".arg")
-ref_type=$(echo "$data" | jq -r ".ref_type")
-is_branch=$(echo "$data" | jq -r ".is_branch")
-is_current=$(echo "$data" | jq -r ".is_current")
-base_branch=$(echo "$data" | jq -r ".base_branch")
-echo "Reference: $arg (type: $ref_type, is_branch: $is_branch, is_current: $is_current, base: $base_branch)"
-'
+~/.claude/skills/review-code/scripts/review-status-handler.sh get-ambiguous-data "<SESSION_ID>"
 ```
+
+Save the JSON output. Extract the fields: `arg`, `ref_type`, `is_branch`, `is_current`, `base_branch`.
 
 Use AskUserQuestion to disambiguate based on the scenario.
 
@@ -240,15 +240,10 @@ After user selects, re-run orchestrator with appropriate argument.
 If STATUS is "prompt", get the prompt data from the session (replace `<SESSION_ID>` with the actual session ID):
 
 ```bash
-bash -c '
-SESSION_ID="<SESSION_ID>"
-data=$(~/.claude/skills/review-code/scripts/review-status-handler.sh get-prompt-data "$SESSION_ID")
-current_branch=$(echo "$data" | jq -r ".current_branch")
-base_branch=$(echo "$data" | jq -r ".base_branch")
-has_uncommitted=$(echo "$data" | jq -r ".has_uncommitted")
-echo "Branch: $current_branch, Base: $base_branch, Uncommitted: $has_uncommitted"
-'
+~/.claude/skills/review-code/scripts/review-status-handler.sh get-prompt-data "<SESSION_ID>"
 ```
+
+Save the JSON output. Extract the fields: `current_branch`, `base_branch`, `has_uncommitted`.
 
 Use AskUserQuestion:
 - Question: "You're on branch '$current_branch' with uncommitted changes. What would you like to review?"
@@ -264,14 +259,10 @@ After user selects, cleanup the old session and re-initialize with the chosen mo
 If STATUS is "prompt_pull", get the pull prompt data from the session (replace `<SESSION_ID>` with the actual session ID):
 
 ```bash
-bash -c '
-SESSION_ID="<SESSION_ID>"
-data=$(~/.claude/skills/review-code/scripts/review-status-handler.sh get-prompt-pull-data "$SESSION_ID")
-branch=$(echo "$data" | jq -r ".branch")
-associated_pr=$(echo "$data" | jq -r ".associated_pr // \"none\"")
-echo "Branch: $branch, Associated PR: $associated_pr"
-'
+~/.claude/skills/review-code/scripts/review-status-handler.sh get-prompt-pull-data "<SESSION_ID>"
 ```
+
+Save the JSON output. Extract the fields: `branch`, `associated_pr` (defaults to "none").
 
 Use AskUserQuestion:
 - Question: "Remote branch '$branch' is ahead of local. Would you like to pull changes first?"
@@ -285,29 +276,18 @@ After user selects:
 
 ### Handler: "find"
 
-If STATUS is "find", get the find data from the session and display the result (replace `<SESSION_ID>` with the actual session ID):
+If STATUS is "find", get the find data from the session (replace `<SESSION_ID>` with the actual session ID):
 
 ```bash
-bash -c '
-SESSION_ID="<SESSION_ID>"
-find_data=$(~/.claude/skills/review-code/scripts/review-status-handler.sh get-find-data "$SESSION_ID")
-display_target=$(echo "$find_data" | jq -r ".display_target")
-file_path=$(echo "$find_data" | jq -r ".file_info.file_path")
-file_exists=$(echo "$find_data" | jq -r ".file_info.file_exists")
-file_summary=$(echo "$find_data" | jq -r ".file_summary")
-has_branch_review=$(echo "$find_data" | jq -r ".file_info.has_branch_review // false")
-branch_review_path=$(echo "$find_data" | jq -r ".file_info.branch_review_path // empty")
-needs_rename=$(echo "$find_data" | jq -r ".file_info.needs_rename // false")
-pr_number=$(echo "$find_data" | jq -r ".file_info.pr_number // empty")
-echo "Target: $display_target"
-echo "File: $file_path"
-echo "Exists: $file_exists"
-echo "Has branch review: $has_branch_review"
-echo "Branch review path: $branch_review_path"
-echo "Needs rename: $needs_rename"
-echo "PR number: $pr_number"
-~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "$SESSION_ID"
-'
+~/.claude/skills/review-code/scripts/review-status-handler.sh get-find-data "<SESSION_ID>"
+```
+
+Save the JSON output. Extract the fields: `display_target`, `file_info.file_path`, `file_info.file_exists`, `file_summary`, `file_info.has_branch_review` (defaults to false), `file_info.branch_review_path`, `file_info.needs_rename` (defaults to false), `file_info.pr_number`.
+
+Then clean up the session:
+
+```bash
+~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
 ```
 
 **Present the results to the user:**
@@ -358,34 +338,27 @@ Then stop - do not proceed with review agents.
 
 ### Handler: "ready"
 
-If STATUS is "ready", get the session file path and read data directly from the file (replace `<SESSION_ID>` with the actual session ID):
+If STATUS is "ready", get the session file path (replace `<SESSION_ID>` with the actual session ID):
 
 ```bash
-bash -c '
-SESSION_ID="<SESSION_ID>"
-SESSION_FILE=$(~/.claude/skills/review-code/scripts/review-status-handler.sh get-session-file "$SESSION_ID")
-display_summary=$(jq -r ".display_summary" "$SESSION_FILE")
-echo "$display_summary"
-'
+~/.claude/skills/review-code/scripts/review-status-handler.sh get-session-file "<SESSION_ID>"
 ```
 
-This displays the pre-formatted summary showing what will be reviewed.
+Save the output as `SESSION_FILE`. Then read the session file using the Read tool and extract `display_summary` to show the user what will be reviewed.
 
-**All subsequent operations will use the same SESSION_FILE to read from the cached session data.**
+**All subsequent data extraction uses the Read tool on the same SESSION_FILE — no re-running the orchestrator.**
 
 Proceed directly with the review.
 
-**Check for existing review and branch review (using `$SESSION_FILE` from above):**
+**Check for existing review and branch review:**
 
-```bash
-jq -r '{
-  existing: (if .file_info.file_exists == true then .file_info.file_path else null end),
-  has_branch_review: (.file_info.has_branch_review // false),
-  branch_review_path: (.file_info.branch_review_path // null),
-  needs_rename: (.file_info.needs_rename // false),
-  pr_number: (.file_info.pr_number // null)
-}' "$SESSION_FILE"
-```
+From the session file JSON (already read above), extract these fields:
+- `file_info.file_exists` — whether a review file already exists
+- `file_info.file_path` — path to the existing review
+- `file_info.has_branch_review` — whether both PR and branch reviews exist (defaults to false)
+- `file_info.branch_review_path` — path to the branch review
+- `file_info.needs_rename` — whether the branch review should migrate to PR format (defaults to false)
+- `file_info.pr_number` — the associated PR number
 
 **If `has_branch_review` is true (both PR and branch reviews exist):**
 
@@ -422,27 +395,22 @@ If user selects "Migrate and continue":
 
 Use AskUserQuestion to ask what to do with the existing review.
 
-**Extract the data needed for building agent context (using `$SESSION_FILE` from above):**
+**Extract the data needed for building agent context:**
 
-All subsequent extractions use the SAME SESSION_FILE (no re-running orchestrator). Extract individual fields as needed using jq directly on the file:
-- `mode=$(jq -r ".mode" "$SESSION_FILE")`
-- `diff=$(jq -r ".diff" "$SESSION_FILE")`
-- `file_metadata=$(jq -r ".file_metadata" "$SESSION_FILE")`
-- `review_context=$(jq -r ".review_context" "$SESSION_FILE")`
-- `git_context=$(jq -r ".git" "$SESSION_FILE")`
-- `languages=$(jq -r ".languages" "$SESSION_FILE")`
-- `review_file=$(jq -r ".file_info.file_path" "$SESSION_FILE")`
+From the session file JSON (already read via Read tool), extract these fields:
+- `mode` — review mode (pr, branch, commit, range, local)
+- `diff` — the code changes to review
+- `file_metadata` — metadata about changed files
+- `review_context` — language/framework-specific guidelines
+- `git` — git repository context
+- `languages` — detected languages
+- `file_info.file_path` — where to save the review
 
-**Extract mode-specific fields from the cached session (using `$SESSION_FILE`):**
+**Extract mode-specific fields:**
 
-Extract mode-specific fields as needed:
-- **For PR mode:** `pr=$(jq -r ".pr // empty" "$SESSION_FILE")`
-- **For branch/commit/range modes:**
-  - `branch=$(jq -r ".branch // empty" "$SESSION_FILE")`
-  - `base_branch=$(jq -r ".base_branch // empty" "$SESSION_FILE")`
-  - `commit=$(jq -r ".commit // empty" "$SESSION_FILE")`
-  - `range=$(jq -r ".range // empty" "$SESSION_FILE")`
-- **For area-specific reviews:** `area=$(jq -r ".area // empty" "$SESSION_FILE")`
+- **For PR mode:** `pr` — PR details (number, title, author, body, comments, etc.)
+- **For branch/commit/range modes:** `branch`, `base_branch`, `commit`, `range`
+- **For area-specific reviews:** `area`
 
 ### Gather Architectural Context
 
@@ -579,12 +547,7 @@ Use the Task tool with `subagent_type` set to the agent name, passing the full c
 
 **If no area specified (comprehensive review)**:
 
-First, check if this is frontend code by inspecting the languages data
-(using `$SESSION_FILE` from above):
-
-```bash
-has_frontend=$(jq -r ".languages.has_frontend // false" "$SESSION_FILE")
-```
+First, check if this is frontend code by inspecting the `languages.has_frontend` field from the session data (already read via Read tool).
 
 **Always invoke these 7 core agents in PARALLEL using the Task tool:**
 
@@ -618,12 +581,12 @@ After collecting findings from agents, validate that each finding references cod
 **Step 1: Extract and validate.** For each agent's findings that reference a specific file and line, build a targets array and run it through the position mapper:
 
 ```bash
-jq -n --arg diff "$(jq -r '.diff' "$SESSION_FILE")" --argjson targets "$TARGETS_JSON" \
-  '{diff: $diff, targets: $targets}' \
-  | ~/.claude/skills/review-code/scripts/diff-position-mapper.sh
+~/.claude/skills/review-code/scripts/diff-position-mapper.sh <<'EOF'
+{"diff": "<diff from session data>", "targets": [<targets array>]}
+EOF
 ```
 
-Where `$TARGETS_JSON` is a JSON array of `{"path": "<file>", "line": <number>}` objects extracted from the agent findings.
+Where the `targets` array contains `{"path": "<file>", "line": <number>}` objects extracted from the agent findings, and `diff` is the diff string from the session data.
 
 **Step 2: Handle results.** Check the `mappings` array in the output:
 
@@ -695,12 +658,9 @@ If this is a PR review and the reviewer is NOT the PR author, generate suggested
 
 **Check if suggested comments should be generated:**
 
-Extract from session data (using `$SESSION_FILE`):
-
-```bash
-is_own_pr=$(jq -r '.is_own_pr // false' "$SESSION_FILE")
-inline_comments=$(jq '.pr.comments.inline // []' "$SESSION_FILE")
-```
+From the session data (already read via Read tool), extract:
+- `is_own_pr` — whether the current user authored the PR (defaults to false)
+- `pr.comments.inline` — existing inline comments on the PR (defaults to empty array)
 
 **If `is_own_pr` is "false":**
 
@@ -803,12 +763,7 @@ If `--draft` was specified and this is a PR review (not own PR), create a pendin
 
 **Check if draft mode is enabled:**
 
-```bash
-draft_mode=$(jq -r '.draft // false' "$SESSION_FILE")
-is_own_pr=$(jq -r '.is_own_pr // false' "$SESSION_FILE")
-self_mode=$(jq -r '.self // false' "$SESSION_FILE")
-mode=$(jq -r '.mode' "$SESSION_FILE")
-```
+From the session data (already read via Read tool), extract: `draft` (defaults to false), `is_own_pr` (defaults to false), `self` (defaults to false), and `mode`.
 
 **Only proceed if ALL conditions are true:**
 - `draft_mode` is "true"
@@ -832,18 +787,16 @@ If any condition fails, skip draft review creation.
    ```
    ```
 
-2. **Get the diff for position mapping**:
-
-```bash
-diff=$(jq -r '.diff' "$SESSION_FILE")
-```
+2. **Get the diff for position mapping**: Use the `diff` field from the session data (already read via Read tool).
 
 3. **Build targets for line mapping**: Create JSON with file:line targets from extracted comments.
 
 4. **Map line numbers to diff lines**: Use the diff-position-mapper script.
 
 ```bash
-echo "$mapping_input" | ~/.claude/skills/review-code/scripts/diff-position-mapper.sh
+~/.claude/skills/review-code/scripts/diff-position-mapper.sh <<'EOF'
+{"diff": "<diff from session data>", "targets": [<targets from step 3>]}
+EOF
 ```
 
 5. **Separate mappable vs unmappable comments**:
@@ -885,7 +838,9 @@ This renders as an "Apply suggestion" button that the PR author can click to com
 7. **Create the pending review**:
 
 ```bash
-echo "$draft_input" | ~/.claude/skills/review-code/scripts/create-draft-review.sh
+~/.claude/skills/review-code/scripts/create-draft-review.sh <<'EOF'
+<draft_input JSON here>
+EOF
 ```
 
 8. **Display result to user**:
@@ -939,11 +894,7 @@ If failed, show the error and suggest using the review file manually.
 After the review is complete, cleanup the session (replace `<SESSION_ID>` with the actual session ID):
 
 ```bash
-bash -c '
-SESSION_ID="<SESSION_ID>"
-~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "$SESSION_ID"
-echo "Session cleaned up: $SESSION_ID"
-'
+~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
 ```
 
 This removes the temporary session files and frees up disk space.
@@ -956,39 +907,28 @@ The learn mode analyzes PR review outcomes to improve future reviews. It uses th
 
 ### Initialize Learn Mode
 
-Extract the learn submode from the parse result and run the orchestrator:
+From the `PARSE_RESULT` (saved earlier), extract `learn_submode` and `pr_number`.
 
-```bash
-LEARN_SUBMODE=$(echo "$PARSE_RESULT" | jq -r '.learn_submode')
-PR_NUMBER=$(echo "$PARSE_RESULT" | jq -r '.pr_number // empty')
+Run the orchestrator based on submode:
 
-# Run orchestrator based on submode
-case "$LEARN_SUBMODE" in
-    single)
-        LEARN_RESULT=$(~/.claude/skills/review-code/scripts/learn-orchestrator.sh single "$PR_NUMBER")
-        ;;
-    batch)
-        LEARN_RESULT=$(~/.claude/skills/review-code/scripts/learn-orchestrator.sh batch)
-        ;;
-    apply)
-        LEARN_RESULT=$(~/.claude/skills/review-code/scripts/learn-orchestrator.sh apply)
-        ;;
-esac
+- **If submode is "single":**
+  ```bash
+  ~/.claude/skills/review-code/scripts/learn-orchestrator.sh single "<PR_NUMBER>"
+  ```
+- **If submode is "batch":**
+  ```bash
+  ~/.claude/skills/review-code/scripts/learn-orchestrator.sh batch
+  ```
+- **If submode is "apply":**
+  ```bash
+  ~/.claude/skills/review-code/scripts/learn-orchestrator.sh apply
+  ```
 
-STATUS=$(echo "$LEARN_RESULT" | jq -r '.status')
-```
+Save the JSON output as `LEARN_RESULT`. Extract the `status` field.
 
-If STATUS is "error", display the error and stop:
+If status is "error", extract the `error` field, display it to the user, and stop.
 
-```bash
-if [[ "$STATUS" == "error" ]]; then
-    ERROR_MSG=$(echo "$LEARN_RESULT" | jq -r '.error')
-    echo "Error: $ERROR_MSG"
-    # Stop processing
-fi
-```
-
-Based on `LEARN_SUBMODE`, proceed to the appropriate handler:
+Based on `learn_submode`, proceed to the appropriate handler:
 
 ### Learn Submode: "single"
 
@@ -996,30 +936,24 @@ Analyze a specific PR's outcomes.
 
 **Step 1: Display cross-reference summary**
 
-Extract and display the summary from the orchestrator result:
+From `LEARN_RESULT`, extract the `summary` object and display it:
 
-```bash
-echo "$LEARN_RESULT" | jq -r '
-"📊 Cross-Reference Summary for PR #\(.summary.pr_number)
+```
+Cross-Reference Summary for PR #<summary.pr_number>
 
-**Claude'\''s Findings (\(.summary.claude_total) total):**
-- \(.summary.claude_addressed) likely addressed in subsequent commits ✓
-- \(.summary.claude_not_addressed) not modified after review
-- \(.summary.claude_total - .summary.claude_addressed - .summary.claude_not_addressed) unclear
+Claude's Findings (<summary.claude_total> total):
+- <summary.claude_addressed> likely addressed in subsequent commits
+- <summary.claude_not_addressed> not modified after review
+- <remaining> unclear
 
-**Other Reviewers Found (\(.summary.other_total) total):**
-- \(.summary.other_caught_by_claude) also caught by Claude ✓
-- \(.summary.other_missed_by_claude) Claude missed
+Other Reviewers Found (<summary.other_total> total):
+- <summary.other_caught_by_claude> also caught by Claude
+- <summary.other_missed_by_claude> Claude missed
 
-Prompts needed: \(.summary.prompts_count)
-"'
+Prompts needed: <summary.prompts_count>
 ```
 
-Extract the full learn data for processing:
-
-```bash
-LEARN_DATA=$(echo "$LEARN_RESULT" | jq '.learn_data')
-```
+Also extract `learn_data` from `LEARN_RESULT` for subsequent steps.
 
 **Step 3: Process prompts for uncertain items**
 
@@ -1072,37 +1006,11 @@ For each user response (except "Skip"), create a learning record:
 }
 ```
 
-Append the learning to the index file:
-
-```bash
-LEARNINGS_DIR=~/.claude/skills/review-code/learnings
-mkdir -p "$LEARNINGS_DIR"
-echo "$LEARNING_JSON" >> "$LEARNINGS_DIR/index.jsonl"
-```
+Append each learning JSON record to `~/.claude/skills/review-code/learnings/index.jsonl` using the Write tool (append mode) or the Edit tool.
 
 **Step 5: Mark PR as analyzed**
 
-Update the analyzed.json tracker:
-
-```bash
-ANALYZED_FILE="$LEARNINGS_DIR/analyzed.json"
-ORG=$(echo "$LEARN_DATA" | jq -r '.org')
-REPO=$(echo "$LEARN_DATA" | jq -r '.repo')
-
-# Read existing or create new
-if [[ -f "$ANALYZED_FILE" ]]; then
-    ANALYZED=$(cat "$ANALYZED_FILE")
-else
-    ANALYZED='{}'
-fi
-
-# Update with this PR
-TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-ANALYZED=$(echo "$ANALYZED" | jq --arg key "$ORG/$REPO" --arg pr "$PR_NUMBER" --arg ts "$TIMESTAMP" \
-    '.[$key] //= {} | .[$key][$pr] = $ts')
-
-echo "$ANALYZED" > "$ANALYZED_FILE"
-```
+Read `~/.claude/skills/review-code/learnings/analyzed.json` using the Read tool (create `{}` if it doesn't exist). Extract `org` and `repo` from `learn_data`. Add an entry: `{"<org>/<repo>": {"<pr_number>": "<timestamp>"}}` merged into the existing data. Write the updated JSON back using the Write tool.
 
 **Step 6: Display completion**
 
@@ -1122,12 +1030,7 @@ Analyze all unanalyzed PRs with existing reviews.
 
 **Step 1: Check orchestrator result**
 
-The orchestrator already ran in the initialization step. Extract the data:
-
-```bash
-COUNT=$(echo "$LEARN_RESULT" | jq '.count')
-UNANALYZED=$(echo "$LEARN_RESULT" | jq '.prs')
-```
+From `LEARN_RESULT` (saved from initialization), extract `count` and `prs`.
 
 **Step 2: Check if any PRs to analyze**
 
@@ -1143,19 +1046,10 @@ To create reviews for analysis:
 
 **Step 3: Process each PR**
 
-For each PR in the batch, run the single analysis:
+For each PR in the batch, run the single analysis by calling the orchestrator:
 
 ```bash
-while read -r PR_JSON; do
-    PR_NUM=$(echo "$PR_JSON" | jq -r '.pr_number')
-    ORG=$(echo "$PR_JSON" | jq -r '.org')
-    REPO=$(echo "$PR_JSON" | jq -r '.repo')
-
-    echo "Analyzing PR #$PR_NUM ($ORG/$REPO)..."
-
-    # Run single analysis for this PR
-    SINGLE_RESULT=$(~/.claude/skills/review-code/scripts/learn-orchestrator.sh single "$PR_NUM" --org "$ORG" --repo "$REPO")
-done < <(echo "$UNANALYZED" | jq -c '.[]')
+~/.claude/skills/review-code/scripts/learn-orchestrator.sh single "<PR_NUM>" --org "<ORG>" --repo "<REPO>"
 ```
 
 For each PR, follow the "single" submode flow (user prompts for uncertain items).
@@ -1190,12 +1084,7 @@ Synthesize accumulated learnings into context file updates.
 
 **Step 1: Check orchestrator result**
 
-The orchestrator already ran in the initialization step. Extract the data:
-
-```bash
-ACTIONABLE=$(echo "$LEARN_RESULT" | jq '.actionable')
-PROPOSALS=$(echo "$LEARN_RESULT" | jq '.proposals')
-```
+From `LEARN_RESULT` (saved from initialization), extract `actionable` and `proposals`.
 
 **Step 2: Check if any proposals**
 
