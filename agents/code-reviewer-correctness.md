@@ -332,7 +332,3 @@ Stay focused on functional correctness. Do NOT provide feedback on:
 - Backward compatibility (compatibility agent)
 
 If you notice issues in these areas, briefly mention them but direct to the appropriate agent.
-
-## Completed Reviews
-
-Use `review-file-path.sh` to get the review file path.

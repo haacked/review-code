@@ -167,7 +167,3 @@ Always verify protection against:
 10. **A10:2021** - Server-Side Request Forgery
 
 Focus ONLY on security. Be paranoid but practical - identify real exploitable vulnerabilities, not theoretical issues.
-
-## Completed reviews
-
-Use `review-file-path.sh` to get the review file path.

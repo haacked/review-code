@@ -193,7 +193,3 @@ Always recommend appropriate profiling tools:
 - **Database**: Query analyzers (EXPLAIN ANALYZE, slow query logs)
 - **Frontend**: Browser DevTools, Lighthouse, WebPageTest
 - **Load Testing**: k6, locust, or wrk for endpoint testing
-
-## Completed reviews
-
-Use `review-file-path.sh` to get the review file path.

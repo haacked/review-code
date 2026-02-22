@@ -6,6 +6,8 @@
 #   bin/manage-permissions remove   # Remove review-code permissions
 #   bin/manage-permissions status   # Check current permissions
 #   bin/manage-permissions migrate  # Remove stale permissions from older versions
+#   bin/manage-permissions check    # Exit 0 if all required permissions present, 1 otherwise
+#   bin/manage-permissions list     # List required permissions, one per line
 #
 # Description:
 #   Manages review-code script permissions in ~/.claude/settings.json
@@ -52,16 +54,19 @@ stale_permissions=(
     "Bash(SESSION_ID=:*)"
     "Bash(review_data=:*)"
     "Bash(ls -la /tmp/review-code:*)"
+    "Bash(git rev-parse:*)"
 )
 
 show_usage() {
-    echo "Usage: bin/manage-permissions {add|remove|status|migrate}"
+    echo "Usage: bin/manage-permissions {add|remove|status|migrate|check|list}"
     echo ""
     echo "Commands:"
     echo "  add     - Add review-code permissions (also removes stale ones)"
     echo "  remove  - Remove review-code permissions from settings.json"
     echo "  status  - Check which permissions are currently configured"
     echo "  migrate - Remove stale permissions from older versions"
+    echo "  check   - Exit 0 if all required permissions are present, 1 otherwise"
+    echo "  list    - List required permissions, one per line"
     echo ""
 }
 
@@ -88,8 +93,8 @@ create_settings_if_needed() {
 }
 
 cmd_add() {
-    # Clean up stale permissions first
-    cmd_migrate
+    # Clean up stale permissions first (quietly — cmd_add has its own output)
+    cmd_migrate --quiet
 
     echo "Checking permissions to add in ${SETTINGS_FILE}:"
     echo ""
@@ -170,6 +175,9 @@ cmd_add() {
 }
 
 cmd_remove() {
+    # Clean up stale permissions first
+    cmd_migrate --quiet
+
     echo ""
     echo "Checking permissions in ${SETTINGS_FILE}:"
     echo ""
@@ -292,9 +300,10 @@ cmd_status() {
 }
 
 cmd_migrate() {
-    echo ""
-    echo "Migrating permissions in ${SETTINGS_FILE}:"
-    echo ""
+    local quiet=false
+    if [[ "${1:-}" == "--quiet" ]]; then
+        quiet=true
+    fi
 
     local removed=0
 
@@ -303,7 +312,9 @@ cmd_migrate() {
         if jq -e ".permissions.allow | index(\"${perm}\")" "${SETTINGS_FILE}" > /dev/null 2>&1; then
             if jq ".permissions.allow |= map(select(. != \"${perm}\"))" "${SETTINGS_FILE}" > "${SETTINGS_FILE}.tmp"; then
                 mv "${SETTINGS_FILE}.tmp" "${SETTINGS_FILE}"
-                echo "  - Removed stale: ${perm}"
+                if [[ "${quiet}" == false ]]; then
+                    echo "  - Removed stale: ${perm}"
+                fi
                 removed=$((removed + 1))
             else
                 error "Failed to remove stale permission: ${perm}"
@@ -312,13 +323,37 @@ cmd_migrate() {
         fi
     done
 
-    if [[ ${removed} -eq 0 ]]; then
-        info "No stale permissions to remove"
-    else
+    if [[ "${quiet}" == false ]]; then
+        echo ""
+        if [[ ${removed} -eq 0 ]]; then
+            info "No stale permissions to remove"
+        else
+            info "Removed ${removed} stale permission(s)"
+        fi
+        echo ""
+    elif [[ ${removed} -gt 0 ]]; then
         info "Removed ${removed} stale permission(s)"
     fi
+}
 
-    echo ""
+cmd_check() {
+    if [[ ! -f "${SETTINGS_FILE}" ]]; then
+        return 1
+    fi
+
+    for perm in "${permissions[@]}"; do
+        if ! jq -e ".permissions.allow | index(\"${perm}\")" "${SETTINGS_FILE}" > /dev/null 2>&1; then
+            return 1
+        fi
+    done
+
+    return 0
+}
+
+cmd_list() {
+    for perm in "${permissions[@]}"; do
+        echo "${perm}"
+    done
 }
 
 # Main
@@ -338,7 +373,13 @@ case "${command}" in
         cmd_status
         ;;
     migrate)
-        cmd_migrate
+        cmd_migrate "${2:-}"
+        ;;
+    check)
+        cmd_check
+        ;;
+    list)
+        cmd_list
         ;;
     "")
         # No argument - default to add for backwards compatibility

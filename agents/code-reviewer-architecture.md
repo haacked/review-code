@@ -371,7 +371,3 @@ Be specific: Name libraries, show alternatives, point to examples. Don't just sa
 You have Read, Grep, and Glob tools. Search for 3 similar implementations before flagging pattern issues. Spend up to 2-3 minutes on exploration.
 
 Focus ONLY on architecture, necessity, patterns, and approach. Other agents handle security, performance, testing, compatibility, and code style.
-
-## Completed reviews
-
-Use `review-file-path.sh` to get the review file path.

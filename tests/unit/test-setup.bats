@@ -614,151 +614,76 @@ EOF
 # Permission check tests
 # =============================================================================
 
-# Helper to source only the permission check function from bin/setup
+# Helper to set up a temp HOME with a .claude directory for permission checks.
+# Uses manage-permissions check directly since bin/setup delegates to it.
 setup_permissions_check() {
     TEST_TEMP_DIR=$(mktemp -d)
     export TEST_TEMP_DIR
-    export CLAUDE_DIR="$TEST_TEMP_DIR/.claude"
-    mkdir -p "$CLAUDE_DIR"
+    export HOME="$TEST_TEMP_DIR"
+    mkdir -p "$HOME/.claude"
 }
 
 teardown_permissions_check() {
     [ -d "$TEST_TEMP_DIR" ] && rm -rf "$TEST_TEMP_DIR"
 }
 
+run_check_permissions() {
+    run "$PROJECT_ROOT/bin/manage-permissions" check
+}
+
 @test "check_permissions_configured: returns false when no settings file exists" {
     setup_permissions_check
-
-    # Source the function inline (can't source bin/setup directly due to main() call)
-    run bash -c "
-        CLAUDE_DIR='$CLAUDE_DIR'
-        check_permissions_configured() {
-            local settings_file=\"\${CLAUDE_DIR}/settings.json\"
-            [[ -f \"\${settings_file}\" ]] || return 1
-            command -v jq &> /dev/null || return 1
-            local required_permissions=(
-                'Bash(~/.claude/skills/review-code/scripts/*:*)'
-                'Read(~/.claude/**)'
-            )
-            for perm in \"\${required_permissions[@]}\"; do
-                if ! jq -e \".permissions.allow | index(\\\"\${perm}\\\")\" \"\${settings_file}\" > /dev/null 2>&1; then
-                    return 1
-                fi
-            done
-            return 0
-        }
-        check_permissions_configured
-    "
+    run_check_permissions
     [ "$status" -ne 0 ]
-
     teardown_permissions_check
 }
 
 @test "check_permissions_configured: returns false when only old path is present" {
     setup_permissions_check
-
-    cat > "$CLAUDE_DIR/settings.json" << 'EOF'
+    cat > "$HOME/.claude/settings.json" << 'EOF'
 {"permissions":{"allow":["Bash(~/.claude/bin/review-code/*:*)"]}}
 EOF
-
-    run bash -c "
-        CLAUDE_DIR='$CLAUDE_DIR'
-        check_permissions_configured() {
-            local settings_file=\"\${CLAUDE_DIR}/settings.json\"
-            [[ -f \"\${settings_file}\" ]] || return 1
-            command -v jq &> /dev/null || return 1
-            local required_permissions=(
-                'Bash(~/.claude/skills/review-code/scripts/*:*)'
-                'Read(~/.claude/**)'
-            )
-            for perm in \"\${required_permissions[@]}\"; do
-                if ! jq -e \".permissions.allow | index(\\\"\${perm}\\\")\" \"\${settings_file}\" > /dev/null 2>&1; then
-                    return 1
-                fi
-            done
-            return 0
-        }
-        check_permissions_configured
-    "
+    run_check_permissions
     [ "$status" -ne 0 ]
-
     teardown_permissions_check
 }
 
 @test "check_permissions_configured: returns false when only one required permission is present" {
     setup_permissions_check
-
-    cat > "$CLAUDE_DIR/settings.json" << 'EOF'
+    cat > "$HOME/.claude/settings.json" << 'EOF'
 {"permissions":{"allow":["Bash(~/.claude/skills/review-code/scripts/*:*)"]}}
 EOF
-
-    run bash -c "
-        CLAUDE_DIR='$CLAUDE_DIR'
-        check_permissions_configured() {
-            local settings_file=\"\${CLAUDE_DIR}/settings.json\"
-            [[ -f \"\${settings_file}\" ]] || return 1
-            command -v jq &> /dev/null || return 1
-            local required_permissions=(
-                'Bash(~/.claude/skills/review-code/scripts/*:*)'
-                'Read(~/.claude/**)'
-            )
-            for perm in \"\${required_permissions[@]}\"; do
-                if ! jq -e \".permissions.allow | index(\\\"\${perm}\\\")\" \"\${settings_file}\" > /dev/null 2>&1; then
-                    return 1
-                fi
-            done
-            return 0
-        }
-        check_permissions_configured
-    "
+    run_check_permissions
     [ "$status" -ne 0 ]
-
     teardown_permissions_check
 }
 
 @test "check_permissions_configured: returns true when all required permissions are present" {
     setup_permissions_check
-
-    cat > "$CLAUDE_DIR/settings.json" << 'EOF'
+    cat > "$HOME/.claude/settings.json" << 'EOF'
 {"permissions":{"allow":["Bash(~/.claude/skills/review-code/scripts/*:*)","Read(~/.claude/**)"]}}
 EOF
-
-    run bash -c "
-        CLAUDE_DIR='$CLAUDE_DIR'
-        check_permissions_configured() {
-            local settings_file=\"\${CLAUDE_DIR}/settings.json\"
-            [[ -f \"\${settings_file}\" ]] || return 1
-            command -v jq &> /dev/null || return 1
-            local required_permissions=(
-                'Bash(~/.claude/skills/review-code/scripts/*:*)'
-                'Read(~/.claude/**)'
-            )
-            for perm in \"\${required_permissions[@]}\"; do
-                if ! jq -e \".permissions.allow | index(\\\"\${perm}\\\")\" \"\${settings_file}\" > /dev/null 2>&1; then
-                    return 1
-                fi
-            done
-            return 0
-        }
-        check_permissions_configured
-    "
+    run_check_permissions
     [ "$status" -eq 0 ]
-
     teardown_permissions_check
 }
 
-@test "setup: check_permissions_configured does not match old path alone" {
-    # Verify the function in bin/setup no longer has the old-path backwards compatibility check
-    run bash -c "grep -A20 'check_permissions_configured()' '$PROJECT_ROOT/bin/setup' | grep -q 'bin/review-code'"
-    [ "$status" -ne 0 ]
+@test "check_permissions_configured: returns true when extra permissions are present" {
+    setup_permissions_check
+    cat > "$HOME/.claude/settings.json" << 'EOF'
+{"permissions":{"allow":["Bash(~/.claude/skills/review-code/scripts/*:*)","Read(~/.claude/**)","Bash(git status:*)"]}}
+EOF
+    run_check_permissions
+    [ "$status" -eq 0 ]
+    teardown_permissions_check
 }
 
-@test "setup: check_permissions_configured checks all required permissions" {
-    run bash -c "grep -A20 'check_permissions_configured()' '$PROJECT_ROOT/bin/setup' | grep -q 'required_permissions'"
+@test "setup: check_permissions_configured delegates to manage-permissions" {
+    run bash -c "grep -A10 'check_permissions_configured()' '$PROJECT_ROOT/bin/setup' | grep -q 'manage-permissions.*check'"
     [ "$status" -eq 0 ]
 }
 
-@test "setup: prompt_configure_permissions calls migration" {
-    run bash -c "grep -A10 'prompt_configure_permissions()' '$PROJECT_ROOT/bin/setup' | grep -q 'migrate'"
+@test "setup: prompt_configure_permissions calls migration with --quiet" {
+    run bash -c "grep -A10 'prompt_configure_permissions()' '$PROJECT_ROOT/bin/setup' | grep -q 'migrate --quiet'"
     [ "$status" -eq 0 ]
 }
