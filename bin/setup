@@ -508,74 +508,6 @@ cleanup_old_installation() {
     done
 }
 
-check_permissions_configured() {
-    if [[ -f "${SCRIPT_DIR}/bin/manage-permissions" ]]; then
-        "${SCRIPT_DIR}/bin/manage-permissions" check
-    else
-        return 1
-    fi
-}
-
-prompt_configure_permissions() {
-    # Clean up stale permissions from older versions (quietly unless something was removed)
-    if [[ -f "${SCRIPT_DIR}/bin/manage-permissions" ]]; then
-        "${SCRIPT_DIR}/bin/manage-permissions" migrate --quiet
-    fi
-
-    # Check if all required permissions are already configured
-    # shellcheck disable=SC2310  # Intentional conditional check
-    if check_permissions_configured; then
-        info "Permissions already configured - skipping prompt"
-        return
-    fi
-
-    echo ""
-    echo "═══════════════════════════════════════════════════════"
-    echo "  Configure Claude Code Permissions (Optional)"
-    echo "═══════════════════════════════════════════════════════"
-    echo ""
-    echo "Review-code needs permission to run helper scripts."
-    echo ""
-    echo "You can either:"
-    echo "  1. Pre-authorize scripts now (recommended)"
-    echo "  2. Approve each script when Claude Code asks"
-    echo ""
-    read -p "Pre-authorize review-code scripts? [Y/n] " -n 1 -r
-    echo ""
-
-    if [[ ! ${REPLY} =~ ^[Nn]$ ]]; then
-        if [[ -f "${SCRIPT_DIR}/bin/manage-permissions" ]]; then
-            "${SCRIPT_DIR}/bin/manage-permissions" add
-        else
-            warn "manage-permissions script not found"
-            warn "You'll need to approve permissions when Claude Code asks"
-        fi
-    else
-        echo ""
-        info "Skipped automatic permission configuration"
-        echo "  You'll be prompted to approve scripts when they run"
-        echo "  To configure later, run: bin/manage-permissions add"
-    fi
-}
-
-show_next_steps() {
-    echo ""
-    echo "═══════════════════════════════════════════════════════"
-    echo "  Next Steps"
-    echo "═══════════════════════════════════════════════════════"
-    echo ""
-    echo "Review-code uses helper scripts that need permission to run."
-    echo ""
-    echo "When Claude Code asks to run a script, you'll see:"
-    echo "  • Script name (e.g., git-context.sh)"
-    echo "  • What it does (e.g., Extract repo metadata)"
-    echo ""
-    echo "All scripts are READ-ONLY and only analyze your code."
-    echo ""
-    echo "Tip: Choose 'Always allow' to avoid repeated prompts."
-    echo ""
-}
-
 main() {
     echo ""
     echo "═══════════════════════════════════════════════════════"
@@ -610,17 +542,11 @@ main() {
     install_agents
     install_context
 
-    # Prompt for permission configuration
-    prompt_configure_permissions
-
     # Cleanup old installation if requested
     if [[ "${remove_old}" -eq 0 ]]; then
         echo ""
         cleanup_old_installation
     fi
-
-    # Show next steps
-    show_next_steps
 
     # Success summary
     echo ""
@@ -632,12 +558,6 @@ main() {
     echo "  - Run: /review-code"
     echo "  - Review PR: /review-code <pr-number>"
     echo "  - Specific review: /review-code security"
-    echo ""
-    echo "Configure permissions:"
-    echo "  - Add: bin/manage-permissions add"
-    echo "  - Remove: bin/manage-permissions remove"
-    echo "  - Status: bin/manage-permissions status"
-    echo "  - Or approve individually when prompted"
     echo ""
     echo "Installation locations:"
     echo "  - Skill: ${SKILL_DIR}/"
