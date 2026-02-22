@@ -917,7 +917,7 @@ handle_pr_review() {
                 local fetch_err
                 if [[ "${is_fork}" == "true" ]]; then
                     local pr_ref="refs/review/pr-${pr_number}"
-                    if fetch_err=$(git fetch origin "pull/${pr_number}/head:${pr_ref}" 2>&1); then
+                    if fetch_err=$(git fetch origin "+pull/${pr_number}/head:${pr_ref}" 2>&1); then
                         file_ref="${pr_ref}"
                     else
                         warning "Failed to fetch PR ref for fork PR #${pr_number}: ${fetch_err}"
@@ -928,6 +928,12 @@ handle_pr_review() {
                     else
                         warning "Failed to fetch origin/${head_ref}: ${fetch_err}"
                     fi
+                fi
+
+                # If fetch failed, null out working_dir so agents fall back to
+                # diff-only instead of reading the wrong branch's files.
+                if [[ -z "${file_ref}" ]]; then
+                    git_context=$(echo "${git_context}" | jq '.working_dir = null')
                 fi
             fi
         fi

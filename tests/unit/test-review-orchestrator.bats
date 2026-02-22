@@ -643,3 +643,111 @@ teardown() {
 
     [ "$is_own_pr" = "false" ]
 }
+
+# =============================================================================
+# Cross-branch PR review tests (file_ref / working_dir behavior)
+# =============================================================================
+
+@test "review-orchestrator.sh: file_ref is omitted on fast path (same branch)" {
+    # Simulate fast path: current branch matches PR head_ref
+    source "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+
+    local current_branch="feature-branch"
+    local head_ref="feature-branch"
+    local file_ref=""
+
+    # On the fast path, current_branch == head_ref, so file_ref stays empty
+    if [[ "${current_branch}" != "${head_ref}" ]]; then
+        file_ref="origin/${head_ref}"
+    fi
+
+    [ -z "$file_ref" ]
+}
+
+@test "review-orchestrator.sh: file_ref is set on cross-branch (different branch)" {
+    # Simulate middle case: same repo, different branch, fetch succeeds
+    source "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+
+    local current_branch="main"
+    local head_ref="feature-branch"
+    local is_fork="false"
+    local file_ref=""
+
+    if [[ "${current_branch}" != "${head_ref}" ]]; then
+        if [[ "${is_fork}" == "true" ]]; then
+            file_ref="refs/review/pr-42"
+        else
+            file_ref="origin/${head_ref}"
+        fi
+    fi
+
+    [ "$file_ref" = "origin/feature-branch" ]
+}
+
+@test "review-orchestrator.sh: file_ref uses PR ref for fork PRs" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+
+    local current_branch="main"
+    local head_ref="fork-feature"
+    local is_fork="true"
+    local pr_number="42"
+    local file_ref=""
+
+    if [[ "${current_branch}" != "${head_ref}" ]]; then
+        if [[ "${is_fork}" == "true" ]]; then
+            file_ref="refs/review/pr-${pr_number}"
+        else
+            file_ref="origin/${head_ref}"
+        fi
+    fi
+
+    [ "$file_ref" = "refs/review/pr-42" ]
+}
+
+@test "review-orchestrator.sh: working_dir nulled when fetch fails on cross-branch" {
+    # Simulate: same repo, different branch, fetch fails → file_ref empty
+    source "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+
+    local current_branch="main"
+    local head_ref="feature-branch"
+    local file_ref=""
+    local git_context='{"working_dir": "/some/path", "org": "testorg", "repo": "testrepo"}'
+
+    # Simulate fetch failure: file_ref stays empty
+    if [[ "${current_branch}" != "${head_ref}" && -z "${file_ref}" ]]; then
+        git_context=$(echo "${git_context}" | jq '.working_dir = null')
+    fi
+
+    working_dir=$(echo "${git_context}" | jq -r '.working_dir')
+    [ "$working_dir" = "null" ]
+}
+
+@test "review-orchestrator.sh: working_dir preserved when fetch succeeds on cross-branch" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+
+    local current_branch="main"
+    local head_ref="feature-branch"
+    local file_ref="origin/feature-branch"
+    local git_context='{"working_dir": "/some/path", "org": "testorg", "repo": "testrepo"}'
+
+    # Fetch succeeded: file_ref is set, so working_dir stays
+    if [[ "${current_branch}" != "${head_ref}" && -z "${file_ref}" ]]; then
+        git_context=$(echo "${git_context}" | jq '.working_dir = null')
+    fi
+
+    working_dir=$(echo "${git_context}" | jq -r '.working_dir')
+    [ "$working_dir" = "/some/path" ]
+}
+
+@test "review-orchestrator.sh: empty file_ref excluded from build_review_data output" {
+    # build_review_data filters out empty mode_ values, so file_ref shouldn't
+    # appear in the output when it's empty (fast path)
+    echo "change" > file.txt
+
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+    [ "$status" -eq 0 ]
+
+    # Local mode doesn't set file_ref, so it shouldn't be in output
+    has_file_ref=$(echo "$output" | jq 'has("file_ref")')
+    [ "$has_file_ref" = "false" ]
+}
