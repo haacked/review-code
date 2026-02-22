@@ -5,6 +5,10 @@
 # shellcheck disable=SC2310  # Functions in conditionals intentionally check return values
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/helpers/gh-wrapper.sh
+source "${SCRIPT_DIR}/helpers/gh-wrapper.sh"
+
 # Process all arguments into an array, extracting flags first
 # This ensures flags can appear anywhere and remaining args are properly ordered
 FORCE_MODE="false"
@@ -449,7 +453,7 @@ detect_no_arg() {
     if command -v gh > /dev/null 2>&1; then
         # Get all open PRs for this branch
         local pr_numbers
-        pr_numbers=$(DEBUG= gh pr list --head "${current_branch}" --state open --json number --jq '.[].number' 2> /dev/null || echo "")
+        pr_numbers=$(gh pr list --head "${current_branch}" --state open --json number --jq '.[].number' 2> /dev/null || echo "")
 
         if [[ -n "${pr_numbers}" ]]; then
             local pr_array

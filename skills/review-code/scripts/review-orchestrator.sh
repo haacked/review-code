@@ -23,6 +23,9 @@ source "${SCRIPT_DIR}/helpers/debug-helpers.sh"
 
 set -euo pipefail
 
+# shellcheck source=lib/helpers/gh-wrapper.sh
+source "${SCRIPT_DIR}/helpers/gh-wrapper.sh"
+
 # Main orchestration function
 main() {
     local arg="${1:-}"
@@ -310,7 +313,7 @@ build_review_data() {
     if [[ -n "${pr_context}" ]]; then
         local pr_author
         pr_author=$(echo "${pr_context}" | jq -r '.author // ""')
-        reviewer_username=$(DEBUG= gh api user --jq '.login' 2> /dev/null || echo "")
+        reviewer_username=$(gh api user --jq '.login' 2> /dev/null || echo "")
         if [[ -n "${reviewer_username}" && -n "${pr_author}" && "${reviewer_username}" == "${pr_author}" ]]; then
             is_own_pr="true"
         fi
