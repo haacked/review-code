@@ -11,6 +11,9 @@ _HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/helpers/error-helpers.sh
 source "${_HELPER_DIR}/error-helpers.sh"
 
+# shellcheck source=lib/helpers/gh-wrapper.sh
+source "${_HELPER_DIR}/gh-wrapper.sh"
+
 validate_git_repo() {
     if ! git rev-parse --git-dir > /dev/null 2>&1; then
         error "Not in a git repository"
@@ -25,7 +28,7 @@ get_git_org_repo() {
     # Try gh CLI first (most reliable, already authenticated and validated)
     if command -v gh > /dev/null 2>&1; then
         local gh_data
-        gh_data=$(DEBUG= gh repo view --json owner,name --jq '"\(.owner.login)|\(.name)"' 2> /dev/null || echo "")
+        gh_data=$(gh repo view --json owner,name --jq '"\(.owner.login)|\(.name)"' 2> /dev/null || echo "")
         if [[ -n "${gh_data}" ]]; then
             # Normalize org to lowercase for consistency
             local org="${gh_data%|*}"

@@ -32,6 +32,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 source "${SCRIPT_DIR}/helpers/config-helpers.sh"
 source "${SCRIPT_DIR}/helpers/date-helpers.sh"
+# shellcheck source=lib/helpers/gh-wrapper.sh
+source "${SCRIPT_DIR}/helpers/gh-wrapper.sh"
 source "${SCRIPT_DIR}/helpers/validation-helpers.sh"
 
 # Get learnings directory from config
@@ -170,7 +172,7 @@ main() {
         # If not cached or cache expired, fetch from API
         if [[ -z "${pr_state}" ]]; then
             local pr_data
-            pr_data=$(DEBUG= gh api "repos/${org}/${repo}/pulls/${pr_number}" --jq '{state: .state, merged_at: .merged_at}' 2> /dev/null || echo '{"state":"unknown","merged_at":null}')
+            pr_data=$(gh api "repos/${org}/${repo}/pulls/${pr_number}" --jq '{state: .state, merged_at: .merged_at}' 2> /dev/null || echo '{"state":"unknown","merged_at":null}')
 
             pr_merged_at=$(echo "${pr_data}" | jq -r '.merged_at // empty')
             local api_state

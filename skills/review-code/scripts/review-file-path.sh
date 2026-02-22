@@ -42,10 +42,7 @@ source "${SCRIPT_DIR}/helpers/config-helpers.sh"
 
 set -euo pipefail
 
-# Get the directory where this script lives
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Source shared git helper functions
+# Source shared git helper functions (also provides gh-wrapper.sh)
 source "${SCRIPT_DIR}/helpers/git-helpers.sh"
 
 # Sanitize path component to prevent directory traversal
@@ -349,7 +346,7 @@ main() {
             fi
 
             local pr_check
-            pr_check=$(DEBUG= gh pr list --head "${branch_to_check}" --json number --jq '.[0].number' 2> /dev/null || echo "")
+            pr_check=$(gh pr list --head "${branch_to_check}" --json number --jq '.[0].number' 2> /dev/null || echo "")
             if [[ -n "${pr_check}" ]]; then
                 local pr_file="${review_dir}/pr-${pr_check}.md"
                 verify_path_safety "${pr_file}" "${review_root}"
