@@ -77,8 +77,9 @@ parse_pr_identifier() {
         local repo="${BASH_REMATCH[2]}"
         local number="${BASH_REMATCH[3]}"
 
-        # Normalize org to lowercase
+        # Normalize to lowercase for case-insensitive comparison
         org=$(echo "${org}" | tr '[:upper:]' '[:lower:]')
+        repo=$(echo "${repo}" | tr '[:upper:]' '[:lower:]')
 
         echo "${org}|${repo}|${number}"
     elif [[ ${input} =~ ^[0-9]+$ ]]; then

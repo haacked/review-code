@@ -648,93 +648,59 @@ teardown() {
 # Cross-branch PR review tests (file_ref / working_dir behavior)
 # =============================================================================
 
-@test "review-orchestrator.sh: file_ref is omitted on fast path (same branch)" {
-    # Simulate fast path: current branch matches PR head_ref
+@test "review-orchestrator.sh: determine_file_ref returns empty on fast path (same branch)" {
     source "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
 
-    local current_branch="feature-branch"
-    local head_ref="feature-branch"
-    local file_ref=""
+    local result
+    result=$(determine_file_ref "feature-branch" "feature-branch" "42")
 
-    # On the fast path, current_branch == head_ref, so file_ref stays empty
-    if [[ "${current_branch}" != "${head_ref}" ]]; then
-        file_ref="origin/${head_ref}"
-    fi
-
-    [ -z "$file_ref" ]
+    [ -z "$result" ]
 }
 
-@test "review-orchestrator.sh: file_ref is set on cross-branch (different branch)" {
-    # Simulate middle case: same repo, different branch, fetch succeeds
+@test "review-orchestrator.sh: determine_file_ref returns review ref on cross-branch" {
     source "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
 
-    local current_branch="main"
-    local head_ref="feature-branch"
-    local is_fork="false"
-    local file_ref=""
+    local result
+    result=$(determine_file_ref "main" "feature-branch" "42")
 
-    if [[ "${current_branch}" != "${head_ref}" ]]; then
-        if [[ "${is_fork}" == "true" ]]; then
-            file_ref="refs/review/pr-42"
-        else
-            file_ref="origin/${head_ref}"
-        fi
-    fi
-
-    [ "$file_ref" = "origin/feature-branch" ]
+    [ "$result" = "refs/review/pr-42" ]
 }
 
-@test "review-orchestrator.sh: file_ref uses PR ref for fork PRs" {
+@test "review-orchestrator.sh: determine_file_ref returns same ref format for fork PRs" {
     source "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
 
-    local current_branch="main"
-    local head_ref="fork-feature"
-    local is_fork="true"
-    local pr_number="42"
-    local file_ref=""
+    local result
+    result=$(determine_file_ref "main" "fork-feature" "99")
 
-    if [[ "${current_branch}" != "${head_ref}" ]]; then
-        if [[ "${is_fork}" == "true" ]]; then
-            file_ref="refs/review/pr-${pr_number}"
-        else
-            file_ref="origin/${head_ref}"
-        fi
-    fi
-
-    [ "$file_ref" = "refs/review/pr-42" ]
+    [ "$result" = "refs/review/pr-99" ]
 }
 
-@test "review-orchestrator.sh: working_dir nulled when fetch fails on cross-branch" {
-    # Simulate: same repo, different branch, fetch fails → file_ref empty
-    source "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
-
-    local current_branch="main"
-    local head_ref="feature-branch"
+@test "review-orchestrator.sh: working_dir nulled when file_ref is empty on cross-branch" {
+    # Spec test: when fetch fails (file_ref empty) on a different branch,
+    # working_dir must be nulled to prevent agents reading the wrong branch.
     local file_ref=""
     local git_context='{"working_dir": "/some/path", "org": "testorg", "repo": "testrepo"}'
 
-    # Simulate fetch failure: file_ref stays empty
-    if [[ "${current_branch}" != "${head_ref}" && -z "${file_ref}" ]]; then
+    if [[ -z "${file_ref}" ]]; then
         git_context=$(echo "${git_context}" | jq '.working_dir = null')
     fi
 
+    local working_dir
     working_dir=$(echo "${git_context}" | jq -r '.working_dir')
     [ "$working_dir" = "null" ]
 }
 
-@test "review-orchestrator.sh: working_dir preserved when fetch succeeds on cross-branch" {
-    source "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
-
-    local current_branch="main"
-    local head_ref="feature-branch"
-    local file_ref="origin/feature-branch"
+@test "review-orchestrator.sh: working_dir preserved when file_ref is set" {
+    # Spec test: when fetch succeeds (file_ref set), working_dir stays so
+    # agents can use Grep/Glob for pattern discovery alongside git show.
+    local file_ref="refs/review/pr-42"
     local git_context='{"working_dir": "/some/path", "org": "testorg", "repo": "testrepo"}'
 
-    # Fetch succeeded: file_ref is set, so working_dir stays
-    if [[ "${current_branch}" != "${head_ref}" && -z "${file_ref}" ]]; then
+    if [[ -z "${file_ref}" ]]; then
         git_context=$(echo "${git_context}" | jq '.working_dir = null')
     fi
 
+    local working_dir
     working_dir=$(echo "${git_context}" | jq -r '.working_dir')
     [ "$working_dir" = "/some/path" ]
 }

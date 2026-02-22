@@ -876,6 +876,22 @@ handle_find_mode() {
         '{status: $status, file_info: $file_info, display_target: $display_target, file_summary: $file_summary}'
 }
 
+# Determine the git ref for reading PR files on a cross-branch review.
+# Returns the local ref path to fetch into, or empty string when on the
+# PR's branch (fast path). The caller handles the actual fetch.
+determine_file_ref() {
+    local current_branch="$1"
+    local head_ref="$2"
+    local pr_number="$3"
+
+    if [[ "${current_branch}" == "${head_ref}" ]]; then
+        echo ""
+        return
+    fi
+
+    echo "refs/review/pr-${pr_number}"
+}
+
 # Handle PR review
 handle_pr_review() {
     local pr_identifier="$1"
@@ -902,7 +918,7 @@ handle_pr_review() {
         source "${SCRIPT_DIR}/helpers/git-helpers.sh"
 
         local current_git_data
-        current_git_data=$(get_git_org_repo 2> /dev/null || echo "|")
+        current_git_data=$(get_git_org_repo 2> /dev/null || echo "unknown|unknown")
         local current_org="${current_git_data%|*}"
         local current_repo="${current_git_data#*|}"
         local current_branch
@@ -911,23 +927,23 @@ handle_pr_review() {
         if [[ "${current_org}" = "${org}" ]] && [[ "${current_repo}" = "${repo}" ]]; then
             git_context=$("${SCRIPT_DIR}/git-context.sh")
 
-            if [[ "${current_branch}" != "${head_ref}" ]]; then
+            local expected_ref
+            expected_ref=$(determine_file_ref "${current_branch}" "${head_ref}" "${pr_number}")
+
+            if [[ -n "${expected_ref}" ]]; then
                 # Same repo, different branch. Fetch the PR ref so agents can
                 # read files via `git show <ref>:<path>` without checkout.
-                local fetch_err
+                local fetch_err fetch_source
                 if [[ "${is_fork}" == "true" ]]; then
-                    local pr_ref="refs/review/pr-${pr_number}"
-                    if fetch_err=$(git fetch origin "+pull/${pr_number}/head:${pr_ref}" 2>&1); then
-                        file_ref="${pr_ref}"
-                    else
-                        warning "Failed to fetch PR ref for fork PR #${pr_number}: ${fetch_err}"
-                    fi
+                    fetch_source="+pull/${pr_number}/head:${expected_ref}"
                 else
-                    if fetch_err=$(git fetch origin "${head_ref}" 2>&1); then
-                        file_ref="origin/${head_ref}"
-                    else
-                        warning "Failed to fetch origin/${head_ref}: ${fetch_err}"
-                    fi
+                    fetch_source="+${head_ref}:${expected_ref}"
+                fi
+
+                if fetch_err=$(git fetch origin "${fetch_source}" 2>&1); then
+                    file_ref="${expected_ref}"
+                else
+                    warning "Failed to fetch ${fetch_source}: ${fetch_err}"
                 fi
 
                 # If fetch failed, null out working_dir so agents fall back to
