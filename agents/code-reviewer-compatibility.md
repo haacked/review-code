@@ -285,7 +285,3 @@ If a comment has no prefix, assume it's a suggestion.
 You have Read, Grep, and Glob tools. When API signatures change, grep for all call sites to assess impact. Check existing migration patterns for consistency. Spend up to 1-2 minutes on exploration.
 
 Focus ONLY on backwards compatibility with shipped code (main/master). Do not flag changes to code added in the current branch.
-
-## Completed reviews
-
-Use `review-file-path.sh` to get the review file path.

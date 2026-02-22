@@ -509,36 +509,22 @@ cleanup_old_installation() {
 }
 
 check_permissions_configured() {
-    local settings_file="${CLAUDE_DIR}/settings.json"
-
-    # If no settings file, permissions aren't configured
-    if [[ ! -f "${settings_file}" ]]; then
+    if [[ -f "${SCRIPT_DIR}/bin/manage-permissions" ]]; then
+        "${SCRIPT_DIR}/bin/manage-permissions" check
+    else
         return 1
     fi
-
-    # Check if jq is available
-    if ! command -v jq &> /dev/null; then
-        return 1
-    fi
-
-    # Check if the key permission is already configured (check both old and new paths)
-    if jq -e '.permissions.allow | index("Bash(~/.claude/skills/review-code/scripts/*:*)")' "${settings_file}" > /dev/null 2>&1; then
-        return 0
-    fi
-
-    # Also check old path pattern for backwards compatibility
-    if jq -e '.permissions.allow | index("Bash(~/.claude/bin/review-code/*:*)")' "${settings_file}" > /dev/null 2>&1; then
-        return 0
-    fi
-
-    return 1
 }
 
 prompt_configure_permissions() {
-    # Check if permissions are already configured
+    # Clean up stale permissions from older versions (quietly unless something was removed)
+    if [[ -f "${SCRIPT_DIR}/bin/manage-permissions" ]]; then
+        "${SCRIPT_DIR}/bin/manage-permissions" migrate --quiet
+    fi
+
+    # Check if all required permissions are already configured
     # shellcheck disable=SC2310  # Intentional conditional check
     if check_permissions_configured; then
-        echo ""
         info "Permissions already configured - skipping prompt"
         return
     fi

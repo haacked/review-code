@@ -17,7 +17,7 @@ set -euo pipefail
 #   session_cleanup <session-id>
 
 # Session storage directory
-SESSION_DIR="${CLAUDE_SESSION_DIR:-/tmp/claude-sessions}"
+SESSION_DIR="${CLAUDE_SESSION_DIR:-${HOME}/.claude/skills/review-code/sessions}"
 
 # Sanitize session ID or command name to prevent path traversal
 # Args: $1 = string to sanitize

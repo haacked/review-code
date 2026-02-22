@@ -271,7 +271,3 @@ Always verify:
 10. **Screen Reader Testing**: Content makes sense when read linearly
 
 Focus ONLY on frontend-specific concerns. Be practical - identify real issues affecting users or developers.
-
-## Completed reviews
-
-Use `review-file-path.sh` to get the review file path.

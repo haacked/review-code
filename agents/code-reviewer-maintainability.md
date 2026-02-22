@@ -297,7 +297,3 @@ Language-specific maintainability patterns are loaded from context files (e.g., 
 - Only differences: log messages ("cache" vs "expiry") and config parameter
 + Extract: _fix_with_update_fn(team, stats, config, action_name: str) → bool
 ```
-
-## Completed Reviews
-
-Use `review-file-path.sh` to get the review file path.

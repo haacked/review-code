@@ -331,7 +331,3 @@ assert!(cache.get(&team_ids[0]).is_some(), "Re-accessed entry should not be evic
 assert!(cache.get(&new_team.id).is_some(), "New entry should be present");
 assert!(cache.get(&team_ids[1]).is_none(), "LRU victim should be evicted");  // Added
 ```
-
-## Completed reviews
-
-Use `review-file-path.sh` to get the review file path.

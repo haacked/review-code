@@ -609,3 +609,81 @@ EOF
     run bash -c "grep -A20 'cleanup_old_config()' '$PROJECT_ROOT/bin/setup' | grep -q '.env'"
     [ "$status" -eq 0 ]
 }
+
+# =============================================================================
+# Permission check tests
+# =============================================================================
+
+# Helper to set up a temp HOME with a .claude directory for permission checks.
+# Uses manage-permissions check directly since bin/setup delegates to it.
+setup_permissions_check() {
+    TEST_TEMP_DIR=$(mktemp -d)
+    export TEST_TEMP_DIR
+    export HOME="$TEST_TEMP_DIR"
+    mkdir -p "$HOME/.claude"
+}
+
+teardown_permissions_check() {
+    [ -d "$TEST_TEMP_DIR" ] && rm -rf "$TEST_TEMP_DIR"
+}
+
+run_check_permissions() {
+    run "$PROJECT_ROOT/bin/manage-permissions" check
+}
+
+@test "check_permissions_configured: returns false when no settings file exists" {
+    setup_permissions_check
+    run_check_permissions
+    [ "$status" -ne 0 ]
+    teardown_permissions_check
+}
+
+@test "check_permissions_configured: returns false when only old path is present" {
+    setup_permissions_check
+    cat > "$HOME/.claude/settings.json" << 'EOF'
+{"permissions":{"allow":["Bash(~/.claude/bin/review-code/*:*)"]}}
+EOF
+    run_check_permissions
+    [ "$status" -ne 0 ]
+    teardown_permissions_check
+}
+
+@test "check_permissions_configured: returns false when only one required permission is present" {
+    setup_permissions_check
+    cat > "$HOME/.claude/settings.json" << 'EOF'
+{"permissions":{"allow":["Bash(~/.claude/skills/review-code/scripts/*:*)"]}}
+EOF
+    run_check_permissions
+    [ "$status" -ne 0 ]
+    teardown_permissions_check
+}
+
+@test "check_permissions_configured: returns true when all required permissions are present" {
+    setup_permissions_check
+    cat > "$HOME/.claude/settings.json" << 'EOF'
+{"permissions":{"allow":["Bash(~/.claude/skills/review-code/scripts/*:*)","Read(~/.claude/**)"]}}
+EOF
+    run_check_permissions
+    [ "$status" -eq 0 ]
+    teardown_permissions_check
+}
+
+@test "check_permissions_configured: returns true when extra permissions are present" {
+    setup_permissions_check
+    cat > "$HOME/.claude/settings.json" << 'EOF'
+{"permissions":{"allow":["Bash(~/.claude/skills/review-code/scripts/*:*)","Read(~/.claude/**)","Bash(git status:*)"]}}
+EOF
+    run_check_permissions
+    [ "$status" -eq 0 ]
+    teardown_permissions_check
+}
+
+@test "setup: check_permissions_configured delegates to manage-permissions" {
+    run bash -c "grep -A10 'check_permissions_configured()' '$PROJECT_ROOT/bin/setup' | grep -q 'manage-permissions.*check'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: prompt_configure_permissions calls migration with --quiet" {
+    run bash -c "grep -A10 'prompt_configure_permissions()' '$PROJECT_ROOT/bin/setup' | grep -q 'migrate --quiet'"
+    [ "$status" -eq 0 ]
+}
