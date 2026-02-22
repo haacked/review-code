@@ -103,6 +103,27 @@ EOF
 }
 
 # =============================================================================
+# cmd_add tests
+# =============================================================================
+
+@test "cmd_add: cleans stale permissions before adding new ones" {
+    create_settings '["Bash(SESSION_ID=:*)"]'
+
+    run bash -c "echo y | '$MANAGE_PERMISSIONS' add"
+    [ "$status" -eq 0 ]
+
+    # Stale permission should be removed
+    run jq -e '.permissions.allow | index("Bash(SESSION_ID=:*)")' "$HOME/.claude/settings.json"
+    [ "$status" -ne 0 ]
+
+    # Required permissions should be added
+    run jq -e '.permissions.allow | index("Bash(~/.claude/skills/review-code/scripts/*:*)")' "$HOME/.claude/settings.json"
+    [ "$status" -eq 0 ]
+    run jq -e '.permissions.allow | index("Read(~/.claude/**)")' "$HOME/.claude/settings.json"
+    [ "$status" -eq 0 ]
+}
+
+# =============================================================================
 # cmd_remove with stale cleanup tests
 # =============================================================================
 
@@ -177,6 +198,14 @@ EOF
 # =============================================================================
 # cmd_status stale detection tests
 # =============================================================================
+
+@test "cmd_status: no stale warning when all permissions are current" {
+    create_settings '["Bash(~/.claude/skills/review-code/scripts/*:*)","Read(~/.claude/**)"]'
+
+    run "$MANAGE_PERMISSIONS" status
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Stale permissions found"* ]]
+}
 
 @test "cmd_status: detects git rev-parse as stale" {
     create_settings '["Bash(~/.claude/skills/review-code/scripts/*:*)","Read(~/.claude/**)","Bash(git rev-parse:*)"]'
