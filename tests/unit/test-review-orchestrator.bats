@@ -717,3 +717,22 @@ teardown() {
     has_file_ref=$(echo "$output" | jq 'has("file_ref")')
     [ "$has_file_ref" = "false" ]
 }
+
+@test "review-orchestrator.sh: non-empty file_ref included in build_review_data output" {
+    # The jq filter in build_review_data strips mode_ prefixes and filters
+    # empty values. A non-empty mode_file_ref should pass through as file_ref.
+    run jq -n \
+        --arg mode_branch "feature-branch" \
+        --arg mode_file_ref "refs/review/pr-42" \
+        '$ARGS.named
+         | with_entries(select(.key | startswith("mode_")))
+         | with_entries(.key |= sub("^mode_"; ""))
+         | with_entries(select(.value != ""))'
+    [ "$status" -eq 0 ]
+
+    file_ref=$(echo "$output" | jq -r '.file_ref')
+    [ "$file_ref" = "refs/review/pr-42" ]
+
+    branch=$(echo "$output" | jq -r '.branch')
+    [ "$branch" = "feature-branch" ]
+}
