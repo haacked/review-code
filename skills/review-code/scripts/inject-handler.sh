@@ -11,9 +11,13 @@ SKILL_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # Parse arguments to determine mode by running parse-review-arg.sh
 parse_result=$("${SCRIPT_DIR}/parse-review-arg.sh" "$@" 2>&1) || true
 
-# Determine which handler to load based on the parsed mode
+# Determine which handler to load based on the parsed mode.
+# Error mode gets no handler since SKILL.md's flow handles errors via PARSE_RESULT.
 handler=""
-if echo "${parse_result}" | jq -e '.mode == "learn"' > /dev/null 2>&1; then
+if echo "${parse_result}" | jq -e '.mode == "error"' > /dev/null 2>&1; then
+	echo "<!-- No handler loaded: argument parsing returned an error. See PARSE_RESULT above. -->"
+	exit 0
+elif echo "${parse_result}" | jq -e '.mode == "learn"' > /dev/null 2>&1; then
 	handler="${SKILL_DIR}/handlers/learn.md"
 elif echo "${parse_result}" | jq -e '.find_mode == "true"' > /dev/null 2>&1; then
 	handler="${SKILL_DIR}/handlers/find.md"

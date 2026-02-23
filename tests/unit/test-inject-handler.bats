@@ -12,7 +12,7 @@ setup() {
     # Create a temporary git repository so parse-review-arg.sh works
     TEST_REPO=$(mktemp -d)
     cd "$TEST_REPO"
-    git init -q
+    git init -q -b main
     git config commit.gpgsign false
     git config user.email "test@example.com"
     git config user.name "Test User"
@@ -106,6 +106,16 @@ teardown() {
 # =============================================================================
 # Error handling tests
 # =============================================================================
+
+@test "inject-handler: outputs minimal message for parse error instead of loading review handler" {
+    # Pass an argument that triggers a parse error (no git remote context)
+    # by running from a non-git directory
+    cd /tmp
+    run "$SCRIPT" "not-a-valid-arg"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"No handler loaded"* ]]
+    [[ "$output" != *"$(head -1 "$HANDLER_DIR/review.md")"* ]]
+}
 
 @test "inject-handler: handles missing handler file gracefully" {
     # Temporarily rename the review handler to simulate missing file
