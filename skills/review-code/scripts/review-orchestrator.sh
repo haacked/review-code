@@ -900,12 +900,11 @@ handle_pr_review() {
     local pr_data
     pr_data=$("${SCRIPT_DIR}/pr-context.sh" "${pr_identifier}")
 
-    local pr_number org repo head_ref is_fork
+    local pr_number org repo head_ref
     pr_number=$(echo "${pr_data}" | jq -r '.number')
     org=$(echo "${pr_data}" | jq -r '.org')
     repo=$(echo "${pr_data}" | jq -r '.repo')
     head_ref=$(echo "${pr_data}" | jq -r '.head_ref')
-    is_fork=$(echo "${pr_data}" | jq -r '.is_fork // false')
 
     # Determine review mode based on local git state:
     # 1. Fast path: in the same repo AND on the PR's branch (agents use Read tool)
@@ -933,12 +932,10 @@ handle_pr_review() {
             if [[ -n "${expected_ref}" ]]; then
                 # Same repo, different branch. Fetch the PR ref so agents can
                 # read files via `git show <ref>:<path>` without checkout.
-                local fetch_err fetch_source
-                if [[ "${is_fork}" == "true" ]]; then
-                    fetch_source="+pull/${pr_number}/head:${expected_ref}"
-                else
-                    fetch_source="+${head_ref}:${expected_ref}"
-                fi
+                # Uses pull/N/head for all PRs (fork and non-fork) since it's
+                # maintained by GitHub and works even after branch deletion.
+                local fetch_err
+                local fetch_source="+pull/${pr_number}/head:${expected_ref}"
 
                 if fetch_err=$(git fetch origin "${fetch_source}" 2>&1); then
                     file_ref="${expected_ref}"
