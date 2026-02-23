@@ -65,9 +65,19 @@ main() {
 
     case "${mode}" in
         "pr")
-            # For PR mode, use helper function to parse identifier
+            # Use pr_url or pr_number from the parse result, not the raw arg.
+            # When invoked as "find <url>", arg is "find" which parse_pr_identifier
+            # can't extract org/repo from. The parse result has the actual PR ref.
+            local pr_identifier
+            pr_identifier=$(echo "${parse_result}" | jq -r '.pr_url // empty')
+            if [[ -z "${pr_identifier}" ]]; then
+                pr_identifier=$(echo "${parse_result}" | jq -r '.pr_number // empty')
+            fi
+            if [[ -z "${pr_identifier}" ]]; then
+                pr_identifier="${identifier}"
+            fi
             local pr_data
-            pr_data=$(parse_pr_identifier "${identifier}")
+            pr_data=$(parse_pr_identifier "${pr_identifier}")
             org="${pr_data%%|*}"
             repo=$(echo "${pr_data}" | cut -d'|' -f2)
             identifier="${pr_data##*|}"

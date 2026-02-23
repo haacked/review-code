@@ -484,6 +484,20 @@ teardown() {
     [[ "$display_target" == *"PR"* ]] || [[ "$display_target" == *"123"* ]]
 }
 
+@test "review-orchestrator.sh: find mode with PR URL extracts org/repo from URL" {
+    # When running "find <url>", org/repo should come from the URL, not the local repo.
+    # The local repo is testorg/testrepo, but the URL points to otherorg/otherrepo.
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" find "https://github.com/otherorg/otherrepo/pull/456"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.status == "find"'
+
+    # file_info.file_path should contain the URL's org/repo, not the local repo's
+    file_path=$(echo "$output" | jq -r '.file_info.file_path')
+    [[ "$file_path" == *"otherorg/otherrepo"* ]]
+    # Must NOT contain the local repo's org/repo
+    [[ "$file_path" != *"testorg/testrepo"* ]]
+}
+
 @test "review-orchestrator.sh: find mode with branch" {
     # Create feature branch
     git checkout -b find-test-branch
