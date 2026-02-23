@@ -222,10 +222,10 @@ Before including any finding, argue against it:
 
 Prefix every finding so the author knows what action is expected:
 
-- **blocking:** Direct breaking change that will fail in production — must fix before merge. Use sparingly.
-- **suggestion:** Breaking change that affects a subset of users or edge cases — worth fixing, but author's call.
-- **question:** Unclear whether a change is intentional or breaks consumers — asking for clarification.
-- **nit:** Deprecation opportunity or minor compatibility concern — take it or leave it.
+- `blocking:` This must be fixed before merge. Use sparingly — reserve it for bugs, security issues, or things that will break.
+- `nit:` A minor style or naming suggestion. Take it or leave it.
+- `suggestion:` A different approach worth considering, but the author's call.
+- `question:` You don't understand something. Not necessarily a problem, but you'd like clarification.
 
 If a comment has no prefix, assume it's a suggestion.
 

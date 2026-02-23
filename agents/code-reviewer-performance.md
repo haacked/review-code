@@ -93,10 +93,10 @@ Before including any finding, argue against it:
 
 Prefix every finding so the author knows what action is expected:
 
-- **blocking:** Severe performance degradation (>100ms latency, >2x memory) — must fix before merge. Use sparingly.
-- **suggestion:** Noticeable performance impact — worth fixing, but author's call.
-- **question:** Performance implication is unclear — asking for clarification or measurement data.
-- **nit:** Micro-optimization or best practice — take it or leave it.
+- `blocking:` This must be fixed before merge. Use sparingly — reserve it for bugs, security issues, or things that will break.
+- `nit:` A minor style or naming suggestion. Take it or leave it.
+- `suggestion:` A different approach worth considering, but the author's call.
+- `question:` You don't understand something. Not necessarily a problem, but you'd like clarification.
 
 If a comment has no prefix, assume it's a suggestion.
 
