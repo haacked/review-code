@@ -788,6 +788,7 @@ If `--draft` was specified and this is a PR review (not own PR), create a pendin
 - The full detailed review stays in the markdown file only
 - NEVER use `gh pr review` directly - always use `create-draft-review.sh`
 - NEVER post the full review summary to GitHub
+- NEVER include confidence percentages in GitHub comments — confidence is internal review metadata only
 
 **Check if draft mode is enabled:**
 
@@ -805,7 +806,7 @@ If any condition fails, skip draft review creation.
 1. **Extract suggested comments from the review**: Parse the "Suggested Comments" section to get:
    - File path
    - Line number
-   - Comment body (without metadata like agent name/confidence)
+   - Comment body — extract ONLY the text inside the ` ```text ``` ` code block
 
    Look for the pattern in the review file:
    ```
@@ -814,6 +815,8 @@ If any condition fails, skip draft review creation.
    <comment body>
    ```
    ```
+
+   **CRITICAL**: Do NOT include the `*From: <Agent Name> (<confidence>% confidence)*` metadata line in the comment body. Confidence percentages are internal review metadata only — they must never appear in public GitHub comments. Extract only what is inside the ` ```text ``` ` block.
 
 2. **Get the diff for position mapping**: Use the `diff` field from the session data (already read via Read tool).
 
