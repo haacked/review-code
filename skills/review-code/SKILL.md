@@ -75,6 +75,14 @@ Examples:
 
 This is the `PARSE_RESULT` — the pre-computed output of parsing the user's arguments. Reference this throughout instead of running the parse script manually.
 
+**Handler Instructions (pre-loaded based on mode):**
+
+```markdown
+!`~/.claude/skills/review-code/scripts/inject-handler.sh $ARGUMENTS 2>&1`
+```
+
+This is the `HANDLER_INSTRUCTIONS` — the pre-loaded handler for the detected mode. Follow these when directed below.
+
 **CRITICAL SAFEGUARDS** - These rules are NON-NEGOTIABLE:
 
 1. **NEVER improvise when errors occur** - If any step fails (API errors, script failures, etc.), STOP and inform the user. Do not try to work around failures by posting comments directly or using alternative methods.
@@ -118,7 +126,7 @@ If mode is "find" or "learn", skip the pre-flight prompt and proceed directly to
 
 ### Step 0: Check for Learn Mode
 
-Using the PARSE_RESULT from pre-flight, check if MODE is "learn". If so, read and follow the instructions in [handlers/learn.md](handlers/learn.md). Otherwise, continue with Step 1.
+Using the PARSE_RESULT from pre-flight, check if MODE is "learn". If so, follow the HANDLER_INSTRUCTIONS above. Otherwise, continue with Step 1.
 
 ### Step 1: Initialize Session
 
@@ -248,8 +256,8 @@ After user selects:
 
 ### Handler: "find"
 
-If STATUS is "find", read and follow the instructions in [handlers/find.md](handlers/find.md).
+If STATUS is "find", follow the HANDLER_INSTRUCTIONS above.
 
 ### Handler: "ready"
 
-If STATUS is "ready", read and follow the instructions in [handlers/review.md](handlers/review.md).
+If STATUS is "ready", follow the HANDLER_INSTRUCTIONS above.
