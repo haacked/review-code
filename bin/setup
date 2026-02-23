@@ -86,7 +86,7 @@ check_prerequisites() {
 }
 
 verify_repo_structure() {
-    local required_dirs=("skills/review-code" "skills/review-code/context" "agents")
+    local required_dirs=("skills/review-code" "skills/review-code/context" "skills/review-code/handlers" "agents")
     local missing=()
 
     for dir in "${required_dirs[@]}"; do

@@ -118,7 +118,7 @@ If mode is "find" or "learn", skip the pre-flight prompt and proceed directly to
 
 ### Step 0: Check for Learn Mode
 
-Using the PARSE_RESULT from pre-flight, check if MODE is "learn". If so, see [handlers/learn.md](handlers/learn.md) for the full learn handler. Otherwise, continue with Step 1.
+Using the PARSE_RESULT from pre-flight, check if MODE is "learn". If so, read and follow the instructions in [handlers/learn.md](handlers/learn.md). Otherwise, continue with Step 1.
 
 ### Step 1: Initialize Session
 
@@ -248,8 +248,8 @@ After user selects:
 
 ### Handler: "find"
 
-If STATUS is "find", see [handlers/find.md](handlers/find.md) for the full find handler.
+If STATUS is "find", read and follow the instructions in [handlers/find.md](handlers/find.md).
 
 ### Handler: "ready"
 
-If STATUS is "ready", see [handlers/review.md](handlers/review.md) for the full review flow.
+If STATUS is "ready", read and follow the instructions in [handlers/review.md](handlers/review.md).

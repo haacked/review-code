@@ -52,7 +52,7 @@ Prompts needed: <summary.prompts_count>
 
 Also extract `learn_data` from `LEARN_RESULT` for subsequent steps.
 
-**Step 3: Process prompts for uncertain items**
+**Step 2: Process prompts for uncertain items**
 
 For each item in `prompts_needed`, ask the user interactively:
 
@@ -77,7 +77,7 @@ Use AskUserQuestion:
   2. "No, too specific" - This was a one-off case
   3. "Skip" - Don't record this learning
 
-**Step 4: Record learnings**
+**Step 3: Record learnings**
 
 For each user response (except "Skip"), create a learning record:
 
@@ -105,11 +105,11 @@ For each user response (except "Skip"), create a learning record:
 
 Append each learning JSON record to `~/.claude/skills/review-code/learnings/index.jsonl` using the Write tool (append mode) or the Edit tool.
 
-**Step 5: Mark PR as analyzed**
+**Step 4: Mark PR as analyzed**
 
 Read `~/.claude/skills/review-code/learnings/analyzed.json` using the Read tool (create `{}` if it doesn't exist). Extract `org` and `repo` from `learn_data`. Add an entry: `{"<org>/<repo>": {"<pr_number>": "<timestamp>"}}` merged into the existing data. Write the updated JSON back using the Write tool.
 
-**Step 6: Display completion**
+**Step 5: Display completion**
 
 ```
 Learning complete for PR #123
