@@ -17,7 +17,7 @@
 #     "body": "This PR fixes...",
 #     "url": "https://github.com/PostHog/posthog/pull/123",
 #     "author": "haacked",
-#     "head_ref": "haacked/fix-auth",
+#     "head_ref": "fix-auth",
 #     "base_ref": "main",
 #     "state": "open",
 #     "is_fork": false,
