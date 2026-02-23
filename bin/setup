@@ -86,7 +86,7 @@ check_prerequisites() {
 }
 
 verify_repo_structure() {
-    local required_dirs=("skills/review-code" "skills/review-code/context" "agents")
+    local required_dirs=("skills/review-code" "skills/review-code/context" "skills/review-code/handlers" "agents")
     local missing=()
 
     for dir in "${required_dirs[@]}"; do
@@ -153,6 +153,17 @@ install_skill() {
 
             cp "${src}" "${dst}"
             chmod +x "${dst}"
+        done
+    fi
+
+    # Copy handlers
+    if [[ -d "${src_dir}/handlers" ]]; then
+        mkdir -p "${dst_dir}/handlers"
+        for src in "${src_dir}/handlers/"*.md; do
+            [[ -e "${src}" ]] || continue
+            local filename
+            filename=$(basename "${src}")
+            cp "${src}" "${dst_dir}/handlers/${filename}"
         done
     fi
 

@@ -165,8 +165,8 @@ main() {
     claude_results=$(jq -n \
         --argjson findings "${claude_findings}" \
         --argjson changed "${files_changed_after_review}" \
-        '[$findings[] | . + {
-            addressed: (if ($changed | index(.file)) != null then "likely" else "not_modified" end)
+        '[$findings[] | .file as $f | . + {
+            addressed: (if ($changed | index($f)) != null then "likely" else "not_modified" end)
         }]')
 
     # Extract findings from other reviewers and check if Claude caught them

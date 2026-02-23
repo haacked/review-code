@@ -4,7 +4,8 @@
 
 This repo contains the source files for the `/review-code` skill:
 
-- `skills/review-code/SKILL.md` - Skill definition
+- `skills/review-code/SKILL.md` - Skill definition (routing + small handlers)
+- `skills/review-code/handlers/` - Large handlers loaded on demand (find, review, learn)
 - `skills/review-code/scripts/` - Bash scripts that implement the skill
 - `skills/review-code/context/` - Base context files (languages, frameworks, orgs)
 - `skills/review-code/learnings/` - Learning system documentation
@@ -17,7 +18,11 @@ This repo contains the source files for the `/review-code` skill:
 
 ```
 skills/review-code/
-    SKILL.md                          # Skill definition
+    SKILL.md                          # Skill definition (routing + small handlers)
+    handlers/                         # Large handlers loaded on demand
+        find.md
+        review.md
+        learn.md
     scripts/                          # Helper scripts
     context/                          # Base context files (shipped to users)
         languages/
@@ -32,6 +37,10 @@ agents/                               # Review agent definitions
 ```
 ~/.claude/skills/review-code/
     SKILL.md
+    handlers/                         # Large handlers loaded on demand
+        find.md
+        review.md
+        learn.md
     scripts/
     context/                          # Base + user learnings (merged)
         languages/
