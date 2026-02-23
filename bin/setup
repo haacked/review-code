@@ -156,6 +156,17 @@ install_skill() {
         done
     fi
 
+    # Copy handlers
+    if [[ -d "${src_dir}/handlers" ]]; then
+        mkdir -p "${dst_dir}/handlers"
+        for src in "${src_dir}/handlers/"*.md; do
+            [[ -e "${src}" ]] || continue
+            local filename
+            filename=$(basename "${src}")
+            cp "${src}" "${dst_dir}/handlers/${filename}"
+        done
+    fi
+
     # Copy learnings README if not exists
     if [[ -f "${src_dir}/learnings/README.md" ]] && [[ ! -f "${dst_dir}/learnings/README.md" ]]; then
         cp "${src_dir}/learnings/README.md" "${dst_dir}/learnings/README.md"
