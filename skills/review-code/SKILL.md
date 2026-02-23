@@ -531,6 +531,17 @@ For each finding you report:
 4. For bug claims: read surrounding code to confirm the behavior before reporting
 Do NOT report anything as a bug unless you've verified the behavior by reading the code.
 
+**Comment Prefixes:**
+
+Prefix every finding so the author knows what action is expected:
+
+- `blocking:` This must be fixed before merge. Use sparingly — reserve it for bugs, security issues, or things that will break.
+- `nit:` A minor style or naming suggestion. Take it or leave it.
+- `suggestion:` A different approach worth considering, but the author's call.
+- `question:` You don't understand something. Not necessarily a problem, but you'd like clarification.
+
+If a comment has no prefix, assume it's a suggestion.
+
 {If previous_review exists:}
 **Previous Review:**
 $previous_review
