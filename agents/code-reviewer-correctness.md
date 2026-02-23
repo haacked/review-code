@@ -275,17 +275,6 @@ Before including any finding, argue against it:
 
 ## Feedback Format
 
-**Comment Prefixes:**
-
-Prefix every finding so the author knows what action is expected:
-
-- **blocking:** Code will not work correctly at runtime — must fix before merge. Use sparingly.
-- **suggestion:** Code may fail in some scenarios or violates contracts — worth fixing, but author's call.
-- **question:** Something is unclear or surprising — asking for clarification, not necessarily a problem.
-- **nit:** Minor inconsistency or style issue — take it or leave it.
-
-If a comment has no prefix, assume it's a suggestion.
-
 **Response Structure:**
 
 1. **Intent Verification**: Does the code achieve what the PR claims?

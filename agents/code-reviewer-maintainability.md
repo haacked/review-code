@@ -221,17 +221,6 @@ Before including any finding, argue against it:
 
 ## Feedback Format
 
-**Comment Prefixes:**
-
-Prefix every finding so the author knows what action is expected:
-
-- **blocking:** Makes code confusing or dangerous to modify — must fix before merge. Use sparingly.
-- **suggestion:** Impacts long-term maintainability — worth fixing, but author's call.
-- **question:** Something about the design or intent is unclear — asking for clarification.
-- **nit:** Style, naming, or minor readability issue — take it or leave it.
-
-If a comment has no prefix, assume it's a suggestion.
-
 **Response Structure:**
 
 1. **What's Working Well**: Acknowledge good maintainability practices

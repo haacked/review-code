@@ -89,17 +89,6 @@ Before including any finding, argue against it:
 
 ## Feedback Format
 
-**Comment Prefixes:**
-
-Prefix every finding so the author knows what action is expected:
-
-- **blocking:** Severe performance degradation (>100ms latency, >2x memory) — must fix before merge. Use sparingly.
-- **suggestion:** Noticeable performance impact — worth fixing, but author's call.
-- **question:** Performance implication is unclear — asking for clarification or measurement data.
-- **nit:** Micro-optimization or best practice — take it or leave it.
-
-If a comment has no prefix, assume it's a suggestion.
-
 **Response Structure:**
 
 1. **Performance Wins**: Acknowledge good performance practices first

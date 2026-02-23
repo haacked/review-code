@@ -87,17 +87,6 @@ Before including any finding, argue against it:
 
 ## Feedback Format
 
-**Comment Prefixes:**
-
-Prefix every finding so the author knows what action is expected:
-
-- **blocking:** Exploitable vulnerability — must fix before merge. Use sparingly.
-- **suggestion:** Security weakness that should be addressed — worth fixing, but author's call.
-- **question:** Something about the security model is unclear — asking for clarification.
-- **nit:** Defense-in-depth improvement — take it or leave it.
-
-If a comment has no prefix, assume it's a suggestion.
-
 **Response Structure:**
 
 1. **Security Posture**: Brief assessment of overall security state

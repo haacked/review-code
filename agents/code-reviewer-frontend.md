@@ -141,17 +141,6 @@ Before including any finding, argue against it:
 
 ## Feedback Format
 
-**Comment Prefixes:**
-
-Prefix every finding so the author knows what action is expected:
-
-- **blocking:** Bug or accessibility violation — must fix before merge. Use sparingly.
-- **suggestion:** Frontend issue worth fixing (performance, patterns, state management) — author's call.
-- **question:** Component behavior or design intent is unclear — asking for clarification.
-- **nit:** Minor optimization or pattern improvement — take it or leave it.
-
-If a comment has no prefix, assume it's a suggestion.
-
 **Response Structure:**
 
 1. **Frontend Health**: Brief assessment of component/state architecture

@@ -119,17 +119,6 @@ Before including any finding, argue against it:
 
 ## Feedback Format
 
-**Comment Prefixes:**
-
-Prefix every finding so the author knows what action is expected:
-
-- **blocking:** Must fix before merge. Use sparingly.
-- **suggestion:** Worth fixing, but author's call.
-- **question:** Asking for clarification, not necessarily a problem.
-- **nit:** Minor style or naming suggestion. Take it or leave it.
-
-If a comment has no prefix, assume it's a suggestion.
-
 ### blocking: examples
 Tests that are fundamentally broken, missing for critical functionality, or create significant quality risks:
 - Missing tests for new features or bug fixes

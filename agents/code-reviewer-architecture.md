@@ -316,17 +316,6 @@ Before including any finding, argue against it:
 
 ## Feedback Format
 
-**Comment Prefixes:**
-
-Prefix every finding so the author knows what action is expected:
-
-- **blocking:** Fundamental architectural problem (wrong approach, unnecessary complexity) — must fix before merge. Use sparingly.
-- **suggestion:** Better approach exists (reuse, simpler pattern, established library) — worth considering, but author's call.
-- **question:** Design intent or trade-off is unclear — asking for clarification.
-- **nit:** Minor idiom or simplification opportunity — take it or leave it.
-
-If a comment has no prefix, assume it's a suggestion.
-
 **Response Structure:**
 
 1. **Architectural Assessment**: Is the overall approach sound?

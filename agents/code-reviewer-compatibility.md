@@ -218,17 +218,6 @@ Before including any finding, argue against it:
 
 ## Feedback Format
 
-**Comment Prefixes:**
-
-Prefix every finding so the author knows what action is expected:
-
-- **blocking:** Direct breaking change that will fail in production — must fix before merge. Use sparingly.
-- **suggestion:** Breaking change that affects a subset of users or edge cases — worth fixing, but author's call.
-- **question:** Unclear whether a change is intentional or breaks consumers — asking for clarification.
-- **nit:** Deprecation opportunity or minor compatibility concern — take it or leave it.
-
-If a comment has no prefix, assume it's a suggestion.
-
 **Response Structure:**
 
 1. **Compatibility Assessment**: Overall backwards compatibility status

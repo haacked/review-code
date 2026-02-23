@@ -531,6 +531,17 @@ For each finding you report:
 4. For bug claims: read surrounding code to confirm the behavior before reporting
 Do NOT report anything as a bug unless you've verified the behavior by reading the code.
 
+**Comment Prefixes:**
+
+Prefix every finding so the author knows what action is expected:
+
+- `blocking:` This must be fixed before merge. Use sparingly — reserve it for bugs, security issues, or things that will break.
+- `nit:` A minor style or naming suggestion. Take it or leave it.
+- `suggestion:` A different approach worth considering, but the author's call.
+- `question:` You don't understand something. Not necessarily a problem, but you'd like clarification.
+
+If a comment has no prefix, assume it's a suggestion.
+
 {If previous_review exists:}
 **Previous Review:**
 $previous_review
@@ -788,6 +799,7 @@ If `--draft` was specified and this is a PR review (not own PR), create a pendin
 - The full detailed review stays in the markdown file only
 - NEVER use `gh pr review` directly - always use `create-draft-review.sh`
 - NEVER post the full review summary to GitHub
+- NEVER include confidence percentages in GitHub comments — confidence is internal review metadata only
 
 **Check if draft mode is enabled:**
 
@@ -805,7 +817,7 @@ If any condition fails, skip draft review creation.
 1. **Extract suggested comments from the review**: Parse the "Suggested Comments" section to get:
    - File path
    - Line number
-   - Comment body (without metadata like agent name/confidence)
+   - Comment body — extract ONLY the text inside the ` ```text ``` ` code block
 
    Look for the pattern in the review file:
    ```
@@ -814,6 +826,8 @@ If any condition fails, skip draft review creation.
    <comment body>
    ```
    ```
+
+   **CRITICAL**: Do NOT include the `*From: <Agent Name> (<confidence>% confidence)*` metadata line in the comment body. Confidence percentages are internal review metadata only — they must never appear in public GitHub comments. Extract only what is inside the ` ```text ``` ` block.
 
 2. **Get the diff for position mapping**: Use the `diff` field from the session data (already read via Read tool).
 
