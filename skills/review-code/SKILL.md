@@ -100,6 +100,14 @@ Examples:
 
 **NOTE**: Uses session-based caching to run the orchestrator once and reuse the data across multiple bash invocations. This reduces token usage by ~60%.
 
+**Parsed Arguments (pre-computed):**
+
+```json
+!`~/.claude/skills/review-code/scripts/parse-review-arg.sh $ARGUMENTS 2>&1`
+```
+
+This is the `PARSE_RESULT` — the pre-computed output of parsing the user's arguments. Reference this throughout instead of running the parse script manually.
+
 **⚠️ CRITICAL SAFEGUARDS** - These rules are NON-NEGOTIABLE:
 
 1. **NEVER improvise when errors occur** - If any step fails (API errors, script failures, etc.), STOP and inform the user. Do not try to work around failures by posting comments directly or using alternative methods.
@@ -138,11 +146,7 @@ If user selects "No, continue anyway", proceed with Step 0.
 - This is a `find` or `learn` command (lightweight operations that don't need fresh context)
 - The context is already fresh (e.g., the user just ran `/clear` or this is the first command in the conversation)
 
-**Note:** To determine if the command is `find` or `learn`, parse the arguments first:
-```bash
-~/.claude/skills/review-code/scripts/parse-review-arg.sh $ARGUMENTS
-```
-Save the JSON output as `PARSE_RESULT`. Extract the `mode` field from it.
+**Note:** Check the `PARSE_RESULT` (pre-computed above). Extract the `mode` field.
 If mode is "find" or "learn", skip the pre-flight prompt and proceed directly to the appropriate handler.
 
 ### Step 0: Check for Learn Mode
