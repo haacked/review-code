@@ -225,9 +225,15 @@ main() {
         if [[ ${url} =~ github\.com/([^/]+)/([^/]+)/pull/ ]]; then
             org="${BASH_REMATCH[1]}"
             repo="${BASH_REMATCH[2]}"
-            org=$(echo "${org}" | tr '[:upper:]' '[:lower:]')
-            repo=$(echo "${repo}" | tr '[:upper:]' '[:lower:]')
         fi
+    fi
+
+    # Normalize org/repo to lowercase regardless of how they were set
+    if [[ -n "${org}" ]]; then
+        org=$(echo "${org}" | tr '[:upper:]' '[:lower:]')
+    fi
+    if [[ -n "${repo}" ]]; then
+        repo=$(echo "${repo}" | tr '[:upper:]' '[:lower:]')
     fi
 
     # Rebuild repo_spec now that we have org/repo
