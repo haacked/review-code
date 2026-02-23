@@ -406,12 +406,35 @@ From the session file JSON (already read via Read tool), extract these fields:
 - `git` — git repository context
 - `languages` — detected languages
 - `file_info.file_path` — where to save the review
+- `file_ref` — (optional) git ref for reading PR files when on a different branch
 
 **Extract mode-specific fields:**
 
-- **For PR mode:** `pr` — PR details (number, title, author, body, comments, etc.)
+- **For PR mode:** `pr` — PR details (number, title, author, body, comments, etc.); `file_ref` — git ref for file access (present when reviewing from a different branch in the same repo)
 - **For branch/commit/range modes:** `branch`, `base_branch`, `commit`, `range`
 - **For area-specific reviews:** `area`
+
+### Prepare File Access Instructions
+
+Build `$file_access_instructions` based on the review context. This block is included in both the context explorer and specialized agent prompts:
+
+{If file_ref is set:}
+```
+**File Access:**
+You are reviewing from a different branch in the same repo. To read files as they appear in the PR, use `git show $file_ref:<path>` via the Bash tool. Do NOT use `git checkout` or `git switch` — this would modify the user's working tree. The Read, Grep, and Glob tools operate on the current working tree (which may differ from the PR branch), so use them for finding patterns and conventions but not for reading the PR's file contents. `git show` works for any file that exists at the ref, including files newly added in the PR. If `git show` fails (e.g., the file was deleted or renamed, the path is wrong, or the ref was not fetched), fall back to the diff content.
+```
+
+{If file_ref is NOT set and working_dir is not null:}
+```
+**File Access:**
+You are on the PR's branch. Use the Read tool to read files normally.
+```
+
+{If working_dir is null:}
+```
+**File Access:**
+No local checkout available. Work from the diff content only.
+```
 
 ### Gather Architectural Context
 
@@ -427,6 +450,8 @@ $file_metadata
 
 **Diff:**
 $diff
+
+$file_access_instructions
 
 Explore the codebase to understand:
 - Full context of modified files
@@ -496,10 +521,12 @@ $architectural_context
 **Language/Framework-Specific Guidelines:**
 $review_context
 
+$file_access_instructions
+
 **Accuracy Requirements:**
 For each finding you report:
 1. Quote the exact code you're referencing
-2. Verify the line number by reading the actual file with the Read tool
+2. Verify the line number by reading the actual file (see File Access above)
 3. Only flag code in the diff - do not flag pre-existing issues in unchanged code
 4. For bug claims: read surrounding code to confirm the behavior before reporting
 Do NOT report anything as a bug unless you've verified the behavior by reading the code.

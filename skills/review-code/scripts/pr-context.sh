@@ -17,9 +17,10 @@
 #     "body": "This PR fixes...",
 #     "url": "https://github.com/PostHog/posthog/pull/123",
 #     "author": "haacked",
-#     "head_ref": "haacked/fix-auth",
+#     "head_ref": "fix-auth",
 #     "base_ref": "main",
 #     "state": "open",
+#     "is_fork": false,
 #     "diff": "diff content...",
 #     "comments": {
 #       "conversation": [...],  # PR discussion thread comments
@@ -76,8 +77,9 @@ parse_pr_identifier() {
         local repo="${BASH_REMATCH[2]}"
         local number="${BASH_REMATCH[3]}"
 
-        # Normalize org to lowercase
+        # Normalize to lowercase for case-insensitive comparison
         org=$(echo "${org}" | tr '[:upper:]' '[:lower:]')
+        repo=$(echo "${repo}" | tr '[:upper:]' '[:lower:]')
 
         echo "${org}|${repo}|${number}"
     elif [[ ${input} =~ ^[0-9]+$ ]]; then
@@ -101,7 +103,7 @@ fetch_pr_metadata() {
         gh_cmd+=(--repo "${repo_spec}")
     fi
 
-    "${gh_cmd[@]}" --json number,title,body,url,author,headRefName,baseRefName,state
+    "${gh_cmd[@]}" --json number,title,body,url,author,headRefName,baseRefName,state,isCrossRepository
 }
 
 # Fetch PR diff
@@ -215,14 +217,23 @@ main() {
     base_ref=$(echo "${metadata}" | jq -r '.baseRefName')
     local state
     state=$(echo "${metadata}" | jq -r '.state')
+    local is_fork
+    is_fork=$(echo "${metadata}" | jq -r '.isCrossRepository // false')
 
     # Extract org/repo from URL if not already set
     if [[ -z "${org}" ]]; then
         if [[ ${url} =~ github\.com/([^/]+)/([^/]+)/pull/ ]]; then
             org="${BASH_REMATCH[1]}"
             repo="${BASH_REMATCH[2]}"
-            org=$(echo "${org}" | tr '[:upper:]' '[:lower:]')
         fi
+    fi
+
+    # Normalize org/repo to lowercase regardless of how they were set
+    if [[ -n "${org}" ]]; then
+        org=$(echo "${org}" | tr '[:upper:]' '[:lower:]')
+    fi
+    if [[ -n "${repo}" ]]; then
+        repo=$(echo "${repo}" | tr '[:upper:]' '[:lower:]')
     fi
 
     # Rebuild repo_spec now that we have org/repo
@@ -273,6 +284,7 @@ main() {
     "head_ref": "${head_ref}",
     "base_ref": "${base_ref}",
     "state": "${state}",
+    "is_fork": ${is_fork},
     "diff": ${diff},
     "comments": {
         "conversation": ${conversation_comments},

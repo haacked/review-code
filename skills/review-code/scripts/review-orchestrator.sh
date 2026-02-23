@@ -362,7 +362,7 @@ build_review_data() {
         + (if $draft_mode == "true" then {draft: true} else {} end)
         + (if $self_mode == "true" then {self: true} else {} end)
         + (if $pr != null then {pr: $pr, reviewer_username: $reviewer_username, is_own_pr: ($is_own_pr == "true")} else {} end)
-        + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")))')
+        + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")) | with_entries(select(.value != "")))')
     debug_save_json "07-final-output" "output.json" <<< "${final_output}"
     debug_time "07-final-output" "end"
     debug_time "00-orchestrator" "end"
@@ -876,6 +876,22 @@ handle_find_mode() {
         '{status: $status, file_info: $file_info, display_target: $display_target, file_summary: $file_summary}'
 }
 
+# Determine the git ref for reading PR files on a cross-branch review.
+# Returns the local ref path to fetch into, or empty string when on the
+# PR's branch (fast path). The caller handles the actual fetch.
+determine_file_ref() {
+    local current_branch="$1"
+    local head_ref="$2"
+    local pr_number="$3"
+
+    if [[ "${current_branch}" == "${head_ref}" ]]; then
+        echo ""
+        return
+    fi
+
+    echo "refs/review/pr-${pr_number}"
+}
+
 # Handle PR review
 handle_pr_review() {
     local pr_identifier="$1"
@@ -890,30 +906,54 @@ handle_pr_review() {
     repo=$(echo "${pr_data}" | jq -r '.repo')
     head_ref=$(echo "${pr_data}" | jq -r '.head_ref')
 
-    # Check if we're on the matching branch (enables richer local context)
-    # Conditions: in a git repo, repo matches PR's repo, branch matches PR's head branch
+    # Determine review mode based on local git state:
+    # 1. Fast path: in the same repo AND on the PR's branch (agents use Read tool)
+    # 2. Middle case: in the same repo but on a different branch (agents use git show)
+    # 3. Remote-only: not in the repo at all (agents work from diff only)
     local git_context=""
+    local file_ref=""
 
     if git rev-parse --git-dir > /dev/null 2>&1; then
         source "${SCRIPT_DIR}/helpers/git-helpers.sh"
 
         local current_git_data
-        current_git_data=$(get_git_org_repo 2> /dev/null || echo "|")
+        current_git_data=$(get_git_org_repo 2> /dev/null || echo "unknown|unknown")
         local current_org="${current_git_data%|*}"
         local current_repo="${current_git_data#*|}"
         local current_branch
         current_branch=$(git branch --show-current 2> /dev/null || echo "")
 
-        # Normalize org names to lowercase for comparison
-        current_org=$(echo "${current_org}" | tr '[:upper:]' '[:lower:]')
-
-        if [[ "${current_org}" = "${org}" ]] && [[ "${current_repo}" = "${repo}" ]] && [[ "${current_branch}" = "${head_ref}" ]]; then
+        if [[ "${current_org}" = "${org}" ]] && [[ "${current_repo}" = "${repo}" ]]; then
             git_context=$("${SCRIPT_DIR}/git-context.sh")
+
+            local expected_ref
+            expected_ref=$(determine_file_ref "${current_branch}" "${head_ref}" "${pr_number}")
+
+            if [[ -n "${expected_ref}" ]]; then
+                # Same repo, different branch. Fetch the PR ref so agents can
+                # read files via `git show <ref>:<path>` without checkout.
+                # Uses pull/N/head for all PRs (fork and non-fork) since it's
+                # maintained by GitHub and works even after branch deletion.
+                local fetch_err
+                local fetch_source="+pull/${pr_number}/head:${expected_ref}"
+
+                if fetch_err=$(git fetch origin "${fetch_source}" 2>&1); then
+                    file_ref="${expected_ref}"
+                else
+                    warning "Failed to fetch ${fetch_source}: ${fetch_err}"
+                fi
+
+                # If fetch failed, null out working_dir so agents fall back to
+                # diff-only instead of reading the wrong branch's files.
+                if [[ -z "${file_ref}" ]]; then
+                    git_context=$(echo "${git_context}" | jq '.working_dir = null')
+                fi
+            fi
         fi
     fi
 
-    # If not on fast path, construct a synthetic git_context with PR's org/repo
-    # Note: working_dir is null when not on fast path (no meaningful local directory)
+    # If not in the same repo, construct a synthetic git_context with PR's org/repo.
+    # working_dir is null since there's no meaningful local directory.
     if [[ -z "${git_context}" ]]; then
         git_context=$(jq -n \
             --arg org "${org}" \
@@ -934,7 +974,8 @@ handle_pr_review() {
     diff_content=$(echo "${pr_data}" | jq -r '.diff')
 
     build_review_data "pr" "${diff_content}" "${git_context}" "pr-${pr_number}" "${pr_data}" \
-        --arg mode_branch "${head_ref}"
+        --arg mode_branch "${head_ref}" \
+        --arg mode_file_ref "${file_ref}"
 }
 
 # Handle commit review

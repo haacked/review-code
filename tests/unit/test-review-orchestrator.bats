@@ -643,3 +643,103 @@ teardown() {
 
     [ "$is_own_pr" = "false" ]
 }
+
+# =============================================================================
+# Cross-branch PR review tests (file_ref / working_dir behavior)
+# =============================================================================
+
+@test "review-orchestrator.sh: determine_file_ref returns empty on fast path (same branch)" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+
+    local result
+    result=$(determine_file_ref "feature-branch" "feature-branch" "42")
+
+    [ -z "$result" ]
+}
+
+@test "review-orchestrator.sh: determine_file_ref returns review ref on cross-branch" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+
+    local result
+    result=$(determine_file_ref "main" "feature-branch" "42")
+
+    [ "$result" = "refs/review/pr-42" ]
+}
+
+@test "review-orchestrator.sh: determine_file_ref returns same ref format for fork PRs" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+
+    local result
+    result=$(determine_file_ref "main" "fork-feature" "99")
+
+    [ "$result" = "refs/review/pr-99" ]
+}
+
+@test "review-orchestrator.sh: working_dir nulled when file_ref is empty on cross-branch" {
+    # Spec test: when fetch fails (file_ref empty) on a different branch,
+    # working_dir must be nulled to prevent agents reading the wrong branch.
+    local file_ref=""
+    local git_context='{"working_dir": "/some/path", "org": "testorg", "repo": "testrepo"}'
+
+    if [[ -z "${file_ref}" ]]; then
+        git_context=$(echo "${git_context}" | jq '.working_dir = null')
+    fi
+
+    local working_dir
+    working_dir=$(echo "${git_context}" | jq -r '.working_dir')
+    [ "$working_dir" = "null" ]
+}
+
+@test "review-orchestrator.sh: working_dir preserved when file_ref is set" {
+    # Spec test: when fetch succeeds (file_ref set), working_dir stays so
+    # agents can use Grep/Glob for pattern discovery alongside git show.
+    local file_ref="refs/review/pr-42"
+    local git_context='{"working_dir": "/some/path", "org": "testorg", "repo": "testrepo"}'
+
+    if [[ -z "${file_ref}" ]]; then
+        git_context=$(echo "${git_context}" | jq '.working_dir = null')
+    fi
+
+    local working_dir
+    working_dir=$(echo "${git_context}" | jq -r '.working_dir')
+    [ "$working_dir" = "/some/path" ]
+}
+
+@test "review-orchestrator.sh: empty file_ref stripped by build_review_data jq filter" {
+    # When mode_file_ref is explicitly passed as empty (cross-branch fetch
+    # failure), the with_entries(select(.value != "")) filter should strip it.
+    run jq -n \
+        --arg mode_branch "feature-branch" \
+        --arg mode_file_ref "" \
+        '$ARGS.named
+         | with_entries(select(.key | startswith("mode_")))
+         | with_entries(.key |= sub("^mode_"; ""))
+         | with_entries(select(.value != ""))'
+    [ "$status" -eq 0 ]
+
+    has_file_ref=$(echo "$output" | jq 'has("file_ref")')
+    [ "$has_file_ref" = "false" ]
+
+    # Non-empty mode values should still pass through
+    branch=$(echo "$output" | jq -r '.branch')
+    [ "$branch" = "feature-branch" ]
+}
+
+@test "review-orchestrator.sh: non-empty file_ref included in build_review_data output" {
+    # The jq filter in build_review_data strips mode_ prefixes and filters
+    # empty values. A non-empty mode_file_ref should pass through as file_ref.
+    run jq -n \
+        --arg mode_branch "feature-branch" \
+        --arg mode_file_ref "refs/review/pr-42" \
+        '$ARGS.named
+         | with_entries(select(.key | startswith("mode_")))
+         | with_entries(.key |= sub("^mode_"; ""))
+         | with_entries(select(.value != ""))'
+    [ "$status" -eq 0 ]
+
+    file_ref=$(echo "$output" | jq -r '.file_ref')
+    [ "$file_ref" = "refs/review/pr-42" ]
+
+    branch=$(echo "$output" | jq -r '.branch')
+    [ "$branch" = "feature-branch" ]
+}

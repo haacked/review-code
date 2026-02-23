@@ -238,6 +238,15 @@ setup_test_git_repo() {
     [[ ! "$org" =~ [A-Z] ]]
 }
 
+@test "get_git_org_repo: returns lowercase repo" {
+    run bash -c "cd '$PROJECT_ROOT' && source skills/review-code/scripts/helpers/git-helpers.sh && get_git_org_repo"
+    [ "$status" -eq 0 ]
+
+    repo="${output#*|}"
+    # Repo should be lowercase (no uppercase letters)
+    [[ ! "$repo" =~ [A-Z] ]]
+}
+
 # =============================================================================
 # display_summary Field Tests
 # =============================================================================

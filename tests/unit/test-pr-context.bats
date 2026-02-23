@@ -129,6 +129,26 @@ setup() {
     [[ "$output" == *"|42" ]]
 }
 
+@test "pr-context.sh: normalizes repo to lowercase" {
+    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh' && parse_pr_identifier 'https://github.com/PostHog/PostHog/pull/789'"
+    [ "$status" -eq 0 ]
+    [ "$output" = "posthog|posthog|789" ]
+}
+
+# =============================================================================
+# is_fork / isCrossRepository tests
+# =============================================================================
+
+@test "pr-context.sh: fetch_pr_metadata requests isCrossRepository field" {
+    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh' && declare -f fetch_pr_metadata | grep -q 'isCrossRepository'"
+    [ "$status" -eq 0 ]
+}
+
+@test "pr-context.sh: main outputs is_fork field in JSON" {
+    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh' && declare -f main | grep -q 'is_fork'"
+    [ "$status" -eq 0 ]
+}
+
 # =============================================================================
 # Input validation tests
 # =============================================================================
