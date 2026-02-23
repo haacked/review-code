@@ -118,13 +118,12 @@ teardown() {
 }
 
 @test "inject-handler: handles missing handler file gracefully" {
-    # Temporarily rename the review handler to simulate missing file
+    # Temporarily rename the review handler to simulate missing file.
+    # Use a trap to guarantee restoration even if an assertion fails.
     mv "$HANDLER_DIR/review.md" "$HANDLER_DIR/review.md.bak"
+    trap 'mv "$HANDLER_DIR/review.md.bak" "$HANDLER_DIR/review.md" 2>/dev/null || true' RETURN
 
     run "$SCRIPT" security
     [ "$status" -eq 1 ]
     [[ "$output" == *"ERROR"* ]]
-
-    # Restore the handler
-    mv "$HANDLER_DIR/review.md.bak" "$HANDLER_DIR/review.md"
 }

@@ -82,7 +82,7 @@ Build `$file_access_instructions` based on the review context. This block is inc
 {If file_ref is set:}
 ```
 **File Access:**
-You are reviewing from a different branch in the same repo. To read files as they appear in the PR, use `git show $file_ref:<path>` via the Bash tool. Do NOT use `git checkout` or `git switch` — this would modify the user's working tree. The Read, Grep, and Glob tools operate on the current working tree (which may differ from the PR branch), so use them for finding patterns and conventions but not for reading the PR's file contents. `git show` works for any file that exists at the ref, including files newly added in the PR. If `git show` fails (e.g., the file was deleted or renamed, the path is wrong, or the ref was not fetched), fall back to the diff content.
+You are reviewing from a different branch in the same repo. To read files as they appear in the PR, use `git show "$file_ref:<path>"` via the Bash tool (always quote the argument to handle paths with spaces or special characters). Do NOT use `git checkout` or `git switch` — this would modify the user's working tree. The Read, Grep, and Glob tools operate on the current working tree (which may differ from the PR branch), so use them for finding patterns and conventions but not for reading the PR's file contents. `git show` works for any file that exists at the ref, including files newly added in the PR. If `git show` fails (e.g., the file was deleted or renamed, the path is wrong, or the ref was not fetched), fall back to the diff content.
 ```
 
 {If file_ref is NOT set and working_dir is not null:}

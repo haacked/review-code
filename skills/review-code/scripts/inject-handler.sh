@@ -8,13 +8,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# Parse arguments to determine mode by running parse-review-arg.sh
-parse_result=$("${SCRIPT_DIR}/parse-review-arg.sh" "$@" 2>&1) || true
+# Parse arguments to determine mode by running parse-review-arg.sh.
+# Discard stderr so that warnings (branch divergence, multiple PRs) don't
+# corrupt the JSON on stdout. Errors are detected via exit code instead.
+parse_exit=0
+parse_result=$("${SCRIPT_DIR}/parse-review-arg.sh" "$@" 2>/dev/null) || parse_exit=$?
 
 # Determine which handler to load based on the parsed mode.
-# Error mode gets no handler since SKILL.md's flow handles errors via PARSE_RESULT.
+# Error mode (non-zero exit) gets no handler since SKILL.md handles errors via PARSE_RESULT.
 handler=""
-if echo "${parse_result}" | jq -e '.mode == "error"' > /dev/null 2>&1; then
+if [[ $parse_exit -ne 0 ]]; then
 	echo "<!-- No handler loaded: argument parsing returned an error. See PARSE_RESULT above. -->"
 	exit 0
 elif echo "${parse_result}" | jq -e '.mode == "learn"' > /dev/null 2>&1; then
