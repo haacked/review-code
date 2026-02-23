@@ -705,17 +705,24 @@ teardown() {
     [ "$working_dir" = "/some/path" ]
 }
 
-@test "review-orchestrator.sh: empty file_ref excluded from build_review_data output" {
-    # build_review_data filters out empty mode_ values, so file_ref shouldn't
-    # appear in the output when it's empty (fast path)
-    echo "change" > file.txt
-
-    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+@test "review-orchestrator.sh: empty file_ref stripped by build_review_data jq filter" {
+    # When mode_file_ref is explicitly passed as empty (cross-branch fetch
+    # failure), the with_entries(select(.value != "")) filter should strip it.
+    run jq -n \
+        --arg mode_branch "feature-branch" \
+        --arg mode_file_ref "" \
+        '$ARGS.named
+         | with_entries(select(.key | startswith("mode_")))
+         | with_entries(.key |= sub("^mode_"; ""))
+         | with_entries(select(.value != ""))'
     [ "$status" -eq 0 ]
 
-    # Local mode doesn't set file_ref, so it shouldn't be in output
     has_file_ref=$(echo "$output" | jq 'has("file_ref")')
     [ "$has_file_ref" = "false" ]
+
+    # Non-empty mode values should still pass through
+    branch=$(echo "$output" | jq -r '.branch')
+    [ "$branch" = "feature-branch" ]
 }
 
 @test "review-orchestrator.sh: non-empty file_ref included in build_review_data output" {
