@@ -234,11 +234,7 @@ EOF
     echo "$result" | jq -e 'has("languages") and has("frameworks") and has("has_frontend") and has("file_extensions")'
 }
 
-@test "does not match commented imports" {
-    # This is a known issue - the current implementation matches commented imports
-    # This test documents the expected behavior once we fix it
-    skip "Known issue: matches commented imports"
-
+@test "does not match Python commented imports" {
     diff=$(cat <<'EOF'
 diff --git a/test.py b/test.py
 +++ b/test.py
@@ -250,6 +246,64 @@ EOF
 
     result=$(echo "$diff" | "$SCRIPT")
     echo "$result" | jq -e '.frameworks | contains(["django"]) | not'
+}
+
+@test "does not match JS single-line commented imports" {
+    diff=$(cat <<'EOF'
+diff --git a/test.tsx b/test.tsx
++++ b/test.tsx
+@@ -1,0 +1,2 @@
++// import React from 'react'
++const x = 1
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.frameworks | contains(["react"]) | not'
+}
+
+@test "does not match JS block-commented imports" {
+    diff=$(cat <<'EOF'
+diff --git a/test.tsx b/test.tsx
++++ b/test.tsx
+@@ -1,0 +1,2 @@
++/* import React from 'react' */
++const x = 1
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.frameworks | contains(["react"]) | not'
+}
+
+@test "does not match indented commented imports" {
+    diff=$(cat <<'EOF'
+diff --git a/test.py b/test.py
++++ b/test.py
+@@ -1,0 +1,2 @@
++    # from flask import Flask
++x = 1
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.frameworks | contains(["flask"]) | not'
+}
+
+@test "still matches real imports alongside commented ones" {
+    diff=$(cat <<'EOF'
+diff --git a/test.py b/test.py
++++ b/test.py
+@@ -1,0 +1,3 @@
++# from flask import Flask
++from django.http import HttpResponse
++x = 1
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.frameworks | contains(["django"])'
+    echo "$result" | jq -e '.frameworks | contains(["flask"]) | not'
 }
 
 @test "performance: single-pass framework detection" {

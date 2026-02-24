@@ -123,6 +123,8 @@ while IFS= read -r framework; do
             ;;
     esac
 done < <(echo "${diff_content}" | awk '
+    # Skip lines where the code (after optional diff +/- prefix) is a comment
+    /^[+-]?[[:space:]]*(\/\/|\/\*|#|--|""")/ { next }
     /import.*from ["'\'']react["'\'']|import React/ { print "react"; next }
     /import.*from ["'\'']kea["'\'']|useValues|useActions/ { print "kea"; next }
     /from django|import django/ { print "django"; next }
