@@ -194,12 +194,12 @@ Do NOT report anything as a bug unless you've verified the behavior by reading t
 
 **Comment Prefixes:**
 
-Prefix every finding so the author knows what action is expected:
+Prefix every finding so the author knows what action is expected. The prefix must be code-formatted in the comment body (e.g., `` `blocking`: This must be fixed ``):
 
-- `blocking:` This must be fixed before merge. Use sparingly — reserve it for bugs, security issues, or things that will break.
-- `nit:` A minor style or naming suggestion. Take it or leave it.
-- `suggestion:` A different approach worth considering, but the author's call.
-- `question:` You don't understand something. Not necessarily a problem, but you'd like clarification.
+- `blocking` — This must be fixed before merge. Use sparingly — reserve it for bugs, security issues, or things that will break.
+- `nit` — A minor style or naming suggestion. Take it or leave it.
+- `suggestion` — A different approach worth considering, but the author's call.
+- `question` — You don't understand something. Not necessarily a problem, but you'd like clarification.
 
 If a comment has no prefix, assume it's a suggestion.
 
@@ -516,7 +516,7 @@ EOF
   "repo": "<repo from session>",
   "pr_number": <number from session>,
   "reviewer_username": "<reviewer from session>",
-  "summary": "<BRIEF 1-2 sentence summary, e.g. 'Code review with 3 suggestions. See inline comments.'>",
+  "summary": "<Short, conversational summary — see guidance below>",
   "comments": [
     {"path": "file.ts", "line": 42, "side": "RIGHT", "body": "Clean comment text"}
   ],
@@ -526,7 +526,21 @@ EOF
 }
 ```
 
-**IMPORTANT**: The `summary` field should be a brief overview (1-2 sentences), NOT the full review. Example: "Code review complete with 3 inline suggestions for improved error handling." The detailed findings are in the markdown file.
+**IMPORTANT**: The `summary` field should sound like a human wrote it — conversational, brief, and specific to the PR. Match the reviewer's natural voice.
+
+Good examples (from real reviews):
+
+- "LGTM! Two non-blocking suggestions."
+- "Nice! Some minor suggestions."
+- "Clean, well-scoped PR. No blocking issues. Two inline suggestions on section title design and type annotation."
+- "Noticed a few things that might be worth addressing."
+
+Bad examples (robotic, template-sounding):
+
+- "Code review with 3 inline suggestions. See review file for full details."
+- "Code review complete with 3 inline suggestions for improved error handling."
+
+The summary should NOT be the full review — it's the casual top-level comment on a GitHub review. Keep it short, natural, and specific to what you found.
 
 **Code Suggestions:**
 
