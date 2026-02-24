@@ -272,6 +272,8 @@ Agents to invoke:
 
 ### Collect and Present Results
 
+Use ultrathink to synthesize findings from all agents into a coherent, deduplicated review.
+
 After all agents complete, combine their findings into a single review document.
 
 **Verify findings against the diff before including them in the final review.**
