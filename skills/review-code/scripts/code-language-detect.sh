@@ -123,8 +123,27 @@ while IFS= read -r framework; do
             ;;
     esac
 done < <(echo "${diff_content}" | awk '
-    # Skip lines where the code (after optional diff +/- prefix) is a comment
-    /^[+-]?[[:space:]]*(\/\/|\/\*|#|--|""")/ { next }
+    BEGIN { in_block = 0 }
+    {
+        # Strip optional diff +/- prefix to get actual code content
+        line = $0
+        sub(/^[+-]/, "", line)
+
+        # Inside a multi-line /* */ block comment, skip until closing */
+        if (in_block) {
+            if (line ~ /\*\//) in_block = 0
+            next
+        }
+
+        # Detect block comment opening (including JSDoc /**)
+        if (line ~ /^[[:space:]]*\/\*/) {
+            if (line !~ /\*\//) in_block = 1
+            next
+        }
+
+        # Skip single-line comments
+        if (line ~ /^[[:space:]]*(\/\/|#|--|""")/) next
+    }
     /import.*from ["'\'']react["'\'']|import React/ { print "react"; next }
     /import.*from ["'\'']kea["'\'']|useValues|useActions/ { print "kea"; next }
     /from django|import django/ { print "django"; next }

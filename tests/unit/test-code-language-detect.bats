@@ -262,7 +262,7 @@ EOF
     echo "$result" | jq -e '.frameworks | contains(["react"]) | not'
 }
 
-@test "does not match JS block-commented imports" {
+@test "does not match single-line block-commented imports" {
     diff=$(cat <<'EOF'
 diff --git a/test.tsx b/test.tsx
 +++ b/test.tsx
@@ -274,6 +274,56 @@ EOF
 
     result=$(echo "$diff" | "$SCRIPT")
     echo "$result" | jq -e '.frameworks | contains(["react"]) | not'
+}
+
+@test "does not match multi-line block-commented imports" {
+    diff=$(cat <<'EOF'
+diff --git a/test.tsx b/test.tsx
++++ b/test.tsx
+@@ -1,0 +1,4 @@
++/*
++import React from 'react'
++*/
++const x = 1
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.frameworks | contains(["react"]) | not'
+}
+
+@test "does not match JSDoc block-commented imports" {
+    diff=$(cat <<'EOF'
+diff --git a/test.tsx b/test.tsx
++++ b/test.tsx
+@@ -1,0 +1,5 @@
++/**
++ * This component used to use React
++ * import React from 'react'
++ */
++const x = 1
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.frameworks | contains(["react"]) | not'
+}
+
+@test "matches real imports after a multi-line block comment ends" {
+    diff=$(cat <<'EOF'
+diff --git a/test.tsx b/test.tsx
++++ b/test.tsx
+@@ -1,0 +1,5 @@
++/*
++ * old import, commented out
++ */
++import React from 'react'
++const x = 1
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.frameworks | contains(["react"])'
 }
 
 @test "does not match indented commented imports" {
