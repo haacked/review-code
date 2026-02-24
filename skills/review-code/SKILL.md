@@ -55,6 +55,13 @@ Examples:
 - `/review-code feature-branch "*.py"` - Review only Python files in branch
 - `/review-code 123 "src/**/*.ts"` - Review only TypeScript files in PR #123
 
+**Review modes:**
+
+- **Pre-review (collaborative):** Automatically detected for local changes, branches without PRs, and your own PRs. Uses collaborative framing ("you might want to", "consider:") instead of formal review tone.
+- **External review (standard):** For reviewing other people's PRs. Uses formal review prefixes (blocking, suggestion, nit, question).
+
+**Post-review learning:** After completing a PR review, you may be prompted to analyze recently merged PRs that have unanalyzed reviews. This improves future review quality by learning from outcomes. You can also run `/review-code learn` manually.
+
 **Usage examples:**
 
 - `/review-code` - Comprehensive review of local uncommitted changes (default)

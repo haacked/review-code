@@ -192,6 +192,19 @@ For each finding you report:
 4. For bug claims: read surrounding code to confirm the behavior before reporting
 Do NOT report anything as a bug unless you've verified the behavior by reading the code.
 
+{If is_pre_review is true:}
+**Review Mode: Pre-Review (Author Self-Check)**
+Frame findings collaboratively — this is a self-check before submitting for external review:
+- Use "you might want to" instead of "this must be fixed"
+- Prioritize things that would embarrass the author if caught by a teammate
+- Use `fix before submitting:` instead of `blocking:`
+- Use `consider:` instead of `suggestion:`
+- `nit:` and `question:` remain unchanged
+- Still flag genuine bugs and security issues clearly
+
+If a comment has no prefix, assume it's a suggestion.
+
+{Otherwise:}
 **Comment Prefixes:**
 
 Prefix every finding so the author knows what action is expected:
@@ -303,9 +316,12 @@ Where the `targets` array contains `{"path": "<file>", "line": <number>}` object
 
 **Format the review based on mode:**
 
+{If is_pre_review is true, prefix all titles with "Pre-Review:" instead of the standard prefix:}
+
 **PR Review Title:**
 ```
-Pull Request Review: #$pr_number - $pr_title
+{If is_pre_review:} Pre-Review: #$pr_number - $pr_title
+{Otherwise:} Pull Request Review: #$pr_number - $pr_title
 ```
 
 **Commit Review Title:**
@@ -315,7 +331,8 @@ Commit Review: $commit
 
 **Branch Review Title:**
 ```
-Branch Review: $branch vs $base_branch
+{If is_pre_review:} Pre-Review: $branch vs $base_branch
+{Otherwise:} Branch Review: $branch vs $base_branch
 ```
 
 **Range Review Title:**
@@ -325,7 +342,8 @@ Range Review: $range
 
 **Local Review Title:**
 ```
-Code Review: (org/repo from git_context) - (branch) (uncommitted)
+{If is_pre_review:} Pre-Review: (org/repo from git_context) - (branch) (uncommitted)
+{Otherwise:} Code Review: (org/repo from git_context) - (branch) (uncommitted)
 ```
 
 **For comprehensive reviews**, include sections for each area:
@@ -338,6 +356,13 @@ Code Review: (org/repo from git_context) - (branch) (uncommitted)
 - Architecture Review
 
 **For area-specific reviews**, include only that area's findings.
+
+{If is_pre_review is true:}
+At the end of the review, add:
+```
+---
+**Next steps:** Address the items above, then submit for external review.
+```
 
 Save the complete review to `$review_file` and inform the user with a clickable file link:
 
@@ -593,6 +618,48 @@ If failed, show the error and suggest using the review file manually.
 - DO save detailed review to markdown file
 - DO use `create-draft-review.sh` with brief summary + inline comments only
 - DO stop and inform the user when errors occur - let them decide how to proceed
+
+### Post-Review: Learning Opportunity
+
+Skip this section if: this is a local/branch review (no PR), or this is an area-specific review.
+
+After saving the review, check for merged PRs with unanalyzed reviews:
+
+```bash
+~/.claude/skills/review-code/scripts/learn-batch.sh --limit 3 --days 30
+```
+
+If the output is a non-empty JSON array (length > 0):
+
+Use AskUserQuestion:
+- Question: "Found N merged PR(s) with unanalyzed reviews. Analyze them to improve future reviews?"
+- Options:
+  1. "Yes, analyze" - Analyze the merged PRs to learn from outcomes
+  2. "Not now" - Skip for now
+
+If "Yes, analyze": For each PR in the batch result, run the learn orchestrator:
+```bash
+~/.claude/skills/review-code/scripts/learn-orchestrator.sh single "<PR_NUMBER>" --org "<ORG>" --repo "<REPO>"
+```
+Then follow the "single" submode flow from the learn handler for each PR (with quick-mode auto-categorization: unaddressed findings with confidence < 85% are "low priority", confidence >= 85% are "deferred", missed findings where file was modified are "add to patterns"). Display a summary instead of interactive prompts.
+
+If "Not now": Display: "You can run `/review-code learn` anytime to analyze merged PRs."
+
+### Review Metadata
+
+When saving the review file, include a metadata header at the top:
+
+```html
+<!-- review-metadata
+reviewed_at: <current ISO 8601 timestamp>
+mode: <mode>
+pr_number: <pr_number if applicable>
+org: <org>
+repo: <repo>
+-->
+```
+
+This metadata is used by the learning system to determine when the review was created.
 
 ### Cleanup Session
 

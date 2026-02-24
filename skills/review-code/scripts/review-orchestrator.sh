@@ -329,6 +329,17 @@ build_review_data() {
         fi
     fi
 
+    # Determine if this is a pre-review (author self-check) vs external review.
+    # Pre-review uses collaborative framing instead of formal review tone.
+    local is_pre_review="false"
+    if [[ "${mode}" == "local" ]]; then
+        is_pre_review="true"
+    elif [[ "${mode}" == "branch" ]] && [[ -z "${pr_context}" ]]; then
+        is_pre_review="true"
+    elif [[ "${mode}" == "pr" ]] && [[ "${is_own_pr}" == "true" ]]; then
+        is_pre_review="true"
+    fi
+
     local -a jq_args=(
         -n
         --arg mode "${mode}"
@@ -343,6 +354,7 @@ build_review_data() {
         --argjson pr "${pr_json}"
         --arg reviewer_username "${reviewer_username}"
         --arg is_own_pr "${is_own_pr}"
+        --arg is_pre_review "${is_pre_review}"
     )
 
     # Add mode-specific arguments
@@ -372,6 +384,7 @@ build_review_data() {
         + (if $draft_mode == "true" then {draft: true} else {} end)
         + (if $self_mode == "true" then {self: true} else {} end)
         + (if $pr != null then {pr: $pr, reviewer_username: $reviewer_username, is_own_pr: ($is_own_pr == "true")} else {} end)
+        + (if $is_pre_review == "true" then {is_pre_review: true} else {} end)
         + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")) | with_entries(select(.value != "")))')
     debug_save_json "07-final-output" "output.json" <<< "${final_output}"
     debug_time "07-final-output" "end"
