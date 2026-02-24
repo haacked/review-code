@@ -30,7 +30,7 @@ For each file in the diff:
 
 Find code related to the changes:
 - **Imports/Dependencies**: What does the modified code import or depend on?
-- **Usages**: Where is the modified code used? (grep for function/class names)
+- **Callers/Consumers**: For each modified function/method/class, grep for call sites. Prioritize: functions whose signature/return type/error behavior changed, public API functions over private helpers. Report top 3-5 most relevant callers per significantly modified function.
 - **Similar Patterns**: Search for similar code patterns in the codebase
 - **Related Tests**: Find test files that cover the modified code
 
@@ -65,7 +65,7 @@ Provide a structured summary that specialized agents can use:
 
 ### Related Code
 - **Dependencies**: List of key imports/modules the changes depend on
-- **Usages**: Where the modified functions/classes are used
+- **Callers**: Top 3-5 callers per significantly modified function/method
 - **Similar Patterns**: Locations of similar code in the codebase
 
 ### Architectural Context
