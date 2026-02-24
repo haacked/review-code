@@ -2,6 +2,12 @@
 description: Run specialized code review agents on code changes or pull requests
 argument-hint: [find|learn|pr|commit|branch|range|area]
 allowed-tools: Bash(~/.claude/skills/review-code/scripts/*:*), Read(~/.claude/**), Write(~/.claude/skills/review-code/learnings/*), Edit(~/.claude/skills/review-code/learnings/*)
+hooks:
+  PreToolUse:
+    - matcher: Bash
+      hooks:
+        - type: command
+          command: ~/.claude/skills/review-code/scripts/review-safety-hook.sh
 ---
 
 Run specialized code review agent(s) with comprehensive context on local changes or pull requests.
