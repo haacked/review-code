@@ -73,13 +73,15 @@ Examples:
 
 **NOTE**: Uses session-based caching to run the orchestrator once and reuse the data across multiple bash invocations. This reduces token usage by ~60%.
 
-**Parsed Arguments (pre-computed):**
+**Step 0: Parse Arguments**
 
-```json
-!`~/.claude/skills/review-code/scripts/parse-review-arg.sh $ARGUMENTS 2>&1`
+Run the parse script to determine the review mode and parameters:
+
+```bash
+~/.claude/skills/review-code/scripts/parse-review-arg.sh $ARGUMENTS 2>&1
 ```
 
-This is the `PARSE_RESULT` — the pre-computed output of parsing the user's arguments. Reference this throughout instead of running the parse script manually.
+Save the JSON output as `PARSE_RESULT`. Reference this throughout instead of running the parse script again.
 
 **Handler File Selection:**
 
