@@ -242,3 +242,89 @@ setup() {
     [ "$status" -eq 1 ]
     [[ "$output" == *"Invalid repo specification"* ]]
 }
+
+# =============================================================================
+# fetch_linked_issues tests
+# =============================================================================
+
+@test "pr-context.sh: fetch_linked_issues returns empty array for empty body" {
+    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh' && fetch_linked_issues '' 'owner/repo'"
+    [ "$status" -eq 0 ]
+    [ "$output" = "[]" ]
+}
+
+@test "pr-context.sh: fetch_linked_issues returns empty array for empty repo_spec" {
+    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh' && fetch_linked_issues 'Fixes #123' ''"
+    [ "$status" -eq 0 ]
+    [ "$output" = "[]" ]
+}
+
+@test "pr-context.sh: fetch_linked_issues returns empty array when body has no issue references" {
+    run bash -c "
+        source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh'
+        gh() { return 1; }
+        fetch_linked_issues 'This is a normal PR body with no issue refs' 'owner/repo'
+    "
+    [ "$status" -eq 0 ]
+    [ "$output" = "[]" ]
+}
+
+@test "pr-context.sh: fetch_linked_issues extracts Fixes pattern" {
+    run bash -c "
+        source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh'
+        gh() { echo '{\"number\": 123, \"title\": \"Bug fix\", \"body\": \"description\", \"labels\": [], \"state\": \"OPEN\"}'; }
+        fetch_linked_issues 'Fixes #123' 'owner/repo'
+    "
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].number == 123'
+}
+
+@test "pr-context.sh: fetch_linked_issues extracts Closes pattern" {
+    run bash -c "
+        source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh'
+        gh() { echo '{\"number\": 456, \"title\": \"Feature request\", \"body\": \"details\", \"labels\": [], \"state\": \"OPEN\"}'; }
+        fetch_linked_issues 'Closes #456' 'owner/repo'
+    "
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].number == 456'
+}
+
+@test "pr-context.sh: fetch_linked_issues extracts Resolves pattern" {
+    run bash -c "
+        source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh'
+        gh() { echo '{\"number\": 789, \"title\": \"Issue\", \"body\": \"info\", \"labels\": [], \"state\": \"OPEN\"}'; }
+        fetch_linked_issues 'Resolves #789' 'owner/repo'
+    "
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].number == 789'
+}
+
+@test "pr-context.sh: fetch_linked_issues is case insensitive" {
+    run bash -c "
+        source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh'
+        gh() { echo '{\"number\": 123, \"title\": \"Bug\", \"body\": \"desc\", \"labels\": [], \"state\": \"OPEN\"}'; }
+        fetch_linked_issues 'fixes #123' 'owner/repo'
+    "
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].number == 123'
+}
+
+@test "pr-context.sh: fetch_linked_issues deduplicates issue numbers" {
+    run bash -c "
+        source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh'
+        gh() { echo '{\"number\": 123, \"title\": \"Bug\", \"body\": \"desc\", \"labels\": [], \"state\": \"OPEN\"}'; }
+        fetch_linked_issues 'Fixes #123 and also Closes #123' 'owner/repo'
+    "
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'length == 1'
+}
+
+@test "pr-context.sh: fetch_linked_issues returns empty array for invalid repo_spec" {
+    run bash -c "
+        source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh'
+        gh() { return 1; }
+        fetch_linked_issues 'Fixes #123' 'invalid;repo'
+    "
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | tail -1)" = "[]" ]
+}
