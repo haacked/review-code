@@ -161,6 +161,60 @@ fetch_reviews() {
     "${gh_cmd[@]}" | jq '.reviews | [.[] | {id, author: .author.login, state, body, submitted_at: .submittedAt}]'
 }
 
+# Extract issue references from PR body and fetch their details.
+# Looks for patterns like "Fixes #123", "Closes #456", "Resolves #789".
+# Non-fatal: silently skips issues that fail to fetch.
+# Args: $1 = PR body text, $2 = repo_spec (owner/repo)
+# Output: JSON array of issue objects
+fetch_linked_issues() {
+    local body="$1"
+    local repo_spec="$2"
+
+    if [[ -z "${body}" ]] || [[ -z "${repo_spec}" ]]; then
+        echo "[]"
+        return
+    fi
+
+    # Extract issue numbers using grep (case-insensitive match for fix/close/resolve variants)
+    local issue_numbers
+    issue_numbers=$(echo "${body}" | grep -ioE '(fix(es|ed)?|close[sd]?|resolve[sd]?)\s+#[0-9]+' \
+        | grep -oE '#[0-9]+' \
+        | tr -d '#' \
+        | sort -u \
+        | head -5) || true
+
+    if [[ -z "${issue_numbers}" ]]; then
+        echo "[]"
+        return
+    fi
+
+    validate_repo_spec "${repo_spec}" || {
+        echo "[]"
+        return
+    }
+
+    local issues="[]"
+    while IFS= read -r issue_num; do
+        [[ -z "${issue_num}" ]] && continue
+
+        # Validate issue number is numeric
+        if [[ ! "${issue_num}" =~ ^[0-9]+$ ]]; then
+            continue
+        fi
+
+        local issue_data
+        issue_data=$(gh issue view "${issue_num}" --repo "${repo_spec}" \
+            --json number,title,body,labels,state 2> /dev/null) || continue
+
+        # Truncate body to 2000 chars to control token usage
+        issue_data=$(echo "${issue_data}" | jq '.body = (.body // "" | if length > 2000 then .[:2000] + "…" else . end)')
+
+        issues=$(echo "${issues}" | jq --argjson issue "${issue_data}" '. + [$issue]')
+    done <<< "${issue_numbers}"
+
+    echo "${issues}"
+}
+
 # Main logic
 main() {
     if [[ $# -eq 0 ]]; then
@@ -241,6 +295,10 @@ main() {
         repo_spec="${org}/${repo}"
     fi
 
+    # Extract and fetch linked issues from PR body
+    local linked_issues="[]"
+    linked_issues=$(fetch_linked_issues "${body}" "${repo_spec}")
+
     # Fetch all comment types (conversation, inline, reviews) with pagination
     local conversation_comments="[]"
     local inline_comments="[]"
@@ -286,6 +344,7 @@ main() {
     "state": "${state}",
     "is_fork": ${is_fork},
     "diff": ${diff},
+    "linked_issues": ${linked_issues},
     "comments": {
         "conversation": ${conversation_comments},
         "reviews": ${reviews},

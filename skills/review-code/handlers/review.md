@@ -144,6 +144,16 @@ You are reviewing Pull Request #$pr_number: "$pr_title"
 **PR Description:**
 $pr_body
 
+{If pr.linked_issues is not empty:}
+**Linked Issues:**
+{For each issue in pr.linked_issues:}
+### Issue #$issue.number: $issue.title
+**Labels:** $issue.labels (comma-separated names)
+**State:** $issue.state
+$issue.body
+---
+{End for}
+
 **Existing Review Comments:**
 $pr_comments
 

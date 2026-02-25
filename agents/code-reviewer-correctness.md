@@ -32,6 +32,8 @@ Before reviewing code quality, verify the code does what the PR claims:
 2. **Verify each claim**: Is it actually implemented? In all code paths?
 3. **Flag gaps**: Where does implementation diverge from stated intent?
 
+When linked issues are provided, cross-reference: Does the implementation address all aspects of each linked issue? Are edge cases mentioned in the issue handled?
+
 **Red Flags:**
 - PR says "add logging for X" but X is captured and discarded (`_variable`)
 - PR says "switch to SystemY" but code still uses SystemX in some paths
