@@ -608,6 +608,53 @@ If failed, show the error and suggest using the review file manually.
 - DO use `create-draft-review.sh` with brief summary + inline comments only
 - DO stop and inform the user when errors occur - let them decide how to proceed
 
+### Offer to Submit Review
+
+After creating the draft review successfully, offer to submit it from within Claude Code.
+
+**Only proceed if the draft review was created successfully** (the `create-draft-review.sh` output has `success: true` and a valid `review_id`).
+
+Use `AskUserQuestion` with these options:
+
+1. "Submit as Comment" — neutral feedback, no approval or rejection
+2. "Submit as Approve" — approve the PR
+3. "Submit as Request Changes" — request changes before merge
+4. "Keep as draft" — don't submit now; visit GitHub to review and submit manually
+
+**If the user selects one of the submit options:**
+
+Map the selection to an event value:
+- "Submit as Comment" → `COMMENT`
+- "Submit as Approve" → `APPROVE`
+- "Submit as Request Changes" → `REQUEST_CHANGES`
+
+Call `submit-review.sh` with the review ID from the draft creation output:
+
+```bash
+~/.claude/skills/review-code/scripts/submit-review.sh <<'EOF'
+{"owner": "<owner>", "repo": "<repo>", "pr_number": <number>, "review_id": <review_id>, "event": "<EVENT>"}
+EOF
+```
+
+**Display the result:**
+
+If successful:
+```
+Review submitted!
+
+Review: <review_url>
+Event: <event> (State: <state>)
+```
+
+If failed, show the error and tell the user they can submit manually on GitHub.
+
+**If the user selects "Keep as draft":**
+
+```
+Review kept as draft. Visit GitHub to review and submit:
+<review_url>
+```
+
 ### Cleanup Session
 
 After the review is complete, cleanup the session (replace `<SESSION_ID>` with the actual session ID):

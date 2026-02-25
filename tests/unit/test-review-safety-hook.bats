@@ -93,6 +93,11 @@ make_input() {
     [ -z "$result" ]
 }
 
+@test "allows submit-review.sh" {
+    result=$(make_input "~/.claude/skills/review-code/scripts/submit-review.sh" | bash "$SCRIPT")
+    [ -z "$result" ]
+}
+
 @test "allows other bash commands" {
     result=$(make_input "git diff HEAD~1" | bash "$SCRIPT")
     [ -z "$result" ]
