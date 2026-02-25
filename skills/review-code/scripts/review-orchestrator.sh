@@ -289,6 +289,12 @@ build_review_data() {
     review_context=$(echo "${review_context_json}" | jq -r '.content')
     loaded_context_files=$(echo "${review_context_json}" | jq -r '.loaded_files')
 
+    # Load false positive patterns from learnings
+    local false_positives_json false_positives false_positives_count
+    false_positives_json=$("${SCRIPT_DIR}/load-false-positives.sh" 2> /dev/null || echo '{"content":"","count":0}')
+    false_positives=$(echo "${false_positives_json}" | jq -r '.content')
+    false_positives_count=$(echo "${false_positives_json}" | jq -r '.count')
+
     # Build summary for user confirmation
     # Extract mode-specific fields to avoid passing large args to jq
     local mode_fields
@@ -343,6 +349,8 @@ build_review_data() {
         --argjson pr "${pr_json}"
         --arg reviewer_username "${reviewer_username}"
         --arg is_own_pr "${is_own_pr}"
+        --arg false_positives "${false_positives}"
+        --arg false_positives_count "${false_positives_count}"
     )
 
     # Add mode-specific arguments
@@ -372,6 +380,7 @@ build_review_data() {
         + (if $draft_mode == "true" then {draft: true} else {} end)
         + (if $self_mode == "true" then {self: true} else {} end)
         + (if $pr != null then {pr: $pr, reviewer_username: $reviewer_username, is_own_pr: ($is_own_pr == "true")} else {} end)
+        + (if ($false_positives_count | tonumber) > 0 then {false_positives: $false_positives} else {} end)
         + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")) | with_entries(select(.value != "")))')
     debug_save_json "07-final-output" "output.json" <<< "${final_output}"
     debug_time "07-final-output" "end"

@@ -194,6 +194,12 @@ $review_context
 
 $file_access_instructions
 
+{If false_positives is not empty:}
+**Known False Positive Patterns:**
+$false_positives
+
+Do NOT flag patterns listed above. These have been confirmed as false positives from prior reviews of this codebase. If you encounter one of these patterns, skip it silently.
+
 **Accuracy Requirements:**
 For each finding you report:
 1. Quote the exact code you're referencing
