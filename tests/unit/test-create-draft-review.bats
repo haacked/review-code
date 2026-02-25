@@ -51,8 +51,8 @@ EOF
     [ "$status" -eq 0 ]
 }
 
-@test "create-draft-review: has require_field function" {
-    run bash -c "grep -q '^require_field()' '$SCRIPT'"
+@test "create-draft-review: has require_field function (via json-helpers)" {
+    run bash -c "source '$SCRIPT' && declare -f require_field > /dev/null"
     [ "$status" -eq 0 ]
 }
 

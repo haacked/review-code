@@ -50,8 +50,8 @@ EOF
     [ "$status" -eq 0 ]
 }
 
-@test "submit-review: has require_field function" {
-    run bash -c "grep -q '^require_field()' '$SCRIPT'"
+@test "submit-review: has require_field function (via json-helpers)" {
+    run bash -c "source '$SCRIPT' && declare -f require_field > /dev/null"
     [ "$status" -eq 0 ]
 }
 
@@ -162,6 +162,14 @@ EOF
 # =============================================================================
 # PENDING state guard tests
 # =============================================================================
+
+@test "submit-review: verify_pending_state accepts PENDING review" {
+    create_mock_gh '{"id": 123, "state": "PENDING"}'
+
+    run bash -c "source '$SCRIPT' && verify_pending_state 'org' 'test' '1' '123'"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
 
 @test "submit-review: rejects already-submitted review (APPROVED state)" {
     create_mock_gh '{"id": 123, "state": "APPROVED"}'

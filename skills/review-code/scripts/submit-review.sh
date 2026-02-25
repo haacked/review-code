@@ -38,19 +38,6 @@ source "${SCRIPT_DIR}/helpers/json-helpers.sh"
 # shellcheck source=helpers/gh-wrapper.sh
 source "${SCRIPT_DIR}/helpers/gh-wrapper.sh"
 
-# Validate a required field
-# Args: $1 = value, $2 = field name
-# Output: JSON error if invalid, returns 1 if invalid
-require_field() {
-    local value="$1"
-    local name="$2"
-
-    if [[ -z "${value}" ]] || [[ "${value}" == "null" ]]; then
-        jq -n --arg name "${name}" '{success: false, error: ("Missing " + $name)}'
-        return 1
-    fi
-}
-
 # Validate the event is one of the allowed values
 # Args: $1 = event
 # Output: JSON error if invalid, returns 1 if invalid

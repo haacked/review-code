@@ -44,19 +44,6 @@ source "${SCRIPT_DIR}/helpers/json-helpers.sh"
 # shellcheck source=lib/helpers/gh-wrapper.sh
 source "${SCRIPT_DIR}/helpers/gh-wrapper.sh"
 
-# Validate a required field
-# Args: $1 = value, $2 = field name
-# Output: JSON error if invalid, returns 1 if invalid
-require_field() {
-    local value="$1"
-    local name="$2"
-
-    if [[ -z "${value}" ]] || [[ "${value}" == "null" ]]; then
-        jq -n --arg name "${name}" '{success: false, error: ("Missing " + $name)}'
-        return 1
-    fi
-}
-
 # Fetch existing pending review and its comments
 # Args: $1 = owner, $2 = repo, $3 = pr_number, $4 = reviewer_username
 # Output: JSON with review_id and comments, or null if no pending review
