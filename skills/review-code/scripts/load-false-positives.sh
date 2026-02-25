@@ -6,7 +6,7 @@
 #
 # Description:
 #   Reads learnings/index.jsonl, filters for type=="false_positive",
-#   groups by agent and language/framework, and outputs a markdown summary
+#   groups by agent, and outputs a markdown summary
 #   that agents can use to suppress known false positive patterns.
 #
 # Output (JSON):
@@ -49,7 +49,6 @@ jq -rs '
             patterns: [.[] | {
                 file: .finding.file,
                 description: .finding.description,
-                language: (.context.language // "unknown"),
                 pr: .pr_number
             }]
         }) |
