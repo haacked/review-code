@@ -82,6 +82,22 @@ def view(request: HttpRequest, user_id: Optional[int] = None) -> HttpResponse:
     ...
 ```
 
+## Dictionary Access Patterns
+
+**Direct access vs `.get()` for required fields:**
+
+- Use `dict["key"]` for fields that must be present (primary keys, identifiers, required schema fields). This fails fast with a clear `KeyError` if the data is unexpectedly malformed, rather than silently propagating `None` downstream where it causes confusing errors.
+- Use `dict.get("key")` only for genuinely optional fields where absence is a valid state.
+- When building lookup dicts from lists (e.g., `{item["id"]: item for item in items}`), use direct access for the key field — if the field is missing, the data is corrupt and you want to know immediately.
+
+```python
+# Good - fails fast if "id" is missing
+flags_by_id = {flag["id"]: flag for flag in flags}
+
+# Bad - silently maps None as a key, causing subtle bugs later
+flags_by_id = {flag.get("id"): flag for flag in flags}
+```
+
 ## Error Handling
 
 **Django-specific:**
