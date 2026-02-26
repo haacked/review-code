@@ -182,8 +182,18 @@ main() {
             # Compute addressed status
             . as $c |
             (if ($changed | index($c.path)) != null then "likely" else "not_modified" end) as $addressed |
-            # Check if Claude caught this (same file, within 10 lines)
-            ([$claude[] | select(.file == $c.path and ((.line - $c.line) | fabs) <= 10)] | length > 0) as $caught |
+            # Match by line proximity or, when lines are missing, by content overlap
+            (($c.body // "" | ascii_downcase | .[0:80]) as $cbody |
+            [$claude[] |
+                ((.description // "") | ascii_downcase | .[0:80]) as $cdesc |
+                select(
+                    .file == $c.path and (
+                        ((.line // 0) > 0 and ($c.line // 0) > 0 and (((.line // 0) - ($c.line // 0)) | fabs) <= 10)
+                        or
+                        ((.line // 0) == 0 or ($c.line // 0) == 0) and (($cdesc | contains($cbody)) or ($cbody | contains($cdesc)))
+                    )
+                )
+            ] | length > 0) as $caught |
             {
                 file: $c.path,
                 line: ($c.line // 0),
