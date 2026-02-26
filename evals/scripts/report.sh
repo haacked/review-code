@@ -138,6 +138,14 @@ compare_shas() {
 }
 
 main() {
+    # Validate prerequisites
+    for cmd in jq bc; do
+        if ! command -v "${cmd}" > /dev/null 2>&1; then
+            echo "Error: ${cmd} not found" >&2
+            exit 1
+        fi
+    done
+
     if [[ ! -f "${HISTORY_FILE}" ]]; then
         echo "No score history found at ${HISTORY_FILE}"
         echo "Run evaluations first with: evals/scripts/run-eval.sh --all"
@@ -151,6 +159,10 @@ main() {
             --last)
                 mode="last"
                 last_n="${2:?--last requires a number}"
+                if ! [[ "${last_n}" =~ ^[1-9][0-9]*$ ]]; then
+                    echo "Error: --last requires a positive integer, got '${last_n}'" >&2
+                    exit 1
+                fi
                 shift 2
                 ;;
             --compare)

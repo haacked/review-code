@@ -43,7 +43,7 @@
       "file": "api/views.py",
       "line_start": 14,
       "line_end": 19,
-      "keywords": ["pagination", "limit", "offset", "unbounded", "all rows", "scalab"]
+      "keywords": ["pagination", "limit", "offset", "unbounded", "all rows", "scalability"]
     },
     {
       "id": "debug-mode-production",

@@ -183,18 +183,6 @@ score_llm_judge() {
     review_content=$(cat "${review_file}")
     answer_content=$(cat "${answer_key}")
 
-    local judge_schema='{
-        "type": "object",
-        "properties": {
-            "actionability": {"type": "integer", "minimum": 1, "maximum": 5},
-            "specificity": {"type": "integer", "minimum": 1, "maximum": 5},
-            "signal_to_noise": {"type": "integer", "minimum": 1, "maximum": 5},
-            "overall_quality": {"type": "integer", "minimum": 1, "maximum": 5},
-            "notes": {"type": "string"}
-        },
-        "required": ["actionability", "specificity", "signal_to_noise", "overall_quality", "notes"]
-    }'
-
     local prompt
     prompt=$(
         cat << PROMPT
@@ -330,6 +318,14 @@ score_benchmark() {
 }
 
 main() {
+    # Validate prerequisites
+    for cmd in jq bc; do
+        if ! command -v "${cmd}" > /dev/null 2>&1; then
+            echo "Error: ${cmd} not found" >&2
+            exit 1
+        fi
+    done
+
     local run_id="" benchmark_id="" skip_llm=false
 
     # Parse arguments

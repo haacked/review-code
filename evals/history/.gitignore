@@ -1,0 +1,2 @@
+# Ignore score history — it's local/ephemeral and can be regenerated
+scores.jsonl

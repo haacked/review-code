@@ -83,12 +83,12 @@ check_match() {
 # Args: $1 = parsed finding (JSON), $2 = expected finding (JSON)
 # Returns: 0 if match, 1 if no match
 check_finding_match() {
-    check_match "$1" "$2" 10 '.keywords[]'
+    check_match "$1" "$2" 10 '.keywords[]?'
 }
 
 # Check if a parsed finding triggers a false-positive trap.
 # Args: $1 = parsed finding (JSON), $2 = trap (JSON)
 # Returns: 0 if trap triggered, 1 if not
 check_trap_match() {
-    check_match "$1" "$2" 5 '.trap_keywords[]'
+    check_match "$1" "$2" 5 '.trap_keywords[]?'
 }

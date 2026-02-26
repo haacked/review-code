@@ -133,9 +133,22 @@ run_crafted_benchmark() {
         return 1
     fi
 
+    # Fail fast if working tree is dirty — patching on a dirty tree risks losing work
+    if [[ -n "$(git -C "${REPO_ROOT}" status --porcelain 2> /dev/null)" ]]; then
+        echo "Error: working tree is dirty; commit or stash changes before running crafted benchmarks" >&2
+        return 1
+    fi
+
     local tmp_branch="eval-tmp-${id}"
     local original_branch
     original_branch=$(git -C "${REPO_ROOT}" branch --show-current 2> /dev/null || echo "HEAD")
+
+    # Ensure we restore the original branch and clean up the temp branch on any exit
+    cleanup_crafted_benchmark() {
+        git -C "${REPO_ROOT}" checkout "${original_branch}" --quiet 2> /dev/null || true
+        git -C "${REPO_ROOT}" branch -D "${tmp_branch}" --quiet 2> /dev/null || true
+    }
+    trap cleanup_crafted_benchmark RETURN
 
     echo "  Applying patch to ${tmp_branch}…"
 
@@ -150,24 +163,20 @@ run_crafted_benchmark() {
     local base_patch="${bench_dir}/base.patch"
     if [[ -f "${base_patch}" ]]; then
         echo "  Applying base patch…"
-        git -C "${REPO_ROOT}" apply "${base_patch}" || {
+        if ! git -C "${REPO_ROOT}" apply "${base_patch}"; then
             echo "  Error: failed to apply base patch for ${id}" >&2
-            git -C "${REPO_ROOT}" checkout "${original_branch}" --quiet
-            git -C "${REPO_ROOT}" branch -D "${tmp_branch}" --quiet 2> /dev/null || true
             return 1
-        }
+        fi
         git -C "${REPO_ROOT}" add -A
         git -C "${REPO_ROOT}" commit -m "eval: base state for ${id}" --quiet --no-gpg-sign
     fi
 
     if ! git -C "${REPO_ROOT}" apply --check "${patch}" 2> /dev/null; then
         echo "  Warning: patch does not apply cleanly, attempting forced apply" >&2
-        git -C "${REPO_ROOT}" apply "${patch}" --allow-empty 2> /dev/null || {
+        if ! git -C "${REPO_ROOT}" apply "${patch}" --allow-empty 2> /dev/null; then
             echo "  Error: failed to apply patch for ${id}" >&2
-            git -C "${REPO_ROOT}" checkout "${original_branch}" --quiet
-            git -C "${REPO_ROOT}" branch -D "${tmp_branch}" --quiet 2> /dev/null || true
             return 1
-        }
+        fi
     else
         git -C "${REPO_ROOT}" apply "${patch}"
     fi
@@ -213,11 +222,7 @@ run_crafted_benchmark() {
         fi
     fi
 
-    # Clean up: switch back and delete the temporary branch
-    echo "  Cleaning up ${tmp_branch}…"
-    git -C "${REPO_ROOT}" checkout "${original_branch}" --quiet
-    git -C "${REPO_ROOT}" branch -D "${tmp_branch}" --quiet 2> /dev/null || true
-
+    # Cleanup happens automatically via the RETURN trap
     echo "  Done with ${id}"
 }
 
