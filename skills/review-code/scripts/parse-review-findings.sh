@@ -30,10 +30,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Source error helpers
 source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 
-# Helper function to save a finding to the findings JSON array
+# Append a finding as a single JSONL line.
 # Args: $1=agent, $2=confidence, $3=file, $4=line, $5=description
-# Uses: findings variable (must be in scope)
-# Modifies: findings variable
+# Uses: findings_jsonl variable (must be in scope)
+# Modifies: findings_jsonl variable
 save_finding() {
     local agent="$1"
     local conf="$2"
@@ -42,18 +42,20 @@ save_finding() {
     local desc="$5"
 
     desc=$(echo "${desc}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | head -c 500)
-    findings=$(echo "${findings}" | jq --arg agent "${agent}" \
+    local entry
+    entry=$(jq -nc --arg agent "${agent}" \
         --arg conf "${conf}" \
         --arg file "${file}" \
         --arg line "${line}" \
         --arg desc "${desc}" \
-        '. + [{
+        '{
             agent: $agent,
             confidence: ($conf | tonumber),
             file: $file,
             line: ($line | tonumber),
             description: $desc
-        }]')
+        }')
+    findings_jsonl+="${entry}"$'\n'
 }
 
 # Flush any pending finding to the findings array
@@ -78,8 +80,8 @@ main() {
         exit 1
     fi
 
-    # Parse the review file and extract findings
-    local findings="[]"
+    # Parse the review file and extract findings as JSONL (one JSON object per line)
+    local findings_jsonl=""
     local current_agent=""
     local current_confidence=""
     local in_finding=false
@@ -221,7 +223,12 @@ main() {
     # Handle any remaining finding at end of file
     flush_pending_finding
 
-    echo "${findings}"
+    # Convert JSONL lines to a JSON array
+    if [[ -z "${findings_jsonl}" ]]; then
+        echo "[]"
+    else
+        echo "${findings_jsonl}" | jq -s '.'
+    fi
 }
 
 # Only run main if script is executed directly (not sourced)

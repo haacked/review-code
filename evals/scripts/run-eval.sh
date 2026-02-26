@@ -19,24 +19,14 @@ REGISTRY="${EVALS_DIR}/benchmarks/registry.json"
 RESULTS_DIR="${EVALS_DIR}/results"
 SKILL_REVIEWS_DIR="${HOME}/.claude/skills/review-code/reviews"
 
+source "${SCRIPT_DIR}/helpers/eval-helpers.sh"
+
 # Generate a unique run ID from timestamp + short git SHA
 generate_run_id() {
     local timestamp sha
     timestamp=$(date +%Y%m%d-%H%M%S)
     sha=$(git -C "${REPO_ROOT}" rev-parse --short HEAD 2> /dev/null || echo "unknown")
     echo "${timestamp}-${sha}"
-}
-
-# Resolve the benchmark directory from an ID
-resolve_benchmark_dir() {
-    local id="$1"
-    local category
-    category=$(jq -r --arg id "${id}" '.benchmarks[] | select(.id == $id) | .category' "${REGISTRY}")
-    if [[ -z "${category}" ]]; then
-        echo "Error: benchmark '${id}' not found in registry" >&2
-        return 1
-    fi
-    echo "${EVALS_DIR}/benchmarks/${category}/${id}"
 }
 
 # List benchmark IDs, optionally filtered by category

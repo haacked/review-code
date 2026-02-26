@@ -352,6 +352,136 @@ EOF
     echo "$output" | jq -e 'all(.[]; has("agent") and has("confidence") and has("file") and has("line") and has("description"))' > /dev/null
 }
 
+# =============================================================================
+# Pattern 5: ### `severity`: Title
+# =============================================================================
+
+@test "parse-review-findings.sh: Pattern 5 - blocking severity header" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+### `blocking`: IPv6-Mapped IPv4 Address SSRF Bypass
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'length == 1' > /dev/null
+    echo "$output" | jq -e '.[0].description | contains("IPv6-Mapped")' > /dev/null
+}
+
+@test "parse-review-findings.sh: Pattern 5 - all severity levels" {
+    for severity in blocking suggestion nit question; do
+        cat > "$TEST_DIR/review.md" << EOF
+### \`${severity}\`: Some finding title
+EOF
+        run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+        [ "$status" -eq 0 ]
+        echo "$output" | jq -e 'length == 1' > /dev/null
+        echo "$output" | jq -e '.[0].description | contains("Some finding title")' > /dev/null
+    done
+}
+
+@test "parse-review-findings.sh: Pattern 5 - with ## prefix" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## `suggestion`: Consider using a connection pool
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'length == 1' > /dev/null
+    echo "$output" | jq -e '.[0].description | contains("connection pool")' > /dev/null
+}
+
+# =============================================================================
+# Pattern 6: **File:** `path` (optionally with line info)
+# =============================================================================
+
+@test "parse-review-findings.sh: Pattern 6 - File with colon line number" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+### `blocking`: Some issue
+**File:** `src/auth.py:42`
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].file == "src/auth.py"' > /dev/null
+    echo "$output" | jq -e '.[0].line == 42' > /dev/null
+}
+
+@test "parse-review-findings.sh: Pattern 6 - File with lines N suffix" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+### `suggestion`: Refactor method
+**File:** `utils/helpers.py` lines 100
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].file == "utils/helpers.py"' > /dev/null
+    echo "$output" | jq -e '.[0].line == 100' > /dev/null
+}
+
+@test "parse-review-findings.sh: Pattern 6 - File without line info" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+### `nit`: Naming convention
+**File:** `config.js`
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].file == "config.js"' > /dev/null
+    echo "$output" | jq -e '.[0].line == 0' > /dev/null
+}
+
+# =============================================================================
+# Relaxed flush (finding saved without file path)
+# =============================================================================
+
+@test "parse-review-findings.sh: saves finding without file path" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+### `blocking`: Missing rate limiting
+
+The API endpoint lacks rate limiting protection.
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'length == 1' > /dev/null
+    echo "$output" | jq -e '.[0].file == ""' > /dev/null
+    echo "$output" | jq -e '.[0].line == 0' > /dev/null
+    echo "$output" | jq -e '.[0].description | contains("rate limiting")' > /dev/null
+}
+
+# =============================================================================
+# Combined flow: Pattern 5 + Pattern 6 together
+# =============================================================================
+
+@test "parse-review-findings.sh: Pattern 5 + 6 combined flow" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+### `blocking`: SQL injection vulnerability
+**File:** `api/users.py:78`
+
+User input is passed directly to the query.
+
+### `suggestion`: Add input validation
+**File:** `api/users.py` lines 90
+
+Consider sanitizing the input before use.
+
+### `nit`: Rename variable
+**File:** `api/helpers.py`
+
+The variable name is unclear.
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'length == 3' > /dev/null
+    echo "$output" | jq -e '.[0].file == "api/users.py"' > /dev/null
+    echo "$output" | jq -e '.[0].line == 78' > /dev/null
+    echo "$output" | jq -e '.[0].agent == "security"' > /dev/null
+    echo "$output" | jq -e '.[1].file == "api/users.py"' > /dev/null
+    echo "$output" | jq -e '.[1].line == 90' > /dev/null
+    echo "$output" | jq -e '.[2].file == "api/helpers.py"' > /dev/null
+    echo "$output" | jq -e '.[2].line == 0' > /dev/null
+}
+
+# =============================================================================
+# Sourceable
+# =============================================================================
+
 @test "parse-review-findings.sh: can be sourced without executing main" {
     run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh' && echo 'sourced ok'"
     [ "$status" -eq 0 ]

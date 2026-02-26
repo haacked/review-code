@@ -73,13 +73,14 @@ show_table() {
 show_aggregate() {
     local lines
     lines=$(cat)
-    local count
-    count=$(echo "${lines}" | wc -l | tr -d ' ')
 
-    if [[ ${count} -eq 0 ]]; then
+    if [[ -z "${lines}" ]]; then
         echo "No scores found."
         return
     fi
+
+    local count
+    count=$(echo "${lines}" | wc -l | tr -d ' ')
 
     local total_composite=0
     local total_recall=0

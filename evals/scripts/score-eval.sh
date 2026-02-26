@@ -22,122 +22,7 @@ RESULTS_DIR="${EVALS_DIR}/results"
 HISTORY_FILE="${EVALS_DIR}/history/scores.jsonl"
 PARSE_FINDINGS="${REPO_ROOT}/skills/review-code/scripts/parse-review-findings.sh"
 
-# Resolve the benchmark directory from an ID
-resolve_benchmark_dir() {
-    local id="$1"
-    local category
-    category=$(jq -r --arg id "${id}" '.benchmarks[] | select(.id == $id) | .category' "${REGISTRY}")
-    if [[ -z "${category}" ]]; then
-        echo "Error: benchmark '${id}' not found in registry" >&2
-        return 1
-    fi
-    echo "${EVALS_DIR}/benchmarks/${category}/${id}"
-}
-
-# Check if a finding matches an expected finding from the answer key.
-# A match requires: same file path, overlapping line range, and at least one
-# keyword present in the description.
-# Args: $1 = parsed finding (JSON), $2 = expected finding (JSON)
-# Returns: 0 if match, 1 if no match
-check_finding_match() {
-    local parsed="$1"
-    local expected="$2"
-
-    local parsed_file parsed_line
-    parsed_file=$(echo "${parsed}" | jq -r '.file')
-    parsed_line=$(echo "${parsed}" | jq -r '.line')
-
-    local expected_file expected_start expected_end
-    expected_file=$(echo "${expected}" | jq -r '.file')
-    expected_start=$(echo "${expected}" | jq -r '.line_start')
-    expected_end=$(echo "${expected}" | jq -r '.line_end')
-
-    # File must match (allow partial path match), or skip if parsed file is empty
-    if [[ -n "${parsed_file}" ]]; then
-        if [[ "${parsed_file}" != *"${expected_file}"* ]] && [[ "${expected_file}" != *"${parsed_file}"* ]]; then
-            return 1
-        fi
-    fi
-
-    # Line must be within a generous range (within 10 lines of the expected range)
-    # Skip line check when parsed line is 0 (unknown) or expected range is null
-    local margin=10
-    if [[ "${parsed_line}" != "0" ]] && [[ "${expected_start}" != "null" ]] && [[ "${expected_end}" != "null" ]]; then
-        if ((parsed_line < expected_start - margin || parsed_line > expected_end + margin)); then
-            return 1
-        fi
-    fi
-
-    # At least one keyword must appear in the description (case-insensitive)
-    local desc
-    desc=$(echo "${parsed}" | jq -r '.description' | tr '[:upper:]' '[:lower:]')
-
-    local keyword_found=false
-    while IFS= read -r kw; do
-        kw_lower=$(echo "${kw}" | tr '[:upper:]' '[:lower:]')
-        if [[ "${desc}" == *"${kw_lower}"* ]]; then
-            keyword_found=true
-            break
-        fi
-    done < <(echo "${expected}" | jq -r '.keywords[]')
-
-    if [[ "${keyword_found}" != "true" ]]; then
-        return 1
-    fi
-
-    return 0
-}
-
-# Check if a parsed finding triggers a false-positive trap.
-# Args: $1 = parsed finding (JSON), $2 = trap (JSON)
-# Returns: 0 if trap triggered, 1 if not
-check_trap_match() {
-    local parsed="$1"
-    local trap="$2"
-
-    local parsed_file parsed_line
-    parsed_file=$(echo "${parsed}" | jq -r '.file')
-    parsed_line=$(echo "${parsed}" | jq -r '.line')
-
-    local trap_file trap_start trap_end
-    trap_file=$(echo "${trap}" | jq -r '.file')
-    trap_start=$(echo "${trap}" | jq -r '.line_start')
-    trap_end=$(echo "${trap}" | jq -r '.line_end')
-
-    # File must match, or skip if parsed file is empty
-    if [[ -n "${parsed_file}" ]]; then
-        if [[ "${parsed_file}" != *"${trap_file}"* ]] && [[ "${trap_file}" != *"${parsed_file}"* ]]; then
-            return 1
-        fi
-    fi
-
-    # Line must be within the trap range (tight margin)
-    # Skip line check when parsed line is 0 (unknown) or trap range is null
-    local margin=5
-    if [[ "${parsed_line}" != "0" ]] && [[ "${trap_start}" != "null" ]] && [[ "${trap_end}" != "null" ]]; then
-        if ((parsed_line < trap_start - margin || parsed_line > trap_end + margin)); then
-            return 1
-        fi
-    fi
-
-    # Check trap keywords in description
-    local desc
-    desc=$(echo "${parsed}" | jq -r '.description' | tr '[:upper:]' '[:lower:]')
-
-    local keyword_found=false
-    while IFS= read -r kw; do
-        kw_lower=$(echo "${kw}" | tr '[:upper:]' '[:lower:]')
-        if [[ "${desc}" == *"${kw_lower}"* ]]; then
-            keyword_found=true
-            break
-        fi
-    done < <(echo "${trap}" | jq -r '.trap_keywords[]')
-
-    if [[ "${keyword_found}" == "true" ]]; then
-        return 0
-    fi
-    return 1
-}
+source "${SCRIPT_DIR}/helpers/eval-helpers.sh"
 
 # Tier 1: Automated pattern matching
 # Args: $1 = review file path, $2 = answer key path
@@ -150,49 +35,45 @@ score_pattern_matching() {
     local parsed_findings
     parsed_findings=$("${PARSE_FINDINGS}" "${review_file}" 2> /dev/null || echo "[]")
 
-    local parsed_count
-    parsed_count=$(echo "${parsed_findings}" | jq 'length')
-
-    # Load answer key
-    local expected_findings traps clean_areas
-    expected_findings=$(jq '.expected_findings' "${answer_key}")
-    traps=$(jq '.false_positive_traps' "${answer_key}")
-    clean_areas=$(jq '.clean_areas' "${answer_key}")
-
-    local expected_count
-    expected_count=$(echo "${expected_findings}" | jq 'length')
+    # Pre-extract arrays as JSONL (one jq call each instead of per-iteration indexing)
+    local parsed_jsonl expected_jsonl traps_jsonl clean_areas_jsonl
+    parsed_jsonl=$(echo "${parsed_findings}" | jq -c '.[]' 2> /dev/null || true)
+    expected_jsonl=$(jq -c '.expected_findings[]' "${answer_key}" 2> /dev/null || true)
+    traps_jsonl=$(jq -c '.false_positive_traps[]' "${answer_key}" 2> /dev/null || true)
+    clean_areas_jsonl=$(jq -r '.clean_areas[]' "${answer_key}" 2> /dev/null || true)
 
     # Match expected findings against parsed findings
-    local caught="[]"
-    local missed="[]"
+    local caught_ids="" missed_ids=""
     local total_weight=0
     local caught_weight=0
 
-    for i in $(seq 0 $((expected_count - 1))); do
-        local expected
-        expected=$(echo "${expected_findings}" | jq ".[$i]")
+    while IFS= read -r expected; do
+        [[ -z "${expected}" ]] && continue
         local eid weight
         eid=$(echo "${expected}" | jq -r '.id')
         weight=$(echo "${expected}" | jq -r '.weight // 1')
         total_weight=$((total_weight + weight))
 
         local found=false
-        for j in $(seq 0 $((parsed_count - 1))); do
-            local parsed
-            parsed=$(echo "${parsed_findings}" | jq ".[$j]")
+        while IFS= read -r parsed; do
+            [[ -z "${parsed}" ]] && continue
             if check_finding_match "${parsed}" "${expected}"; then
                 found=true
                 break
             fi
-        done
+        done <<< "${parsed_jsonl}"
 
         if [[ "${found}" == "true" ]]; then
-            caught=$(echo "${caught}" | jq --arg id "${eid}" '. + [$id]')
+            caught_ids+="\"${eid}\","
             caught_weight=$((caught_weight + weight))
         else
-            missed=$(echo "${missed}" | jq --arg id "${eid}" '. + [$id]')
+            missed_ids+="\"${eid}\","
         fi
-    done
+    done <<< "${expected_jsonl}"
+
+    # Build JSON arrays from accumulated IDs
+    local caught="[${caught_ids%,}]"
+    local missed="[${missed_ids%,}]"
 
     # Calculate weighted recall
     local recall_weighted="0"
@@ -201,27 +82,22 @@ score_pattern_matching() {
     fi
 
     # Check for false-positive traps
-    local traps_triggered="[]"
-    local trap_count
-    trap_count=$(echo "${traps}" | jq 'length')
-
+    local traps_triggered_ids=""
     local true_positives=0
     local false_positives=0
 
-    for j in $(seq 0 $((parsed_count - 1))); do
-        local parsed
-        parsed=$(echo "${parsed_findings}" | jq ".[$j]")
+    while IFS= read -r parsed; do
+        [[ -z "${parsed}" ]] && continue
 
         # Check if this finding matches any expected finding
         local matches_expected=false
-        for i in $(seq 0 $((expected_count - 1))); do
-            local expected
-            expected=$(echo "${expected_findings}" | jq ".[$i]")
+        while IFS= read -r expected; do
+            [[ -z "${expected}" ]] && continue
             if check_finding_match "${parsed}" "${expected}"; then
                 matches_expected=true
                 break
             fi
-        done
+        done <<< "${expected_jsonl}"
 
         if [[ "${matches_expected}" == "true" ]]; then
             true_positives=$((true_positives + 1))
@@ -230,23 +106,24 @@ score_pattern_matching() {
 
         # Check if it triggers a trap
         local triggers_trap=false
-        for k in $(seq 0 $((trap_count - 1))); do
-            local trap
-            trap=$(echo "${traps}" | jq ".[$k]")
-            if check_trap_match "${parsed}" "${trap}"; then
+        while IFS= read -r trap_entry; do
+            [[ -z "${trap_entry}" ]] && continue
+            if check_trap_match "${parsed}" "${trap_entry}"; then
                 local tid
-                tid=$(echo "${trap}" | jq -r '.id')
-                traps_triggered=$(echo "${traps_triggered}" | jq --arg id "${tid}" '. + [$id]')
+                tid=$(echo "${trap_entry}" | jq -r '.id')
+                traps_triggered_ids+="\"${tid}\","
                 triggers_trap=true
                 break
             fi
-        done
+        done <<< "${traps_jsonl}"
 
         if [[ "${triggers_trap}" == "true" ]]; then
             false_positives=$((false_positives + 1))
         fi
         # Unmatched findings that aren't traps are neutral (may be valid extras)
-    done
+    done <<< "${parsed_jsonl}"
+
+    local traps_triggered="[${traps_triggered_ids%,}]"
 
     # Precision ratio
     local total_flagged=$((true_positives + false_positives))
@@ -257,19 +134,17 @@ score_pattern_matching() {
 
     # Check clean area violations
     local clean_violations=0
-    local clean_count
-    clean_count=$(echo "${clean_areas}" | jq 'length')
-    for j in $(seq 0 $((parsed_count - 1))); do
+    while IFS= read -r parsed; do
+        [[ -z "${parsed}" ]] && continue
         local agent
-        agent=$(echo "${parsed_findings}" | jq -r ".[$j].agent")
-        for c in $(seq 0 $((clean_count - 1))); do
-            local area
-            area=$(echo "${clean_areas}" | jq -r ".[$c]")
+        agent=$(echo "${parsed}" | jq -r '.agent')
+        while IFS= read -r area; do
+            [[ -z "${area}" ]] && continue
             if [[ "${agent}" == "${area}" ]]; then
                 clean_violations=$((clean_violations + 1))
             fi
-        done
-    done
+        done <<< "${clean_areas_jsonl}"
+    done <<< "${parsed_jsonl}"
 
     # Output score JSON
     jq -n \
