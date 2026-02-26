@@ -1,0 +1,11 @@
+{
+  "id": "unsafe-api",
+  "name": "Unsafe Flask API",
+  "description": "Python Flask API with deliberate security, correctness, and performance issues",
+  "languages": ["python"],
+  "frameworks": ["flask", "sqlalchemy"],
+  "areas": ["security", "correctness", "performance"],
+  "difficulty": "medium",
+  "expected_finding_count": 5,
+  "false_positive_trap_count": 1
+}

@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "expected_findings": [
+    {
+      "id": "unquoted-variables",
+      "description": "Variables used without quoting, causing word splitting and glob expansion",
+      "area": "correctness",
+      "severity": "blocking",
+      "weight": 8,
+      "file": "scripts/deploy.sh",
+      "line_start": 14,
+      "line_end": 14,
+      "keywords": ["unquoted", "quoting", "word splitting", "glob", "double quote"]
+    },
+    {
+      "id": "eval-command-injection",
+      "description": "eval on untrusted input from config file enables arbitrary command execution",
+      "area": "security",
+      "severity": "blocking",
+      "weight": 10,
+      "file": "scripts/deploy.sh",
+      "line_start": 23,
+      "line_end": 23,
+      "keywords": ["eval", "command injection", "arbitrary", "untrusted", "code execution"]
+    },
+    {
+      "id": "missing-set-flags",
+      "description": "Script lacks set -euo pipefail for safe error handling",
+      "area": "correctness",
+      "severity": "blocking",
+      "weight": 7,
+      "file": "scripts/deploy.sh",
+      "line_start": 1,
+      "line_end": 6,
+      "keywords": ["set -e", "set -u", "pipefail", "errexit", "nounset", "error handling"]
+    },
+    {
+      "id": "toctou-file-check",
+      "description": "TOCTOU race between checking if file exists and using it",
+      "area": "security",
+      "severity": "suggestion",
+      "weight": 4,
+      "file": "scripts/deploy.sh",
+      "line_start": 26,
+      "line_end": 29,
+      "keywords": ["toctou", "race condition", "time of check", "time of use", "race"]
+    },
+    {
+      "id": "no-input-validation",
+      "description": "No validation that required arguments are provided before use",
+      "area": "correctness",
+      "severity": "blocking",
+      "weight": 6,
+      "file": "scripts/deploy.sh",
+      "line_start": 9,
+      "line_end": 11,
+      "keywords": ["validation", "argument", "empty", "unset", "missing", "required"]
+    }
+  ],
+  "false_positive_traps": [
+    {
+      "id": "safe-report-generation",
+      "description": "The report generation block uses proper quoting in a heredoc-style redirect — not a quoting issue",
+      "area": "correctness",
+      "file": "scripts/deploy.sh",
+      "line_start": 70,
+      "line_end": 74,
+      "trap_keywords": ["unquoted", "word splitting", "injection"]
+    }
+  ],
+  "clean_areas": ["compatibility", "performance"]
+}

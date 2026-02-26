@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "benchmarks": [
+    {
+      "id": "unsafe-api",
+      "category": "crafted",
+      "name": "Unsafe Flask API",
+      "description": "Python Flask API with security, correctness, and performance issues",
+      "languages": ["python"],
+      "areas": ["security", "correctness", "performance"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "shell-script-issues",
+      "category": "crafted",
+      "name": "Shell Script Issues",
+      "description": "Bash script with quoting, eval, and TOCTOU issues",
+      "languages": ["bash"],
+      "areas": ["security", "correctness"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "breaking-changes",
+      "category": "crafted",
+      "name": "Breaking API Changes",
+      "description": "TypeScript API with backwards-incompatible changes",
+      "languages": ["typescript"],
+      "areas": ["compatibility"],
+      "difficulty": "medium"
+    }
+  ]
+}

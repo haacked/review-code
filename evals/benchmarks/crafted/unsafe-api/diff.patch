@@ -1,0 +1,97 @@
+diff --git a/api/views.py b/api/views.py
+new file mode 100644
+index 0000000..a1b2c3d
+--- /dev/null
++++ b/api/views.py
+@@ -0,0 +1,86 @@
++import os
++from flask import Flask, request, jsonify
++from sqlalchemy import create_engine, text
++
++app = Flask(__name__)
++
++DB_USER = "admin"
++DB_PASS = "s3cret_p@ssw0rd!"
++DB_HOST = os.environ.get("DB_HOST", "localhost")
++engine = create_engine(f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}/myapp")
++
++
++@app.route("/users", methods=["GET"])
++def list_users():
++    """Return all users."""
++    with engine.connect() as conn:
++        result = conn.execute(text("SELECT id, name, email FROM users"))
++        users = [dict(row._mapping) for row in result]
++    return jsonify(users)
++
++
++@app.route("/users/search", methods=["GET"])
++def search_users():
++    """Search users by name."""
++    name = request.args.get("name", "")
++    with engine.connect() as conn:
++        query = f"SELECT id, name, email FROM users WHERE name LIKE '%{name}%'"
++        result = conn.execute(text(query))
++        users = [dict(row._mapping) for row in result]
++    return jsonify(users)
++
++
++@app.route("/users/<int:user_id>", methods=["GET"])
++def get_user(user_id):
++    """Get a single user by ID."""
++    with engine.connect() as conn:
++        result = conn.execute(
++            text("SELECT id, name, email FROM users WHERE id = :uid"),
++            {"uid": user_id},
++        )
++        user = result.fetchone()
++    if user is None:
++        return jsonify({"error": "User not found"}), 404
++    return jsonify(dict(user._mapping))
++
++
++@app.route("/users", methods=["POST"])
++def create_user():
++    """Create a new user."""
++    data = request.get_json()
++    name = data["name"]
++    email = data["email"]
++    with engine.connect() as conn:
++        conn.execute(
++            text("INSERT INTO users (name, email) VALUES (:n, :e)"),
++            {"n": name, "e": email},
++        )
++        conn.commit()
++    return jsonify({"status": "created"}), 201
++
++
++@app.route("/users/<int:user_id>/orders", methods=["GET"])
++def list_user_orders(user_id):
++    """List all orders for a user."""
++    with engine.connect() as conn:
++        result = conn.execute(
++            text("SELECT id, product, amount, created_at FROM orders WHERE user_id = :uid"),
++            {"uid": user_id},
++        )
++        orders = [dict(row._mapping) for row in result]
++    return jsonify(orders)
++
++
++@app.route("/reports/spending", methods=["GET"])
++def spending_report():
++    """Generate a spending report grouped by user."""
++    with engine.connect() as conn:
++        result = conn.execute(
++            text(
++                "SELECT u.name, SUM(o.amount) as total "
++                "FROM users u "
++                "LEFT JOIN orders o ON u.id = o.user_id "
++                "GROUP BY u.name"
++            )
++        )
++        report = [dict(row._mapping) for row in result]
++    return jsonify(report)
++
++
++if __name__ == "__main__":
++    app.run(debug=True)

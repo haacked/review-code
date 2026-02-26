@@ -1,0 +1,63 @@
+diff --git a/src/api/index.ts b/src/api/index.ts
+new file mode 100644
+index 0000000..3525b4f
+--- /dev/null
++++ b/src/api/index.ts
+@@ -0,0 +1,5 @@
++export { createUserRouter } from './users';
++export type { UserResponse } from './users';
++export { createOrderRouter } from './orders';
++export type { OrderResponse } from './orders';
++export { createHealthRouter } from './health';
+diff --git a/src/api/users.ts b/src/api/users.ts
+new file mode 100644
+index 0000000..35de012
+--- /dev/null
++++ b/src/api/users.ts
+@@ -0,0 +1,46 @@
++import { Router } from 'express';
++import { UserService } from '../services/user-service';
++
++export interface UserResponse {
++  id: string;
++  name: string;
++  email: string;
++  createdAt: string;
++  avatarUrl: string | null;
++}
++
++export function createUserRouter(service: UserService): Router {
++  const router = Router();
++
++  router.get('/users', async (req, res) => {
++    const limit = parseInt(req.query.limit as string) || 50;
++    const offset = parseInt(req.query.offset as string) || 0;
++    const users = await service.listUsers({ limit, offset });
++    res.json(users);
++  });
++
++  router.get('/users/:id', async (req, res) => {
++    const user = await service.getUser(req.params.id);
++    if (!user) {
++      return res.status(404).json({ error: 'User not found' });
++    }
++    res.json(user);
++  });
++
++  router.post('/users', async (req, res) => {
++    const user = await service.createUser(req.body);
++    res.status(201).json(user);
++  });
++
++  return router;
++}
++
++export function formatUser(raw: any): UserResponse {
++  return {
++    id: raw.id,
++    name: raw.display_name ?? raw.name,
++    email: raw.email,
++    createdAt: raw.created_at.toISOString(),
++    avatarUrl: raw.avatar_url ?? null,
++  };
++}

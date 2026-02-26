@@ -1,0 +1,3 @@
+# Ignore raw eval results — they're ephemeral and can be regenerated
+*
+!.gitignore

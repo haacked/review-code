@@ -1,0 +1,79 @@
+diff --git a/src/api/index.ts b/src/api/index.ts
+index 3525b4f..7b5af48 100644
+--- a/src/api/index.ts
++++ b/src/api/index.ts
+@@ -1,4 +1,4 @@
+-export { createUserRouter } from './users';
++export { buildUserRoutes } from './users';
+ export type { UserResponse } from './users';
+ export { createOrderRouter } from './orders';
+ export type { OrderResponse } from './orders';
+diff --git a/src/api/users.ts b/src/api/users.ts
+index 35de012..7a48b15 100644
+--- a/src/api/users.ts
++++ b/src/api/users.ts
+@@ -1,25 +1,26 @@
+-import { Router } from 'express';
++import { Router, Request, Response } from 'express';
+ import { UserService } from '../services/user-service';
+ 
+ export interface UserResponse {
+   id: string;
+   name: string;
+   email: string;
+-  createdAt: string;
+-  avatarUrl: string | null;
++  created: string;
++  profileImageUrl: string | null;
++  role: string;
+ }
+ 
+-export function createUserRouter(service: UserService): Router {
++export function buildUserRoutes(service: UserService, authMiddleware: Function): Router {
+   const router = Router();
+ 
+-  router.get('/users', async (req, res) => {
+-    const limit = parseInt(req.query.limit as string) || 50;
++  router.get('/users', authMiddleware, async (req: Request, res: Response) => {
++    const limit = parseInt(req.query.limit as string) || 20;
+     const offset = parseInt(req.query.offset as string) || 0;
+     const users = await service.listUsers({ limit, offset });
+     res.json(users);
+   });
+ 
+-  router.get('/users/:id', async (req, res) => {
++  router.get('/users/:id', authMiddleware, async (req: Request, res: Response) => {
+     const user = await service.getUser(req.params.id);
+     if (!user) {
+       return res.status(404).json({ error: 'User not found' });
+@@ -27,11 +28,17 @@ export function createUserRouter(service: UserService): Router {
+     res.json(user);
+   });
+ 
+-  router.post('/users', async (req, res) => {
+-    const user = await service.createUser(req.body);
++  router.post('/users', authMiddleware, async (req: Request, res: Response) => {
++    const { name, email, role } = req.body;
++    const user = await service.createUser({ name, email, role });
+     res.status(201).json(user);
+   });
+ 
++  router.delete('/users/:id', authMiddleware, async (req: Request, res: Response) => {
++    await service.deleteUser(req.params.id);
++    res.status(204).send();
++  });
++
+   return router;
+ }
+ 
+@@ -40,7 +47,8 @@ export function formatUser(raw: any): UserResponse {
+     id: raw.id,
+     name: raw.display_name ?? raw.name,
+     email: raw.email,
+-    createdAt: raw.created_at.toISOString(),
+-    avatarUrl: raw.avatar_url ?? null,
++    created: raw.created_at.toISOString(),
++    profileImageUrl: raw.profile_image_url ?? raw.avatar_url ?? null,
++    role: raw.role ?? 'member',
+   };
+ }
