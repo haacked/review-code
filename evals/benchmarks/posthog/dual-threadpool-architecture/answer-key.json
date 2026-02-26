@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "expected_findings": [
+    {
+      "id": "cfg-test-skips-block-in-place",
+      "description": "The #[cfg(test)] version of eval_parallel skips block_in_place, but all integration tests were changed to #[tokio::test(flavor = \"multi_thread\")]. The comment says block_in_place is skipped \"since #[tokio::test] uses single-threaded runtime\" but that's no longer true for integration tests. This means the production code path (block_in_place + EVAL_POOL.install) is never exercised in integration tests -- only the simplified test path (EVAL_POOL.install alone) runs. If block_in_place interacts poorly with the rayon pool, no test would catch it.",
+      "area": "correctness",
+      "severity": "suggestion",
+      "weight": 7,
+      "file": "rust/feature-flags/src/rayon_pool.rs",
+      "line_start": 136,
+      "line_end": 144,
+      "keywords": ["cfg(test)", "block_in_place", "multi_thread", "integration test", "diverge", "production", "test coverage", "eval_parallel", "flavor"]
+    },
+    {
+      "id": "no-parallelism-threshold",
+      "description": "The PR always routes through block_in_place + pool.install even for teams with very few flags. While the PR description notes 79% of teams have 5 or fewer flags, production data shows the median request evaluates 11 flags and the average is 57. A threshold to skip eval_parallel for small flag sets could reduce overhead for simple requests, though the production data suggests most requests by volume benefit from parallelization.",
+      "area": "performance",
+      "severity": "suggestion",
+      "weight": 5,
+      "file": "rust/feature-flags/src/flags/flag_matching.rs",
+      "line_start": 764,
+      "line_end": 793,
+      "keywords": ["threshold", "overhead", "small", "few flags", "skip", "parallel", "block_in_place", "performance", "eval_parallel"]
+    },
+    {
+      "id": "test-before-acquire-default-change",
+      "description": "Changing test_before_acquire from true to false disables connection health checks (SELECT 1) before returning connections from the pool. While well-justified for CPU-throttled environments where the health check starves tokio workers, this is a significant behavioral change that affects all deployments -- not just those experiencing the CFS throttling issue. Environments without CPU throttling lose a safety net against stale connections.",
+      "area": "architecture",
+      "severity": "suggestion",
+      "weight": 4,
+      "file": "rust/feature-flags/src/config.rs",
+      "line_start": 244,
+      "line_end": 252,
+      "keywords": ["test_before_acquire", "health check", "SELECT 1", "connection", "stale", "default", "behavioral change", "all deployments"]
+    },
+    {
+      "id": "cloning-collections-per-flag",
+      "description": "hash_key_overrides and request_hash_key_override are cloned for every flag in the parallel iterator. These collections are the same for every flag and could be passed by reference instead. While this is existing code that predates this PR, wrapping it in eval_parallel makes it more visible -- and the cloning is more impactful now that it runs on the dedicated rayon pool where memory allocation could cause contention.",
+      "area": "performance",
+      "severity": "nit",
+      "weight": 3,
+      "file": "rust/feature-flags/src/flags/flag_matching.rs",
+      "line_start": 784,
+      "line_end": 789,
+      "keywords": ["clone", "hash_key_overrides", "request_hash_key_override", "per flag", "reference", "allocation", "par_iter"]
+    }
+  ],
+  "false_positive_traps": [
+    {
+      "id": "block-in-place-is-correct",
+      "description": "block_in_place is the correct bridge between tokio and rayon. It signals tokio to move pending tasks to other workers before blocking the current thread, keeping the async runtime responsive. A reviewer might flag this as 'blocking the async runtime' but it is actually the recommended approach when spawn_blocking's 'static + Send bounds are too restrictive. The PR description thoroughly justifies this choice over spawn_blocking and channel-based alternatives.",
+      "area": "performance",
+      "file": "rust/feature-flags/src/rayon_pool.rs",
+      "line_start": 127,
+      "line_end": 134,
+      "trap_keywords": ["blocking", "async", "runtime", "spawn_blocking", "block_in_place", "deadlock"]
+    }
+  ],
+  "clean_areas": ["compatibility", "security"]
+}

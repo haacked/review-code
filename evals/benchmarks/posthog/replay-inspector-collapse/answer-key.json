@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "expected_findings": [
+    {
+      "id": "event-ordering-bug",
+      "description": "Event grouping is not strictly adjacent — events with the same name can be grouped across intervening non-event items, causing out-of-order display relative to console logs",
+      "area": "correctness",
+      "severity": "blocking",
+      "weight": 8,
+      "file": "frontend/src/scenes/session-recordings/player/inspector/inspectorListCollapsing.test.ts",
+      "line_start": 38,
+      "line_end": 48,
+      "keywords": ["order", "adjacent", "group", "out-of-order", "display", "sequence", "console"]
+    },
+    {
+      "id": "expensive-selector-feature-flag",
+      "description": "The processedSnapshotData selector depends on all feature flags, meaning every flag change reprocesses all snapshots — should extract a dedicated selector for just the relevant flag",
+      "area": "performance",
+      "severity": "blocking",
+      "weight": 10,
+      "file": "frontend/src/scenes/session-recordings/player/inspector/playerInspectorLogic.ts",
+      "line_start": 485,
+      "line_end": 495,
+      "keywords": ["expensive", "selector", "feature flag", "dependency", "reprocess", "snapshot", "performance"]
+    },
+    {
+      "id": "state-leak-across-inactivity",
+      "description": "activeEventGroup is not reset when an inactivity period is encountered, allowing events to be grouped across inactivity boundaries",
+      "area": "correctness",
+      "severity": "suggestion",
+      "weight": 6,
+      "file": "frontend/src/scenes/session-recordings/player/inspector/playerInspectorLogic.ts",
+      "line_start": 240,
+      "line_end": 250,
+      "keywords": ["reset", "activeEventGroup", "inactivity", "state", "leak", "group", "boundary"]
+    },
+    {
+      "id": "redundant-onclick-handler",
+      "description": "Duplicate onClick handler on the grouped event row — the inner handler is redundant since the outer element already handles the click",
+      "area": "maintainability",
+      "severity": "nit",
+      "weight": 3,
+      "file": "frontend/src/scenes/session-recordings/player/inspector/components/ItemEvent.tsx",
+      "line_start": 252,
+      "line_end": 260,
+      "keywords": ["onclick", "redundant", "duplicate", "handler", "dead code"]
+    },
+    {
+      "id": "badge-color-inconsistency",
+      "description": "Console log badges change color when highlighted but event badges do not — the badge coloring behavior should be aligned between the two item types",
+      "area": "frontend",
+      "severity": "nit",
+      "weight": 3,
+      "file": "frontend/src/scenes/session-recordings/player/inspector/components/ItemConsoleLog.tsx",
+      "line_start": 28,
+      "line_end": 38,
+      "keywords": ["badge", "color", "highlight", "consistency", "align", "UX"]
+    }
+  ],
+  "false_positive_traps": [],
+  "clean_areas": ["security", "compatibility"]
+}

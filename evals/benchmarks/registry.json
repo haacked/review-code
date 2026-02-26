@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "benchmarks": [
+    {
+      "id": "unsafe-api",
+      "category": "crafted",
+      "name": "Unsafe Flask API",
+      "description": "Python Flask API with security, correctness, and performance issues",
+      "languages": ["python"],
+      "areas": ["security", "correctness", "performance"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "shell-script-issues",
+      "category": "crafted",
+      "name": "Shell Script Issues",
+      "description": "Bash script with quoting, eval, and TOCTOU issues",
+      "languages": ["bash"],
+      "areas": ["security", "correctness"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "breaking-changes",
+      "category": "crafted",
+      "name": "Breaking API Changes",
+      "description": "TypeScript API with backwards-incompatible changes",
+      "languages": ["typescript"],
+      "areas": ["compatibility"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "canonical-log-parallel",
+      "category": "posthog",
+      "name": "Canonical Log Lines No-Op in Parallel Path",
+      "description": "Rust concurrency fix: canonical log counters silently lost on rayon thread pool",
+      "source": "posthog/posthog#49114",
+      "languages": ["rust"],
+      "areas": ["correctness", "testing", "maintainability"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "s3-export-validation",
+      "category": "posthog",
+      "name": "S3 Batch Export Validation",
+      "description": "Python input validation for S3 exports with SSRF-adjacent URL/hostname confusion",
+      "source": "posthog/posthog#49032",
+      "languages": ["python"],
+      "areas": ["security", "correctness", "testing"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "replay-inspector-collapse",
+      "category": "posthog",
+      "name": "Collapse Identical Replay Inspector Rows",
+      "description": "TypeScript/React feature with correctness bugs, performance regression, and UX issues",
+      "source": "posthog/posthog#48304",
+      "languages": ["typescript"],
+      "areas": ["correctness", "performance", "frontend", "maintainability"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "dual-threadpool-architecture",
+      "category": "posthog",
+      "name": "Dual Thread Pool Architecture for Feature Flags",
+      "description": "Rust concurrency architecture: dedicated rayon pool with tokio bridge, config changes",
+      "source": "posthog/posthog#46712",
+      "languages": ["rust"],
+      "areas": ["correctness", "performance", "architecture"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tokio-runtime-monitoring",
+      "category": "posthog",
+      "name": "Tokio Runtime Monitoring for Feature Flags",
+      "description": "Rust observability feature with subtle data correctness bug (stale variable self-subtraction)",
+      "source": "posthog/posthog#48629",
+      "languages": ["rust"],
+      "areas": ["correctness", "testing", "maintainability"],
+      "difficulty": "hard"
+    }
+  ]
+}

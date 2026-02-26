@@ -44,6 +44,10 @@ if command_exists shfmt; then
         "bin/"*
         "lib/"*.sh
         "lib/helpers/"*.sh
+        "evals/scripts/"*.sh
+        "evals/scripts/helpers/"*.sh
+        "skills/review-code/scripts/"*.sh
+        "skills/review-code/scripts/helpers/"*.sh
         "*.sh"
     )
 

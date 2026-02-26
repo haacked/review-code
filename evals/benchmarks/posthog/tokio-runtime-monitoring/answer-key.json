@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "expected_findings": [
+    {
+      "id": "busy-duration-self-subtraction",
+      "description": "In the busy_ratio_bounded_with_real_elapsed test, busy_now is bound from busy_before.iter() on the line above the loop, so the subtraction becomes busy_before[i].saturating_sub(busy_before[i]) — always zero. The per-worker busy duration delta metric never reports real values. The test passes trivially since 0.0 is in [0.0, 1.0].",
+      "area": "correctness",
+      "severity": "blocking",
+      "weight": 10,
+      "file": "rust/feature-flags/src/tokio_monitor.rs",
+      "line_start": 362,
+      "line_end": 363,
+      "keywords": ["busy_now", "busy_before", "saturating_sub", "self-subtraction", "always zero", "stale", "variable", "shadow", "delta", "iter", "enumerate"]
+    },
+    {
+      "id": "first-tick-immediate",
+      "description": "The first ticker.tick().await in both run_stable_loop and run_unstable_loop completes immediately per Tokio's interval semantics, making the initial elapsed value very small (microseconds). This produces a misleading first busy_ratio sample that could be extremely high or erratic. Should skip the first tick or add an elapsed threshold before reporting metrics.",
+      "area": "correctness",
+      "severity": "suggestion",
+      "weight": 5,
+      "file": "rust/feature-flags/src/tokio_monitor.rs",
+      "line_start": 67,
+      "line_end": 97,
+      "keywords": ["first tick", "immediate", "elapsed", "misleading", "initial", "skip", "interval", "ticker", "busy_ratio"]
+    },
+    {
+      "id": "duplicated-loop-structure",
+      "description": "run_stable_loop and run_unstable_loop duplicate the ticker setup, loop structure, and elapsed calculation (~20 lines each). Could consolidate into a single loop with #[cfg(tokio_unstable)] gating only the report_unstable_metrics call, reducing duplication and ensuring loop changes only need to happen once.",
+      "area": "maintainability",
+      "severity": "suggestion",
+      "weight": 3,
+      "file": "rust/feature-flags/src/tokio_monitor.rs",
+      "line_start": 59,
+      "line_end": 97,
+      "keywords": ["duplicate", "run_stable_loop", "run_unstable_loop", "consolidate", "cfg", "DRY", "refactor", "loop", "ticker"]
+    }
+  ],
+  "false_positive_traps": [
+    {
+      "id": "tokio-unstable-workspace-wide",
+      "description": "The tokio_unstable cfg flag is set workspace-wide in .cargo/config.toml. A reviewer might flag this as risky since it affects all crates in the workspace, but the PR description explains this is required because Cargo doesn't support per-crate config within a workspace. The flag only makes additional unstable methods available — it does not change stable API behavior or runtime semantics.",
+      "area": "architecture",
+      "file": "rust/.cargo/config.toml",
+      "line_start": 1,
+      "line_end": 6,
+      "trap_keywords": ["workspace", "unstable", "unsafe", "risky", "all crates", "workspace-wide", "config.toml"]
+    }
+  ],
+  "clean_areas": ["security", "compatibility"]
+}

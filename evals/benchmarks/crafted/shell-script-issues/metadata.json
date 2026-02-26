@@ -1,0 +1,11 @@
+{
+  "id": "shell-script-issues",
+  "name": "Shell Script Issues",
+  "description": "Bash script with quoting, eval, TOCTOU, and safety issues",
+  "languages": ["bash"],
+  "frameworks": [],
+  "areas": ["security", "correctness"],
+  "difficulty": "medium",
+  "expected_finding_count": 5,
+  "false_positive_trap_count": 1
+}

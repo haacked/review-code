@@ -1,0 +1,1355 @@
+diff --git a/rust/feature-flags/src/config.rs b/rust/feature-flags/src/config.rs
+index 46c4e2681cf8..b181e9f771fa 100644
+--- a/rust/feature-flags/src/config.rs
++++ b/rust/feature-flags/src/config.rs
+@@ -241,10 +241,13 @@ pub struct Config {
+     #[envconfig(default = "300")]
+     pub idle_timeout_secs: u64,
+ 
+-    // Test connection health before returning from pool
+-    // - Set to true for production to catch stale connections
+-    // - Set to false in tests or very stable environments for slight performance gain
+-    #[envconfig(default = "true")]
++    // Test connection health before returning from pool (runs SELECT 1)
++    // Default: false - disabled in production for the following reasons:
++    // 1. Under CPU throttling (CFS), health checks add latency because the async I/O
++    //    needs a tokio worker thread, which may be starved by rayon parallel evaluation
++    // 2. DB connections are to stable RDS instances where stale connections are rare
++    // 3. SQLx already handles broken connections via automatic retry on first query failure
++    #[envconfig(default = "false")]
+     pub test_before_acquire: FlexBool,
+ 
+     // PostgreSQL statement_timeout for non-persons reader queries (milliseconds)
+@@ -537,7 +540,7 @@ impl Config {
+             min_persons_writer_connections: 0,
+             acquire_timeout_secs: 3,
+             idle_timeout_secs: 300,
+-            test_before_acquire: FlexBool(true),
++            test_before_acquire: FlexBool(false),
+             non_persons_reader_statement_timeout_ms: 2000,
+             persons_reader_statement_timeout_ms: 3000,
+             writer_statement_timeout_ms: 3000,
+diff --git a/rust/feature-flags/src/flags/flag_matching.rs b/rust/feature-flags/src/flags/flag_matching.rs
+index f40497b61162..b733c0c1f1d9 100644
+--- a/rust/feature-flags/src/flags/flag_matching.rs
++++ b/rust/feature-flags/src/flags/flag_matching.rs
+@@ -24,6 +24,7 @@ use crate::metrics::consts::{
+     PROPERTY_CACHE_MISSES_COUNTER,
+ };
+ use crate::properties::property_models::PropertyFilter;
++use crate::rayon_pool::eval_parallel;
+ use crate::utils::graph_utils::{
+     build_dependency_graph, filter_graph_by_keys, log_dependency_graph_operation_error,
+     DependencyGraph, DependencyGraphResult, FilteredGraphResult,
+@@ -760,31 +761,33 @@ impl FeatureFlagMatcher {
+             .map(|flag| (&flag.key, *flag))
+             .collect();
+ 
+-        let results: Vec<(String, Result<FeatureFlagMatch, FlagError>)> = flags_to_evaluate
+-            .par_iter()
+-            .map(|flag| {
+-                // Flags with missing dependencies evaluate to false (fail closed)
+-                if flags_with_missing_deps.contains(&flag.id) {
+-                    return (flag.key.clone(), Ok(FeatureFlagMatch::missing_dependency()));
+-                }
++        let results: Vec<(String, Result<FeatureFlagMatch, FlagError>)> = eval_parallel(|| {
++            flags_to_evaluate
++                .par_iter()
++                .map(|flag| {
++                    // Flags with missing dependencies evaluate to false (fail closed)
++                    if flags_with_missing_deps.contains(&flag.id) {
++                        return (flag.key.clone(), Ok(FeatureFlagMatch::missing_dependency()));
++                    }
+ 
+-                // If the overrides for this flag are not in the pre-computed map, assume no overrides
+-                // this shouldn't happen, but it's here to avoid panics
+-                let property_overrides = precomputed_property_overrides
+-                    .get(&flag.key)
+-                    .unwrap_or(&None)
+-                    .clone();
+-                (
+-                    flag.key.clone(),
+-                    self.get_match(
+-                        flag,
+-                        property_overrides,
+-                        hash_key_overrides.clone(),
+-                        request_hash_key_override.clone(),
+-                    ),
+-                )
+-            })
+-            .collect();
++                    // If the overrides for this flag are not in the pre-computed map, assume no overrides
++                    // this shouldn't happen, but it's here to avoid panics
++                    let property_overrides = precomputed_property_overrides
++                        .get(&flag.key)
++                        .unwrap_or(&None)
++                        .clone();
++                    (
++                        flag.key.clone(),
++                        self.get_match(
++                            flag,
++                            property_overrides,
++                            hash_key_overrides.clone(),
++                            request_hash_key_override.clone(),
++                        ),
++                    )
++                })
++                .collect()
++        });
+ 
+         for (flag_key, result) in results {
+             // If flag not found in map, skip it (this shouldn't happen but is safe)
+diff --git a/rust/feature-flags/src/lib.rs b/rust/feature-flags/src/lib.rs
+index 68778536c0b3..c331b2ca91b4 100644
+--- a/rust/feature-flags/src/lib.rs
++++ b/rust/feature-flags/src/lib.rs
+@@ -10,6 +10,7 @@ pub mod flags;
+ pub mod handler;
+ pub mod metrics;
+ pub mod properties;
++pub mod rayon_pool;
+ pub mod router;
+ pub mod server;
+ pub mod site_apps;
+diff --git a/rust/feature-flags/src/rayon_pool.rs b/rust/feature-flags/src/rayon_pool.rs
+new file mode 100644
+index 000000000000..bd2241306645
+--- /dev/null
++++ b/rust/feature-flags/src/rayon_pool.rs
+@@ -0,0 +1,179 @@
++//! Dedicated thread pool for CPU-bound parallel flag evaluation.
++//!
++//! # Thread budget
++//!
++//! The total active threads should stay within the CFS quota to avoid throttling:
++//!
++//! | Pool | Threads | Purpose |
++//! |------|---------|---------|
++//! | Tokio workers | N (set via `TOKIO_WORKER_THREADS`) | Async I/O, connection pools, request handling |
++//! | Rayon eval | M (set via `EVAL_NUM_THREADS`) | CPU-bound parallel flag evaluation |
++//!
++//! Not all threads are CPU-hot simultaneously: tokio threads mostly wait on I/O, and rayon
++//! threads only run during `eval_parallel()` calls. The budget can slightly exceed the quota
++//! as long as peak concurrent CPU usage stays within limits.
++//!
++//! # Safety cap
++//!
++//! If `EVAL_NUM_THREADS` exceeds `std::thread::available_parallelism()` (which respects
++//! container CPU limits on Linux), the value is capped and a warning is logged. This
++//! prevents misconfiguration from causing thread over-subscription.
++
++use std::{env, sync::LazyLock};
++
++const DEFAULT_EVAL_NUM_THREADS: usize = 1;
++const EVAL_NUM_THREADS_ENV: &str = "EVAL_NUM_THREADS";
++
++/// Result of resolving the thread count from environment and available parallelism.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++enum ResolvedThreadCount {
++    /// Valid env var value within available parallelism.
++    Configured(usize),
++    /// Env var value exceeded available parallelism, capped.
++    Capped { requested: usize, available: usize },
++    /// No env var, invalid value, or zero; using default.
++    Default(usize),
++}
++
++impl ResolvedThreadCount {
++    fn get(&self) -> usize {
++        match self {
++            Self::Configured(n) | Self::Default(n) => *n,
++            Self::Capped { available, .. } => *available,
++        }
++    }
++}
++
++/// Resolves the number of threads from an optional env var value and available parallelism.
++fn resolve_thread_count(env_value: Option<&str>, available: usize) -> ResolvedThreadCount {
++    let Some(requested) = env_value
++        .and_then(|s| s.parse::<usize>().ok())
++        .filter(|&n| n > 0)
++    else {
++        return ResolvedThreadCount::Default(DEFAULT_EVAL_NUM_THREADS);
++    };
++
++    if requested > available {
++        ResolvedThreadCount::Capped {
++            requested,
++            available,
++        }
++    } else {
++        ResolvedThreadCount::Configured(requested)
++    }
++}
++
++/// Returns the available parallelism, respecting container CPU limits on Linux.
++fn available_parallelism() -> usize {
++    std::thread::available_parallelism()
++        .map(|n| n.get())
++        .unwrap_or_else(|_| {
++            tracing::warn!("Failed to determine available parallelism, falling back to 1");
++            1
++        })
++}
++
++static EVAL_POOL: LazyLock<rayon::ThreadPool> = LazyLock::new(|| {
++    let available = available_parallelism();
++    let env_value = env::var(EVAL_NUM_THREADS_ENV).ok();
++    let resolved = resolve_thread_count(env_value.as_deref(), available);
++    let num_threads = resolved.get();
++
++    if let ResolvedThreadCount::Capped { requested, .. } = resolved {
++        tracing::warn!(
++            requested,
++            available,
++            num_threads,
++            "{EVAL_NUM_THREADS_ENV} exceeds available parallelism, capping"
++        );
++    }
++
++    tracing::info!(
++        num_threads,
++        available,
++        "Initializing rayon evaluation thread pool (set {EVAL_NUM_THREADS_ENV} to override)"
++    );
++
++    rayon::ThreadPoolBuilder::new()
++        .num_threads(num_threads)
++        .thread_name(|i| format!("flag-eval-{i}"))
++        .build()
++        .expect("Failed to build Rayon flag evaluation thread pool")
++});
++
++/// Execute CPU-bound parallel work on the evaluation thread pool.
++///
++/// This handles the tokio/rayon interaction correctly by:
++/// 1. Using `block_in_place` to signal tokio that this thread will block
++/// 2. Installing the closure on the dedicated rayon pool
++///
++/// The `block_in_place` call allows tokio to move pending tasks to other workers,
++/// keeping the async runtime responsive for connection pool operations and I/O.
++///
++/// # Example
++///
++/// ```ignore
++/// let results = eval_parallel(|| {
++///     flags.par_iter().map(|flag| evaluate(flag)).collect()
++/// });
++/// ```
++///
++/// # Why not `spawn_blocking`?
++///
++/// `spawn_blocking` requires `'static + Send` bounds, which would force cloning
++/// the entire `FeatureFlagMatcher` and all flag data for every evaluation.
++/// `block_in_place` runs in-place on the current thread, allowing borrows.
++#[cfg(not(test))]
++pub fn eval_parallel<F, R>(f: F) -> R
++where
++    F: FnOnce() -> R + Send,
++    R: Send,
++{
++    tokio::task::block_in_place(|| EVAL_POOL.install(f))
++}
++
++/// Test version: skips `block_in_place` since `#[tokio::test]` uses single-threaded runtime.
++#[cfg(test)]
++pub fn eval_parallel<F, R>(f: F) -> R
++where
++    F: FnOnce() -> R + Send,
++    R: Send,
++{
++    EVAL_POOL.install(f)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use rstest::rstest;
++
++    #[rstest]
++    #[case::valid_within_limit(Some("4"), 8, ResolvedThreadCount::Configured(4))]
++    #[case::valid_at_limit(Some("8"), 8, ResolvedThreadCount::Configured(8))]
++    #[case::exceeds_available(Some("16"), 8, ResolvedThreadCount::Capped { requested: 16, available: 8 })]
++    #[case::no_env_var(None, 8, ResolvedThreadCount::Default(DEFAULT_EVAL_NUM_THREADS))]
++    #[case::empty_string(Some(""), 8, ResolvedThreadCount::Default(DEFAULT_EVAL_NUM_THREADS))]
++    #[case::non_numeric(Some("abc"), 8, ResolvedThreadCount::Default(DEFAULT_EVAL_NUM_THREADS))]
++    #[case::zero_value(Some("0"), 8, ResolvedThreadCount::Default(DEFAULT_EVAL_NUM_THREADS))]
++    #[case::negative_value(Some("-1"), 8, ResolvedThreadCount::Default(DEFAULT_EVAL_NUM_THREADS))]
++    #[case::whitespace_only(Some("   "), 8, ResolvedThreadCount::Default(DEFAULT_EVAL_NUM_THREADS))]
++    #[case::float_value(Some("4.5"), 8, ResolvedThreadCount::Default(DEFAULT_EVAL_NUM_THREADS))]
++    fn test_resolve_thread_count(
++        #[case] env_value: Option<&str>,
++        #[case] available: usize,
++        #[case] expected: ResolvedThreadCount,
++    ) {
++        assert_eq!(resolve_thread_count(env_value, available), expected);
++    }
++
++    #[rstest]
++    #[case::configured(ResolvedThreadCount::Configured(4), 4)]
++    #[case::capped(ResolvedThreadCount::Capped { requested: 16, available: 8 }, 8)]
++    #[case::default(ResolvedThreadCount::Default(1), 1)]
++    fn test_resolved_thread_count_get(
++        #[case] resolved: ResolvedThreadCount,
++        #[case] expected: usize,
++    ) {
++        assert_eq!(resolved.get(), expected);
++    }
++}
+diff --git a/rust/feature-flags/tests/test_experience_continuity.rs b/rust/feature-flags/tests/test_experience_continuity.rs
+index 7eb12807220e..7a6559c0c5c2 100644
+--- a/rust/feature-flags/tests/test_experience_continuity.rs
++++ b/rust/feature-flags/tests/test_experience_continuity.rs
+@@ -8,7 +8,7 @@ use feature_flags::config::DEFAULT_TEST_CONFIG;
+ use feature_flags::flags::flag_models::FeatureFlagRow;
+ use feature_flags::utils::test_utils::TestContext;
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_experience_continuity_matches_python() -> Result<()> {
+     // 1. Create a user that evaluates to false
+     // 2. Find an ID that evaluates to true
+@@ -138,7 +138,7 @@ async fn test_experience_continuity_matches_python() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_experience_continuity_with_merge() -> Result<()> {
+     // Test that merged persons also maintain overrides without $anon_distinct_id
+ 
+@@ -300,7 +300,7 @@ async fn test_experience_continuity_with_merge() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_anon_distinct_id_from_person_properties() -> Result<()> {
+     let context = TestContext::new(None).await;
+     let team = context
+@@ -425,7 +425,7 @@ async fn test_anon_distinct_id_from_person_properties() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_top_level_anon_distinct_id_takes_precedence() -> Result<()> {
+     let context = TestContext::new(None).await;
+     let team = context
+@@ -536,7 +536,7 @@ async fn test_top_level_anon_distinct_id_takes_precedence() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_experience_continuity_without_person_uses_anon_distinct_id() -> Result<()> {
+     // This test verifies that when:
+     // 1. No person record exists (common during anonymous->identified transition)
+diff --git a/rust/feature-flags/tests/test_flag_definitions.rs b/rust/feature-flags/tests/test_flag_definitions.rs
+index 1354091e3c77..24961e808b69 100644
+--- a/rust/feature-flags/tests/test_flag_definitions.rs
++++ b/rust/feature-flags/tests/test_flag_definitions.rs
+@@ -1,6 +1,6 @@
+ mod common;
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_hypercache_config_generation() {
+     use common_hypercache::{HyperCacheConfig, KeyType};
+     use common_types::TeamIdentifier;
+@@ -71,7 +71,7 @@ async fn test_hypercache_config_generation() {
+     );
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_flag_definitions_endpoint_exists() {
+     use feature_flags::config::Config;
+     use reqwest;
+@@ -94,7 +94,7 @@ async fn test_flag_definitions_endpoint_exists() {
+     assert_eq!(response.status(), 401);
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_personal_api_key_authentication_no_key() {
+     use feature_flags::{config::Config, utils::test_utils::TestContext};
+     use reqwest;
+@@ -135,7 +135,7 @@ async fn test_personal_api_key_authentication_no_key() {
+     assert_eq!(body["attr"], Value::Null);
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_personal_api_key_authentication_invalid_key() {
+     use feature_flags::{config::Config, utils::test_utils::TestContext};
+     use reqwest;
+@@ -177,7 +177,7 @@ async fn test_personal_api_key_authentication_invalid_key() {
+     assert_eq!(body["attr"], Value::Null);
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_personal_api_key_authentication_valid_key_with_scopes() {
+     use feature_flags::{config::Config, utils::test_utils::TestContext};
+     use reqwest;
+@@ -229,7 +229,7 @@ async fn test_personal_api_key_authentication_valid_key_with_scopes() {
+     );
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_personal_api_key_authentication_without_feature_flag_scopes() {
+     use feature_flags::{config::Config, utils::test_utils::TestContext};
+     use reqwest;
+@@ -276,7 +276,7 @@ async fn test_personal_api_key_authentication_without_feature_flag_scopes() {
+     assert_eq!(response.status(), 401);
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_personal_api_key_authentication_inactive_user() {
+     use feature_flags::{config::Config, utils::test_utils::TestContext};
+     use reqwest;
+@@ -324,7 +324,7 @@ async fn test_personal_api_key_authentication_inactive_user() {
+     assert_eq!(response.status(), 401);
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_secret_api_token_authentication_valid_token() {
+     use feature_flags::{config::Config, utils::test_utils::TestContext};
+     use reqwest;
+@@ -363,7 +363,7 @@ async fn test_secret_api_token_authentication_valid_token() {
+     );
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_secret_api_token_authentication_invalid_token() {
+     use feature_flags::{config::Config, utils::test_utils::TestContext};
+     use reqwest;
+@@ -402,7 +402,7 @@ async fn test_secret_api_token_authentication_invalid_token() {
+     assert_eq!(body["attr"], Value::Null);
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_missing_token_parameter() {
+     use feature_flags::config::Config;
+     use reqwest;
+@@ -423,7 +423,7 @@ async fn test_missing_token_parameter() {
+     assert_eq!(response.status(), 400);
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_token_mismatch_secret_token_for_different_team() {
+     use feature_flags::{config::Config, utils::test_utils::TestContext};
+     use reqwest;
+@@ -460,7 +460,7 @@ async fn test_token_mismatch_secret_token_for_different_team() {
+     assert_eq!(response.status(), 401);
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_personal_api_key_with_scoped_teams_allowed() {
+     use feature_flags::{config::Config, utils::test_utils::TestContext};
+     use reqwest;
+@@ -525,7 +525,7 @@ async fn test_personal_api_key_with_scoped_teams_allowed() {
+     );
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_personal_api_key_with_scoped_teams_denied() {
+     use feature_flags::{config::Config, utils::test_utils::TestContext};
+     use reqwest;
+@@ -576,7 +576,7 @@ async fn test_personal_api_key_with_scoped_teams_denied() {
+     );
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_personal_api_key_with_scoped_organizations_allowed() {
+     use feature_flags::{config::Config, utils::test_utils::TestContext};
+     use reqwest;
+@@ -637,7 +637,7 @@ async fn test_personal_api_key_with_scoped_organizations_allowed() {
+     );
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_personal_api_key_with_scoped_organizations_denied() {
+     use feature_flags::{config::Config, utils::test_utils::TestContext};
+     use reqwest;
+@@ -690,7 +690,7 @@ async fn test_personal_api_key_with_scoped_organizations_denied() {
+     );
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_cache_miss_returns_503() {
+     use feature_flags::{config::Config, utils::test_utils::TestContext};
+     use reqwest;
+@@ -749,7 +749,7 @@ async fn test_cache_miss_returns_503() {
+     }
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_personal_api_key_with_all_access_scopes() {
+     use feature_flags::{config::Config, utils::test_utils::TestContext};
+     use reqwest;
+@@ -808,7 +808,7 @@ async fn test_personal_api_key_with_all_access_scopes() {
+     );
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_personal_api_key_with_feature_flag_write_scope() {
+     use feature_flags::{config::Config, utils::test_utils::TestContext};
+     use reqwest;
+@@ -873,7 +873,7 @@ async fn test_personal_api_key_with_feature_flag_write_scope() {
+     );
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_backup_secret_api_token_authentication() {
+     use feature_flags::{config::Config, utils::test_utils::TestContext};
+     use reqwest;
+@@ -921,7 +921,7 @@ async fn test_backup_secret_api_token_authentication() {
+     );
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_invalid_project_api_key() {
+     use feature_flags::config::Config;
+     use reqwest;
+@@ -962,7 +962,7 @@ async fn test_invalid_project_api_key() {
+     }
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_secret_token_takes_priority_over_personal_api_key() {
+     use feature_flags::{config::Config, utils::test_utils::TestContext};
+     use reqwest;
+@@ -1033,7 +1033,7 @@ async fn test_secret_token_takes_priority_over_personal_api_key() {
+     );
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_flag_definitions_rate_limit_enforced() {
+     use feature_flags::{config::Config, utils::test_utils::TestContext};
+     use reqwest;
+@@ -1104,7 +1104,7 @@ async fn test_flag_definitions_rate_limit_enforced() {
+     );
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_flag_definitions_custom_rate_limit_overrides_default() {
+     use feature_flags::{config::Config, utils::test_utils::TestContext};
+     use reqwest;
+@@ -1195,7 +1195,7 @@ async fn test_flag_definitions_custom_rate_limit_overrides_default() {
+     );
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_flag_definitions_rate_limit_metrics_incremented() {
+     use feature_flags::{config::Config, utils::test_utils::TestContext};
+     use reqwest;
+diff --git a/rust/feature-flags/tests/test_flag_matching_consistency.rs b/rust/feature-flags/tests/test_flag_matching_consistency.rs
+index a241fafd07a7..d4b8216d3858 100644
+--- a/rust/feature-flags/tests/test_flag_matching_consistency.rs
++++ b/rust/feature-flags/tests/test_flag_matching_consistency.rs
+@@ -12,7 +12,7 @@ use feature_flags::{
+ };
+ use serde_json::json;
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_is_consistent_with_rollout_calculation_for_simple_flags() {
+     let flags = create_flag_from_json(Some(
+         json!([{
+@@ -156,7 +156,7 @@ async fn it_is_consistent_with_rollout_calculation_for_simple_flags() {
+     }
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_is_consistent_with_rollout_calculation_for_multivariate_flags() {
+     let flags = create_flag_from_json(Some(
+         json!([{
+diff --git a/rust/feature-flags/tests/test_flags.rs b/rust/feature-flags/tests/test_flags.rs
+index f83460904ace..f3ce7bc81a4f 100644
+--- a/rust/feature-flags/tests/test_flags.rs
++++ b/rust/feature-flags/tests/test_flags.rs
+@@ -19,7 +19,7 @@ use feature_flags::utils::test_utils::{
+ 
+ pub mod common;
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_handles_get_requests_with_minimal_response() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+ 
+@@ -69,7 +69,7 @@ async fn it_handles_get_requests_with_minimal_response() -> Result<()> {
+ #[rstest]
+ #[case(Some("1"))]
+ #[case(Some("banana"))]
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_gets_legacy_response_for_v1_or_invalid_version(
+     #[case] version: Option<&str>,
+ ) -> Result<()> {
+@@ -135,7 +135,7 @@ async fn it_gets_legacy_response_for_v1_or_invalid_version(
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_gets_v2_response_by_default_when_no_params() -> Result<()> {
+     // When no version and no config params are provided, we default to v=2 and config=true
+     let config = DEFAULT_TEST_CONFIG.clone();
+@@ -225,7 +225,7 @@ async fn it_gets_v2_response_by_default_when_no_params() -> Result<()> {
+ #[rstest]
+ #[case("2")]
+ #[case("3")]
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_get_new_response_when_version_is_2_or_more(#[case] version: &str) -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+ 
+@@ -303,7 +303,7 @@ async fn it_get_new_response_when_version_is_2_or_more(#[case] version: &str) ->
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_rejects_invalid_headers_flag_request() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+ 
+@@ -345,7 +345,7 @@ async fn it_rejects_invalid_headers_flag_request() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_accepts_empty_distinct_id() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let client = setup_redis_client(Some(config.redis_url.clone())).await;
+@@ -382,7 +382,7 @@ async fn it_accepts_empty_distinct_id() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_rejects_missing_distinct_id() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let client = setup_redis_client(Some(config.redis_url.clone())).await;
+@@ -405,7 +405,7 @@ async fn it_rejects_missing_distinct_id() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_rejects_missing_token() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let server = ServerHandle::for_config(config).await;
+@@ -425,7 +425,7 @@ async fn it_rejects_missing_token() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_rejects_invalid_token() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let server = ServerHandle::for_config(config).await;
+@@ -446,7 +446,7 @@ async fn it_rejects_invalid_token() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_handles_malformed_json() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let server = ServerHandle::for_config(config).await;
+@@ -466,7 +466,7 @@ async fn it_handles_malformed_json() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_handles_base64_auto_detection_fallback() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+ 
+@@ -517,7 +517,7 @@ async fn it_handles_base64_auto_detection_fallback() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_handles_disable_flags_without_distinct_id() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+ 
+@@ -555,7 +555,7 @@ async fn it_handles_disable_flags_without_distinct_id() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_handles_quota_limiting() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+ 
+@@ -594,7 +594,7 @@ async fn it_handles_quota_limiting() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_handles_quota_limiting_v2() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+ 
+@@ -633,7 +633,7 @@ async fn it_handles_quota_limiting_v2() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_handles_multivariate_flags() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "user_distinct_id".to_string();
+@@ -718,7 +718,7 @@ async fn it_handles_multivariate_flags() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_handles_flag_with_property_filter() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "user_distinct_id".to_string();
+@@ -813,7 +813,7 @@ async fn it_handles_flag_with_property_filter() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_matches_flags_to_a_request_with_group_property_overrides() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "user_distinct_id".to_string();
+@@ -917,7 +917,7 @@ async fn it_matches_flags_to_a_request_with_group_property_overrides() -> Result
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_feature_flags_with_json_payloads() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "example_id".to_string();
+@@ -998,7 +998,7 @@ async fn test_feature_flags_with_json_payloads() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_feature_flags_with_group_relationships() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "example_id".to_string();
+@@ -1163,7 +1163,7 @@ async fn test_feature_flags_with_group_relationships() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_handles_not_contains_property_filter() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "user_distinct_id".to_string();
+@@ -1232,7 +1232,7 @@ async fn it_handles_not_contains_property_filter() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_handles_not_equal_and_not_regex_property_filters() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "user_distinct_id".to_string();
+@@ -1378,7 +1378,7 @@ async fn it_handles_not_equal_and_not_regex_property_filters() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_complex_regex_and_name_match_flag() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "example_id".to_string();
+@@ -1515,7 +1515,7 @@ async fn test_complex_regex_and_name_match_flag() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_super_condition_with_complex_request() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "test_user".to_string();
+@@ -1618,7 +1618,7 @@ async fn test_super_condition_with_complex_request() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_flag_matches_with_no_person_profile() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let client = setup_redis_client(Some(config.redis_url.clone())).await;
+@@ -1694,7 +1694,7 @@ async fn test_flag_matches_with_no_person_profile() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_sets_quota_limited_in_legacy_and_v2() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let token = format!("test_token_{}", rand::thread_rng().gen::<u64>());
+@@ -1738,7 +1738,7 @@ async fn it_sets_quota_limited_in_legacy_and_v2() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_only_includes_config_fields_when_requested() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "user_distinct_id".to_string();
+@@ -1816,7 +1816,7 @@ async fn it_only_includes_config_fields_when_requested() -> Result<()> {
+ /// Test config passthrough for an enterprise team with all features enabled.
+ /// This verifies the response shape matches what SDKs expect when
+ /// config is populated by Python's RemoteConfig.build_config() and passed through by Rust.
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_config_passthrough_enterprise_team() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "enterprise_user".to_string();
+@@ -1996,7 +1996,7 @@ async fn test_config_passthrough_enterprise_team() -> Result<()> {
+ 
+ /// Test config passthrough for a minimal team (all features disabled).
+ /// This ensures the response shape is correct even with minimal configuration.
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_config_passthrough_minimal_team() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "minimal_user".to_string();
+@@ -2080,7 +2080,7 @@ async fn test_config_passthrough_minimal_team() -> Result<()> {
+ 
+ /// Test that unknown fields in config are preserved during passthrough.
+ /// This ensures forward compatibility when Python adds new config fields.
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_config_passthrough_preserves_unknown_fields() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "user_distinct_id".to_string();
+@@ -2147,7 +2147,7 @@ async fn test_config_passthrough_preserves_unknown_fields() -> Result<()> {
+ /// On cache miss, the service gracefully degrades by returning a minimal config that
+ /// disables optional features (session recording, surveys, heatmaps, etc.) rather than
+ /// failing the entire request. This ensures clients always receive a valid config structure.
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_config_cache_miss_returns_minimal_fallback() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "user_distinct_id".to_string();
+@@ -2214,7 +2214,7 @@ async fn test_config_cache_miss_returns_minimal_fallback() -> Result<()> {
+ /// the response includes both `sessionRecording: false` (from fallback) AND `quotaLimited: ["recordings"]`.
+ /// The original implementation would have failed this test because cache miss returned early
+ /// without checking quota limits, causing an inconsistent response.
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_config_cache_miss_with_recordings_quota_limited() -> Result<()> {
+     let token = "phc_test_cache_miss_quota".to_string();
+     let team_id = 12345;
+@@ -2263,7 +2263,7 @@ async fn test_config_cache_miss_with_recordings_quota_limited() -> Result<()> {
+ }
+ 
+ /// Test that empty config from HyperCache is handled correctly.
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_config_cache_empty_config() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "user_distinct_id".to_string();
+@@ -2304,7 +2304,7 @@ async fn test_config_cache_empty_config() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_disable_flags_returns_empty_response() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+ 
+@@ -2369,7 +2369,7 @@ async fn test_disable_flags_returns_empty_response() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_disable_flags_returns_empty_response_v2() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+ 
+@@ -2433,7 +2433,7 @@ async fn test_disable_flags_returns_empty_response_v2() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_disable_flags_false_still_returns_flags() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+ 
+@@ -2499,7 +2499,7 @@ async fn test_disable_flags_false_still_returns_flags() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_disable_flags_with_config_still_returns_config_data() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+ 
+@@ -2594,7 +2594,7 @@ async fn test_disable_flags_with_config_still_returns_config_data() -> Result<()
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_disable_flags_with_config_v2_still_returns_config_data() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+ 
+@@ -2688,7 +2688,7 @@ async fn test_disable_flags_with_config_v2_still_returns_config_data() -> Result
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_disable_flags_without_config_param_has_minimal_response() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+ 
+@@ -2760,7 +2760,7 @@ async fn test_disable_flags_without_config_param_has_minimal_response() -> Resul
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_numeric_group_ids_work_correctly() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "user_with_numeric_group".to_string();
+@@ -2922,7 +2922,7 @@ async fn test_numeric_group_ids_work_correctly() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_super_condition_property_overrides_bug_fix() -> Result<()> {
+     // This test specifically addresses the bug where super condition property overrides
+     // were ignored when evaluating flags. The bug was that if you sent:
+@@ -3113,7 +3113,7 @@ async fn test_super_condition_property_overrides_bug_fix() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_property_override_bug_real_scenario() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "test_real_bug".to_string();
+@@ -3244,7 +3244,7 @@ async fn test_property_override_bug_real_scenario() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_super_condition_with_cohort_filters() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "super_condition_cohort_user".to_string();
+@@ -3421,7 +3421,7 @@ async fn test_super_condition_with_cohort_filters() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_returns_empty_flags_when_no_active_flags_configured() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "user_distinct_id".to_string();
+@@ -3568,7 +3568,7 @@ async fn test_returns_empty_flags_when_no_active_flags_configured() -> Result<()
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_group_key_property_matching() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "user_distinct_id".to_string();
+@@ -3688,7 +3688,7 @@ async fn test_group_key_property_matching() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_cohort_filter_with_regex_and_negation() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "test.user".to_string();
+@@ -3893,7 +3893,7 @@ async fn test_cohort_filter_with_regex_and_negation() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_flag_keys_should_include_dependency_graph() -> Result<()> {
+     // This test is to ensure that when flag_keys is specified, the dependency graph is included in the response
+     // For example, if parent_flag -> intermediate_flag -> leaf_flag, and we only request parent_flag,
+@@ -4123,7 +4123,7 @@ async fn test_flag_keys_should_include_dependency_graph() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_flag_keys_to_evaluate_parameter() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "user_distinct_id".to_string();
+@@ -4244,7 +4244,7 @@ async fn test_flag_keys_to_evaluate_parameter() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_handles_empty_query_parameters() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "user_distinct_id".to_string();
+@@ -4301,7 +4301,7 @@ async fn it_handles_empty_query_parameters() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_handles_boolean_query_params_as_truthy() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "user_distinct_id".to_string();
+@@ -4389,7 +4389,7 @@ async fn it_handles_boolean_query_params_as_truthy() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_nested_cohort_targeting_with_days_since_paid_plan() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "test_user_with_77_days".to_string();
+@@ -4667,7 +4667,7 @@ async fn test_nested_cohort_targeting_with_days_since_paid_plan() -> Result<()>
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_empty_distinct_id_flag_matching() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+ 
+@@ -4932,7 +4932,7 @@ async fn test_empty_distinct_id_flag_matching() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_cohort_with_and_negated_cohort_condition() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "test_user_and_cohort".to_string();
+@@ -5160,7 +5160,7 @@ async fn test_cohort_with_and_negated_cohort_condition() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_date_string_property_matching_with_is_date_after() -> Result<()> {
+     // This test reproduces the issue where a date string stored in DB like "2024-03-15T19:17:07.083Z"
+     // is compared against a filter value like "2024-03-15 19:37:00" using the is_date_after operator.
+@@ -5291,7 +5291,7 @@ async fn test_date_string_property_matching_with_is_date_after() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_includes_evaluated_at_timestamp_in_response() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+ 
+@@ -5365,7 +5365,7 @@ async fn it_includes_evaluated_at_timestamp_in_response() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_cohort_date_matching_with_milliseconds_format() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let client = setup_redis_client(Some(config.redis_url.clone())).await;
+@@ -5497,7 +5497,7 @@ async fn test_cohort_date_matching_with_milliseconds_format() -> Result<()> {
+     json!({"$browser": "Chrome"}),
+     false      // Flag checking $initial_browser = Safari should NOT match
+ )]
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_initial_property_population_respects_db_values(
+     #[case] db_properties: Option<Value>,
+     #[case] override_properties: Value,
+diff --git a/rust/feature-flags/tests/test_http_methods.rs b/rust/feature-flags/tests/test_http_methods.rs
+index 72060f1e70c4..fd251f63d556 100644
+--- a/rust/feature-flags/tests/test_http_methods.rs
++++ b/rust/feature-flags/tests/test_http_methods.rs
+@@ -6,7 +6,7 @@ use feature_flags::config::DEFAULT_TEST_CONFIG;
+ 
+ pub mod common;
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn it_handles_http_methods_correctly() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let server = ServerHandle::for_config(config).await;
+diff --git a/rust/feature-flags/tests/test_legacy_decide_formats.rs b/rust/feature-flags/tests/test_legacy_decide_formats.rs
+index 956c27f0939c..dfee218c7610 100644
+--- a/rust/feature-flags/tests/test_legacy_decide_formats.rs
++++ b/rust/feature-flags/tests/test_legacy_decide_formats.rs
+@@ -14,7 +14,7 @@ pub mod common;
+ /// Integration test for legacy decide v1 format
+ /// Tests that when X-Original-Endpoint: decide header is present and v=1 query param is passed,
+ /// the response contains featureFlags as an array of strings (active flag keys only)
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_legacy_decide_v1_format() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "user_distinct_id".to_string();
+@@ -164,7 +164,7 @@ async fn test_legacy_decide_v1_format() -> Result<()> {
+ /// Integration test for legacy decide v2 format
+ /// Tests that when X-Original-Endpoint: decide header is present and v=2 query param is passed,
+ /// the response contains featureFlags as an object with flag values (booleans or strings)
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_legacy_decide_v2_format() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "user_distinct_id".to_string();
+@@ -287,7 +287,7 @@ async fn test_legacy_decide_v2_format() -> Result<()> {
+ }
+ 
+ /// Test that X-Original-Endpoint: decide header changes how v query parameter is interpreted
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_decide_header_changes_version_interpretation() -> Result<()> {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let distinct_id = "user_distinct_id".to_string();
+diff --git a/rust/feature-flags/tests/test_personal_api_key_scopes.rs b/rust/feature-flags/tests/test_personal_api_key_scopes.rs
+index b62bf9ec73ae..d7f34181b96c 100644
+--- a/rust/feature-flags/tests/test_personal_api_key_scopes.rs
++++ b/rust/feature-flags/tests/test_personal_api_key_scopes.rs
+@@ -24,7 +24,7 @@ async fn cleanup_test_data(ctx: &TestContext, pak_id: String, user_id: i32) {
+         .unwrap();
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_personal_api_key_scoped_teams_allowed() {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let ctx = TestContext::new(Some(&config)).await;
+@@ -79,7 +79,7 @@ async fn test_personal_api_key_scoped_teams_allowed() {
+     cleanup_test_data(&ctx, pak_id, user_id).await;
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_personal_api_key_scoped_organizations_allowed() {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let ctx = TestContext::new(Some(&config)).await;
+@@ -131,7 +131,7 @@ async fn test_personal_api_key_scoped_organizations_allowed() {
+     cleanup_test_data(&ctx, pak_id, user_id).await;
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_personal_api_key_unrestricted_teams_null() {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let ctx = TestContext::new(Some(&config)).await;
+@@ -198,7 +198,7 @@ async fn test_personal_api_key_unrestricted_teams_null() {
+     cleanup_test_data(&ctx, pak_id, user_id).await;
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_personal_api_key_unrestricted_teams_empty_array() {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let ctx = TestContext::new(Some(&config)).await;
+@@ -271,7 +271,7 @@ async fn test_personal_api_key_unrestricted_teams_empty_array() {
+     cleanup_test_data(&ctx, pak_id, user_id).await;
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_personal_api_key_unrestricted_organizations_null() {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let ctx = TestContext::new(Some(&config)).await;
+@@ -344,7 +344,7 @@ async fn test_personal_api_key_unrestricted_organizations_null() {
+     cleanup_test_data(&ctx, pak_id, user_id).await;
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_personal_api_key_mixed_scopes_both_valid() {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let ctx = TestContext::new(Some(&config)).await;
+@@ -396,7 +396,7 @@ async fn test_personal_api_key_mixed_scopes_both_valid() {
+     cleanup_test_data(&ctx, pak_id, user_id).await;
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_personal_api_key_mixed_scopes_team_valid_org_invalid() {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let ctx = TestContext::new(Some(&config)).await;
+@@ -457,7 +457,7 @@ async fn test_personal_api_key_mixed_scopes_team_valid_org_invalid() {
+     cleanup_test_data(&ctx, pak_id, user_id).await;
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_personal_api_key_user_without_current_team() {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let ctx = TestContext::new(Some(&config)).await;
+@@ -514,7 +514,7 @@ async fn test_personal_api_key_user_without_current_team() {
+     cleanup_test_data(&ctx, pak_id, user_id).await;
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_personal_api_key_user_member_of_multiple_orgs() {
+     let config = DEFAULT_TEST_CONFIG.clone();
+     let ctx = TestContext::new(Some(&config)).await;
+diff --git a/rust/feature-flags/tests/test_rate_limiting.rs b/rust/feature-flags/tests/test_rate_limiting.rs
+index a5cac5031196..6f745b4dce32 100644
+--- a/rust/feature-flags/tests/test_rate_limiting.rs
++++ b/rust/feature-flags/tests/test_rate_limiting.rs
+@@ -10,7 +10,7 @@ use feature_flags::utils::test_utils::{
+ 
+ pub mod common;
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_rate_limit_basic() -> Result<()> {
+     // Create config with very restrictive rate limiting (capacity: 3, replenish: 0.1/sec)
+     let mut config = Config::default_test_config();
+@@ -89,7 +89,7 @@ async fn test_rate_limit_basic() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_rate_limit_disabled() -> Result<()> {
+     // Create config with rate limiting disabled (default)
+     let config = Config::default_test_config();
+@@ -143,7 +143,7 @@ async fn test_rate_limit_disabled() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_rate_limit_per_token_isolation() -> Result<()> {
+     // Create config with capacity of 1
+     let mut config = Config::default_test_config();
+@@ -240,7 +240,7 @@ async fn test_rate_limit_per_token_isolation() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_rate_limit_with_invalid_tokens() -> Result<()> {
+     // Create config with very restrictive rate limiting
+     let mut config = Config::default_test_config();
+@@ -295,7 +295,7 @@ async fn test_rate_limit_with_invalid_tokens() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_rate_limit_ip_fallback_on_malformed_body() -> Result<()> {
+     // Test that IP is used for rate limiting when body parsing fails
+     let mut config = Config::default_test_config();
+@@ -344,7 +344,7 @@ async fn test_rate_limit_ip_fallback_on_malformed_body() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_rate_limit_replenishment() -> Result<()> {
+     // Test that rate limit replenishes over time
+     let mut config = Config::default_test_config();
+@@ -425,7 +425,7 @@ async fn test_rate_limit_replenishment() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_ip_rate_limit_basic() -> Result<()> {
+     // Create config with IP rate limiting enabled
+     let mut config = Config::default_test_config();
+@@ -502,7 +502,7 @@ async fn test_ip_rate_limit_basic() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_ip_rate_limit_with_rotating_tokens() -> Result<()> {
+     // Test that IP rate limiting prevents DDoS with rotating fake tokens
+     let mut config = Config::default_test_config();
+@@ -558,7 +558,7 @@ async fn test_ip_rate_limit_with_rotating_tokens() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_both_rate_limiters_together() -> Result<()> {
+     // Test that both token-based and IP-based rate limiting work together
+     let mut config = Config::default_test_config();
+@@ -638,7 +638,7 @@ async fn test_both_rate_limiters_together() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_ip_rate_limit_disabled() -> Result<()> {
+     // Verify IP rate limiting is disabled by default
+     let mut config = Config::default_test_config();
+@@ -692,7 +692,7 @@ async fn test_ip_rate_limit_disabled() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_ip_rate_limit_respects_x_forwarded_for() -> Result<()> {
+     // Test that IP rate limiting uses X-Forwarded-For header (production scenario)
+     let mut config = Config::default_test_config();
+@@ -801,7 +801,7 @@ async fn test_ip_rate_limit_respects_x_forwarded_for() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_token_rate_limit_log_only_mode() -> Result<()> {
+     // Test that token-based rate limiting in log-only mode allows requests through
+     let mut config = Config::default_test_config();
+@@ -874,7 +874,7 @@ async fn test_token_rate_limit_log_only_mode() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_ip_rate_limit_log_only_mode() -> Result<()> {
+     // Test that IP-based rate limiting in log-only mode allows requests through
+     let mut config = Config::default_test_config();
+@@ -947,7 +947,7 @@ async fn test_ip_rate_limit_log_only_mode() -> Result<()> {
+     Ok(())
+ }
+ 
+-#[tokio::test]
++#[tokio::test(flavor = "multi_thread")]
+ async fn test_mixed_log_only_modes() -> Result<()> {
+     // Test IP rate limiting in enforced mode while token rate limiting is in log-only mode
+     let mut config = Config::default_test_config();

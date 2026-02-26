@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "expected_findings": [
+    {
+      "id": "sql-injection-search",
+      "description": "SQL injection via f-string interpolation of user input in search_users",
+      "area": "security",
+      "severity": "blocking",
+      "weight": 10,
+      "file": "api/views.py",
+      "line_start": 27,
+      "line_end": 28,
+      "keywords": ["sql injection", "f-string", "string format", "unsanitized", "parameterized", "user input"]
+    },
+    {
+      "id": "hardcoded-credentials",
+      "description": "Database credentials hardcoded in source code",
+      "area": "security",
+      "severity": "suggestion",
+      "weight": 5,
+      "file": "api/views.py",
+      "line_start": 7,
+      "line_end": 10,
+      "keywords": ["hardcoded", "credential", "secret", "password", "environment variable", "config"]
+    },
+    {
+      "id": "missing-input-validation-post",
+      "description": "POST /users does not validate or handle missing name/email fields",
+      "area": "correctness",
+      "severity": "blocking",
+      "weight": 8,
+      "file": "api/views.py",
+      "line_start": 50,
+      "line_end": 53,
+      "keywords": ["validation", "missing", "KeyError", "error handling", "required field"]
+    },
+    {
+      "id": "no-pagination-list",
+      "description": "GET /users returns all users without pagination",
+      "area": "performance",
+      "severity": "suggestion",
+      "weight": 4,
+      "file": "api/views.py",
+      "line_start": 14,
+      "line_end": 19,
+      "keywords": ["pagination", "limit", "offset", "unbounded", "all rows", "scalability"]
+    },
+    {
+      "id": "debug-mode-production",
+      "description": "Flask debug=True should not be used in production",
+      "area": "security",
+      "severity": "suggestion",
+      "weight": 3,
+      "file": "api/views.py",
+      "line_start": 86,
+      "line_end": 86,
+      "keywords": ["debug", "production", "debug=True", "development"]
+    }
+  ],
+  "false_positive_traps": [
+    {
+      "id": "safe-parameterized-query",
+      "description": "The get_user endpoint uses parameterized queries with :uid — this is safe, not SQL injection",
+      "area": "security",
+      "file": "api/views.py",
+      "line_start": 38,
+      "line_end": 41,
+      "trap_keywords": ["sql injection", "unsanitized", "user input"]
+    },
+    {
+      "id": "safe-spending-report",
+      "description": "The spending_report query is a static string with no user input — not injectable",
+      "area": "security",
+      "file": "api/views.py",
+      "line_start": 76,
+      "line_end": 82,
+      "trap_keywords": ["sql injection", "string concatenation"]
+    }
+  ],
+  "clean_areas": ["compatibility"]
+}

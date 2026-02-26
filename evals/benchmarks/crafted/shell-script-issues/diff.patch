@@ -1,0 +1,86 @@
+diff --git a/scripts/deploy.sh b/scripts/deploy.sh
+new file mode 100755
+index 0000000..b3c4d5e
+--- /dev/null
++++ b/scripts/deploy.sh
+@@ -0,0 +1,74 @@
++#!/usr/bin/env bash
++# deploy.sh - Deploy application to target environment
++#
++# Usage: deploy.sh <environment> <version> [config-file]
++
++DEPLOY_DIR="/opt/app"
++LOG_FILE="/var/log/deploy.log"
++
++environment=$1
++version=$2
++config_file=${3:-config.json}
++
++# Validate environment
++if [ $environment = "production" ] || [ $environment = "staging" ]; then
++    echo "Deploying to $environment"
++else
++    echo "Invalid environment: $environment"
++    exit 1
++fi
++
++# Build the deployment command from config
++deploy_cmd=$(cat $config_file | jq -r '.deploy_command')
++eval $deploy_cmd
++
++# Check if deploy directory exists before copying
++if [ -f "${DEPLOY_DIR}/app.tar.gz" ]; then
++    echo "Existing deployment found, backing up"
++    cp ${DEPLOY_DIR}/app.tar.gz ${DEPLOY_DIR}/app.tar.gz.bak
++fi
++
++# Download and extract the new version
++curl -sL "https://releases.example.com/${version}/app.tar.gz" -o /tmp/app.tar.gz
++tar xzf /tmp/app.tar.gz -C ${DEPLOY_DIR}
++
++# Apply configuration
++for config in $(ls ${DEPLOY_DIR}/config/*.conf); do
++    source $config
++done
++
++# Restart the service
++service_name="app-${environment}"
++systemctl restart $service_name
++
++# Verify the deployment
++sleep 5
++health_url="http://localhost:8080/health"
++status=$(curl -s -o /dev/null -w "%{http_code}" $health_url)
++
++if [ $status -eq 200 ]; then
++    echo "Deployment successful"
++else
++    echo "Health check failed with status $status, rolling back"
++    if [ -f "${DEPLOY_DIR}/app.tar.gz.bak" ]; then
++        mv ${DEPLOY_DIR}/app.tar.gz.bak ${DEPLOY_DIR}/app.tar.gz
++        tar xzf ${DEPLOY_DIR}/app.tar.gz -C ${DEPLOY_DIR}
++        systemctl restart $service_name
++    fi
++fi
++
++# Clean up old versions, keep last 5
++cd ${DEPLOY_DIR}/versions
++ls -t | tail -n +6 | xargs rm -rf
++
++# Log the deployment
++echo "$(date): Deployed ${version} to ${environment}" >> $LOG_FILE
++
++# Notify team via webhook
++webhook_url="https://hooks.slack.com/services/T00/B00/xxxx"
++payload="{\"text\": \"Deployed ${version} to ${environment}\"}"
++curl -s -X POST -H "Content-Type: application/json" -d "$payload" $webhook_url
++
++# Generate deployment report
++report_file="${DEPLOY_DIR}/reports/deploy-$(date +%Y%m%d).txt"
++{
++    echo "Deployment Report"
++    echo "Environment: ${environment}"
++    echo "Version: ${version}"
++    echo "Date: $(date)"
++    echo "Status: $([[ $status -eq 200 ]] && echo 'SUCCESS' || echo 'FAILED')"
++} > "${report_file}"

@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "expected_findings": [
+    {
+      "id": "ssrf-url-hostname-confusion",
+      "description": "resolve_and_validate_host receives a full URL (e.g., http://127.0.0.1) via merged_config['endpoint_url'], but passes it directly to socket.getaddrinfo(host, None). getaddrinfo expects a hostname, not a URL, so internal IP detection would fail because getaddrinfo cannot resolve a URL string, enabling SSRF bypass.",
+      "area": "security",
+      "severity": "blocking",
+      "weight": 10,
+      "file": "posthog/batch_exports/http.py",
+      "line_start": 445,
+      "line_end": 455,
+      "keywords": ["ssrf", "url", "hostname", "getaddrinfo", "resolve", "internal", "socket", "validation", "bypass"]
+    },
+    {
+      "id": "missing-host-vs-url-test-coverage",
+      "description": "The Postgres/Redshift validation passes a bare host (not a URL) to resolve_and_validate_host, but there are no tests confirming this works correctly. Passing a host rather than a URL to the validation function needs explicit test coverage to prevent regressions.",
+      "area": "testing",
+      "severity": "suggestion",
+      "weight": 6,
+      "file": "posthog/batch_exports/http.py",
+      "line_start": 825,
+      "line_end": 835,
+      "keywords": ["test", "host", "url", "coverage", "urlparse", "split"]
+    },
+    {
+      "id": "defensive-credential-runtime-check",
+      "description": "The runtime check for aws_access_key_id and aws_secret_access_key may appear redundant given the type annotations now declare them as non-optional str, but it serves as good defensive programming to catch empty strings that would pass type checking.",
+      "area": "correctness",
+      "severity": "suggestion",
+      "weight": 4,
+      "file": "products/batch_exports/backend/temporal/destinations/s3_batch_export.py",
+      "line_start": 480,
+      "line_end": 490,
+      "keywords": ["defensive", "runtime", "check", "empty", "credential", "type", "validation", "redundant"]
+    }
+  ],
+  "false_positive_traps": [],
+  "clean_areas": ["compatibility", "performance"]
+}

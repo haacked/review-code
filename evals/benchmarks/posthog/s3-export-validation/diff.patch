@@ -1,0 +1,387 @@
+diff --git a/posthog/api/test/batch_exports/test_create.py b/posthog/api/test/batch_exports/test_create.py
+index 8e8407a0046..cf1ff6090cf 100644
+--- a/posthog/api/test/batch_exports/test_create.py
++++ b/posthog/api/test/batch_exports/test_create.py
+@@ -7,6 +7,7 @@
+ from unittest import mock
+ 
+ from django.conf import settings
++from django.test import override_settings
+ from django.test.client import Client as HttpClient
+ 
+ from asgiref.sync import async_to_sync
+@@ -753,7 +754,7 @@ def test_create_redshift_batch_export_validates_copy_inputs(
+             "user": "user",
+             "password": "my-password",
+             "database": "my-db",
+-            "host": "test",
++            "host": "localhost",
+             "schema": "public",
+             "table_name": "my_events",
+             "mode": mode,
+@@ -870,7 +871,7 @@ def test_create_s3_batch_export_validates_file_format_and_compression(
+         assert response.json()["detail"] == expected_error_message
+ 
+ 
+-def test_create_s3_batch_export_validates_missing_inputs(client: HttpClient, temporal, organization, team, user):
++def test_create_s3_batch_export_validates_empty_inputs(client: HttpClient, temporal, organization, team, user):
+     """Test creating a BatchExport with S3 destination validates that expected inputs are not empty."""
+ 
+     destination_data = {
+@@ -904,6 +905,53 @@ def test_create_s3_batch_export_validates_missing_inputs(client: HttpClient, tem
+     assert response.json()["detail"] == "The following inputs are empty: ['aws_access_key_id', 'aws_secret_access_key']"
+ 
+ 
++def test_create_s3_batch_export_validates_missing_inputs(client: HttpClient, temporal, organization, team, user):
++    """Test creating a BatchExport with S3 destination validates that expected inputs are not missing."""
++
++    config = {
++        "bucket_name": "my-s3-bucket",
++        "region": "us-east-1",
++        "prefix": "events/",
++        "aws_access_key_id": "something",
++        "aws_secret_access_key": "something",
++        "file_format": "JSONLines",
++        "compression": "gzip",
++    }
++
++    client.force_login(user)
++
++    for key in ("aws_access_key_id", "aws_secret_access_key"):
++        # Check that we validate each key missing invidually first
++        destination_data = {"type": "S3", "config": {k: v for k, v in config.items() if k != key}}
++
++        data = {
++            "name": "my-s3-bucket",
++            "destination": destination_data,
++            "interval": "hour",
++        }
++
++        response = create_batch_export(
++            client,
++            team.pk,
++            data,
++        )
++
++        assert response.status_code == status.HTTP_400_BAD_REQUEST, key
++        assert response.json()["detail"] == f"Configuration missing required field: '{key}'"
++
++    response_missing_both = create_batch_export(
++        client,
++        team.pk,
++        {
++            "name": "my-s3-bucket",
++            "destination": {k: v for k, v in destination_data.items() if k != "aws_secret_access_key"},
++            "interval": "hour",
++        },
++    )
++
++    assert response_missing_both.status_code == status.HTTP_400_BAD_REQUEST
++
++
+ @pytest.mark.parametrize(
+     "type,config,expected_error_message",
+     [
+@@ -939,7 +987,7 @@ def test_create_s3_batch_export_validates_missing_inputs(client: HttpClient, tem
+             {
+                 "user": "test",
+                 "password": "password",
+-                "host": "host",
++                "host": "localhost",
+                 "database": "db",
+                 "schema": None,  # Not optional
+                 "table_name": "test",
+@@ -1603,3 +1651,104 @@ def test_creating_workflows_batch_export_fails_if_feature_flag_is_not_enabled(
+ 
+     assert response.status_code == status.HTTP_403_FORBIDDEN, response.json()
+     assert "Backfilling Workflows is not enabled for this team." in response.json()["detail"]
++
++
++@pytest.mark.parametrize(
++    "endpoint_url",
++    [
++        "https://192.168.1.1",
++        "http://127.0.0.1",
++        "http://[::1]/",
++        "http://10.0.0.1:9000/",
++        "http://169.254.0.0:8080/data",
++        "http://localhost",
++    ],
++)
++def test_creating_S3_batch_export_fails_if_using_invalid_endpoint_url(
++    client: HttpClient, temporal, organization, team, user, endpoint_url
++):
++    """Test that creating an S3 batch export fails if passing an internal IP as endpoint URL.
++
++    Last time I checked, we are not S3.
++    """
++
++    interval = "hour"
++
++    destination_data = {
++        "type": "S3",
++        "config": {
++            "bucket_name": "my-production-s3-bucket",
++            "region": "us-east-1",
++            "prefix": "posthog-events/",
++            "aws_access_key_id": "abc123",
++            "aws_secret_access_key": "secret",
++            "use_virtual_style_addressing": True,
++            "endpoint_url": endpoint_url,
++        },
++        "integration": None,
++    }
++
++    batch_export_data: dict[str, t.Any] = {
++        "name": "my-production-s3-bucket-destination",
++        "destination": destination_data,
++        "interval": interval,
++    }
++    client.force_login(user)
++
++    with override_settings(TEST=0, DEBUG=0):
++        response = create_batch_export(
++            client,
++            team.pk,
++            batch_export_data,
++        )
++
++    assert response.status_code == status.HTTP_400_BAD_REQUEST, response.json()
++    assert f"Invalid endpoint_url: '{endpoint_url}'" in response.json()["detail"]
++
++
++@pytest.mark.parametrize(
++    "host",
++    [
++        "192.168.1.1",
++        "127.0.0.1",
++        "[::1]",
++        "10.0.0.1",
++        "169.254.0.0",
++        "localhost",
++    ],
++)
++def test_create_redshift_or_postgres_batch_export_fails_with_invalid_host(
++    client: HttpClient, temporal, organization, team, user, host
++):
++    """Test creating a BatchExport with Redshift destination validates inputs for 'COPY'."""
++
++    for type in ("Redshift", "Postgres"):
++        destination_data = {
++            "type": type,
++            "config": {
++                "user": "user",
++                "password": "my-password",
++                "database": "my-db",
++                "host": host,
++                "schema": "public",
++                "table_name": "my_events",
++            },
++        }
++
++        batch_export_data = {
++            "name": "my-production-destination",
++            "destination": destination_data,
++            "interval": "hour",
++        }
++
++        client.force_login(user)
++
++        with override_settings(TEST=0, DEBUG=0):
++            response = create_batch_export(
++                client,
++                team.pk,
++                batch_export_data,
++            )
++
++        assert response.status_code == status.HTTP_400_BAD_REQUEST, response.json()
++        assert f"Invalid host: '{host}'" in response.json()["detail"]
+diff --git a/posthog/api/test/batch_exports/test_update.py b/posthog/api/test/batch_exports/test_update.py
+index 1a3c2ee3053..ec6fc0e4fa1 100644
+--- a/posthog/api/test/batch_exports/test_update.py
++++ b/posthog/api/test/batch_exports/test_update.py
+@@ -955,7 +955,7 @@ def test_can_patch_redshift_batch_export(client: HttpClient, temporal, organizat
+             "user": "user",
+             "password": "my-password",
+             "database": "my-db",
+-            "host": "test",
++            "host": "localhost",
+             "schema": "public",
+             "table_name": "my_events",
+             "mode": "COPY",
+diff --git a/posthog/batch_exports/http.py b/posthog/batch_exports/http.py
+index 667f6435d55..a45469dd25c 100644
+--- a/posthog/batch_exports/http.py
++++ b/posthog/batch_exports/http.py
+@@ -1,11 +1,15 @@
++import socket
+ import typing
+ import builtins
+ import datetime as dt
++import ipaddress
+ import dataclasses
+ import collections.abc
+ from dataclasses import dataclass
+ from typing import Any, TypedDict, cast
++from urllib.parse import urlparse
+ 
++from django.conf import settings
+ from django.db import transaction
+ from django.utils.timezone import now
+ 
+@@ -414,6 +418,73 @@ def visit_select_set_query(self, node: ast.SelectSetQuery):
+         self.found = True
+ 
+ 
++INTERNAL_NETWORKS = (
++    ipaddress.ip_network("10.0.0.0/8"),
++    ipaddress.ip_network("172.16.0.0/12"),
++    ipaddress.ip_network("192.168.0.0/16"),
++    ipaddress.ip_network("127.0.0.0/8"),
++    ipaddress.ip_network("169.254.0.0/16"),
++    ipaddress.ip_network("0.0.0.0/8"),
++    ipaddress.ip_network("::1/128"),
++    ipaddress.ip_network("fc00::/7"),
++    ipaddress.ip_network("fe80::/10"),
++)
++
++
++def is_ip_internal(ip: str) -> bool:
++    """Check if IP belongs to an internal network."""
++    try:
++        addr = ipaddress.ip_address(ip)
++    except ValueError:
++        raise ValueError("Could not parse IP")
++
++    if any(addr in network for network in INTERNAL_NETWORKS):
++        return True
++    return False
++
++
++def resolve_and_validate_url(url: str) -> None:
++    """Ensure provided url point to a non-internal IP."""
++    try:
++        parsed = urlparse(url)
++    except Exception as e:
++        raise ValueError(f"Invalid URL'{url}': {e}") from e
++
++    host = parsed.hostname
++    if not host:
++        raise ValueError("URL has no hostname")
++
++    resolve_and_validate_host(host)
++
++
++def resolve_and_validate_host(host: str) -> None:
++    """Ensure provided host resolves to a non-internal IP."""
++    if host == "localhost" and (settings.TEST or settings.DEBUG):
++        return
++
++    # Host may already be an IP literal
++    try:
++        if is_ip_internal(host):
++            raise ValueError("Host resolved to internal IP")
++        return
++    except ValueError:
++        # Not an IP literal, requires DNS
++        pass
++
++    try:
++        # getaddrinfo supports both ipv4 and ipv6
++        results = socket.getaddrinfo(host, None)
++    except socket.gaierror as e:
++        raise ValueError(f"Could not resolve '{host}': {e}") from e
++
++    # Keeps only unique ips from the result tuple
++    resolved_ips = {str(r[4][0]) for r in results}
++
++    for ip in resolved_ips:
++        if is_ip_internal(ip):
++            raise ValueError("Host resolved to internal IP")
++
++
+ class BatchExportSerializer(serializers.ModelSerializer):
+     """Serializer for a BatchExport model."""
+ 
+@@ -635,6 +706,12 @@ def validate_destination(self, destination_attrs: dict):
+             if merged_config.get("endpoint_url") == "":
+                 destination_attrs["config"]["endpoint_url"] = None
+ 
++            if merged_config.get("endpoint_url") is not None:
++                try:
++                    resolve_and_validate_url(merged_config["endpoint_url"])
++                except ValueError:
++                    raise serializers.ValidationError(f"Invalid endpoint_url: '{merged_config['endpoint_url']}'")
++
+         if destination_type == BatchExportDestination.Destination.DATABRICKS:
+             team_id = self.context["team_id"]
+             team = Team.objects.get(id=team_id)
+@@ -752,6 +829,15 @@ def validate_destination(self, destination_attrs: dict):
+             ):
+                 raise PermissionDenied("Backfilling Workflows is not enabled for this team.")
+ 
++        if destination_type in (
++            BatchExportDestination.Destination.POSTGRES,
++            BatchExportDestination.Destination.REDSHIFT,
++        ):
++            try:
++                resolve_and_validate_host(merged_config["host"])
++            except ValueError:
++                raise serializers.ValidationError(f"Invalid host: '{merged_config['host']}'")
++
+         return destination_attrs
+ 
+     def create(self, validated_data: dict) -> BatchExport:
+diff --git a/posthog/batch_exports/service.py b/posthog/batch_exports/service.py
+index a9c03300304..fa6b01369a0 100644
+--- a/posthog/batch_exports/service.py
++++ b/posthog/batch_exports/service.py
+@@ -150,8 +150,8 @@ class S3BatchExportInputs(BaseBatchExportInputs):
+     bucket_name: str
+     region: str
+     prefix: str
+-    aws_access_key_id: str | None = None
+-    aws_secret_access_key: str | None = None
++    aws_access_key_id: str
++    aws_secret_access_key: str
+     compression: str | None = None
+     encryption: str | None = None
+     kms_key_id: str | None = None
+diff --git a/posthog/session_recordings/queries/test/listing_recordings/__snapshots__/test_session_recording_list_from_query.ambr b/posthog/session_recordings/queries/test/listing_recordings/__snapshots__/test_session_recording_list_from_query.ambr
+index 39b529aa6ca..e919cef8d24 100644
+--- a/posthog/session_recordings/queries/test/listing_recordings/__snapshots__/test_session_recording_list_from_query.ambr
++++ b/posthog/session_recordings/queries/test/listing_recordings/__snapshots__/test_session_recording_list_from_query.ambr
+@@ -369,7 +369,7 @@
+   WHERE and(equals(s.team_id, 99999), greaterOrEquals(toTimeZone(s.min_first_timestamp, 'UTC'), toDateTime64('2020-12-29 00:00:00.000000', 6, 'UTC')), lessOrEquals(toTimeZone(s.min_first_timestamp, 'UTC'), toDateTime64('today', 6, 'UTC')), globalIn(s.session_id,
+                                                                                                                                                                                                                                                            (SELECT events.`$session_id` AS session_id
+                                                                                                                                                                                                                                                             FROM events
+-                                                                                                                                                                                                                                                            WHERE and(equals(events.team_id, 99999), notEmpty(events.`$session_id`), lessOrEquals(toTimeZone(events.timestamp, 'UTC'), now64(6, 'UTC')), ifNull(equals(replaceRegexpAll(nullIf(nullIf(JSONExtractRaw(events.person_properties, 'email'), ''), 'null'), '^"|"$', ''), 'bla'), 0), greaterOrEquals(toTimeZone(events.timestamp, 'UTC'), toDateTime64('2020-12-28 00:00:00.000000', 6, 'UTC')))
++                                                                                                                                                                                                                                                            WHERE and(equals(events.team_id, 99999), notEmpty(events.`$session_id`), lessOrEquals(toTimeZone(events.timestamp, 'UTC'), now64(6, 'UTC')), equals(events.mat_pp_email, 'bla'), greaterOrEquals(toTimeZone(events.timestamp, 'UTC'), toDateTime64('2020-12-28 00:00:00.000000', 6, 'UTC')))
+                                                                                                                                                                                                                                                             GROUP BY events.`$session_id`
+                                                                                                                                                                                                                                                             HAVING 1
+                                                                                                                                                                                                                                                             ORDER BY min(toTimeZone(events.timestamp, 'UTC')) DESC
+diff --git a/products/batch_exports/backend/temporal/destinations/s3_batch_export.py b/products/batch_exports/backend/temporal/destinations/s3_batch_export.py
+index 2c33cfa9799..cfc39281141 100644
+--- a/products/batch_exports/backend/temporal/destinations/s3_batch_export.py
++++ b/products/batch_exports/backend/temporal/destinations/s3_batch_export.py
+@@ -413,8 +413,8 @@ def __init__(
+         data_interval_end: str,
+         batch_export_model: BatchExportModel | None,
+         file_format: str,
+-        aws_access_key_id: str | None,
+-        aws_secret_access_key: str | None,
++        aws_access_key_id: str,
++        aws_secret_access_key: str,
+         kms_key_id: str | None = None,
+         max_file_size_mb: int | None = None,
+         compression: str | None = None,
+@@ -481,6 +481,9 @@ def from_inputs(
+         part_size: int = 50 * 1024 * 1024,
+         max_concurrent_uploads: int = 5,
+     ):
++        if not s3_inputs.aws_access_key_id or not s3_inputs.aws_secret_access_key:
++            raise InvalidCredentialsError()
++
+         return cls(
+             bucket=s3_inputs.bucket_name,
+             region_name=s3_inputs.region,

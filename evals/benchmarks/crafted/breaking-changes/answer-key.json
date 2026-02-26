@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "expected_findings": [
+    {
+      "id": "renamed-export",
+      "description": "createUserRouter renamed to buildUserRoutes — breaks all existing callers",
+      "area": "compatibility",
+      "severity": "blocking",
+      "weight": 10,
+      "file": "src/api/users.ts",
+      "line_start": 13,
+      "line_end": 13,
+      "keywords": ["rename", "breaking", "export", "createUserRouter", "buildUserRoutes", "backwards", "import"]
+    },
+    {
+      "id": "removed-response-fields",
+      "description": "UserResponse fields createdAt and avatarUrl removed and replaced with differently-named fields",
+      "area": "compatibility",
+      "severity": "blocking",
+      "weight": 10,
+      "file": "src/api/users.ts",
+      "line_start": 7,
+      "line_end": 9,
+      "keywords": ["removed", "renamed", "createdAt", "avatarUrl", "breaking", "field", "response", "interface"]
+    },
+    {
+      "id": "changed-default-limit",
+      "description": "Default pagination limit changed from 50 to 20 — existing clients expecting 50 results will silently get fewer",
+      "area": "compatibility",
+      "severity": "suggestion",
+      "weight": 4,
+      "file": "src/api/users.ts",
+      "line_start": 18,
+      "line_end": 18,
+      "keywords": ["default", "limit", "50", "20", "pagination", "changed", "silent"]
+    },
+    {
+      "id": "added-required-parameter",
+      "description": "buildUserRoutes now requires authMiddleware parameter — existing callers will fail",
+      "area": "compatibility",
+      "severity": "blocking",
+      "weight": 8,
+      "file": "src/api/users.ts",
+      "line_start": 13,
+      "line_end": 13,
+      "keywords": ["required", "parameter", "authMiddleware", "argument", "signature", "breaking"]
+    }
+  ],
+  "false_positive_traps": [
+    {
+      "id": "additive-delete-endpoint",
+      "description": "The new DELETE /users/:id endpoint is purely additive — not a breaking change",
+      "area": "compatibility",
+      "file": "src/api/users.ts",
+      "line_start": 37,
+      "line_end": 40,
+      "trap_keywords": ["breaking", "backwards", "incompatible"]
+    }
+  ],
+  "clean_areas": ["performance"]
+}
