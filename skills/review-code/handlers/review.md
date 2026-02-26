@@ -14,7 +14,7 @@ Proceed directly with the review.
 
 **Check for existing review and branch review:**
 
-From the session file JSON (already read above), extract these fields:
+From the session file JSON, extract these fields:
 - `file_info.file_exists` — whether a review file already exists
 - `file_info.file_path` — path to the existing review
 - `file_info.has_branch_review` — whether both PR and branch reviews exist (defaults to false)
@@ -59,7 +59,7 @@ Use AskUserQuestion to ask what to do with the existing review.
 
 **Extract the data needed for building agent context:**
 
-From the session file JSON (already read via Read tool), extract these fields:
+From the session file JSON, extract these fields:
 - `mode` — review mode (pr, branch, commit, range, local)
 - `diff` — the code changes to review
 - `file_metadata` — metadata about changed files
@@ -243,42 +243,20 @@ When the context includes PR comments (`$pr_comments`), instruct agents to:
 
 Comment structure: `conversation` (discussion), `reviews` (approve/changes), `inline` (line-level with `path`, `line`, `author`, `body`)
 
-**Determine which agents to invoke:**
+**Agent selection by area:**
 
-Use the Task tool with `subagent_type` set to the agent name, passing the full context as the `prompt`.
+| Area | `subagent_type` | Focus |
+|------|----------------|-------|
+| security | code-reviewer-security | Vulnerabilities, exploits, security hardening |
+| performance | code-reviewer-performance | Bottlenecks, inefficiencies, optimization |
+| correctness | code-reviewer-correctness | Intent verification, integration boundaries |
+| maintainability | code-reviewer-maintainability | Readability, simplicity, long-term code health |
+| testing | code-reviewer-testing | Test coverage, quality, edge cases |
+| compatibility | code-reviewer-compatibility | Backwards compatibility with shipped code |
+| architecture | code-reviewer-architecture | Necessity, patterns, code reuse, simplicity |
+| *(frontend detected)* | code-reviewer-frontend | React/TS patterns, components, state, a11y |
 
-**If area is "security"**: Use Task tool with `subagent_type: "code-reviewer-security"`
-**If area is "performance"**: Use Task tool with `subagent_type: "code-reviewer-performance"`
-**If area is "correctness"**: Use Task tool with `subagent_type: "code-reviewer-correctness"`
-**If area is "maintainability"**: Use Task tool with `subagent_type: "code-reviewer-maintainability"`
-**If area is "testing"**: Use Task tool with `subagent_type: "code-reviewer-testing"`
-**If area is "compatibility"**: Use Task tool with `subagent_type: "code-reviewer-compatibility"`
-**If area is "architecture"**: Use Task tool with `subagent_type: "code-reviewer-architecture"`
-
-**If no area specified (comprehensive review)**:
-
-First, check if this is frontend code by inspecting the `languages.has_frontend` field from the session data (already read via Read tool).
-
-**Always invoke these 7 core agents in PARALLEL using the Task tool:**
-
-For each agent, use the Task tool with:
-- `subagent_type`: The agent name (e.g., "code-reviewer-security")
-- `prompt`: The full context built above (PR details, diff, architectural context, etc.)
-- `description`: Short description like "Security review"
-
-Agents to invoke:
-1. `code-reviewer-security` - Focus: vulnerabilities, exploits, security hardening
-2. `code-reviewer-performance` - Focus: bottlenecks, inefficiencies, optimization
-3. `code-reviewer-correctness` - Focus: intent verification, integration boundaries, functional correctness
-4. `code-reviewer-maintainability` - Focus: readability, simplicity, long-term code health
-5. `code-reviewer-testing` - Focus: test coverage, quality, edge cases
-6. `code-reviewer-compatibility` - Focus: backwards compatibility with shipped code
-7. `code-reviewer-architecture` - Focus: necessity, patterns, code reuse, simplicity
-
-**If `has_frontend` is true**, also invoke in the same parallel batch:
-8. `code-reviewer-frontend` - Focus: React/TypeScript patterns, component design, state management, accessibility
-
-**IMPORTANT:** Pass the FULL context (PR info, diff, architectural context, guidelines) to each agent as the prompt. Agents cannot review code without receiving the actual code changes.
+If an area is specified, invoke only that agent. Otherwise, invoke all 7 core agents in parallel (+ frontend if `languages.has_frontend` is true). Pass the FULL context (PR info, diff, architectural context, guidelines) to each agent as the prompt.
 
 ### Collect and Present Results
 
@@ -311,32 +289,15 @@ Where the `targets` array contains `{"path": "<file>", "line": <number>}` object
 
 **Step 3: Spot-check bug claims.** For any remaining finding that claims a bug or incorrect behavior, use the Read tool to verify the claim is accurate before including it.
 
-**Format the review based on mode:**
+**Review title by mode:**
 
-**PR Review Title:**
-```
-Pull Request Review: #$pr_number - $pr_title
-```
-
-**Commit Review Title:**
-```
-Commit Review: $commit
-```
-
-**Branch Review Title:**
-```
-Branch Review: $branch vs $base_branch
-```
-
-**Range Review Title:**
-```
-Range Review: $range
-```
-
-**Local Review Title:**
-```
-Code Review: (org/repo from git_context) - (branch) (uncommitted)
-```
+| Mode | Title format |
+|------|-------------|
+| PR | `Pull Request Review: #$pr_number - $pr_title` |
+| Commit | `Commit Review: $commit` |
+| Branch | `Branch Review: $branch vs $base_branch` |
+| Range | `Range Review: $range` |
+| Local | `Code Review: (org/repo) - (branch) (uncommitted)` |
 
 **For comprehensive reviews**, include sections for each area:
 - Security Review
@@ -370,7 +331,7 @@ If this is a PR review and the reviewer is NOT the PR author, generate suggested
 
 **Check if suggested comments should be generated:**
 
-From the session data (already read via Read tool), extract:
+From the session data, extract:
 - `is_own_pr` — whether the current user authored the PR (defaults to false)
 - `pr.comments.inline` — existing inline comments on the PR (defaults to empty array)
 
@@ -476,7 +437,7 @@ If `--draft` was specified and this is a PR review (not own PR), create a pendin
 
 **Check if draft mode is enabled:**
 
-From the session data (already read via Read tool), extract: `draft` (defaults to false), `is_own_pr` (defaults to false), `self` (defaults to false), and `mode`.
+From the session data, extract: `draft` (defaults to false), `is_own_pr` (defaults to false), `self` (defaults to false), and `mode`.
 
 **Only proceed if ALL conditions are true:**
 - `draft_mode` is "true"
@@ -502,23 +463,19 @@ If any condition fails, skip draft review creation.
 
    **CRITICAL**: Do NOT include the `*From: <Agent Name> (<confidence>% confidence)*` metadata line in the comment body. Confidence percentages are internal review metadata only — they must never appear in public GitHub comments. Extract only what is inside the ` ```text ``` ` block.
 
-2. **Get the diff for position mapping**: Use the `diff` field from the session data (already read via Read tool).
-
-3. **Build targets for line mapping**: Create JSON with file:line targets from extracted comments.
-
-4. **Map line numbers to diff lines**: Use the diff-position-mapper script.
+2. **Map comment locations to diff positions**: Build a targets array from the extracted comments and run through the position mapper:
 
 ```bash
 ~/.claude/skills/review-code/scripts/diff-position-mapper.sh <<'EOF'
-{"diff": "<diff from session data>", "targets": [<targets from step 3>]}
+{"diff": "<diff from session data>", "targets": [<targets array>]}
 EOF
 ```
 
-5. **Separate mappable vs unmappable comments**:
+3. **Separate mappable vs unmappable comments**:
    - Mappable: Comments with valid line mappings (will be inline comments)
    - Unmappable: Comments where line not in diff (will go in summary)
 
-6. **Build input for create-draft-review.sh**:
+4. **Build input for create-draft-review.sh**:
 
 ```json
 {
@@ -569,7 +526,7 @@ replacement code here
 
 This renders as an "Apply suggestion" button that the PR author can click to commit the change.
 
-7. **Create the pending review**:
+5. **Create the pending review**:
 
 ```bash
 ~/.claude/skills/review-code/scripts/create-draft-review.sh <<'EOF'
@@ -577,7 +534,7 @@ This renders as an "Apply suggestion" button that the PR author can click to com
 EOF
 ```
 
-8. **Display result to user**:
+6. **Display result to user**:
 
 If successful:
 ```
@@ -588,11 +545,6 @@ Review: <review_url>
 Summary:
 - Inline comments: X
 - Summary comments: Y
-
-{If amended}:
-- Comments kept (updated wording): K
-- New comments added: N
-- Outdated comments removed: R
 
 The review is in PENDING state. Visit GitHub to:
 - Edit or remove any comments
@@ -612,16 +564,6 @@ If failed, show the error and suggest using the review file manually.
   2. Tell them: "Draft review creation failed. The review has been saved to the markdown file."
   3. Suggest: "You can copy comments from the review file and post them manually on GitHub."
   4. **STOP HERE** - Do NOT attempt to post comments using `gh pr review` or any other method as a fallback. This will submit the review instead of keeping it pending.
-
-**What NOT to do:**
-- Do NOT use `gh pr review` or `gh api` directly to create reviews
-- Do NOT post the full review summary as the review body
-- Do NOT skip the `create-draft-review.sh` script
-- **NEVER fall back to posting a regular comment when draft review fails** - if the API fails, STOP and tell the user. Do not try to work around the failure by posting a comment directly.
-- **NEVER submit a pending review without explicit user approval** - if the user asks to add comments to a pending review and you cannot amend it, ASK the user if they want to submit the current review first. Never submit on their behalf.
-- DO save detailed review to markdown file
-- DO use `create-draft-review.sh` with brief summary + inline comments only
-- DO stop and inform the user when errors occur - let them decide how to proceed
 
 ### Offer to Submit Review
 
