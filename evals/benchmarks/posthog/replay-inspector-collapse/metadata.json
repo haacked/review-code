@@ -8,6 +8,7 @@
   "frameworks": ["react"],
   "areas": ["correctness", "performance", "frontend", "maintainability"],
   "difficulty": "hard",
+  "budget_usd": 8,
   "expected_finding_count": 5,
   "false_positive_trap_count": 0
 }

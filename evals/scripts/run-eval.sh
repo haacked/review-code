@@ -63,24 +63,29 @@ run_benchmark() {
     local result_dir="${RESULTS_DIR}/${run_id}/${id}"
     mkdir -p "${result_dir}"
 
+    # Per-benchmark budget from metadata, defaulting to $5
+    local budget
+    budget=$(jq -r '.budget_usd // 5' "${bench_dir}/metadata.json" 2> /dev/null)
+
     # Check if this is a real-world PR benchmark (has source_url in metadata)
     local source_url
     source_url=$(jq -r '.source_url // empty' "${bench_dir}/metadata.json" 2> /dev/null)
 
     if [[ -n "${source_url}" ]]; then
-        run_pr_benchmark "${id}" "${bench_dir}" "${result_dir}" "${source_url}"
+        run_pr_benchmark "${id}" "${bench_dir}" "${result_dir}" "${source_url}" "${budget}"
     else
-        run_crafted_benchmark "${id}" "${bench_dir}" "${result_dir}"
+        run_crafted_benchmark "${id}" "${bench_dir}" "${result_dir}" "${budget}"
     fi
 }
 
 # Run a real-world PR benchmark by reviewing the PR URL directly
-# Args: $1 = benchmark ID, $2 = bench dir, $3 = result dir, $4 = PR URL
+# Args: $1 = benchmark ID, $2 = bench dir, $3 = result dir, $4 = PR URL, $5 = budget
 run_pr_benchmark() {
     local id="$1"
     local bench_dir="$2"
     local result_dir="$3"
     local pr_url="$4"
+    local budget="${5:-5}"
 
     # Extract org/repo/number from the PR URL (lowercase for file lookup)
     local org repo pr_number
@@ -92,10 +97,11 @@ run_pr_benchmark() {
 
     # Run the review via claude -p using the PR URL.
     # Unset CLAUDECODE to allow running inside an existing Claude Code session.
+    echo "  Budget: \$${budget}"
     local claude_exit=0
     env -u CLAUDECODE claude -p "/review-code ${pr_url} --force" \
         --dangerously-skip-permissions \
-        --max-budget-usd 5 \
+        --max-budget-usd "${budget}" \
         > "${result_dir}/claude-output.txt" 2>&1 || claude_exit=$?
 
     if [[ ${claude_exit} -ne 0 ]]; then
@@ -124,11 +130,12 @@ run_pr_benchmark() {
 }
 
 # Run a crafted benchmark by applying patch to a temporary branch
-# Args: $1 = benchmark ID, $2 = bench dir, $3 = result dir
+# Args: $1 = benchmark ID, $2 = bench dir, $3 = result dir, $4 = budget
 run_crafted_benchmark() {
     local id="$1"
     local bench_dir="$2"
     local result_dir="$3"
+    local budget="${4:-5}"
 
     local patch="${bench_dir}/diff.patch"
     if [[ ! -f "${patch}" ]]; then
@@ -187,10 +194,11 @@ run_crafted_benchmark() {
 
     # Run the review via claude -p.
     # Unset CLAUDECODE to allow running inside an existing Claude Code session.
+    echo "  Budget: \$${budget}"
     local claude_exit=0
     env -u CLAUDECODE claude -p "/review-code ${tmp_branch} --force" \
         --dangerously-skip-permissions \
-        --max-budget-usd 5 \
+        --max-budget-usd "${budget}" \
         > "${result_dir}/claude-output.txt" 2>&1 || claude_exit=$?
 
     if [[ ${claude_exit} -ne 0 ]]; then

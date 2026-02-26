@@ -57,6 +57,26 @@
       "languages": ["typescript"],
       "areas": ["correctness", "performance", "frontend", "maintainability"],
       "difficulty": "hard"
+    },
+    {
+      "id": "dual-threadpool-architecture",
+      "category": "posthog",
+      "name": "Dual Thread Pool Architecture for Feature Flags",
+      "description": "Rust concurrency architecture: dedicated rayon pool with tokio bridge, config changes",
+      "source": "posthog/posthog#46712",
+      "languages": ["rust"],
+      "areas": ["correctness", "performance", "architecture"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tokio-runtime-monitoring",
+      "category": "posthog",
+      "name": "Tokio Runtime Monitoring for Feature Flags",
+      "description": "Rust observability feature with subtle data correctness bug (stale variable self-subtraction)",
+      "source": "posthog/posthog#48629",
+      "languages": ["rust"],
+      "areas": ["correctness", "testing", "maintainability"],
+      "difficulty": "hard"
     }
   ]
 }

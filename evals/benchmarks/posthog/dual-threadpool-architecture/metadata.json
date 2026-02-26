@@ -1,0 +1,13 @@
+{
+  "id": "dual-threadpool-architecture",
+  "name": "Dual Thread Pool Architecture for Feature Flags",
+  "description": "Rust concurrency architecture change: dedicated rayon pool with tokio bridge, config change, test updates",
+  "source": "posthog/posthog#46712",
+  "source_url": "https://github.com/PostHog/posthog/pull/46712",
+  "languages": ["rust"],
+  "frameworks": [],
+  "areas": ["correctness", "performance", "architecture"],
+  "difficulty": "hard",
+  "expected_finding_count": 4,
+  "false_positive_trap_count": 1
+}
