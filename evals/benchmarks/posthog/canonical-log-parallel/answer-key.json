@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "expected_findings": [
+    {
+      "id": "missing-nonzero-base-test",
+      "description": "All parametrized test cases for merge_rayon_delta start from a zero-base log. A test merging into pre-existing non-zero counters is needed to catch accidental = instead of += in merge_rayon_delta, since 0 + x == x masks the bug.",
+      "area": "testing",
+      "severity": "suggestion",
+      "weight": 7,
+      "file": "rust/feature-flags/src/handler/canonical_log.rs",
+      "line_start": 848,
+      "line_end": 854,
+      "keywords": ["zero-base", "non-zero", "pre-existing", "counters", "merge", "test coverage", "parametrized", "merge_rayon_delta", "0 + x"]
+    },
+    {
+      "id": "panic-safety-untested",
+      "description": "The RayonCanonicalLogGuard exists specifically for panic safety, but no test verifies that a panic during evaluation cleans up the thread-local. A test using catch_unwind should assert the thread-local is clean after a panic.",
+      "area": "testing",
+      "severity": "suggestion",
+      "weight": 5,
+      "file": "rust/feature-flags/src/handler/canonical_log.rs",
+      "line_start": 46,
+      "line_end": 52,
+      "keywords": ["panic", "guard", "Drop", "catch_unwind", "safety", "RayonCanonicalLogGuard", "thread-local", "cleanup"]
+    },
+    {
+      "id": "fragile-field-by-field-merge",
+      "description": "merge_rayon_delta uses an explicit field list that must be kept in sync with any new evaluation counters. If someone adds a new counter used via with_canonical_log inside evaluate_single_flag but forgets to add it here, the original silent-loss bug is re-introduced for that field.",
+      "area": "maintainability",
+      "severity": "suggestion",
+      "weight": 8,
+      "file": "rust/feature-flags/src/handler/canonical_log.rs",
+      "line_start": 358,
+      "line_end": 370,
+      "keywords": ["field list", "sync", "merge_rayon_delta", "fragile", "coupling", "drift", "explicit", "counter", "sub-struct", "EvalCounters"]
+    },
+    {
+      "id": "inaccurate-comment-oneshot",
+      "description": "The comment says deltas are 'sent back through the oneshot channel' but the deltas are actually returned as part of the (flag, result, delta) tuple from the par_iter map closure.",
+      "area": "correctness",
+      "severity": "nit",
+      "weight": 2,
+      "file": "rust/feature-flags/src/flags/flag_matching.rs",
+      "line_start": 1016,
+      "line_end": 1019,
+      "keywords": ["comment", "inaccurate", "oneshot", "channel", "tuple", "misleading", "stale"]
+    }
+  ],
+  "false_positive_traps": [],
+  "clean_areas": ["security", "performance"]
+}

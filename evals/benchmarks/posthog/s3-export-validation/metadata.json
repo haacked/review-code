@@ -1,0 +1,13 @@
+{
+  "id": "s3-export-validation",
+  "name": "S3 Batch Export Validation",
+  "description": "Python input validation for S3 exports with SSRF-adjacent URL/hostname confusion bug",
+  "source": "posthog/posthog#49032",
+  "source_url": "https://github.com/PostHog/posthog/pull/49032",
+  "languages": ["python"],
+  "frameworks": ["django"],
+  "areas": ["security", "correctness", "testing"],
+  "difficulty": "hard",
+  "expected_finding_count": 3,
+  "false_positive_trap_count": 0
+}

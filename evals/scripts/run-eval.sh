@@ -6,8 +6,9 @@
 #   run-eval.sh --all                Run all benchmarks
 #   run-eval.sh --category <cat>     Run all benchmarks in a category
 #
-# Each benchmark is applied as a patch to a temporary branch, reviewed
-# via `claude -p`, and the resulting review is saved to evals/results/.
+# Crafted benchmarks: applies patch to a temporary branch, reviews via `claude -p`
+# Real-world PR benchmarks: reviews via PR URL directly (no patch needed)
+# Results are saved to evals/results/.
 
 set -euo pipefail
 
@@ -48,7 +49,9 @@ list_benchmarks() {
     fi
 }
 
-# Run a single benchmark and save the review output
+# Run a single benchmark and save the review output.
+# Dispatches between crafted (apply patch to temp branch) and real-world PR
+# (review via PR URL) modes based on whether the metadata has a source field.
 # Args: $1 = benchmark ID, $2 = run ID
 run_benchmark() {
     local id="$1"
@@ -57,14 +60,80 @@ run_benchmark() {
     local bench_dir
     bench_dir=$(resolve_benchmark_dir "${id}") || return 1
 
+    local result_dir="${RESULTS_DIR}/${run_id}/${id}"
+    mkdir -p "${result_dir}"
+
+    # Check if this is a real-world PR benchmark (has source_url in metadata)
+    local source_url
+    source_url=$(jq -r '.source_url // empty' "${bench_dir}/metadata.json" 2> /dev/null)
+
+    if [[ -n "${source_url}" ]]; then
+        run_pr_benchmark "${id}" "${bench_dir}" "${result_dir}" "${source_url}"
+    else
+        run_crafted_benchmark "${id}" "${bench_dir}" "${result_dir}"
+    fi
+}
+
+# Run a real-world PR benchmark by reviewing the PR URL directly
+# Args: $1 = benchmark ID, $2 = bench dir, $3 = result dir, $4 = PR URL
+run_pr_benchmark() {
+    local id="$1"
+    local bench_dir="$2"
+    local result_dir="$3"
+    local pr_url="$4"
+
+    # Extract org/repo/number from the PR URL
+    local org repo pr_number
+    org=$(echo "${pr_url}" | sed -E 's#.*/([^/]+)/([^/]+)/pull/([0-9]+)#\1#')
+    repo=$(echo "${pr_url}" | sed -E 's#.*/([^/]+)/([^/]+)/pull/([0-9]+)#\2#')
+    pr_number=$(echo "${pr_url}" | sed -E 's#.*/([^/]+)/([^/]+)/pull/([0-9]+)#\3#')
+
+    echo "  Reviewing PR ${pr_url}…"
+
+    # Run the review via claude -p using the PR URL
+    local claude_exit=0
+    claude -p "/review-code ${pr_url} --force" \
+        --dangerously-skip-permissions \
+        --max-budget-usd 5 \
+        > "${result_dir}/claude-output.txt" 2>&1 || claude_exit=$?
+
+    if [[ ${claude_exit} -ne 0 ]]; then
+        echo "  Warning: claude exited with code ${claude_exit}" >&2
+    fi
+
+    # The review file is saved under the PR's org/repo
+    local review_file="${SKILL_REVIEWS_DIR}/${org}/${repo}/pr-${pr_number}.md"
+    if [[ -f "${review_file}" ]]; then
+        cp "${review_file}" "${result_dir}/review.md"
+        echo "  Review saved to ${result_dir}/review.md"
+    else
+        echo "  Warning: review file not found at ${review_file}" >&2
+        # Fallback: search for any file matching the PR number
+        local found
+        found=$(find "${SKILL_REVIEWS_DIR}/${org}/${repo}" -name "*${pr_number}*" -type f 2> /dev/null | head -1)
+        if [[ -n "${found}" ]]; then
+            cp "${found}" "${result_dir}/review.md"
+            echo "  Found review at ${found}"
+        else
+            echo "  No review output found" >&2
+        fi
+    fi
+
+    echo "  Done with ${id}"
+}
+
+# Run a crafted benchmark by applying patch to a temporary branch
+# Args: $1 = benchmark ID, $2 = bench dir, $3 = result dir
+run_crafted_benchmark() {
+    local id="$1"
+    local bench_dir="$2"
+    local result_dir="$3"
+
     local patch="${bench_dir}/diff.patch"
     if [[ ! -f "${patch}" ]]; then
         echo "Error: patch not found at ${patch}" >&2
         return 1
     fi
-
-    local result_dir="${RESULTS_DIR}/${run_id}/${id}"
-    mkdir -p "${result_dir}"
 
     local tmp_branch="eval-tmp-${id}"
     local original_branch
@@ -134,7 +203,6 @@ run_benchmark() {
     else
         echo "  Warning: review file not found at ${review_file}" >&2
         echo "  Checking for any review matching this branch…" >&2
-        # Fallback: search for any file matching the branch name
         local found
         found=$(find "${SKILL_REVIEWS_DIR}" -name "*${tmp_branch}*" -type f 2> /dev/null | head -1)
         if [[ -n "${found}" ]]; then

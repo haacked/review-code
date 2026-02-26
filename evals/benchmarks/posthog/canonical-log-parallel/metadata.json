@@ -1,0 +1,13 @@
+{
+  "id": "canonical-log-parallel",
+  "name": "Canonical Log Lines No-Op in Parallel Path",
+  "description": "Rust concurrency fix: canonical log counters silently lost on rayon thread pool",
+  "source": "posthog/posthog#49114",
+  "source_url": "https://github.com/PostHog/posthog/pull/49114",
+  "languages": ["rust"],
+  "frameworks": [],
+  "areas": ["correctness", "testing", "maintainability"],
+  "difficulty": "hard",
+  "expected_finding_count": 4,
+  "false_positive_trap_count": 0
+}

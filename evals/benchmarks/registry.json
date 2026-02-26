@@ -27,6 +27,36 @@
       "languages": ["typescript"],
       "areas": ["compatibility"],
       "difficulty": "medium"
+    },
+    {
+      "id": "canonical-log-parallel",
+      "category": "posthog",
+      "name": "Canonical Log Lines No-Op in Parallel Path",
+      "description": "Rust concurrency fix: canonical log counters silently lost on rayon thread pool",
+      "source": "posthog/posthog#49114",
+      "languages": ["rust"],
+      "areas": ["correctness", "testing", "maintainability"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "s3-export-validation",
+      "category": "posthog",
+      "name": "S3 Batch Export Validation",
+      "description": "Python input validation for S3 exports with SSRF-adjacent URL/hostname confusion",
+      "source": "posthog/posthog#49032",
+      "languages": ["python"],
+      "areas": ["security", "correctness", "testing"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "replay-inspector-collapse",
+      "category": "posthog",
+      "name": "Collapse Identical Replay Inspector Rows",
+      "description": "TypeScript/React feature with correctness bugs, performance regression, and UX issues",
+      "source": "posthog/posthog#48304",
+      "languages": ["typescript"],
+      "areas": ["correctness", "performance", "frontend", "maintainability"],
+      "difficulty": "hard"
     }
   ]
 }

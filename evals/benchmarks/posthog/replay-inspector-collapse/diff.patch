@@ -1,0 +1,1076 @@
+diff --git a/frontend/__snapshots__/components-playerinspector--default--dark.png b/frontend/__snapshots__/components-playerinspector--default--dark.png
+index 7e41f1c445f..b0f82f5c629 100644
+Binary files a/frontend/__snapshots__/components-playerinspector--default--dark.png and b/frontend/__snapshots__/components-playerinspector--default--dark.png differ
+diff --git a/frontend/__snapshots__/components-playerinspector--default--light.png b/frontend/__snapshots__/components-playerinspector--default--light.png
+index c7af19ec0b8..c9e5d765ff7 100644
+Binary files a/frontend/__snapshots__/components-playerinspector--default--light.png and b/frontend/__snapshots__/components-playerinspector--default--light.png differ
+diff --git a/frontend/__snapshots__/components-playerinspector-itemconsole--console-log-item--dark.png b/frontend/__snapshots__/components-playerinspector-itemconsole--console-log-item--dark.png
+index c7c7edae66a..89fb1f033f8 100644
+Binary files a/frontend/__snapshots__/components-playerinspector-itemconsole--console-log-item--dark.png and b/frontend/__snapshots__/components-playerinspector-itemconsole--console-log-item--dark.png differ
+diff --git a/frontend/__snapshots__/components-playerinspector-itemconsole--console-log-item--light.png b/frontend/__snapshots__/components-playerinspector-itemconsole--console-log-item--light.png
+index 1e16024f439..f19a94b62e5 100644
+Binary files a/frontend/__snapshots__/components-playerinspector-itemconsole--console-log-item--light.png and b/frontend/__snapshots__/components-playerinspector-itemconsole--console-log-item--light.png differ
+diff --git a/frontend/__snapshots__/components-playerinspector-itemevent--error-event--dark.png b/frontend/__snapshots__/components-playerinspector-itemevent--error-event--dark.png
+index 68e91f09808..f7805f1cec3 100644
+Binary files a/frontend/__snapshots__/components-playerinspector-itemevent--error-event--dark.png and b/frontend/__snapshots__/components-playerinspector-itemevent--error-event--dark.png differ
+diff --git a/frontend/__snapshots__/components-playerinspector-itemevent--error-event--light.png b/frontend/__snapshots__/components-playerinspector-itemevent--error-event--light.png
+index d7e06773816..68a4273b22b 100644
+Binary files a/frontend/__snapshots__/components-playerinspector-itemevent--error-event--light.png and b/frontend/__snapshots__/components-playerinspector-itemevent--error-event--light.png differ
+diff --git a/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-current-url--dark.png b/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-current-url--dark.png
+index 86c95a0c7e1..38cb388f4c4 100644
+Binary files a/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-current-url--dark.png and b/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-current-url--dark.png differ
+diff --git a/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-current-url--light.png b/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-current-url--light.png
+index 626550a3790..ba291c335e6 100644
+Binary files a/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-current-url--light.png and b/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-current-url--light.png differ
+diff --git a/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-path--dark.png b/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-path--dark.png
+index 9c7bd7f39d1..66b3adbffbb 100644
+Binary files a/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-path--dark.png and b/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-path--dark.png differ
+diff --git a/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-path--light.png b/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-path--light.png
+index 92c4c8dfa16..6d3f657f6cb 100644
+Binary files a/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-path--light.png and b/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-path--light.png differ
+diff --git a/frontend/__snapshots__/components-playerinspector-itemevent--sentry-error-event--dark.png b/frontend/__snapshots__/components-playerinspector-itemevent--sentry-error-event--dark.png
+index a64b207e48b..7d684edf1c3 100644
+Binary files a/frontend/__snapshots__/components-playerinspector-itemevent--sentry-error-event--dark.png and b/frontend/__snapshots__/components-playerinspector-itemevent--sentry-error-event--dark.png differ
+diff --git a/frontend/__snapshots__/components-playerinspector-itemevent--sentry-error-event--light.png b/frontend/__snapshots__/components-playerinspector-itemevent--sentry-error-event--light.png
+index 824cba9360b..c8a2d76b88e 100644
+Binary files a/frontend/__snapshots__/components-playerinspector-itemevent--sentry-error-event--light.png and b/frontend/__snapshots__/components-playerinspector-itemevent--sentry-error-event--light.png differ
+diff --git a/frontend/__snapshots__/components-playerinspector-itemevent--web-vitals-event--dark.png b/frontend/__snapshots__/components-playerinspector-itemevent--web-vitals-event--dark.png
+index 72f0863b6ef..a777ae05b12 100644
+Binary files a/frontend/__snapshots__/components-playerinspector-itemevent--web-vitals-event--dark.png and b/frontend/__snapshots__/components-playerinspector-itemevent--web-vitals-event--dark.png differ
+diff --git a/frontend/__snapshots__/components-playerinspector-itemevent--web-vitals-event--light.png b/frontend/__snapshots__/components-playerinspector-itemevent--web-vitals-event--light.png
+index 479d3352a91..75a21f7773b 100644
+Binary files a/frontend/__snapshots__/components-playerinspector-itemevent--web-vitals-event--light.png and b/frontend/__snapshots__/components-playerinspector-itemevent--web-vitals-event--light.png differ
+diff --git a/frontend/src/lib/constants.tsx b/frontend/src/lib/constants.tsx
+index ee3e5c64841..9bf2efcaace 100644
+--- a/frontend/src/lib/constants.tsx
++++ b/frontend/src/lib/constants.tsx
+@@ -372,6 +372,7 @@ export const FEATURE_FLAGS = {
+     REPLAY_SNAPSHOT_STORE: 'replay-snapshot-store', // owner: @tue #team-replay multivariate=control,test
+     REPLAY_WAIT_FOR_IFRAME_READY: 'replay-wait-for-full-snapshot-playback', // owner: @ksvat #team-replay
+     REPLAY_X_LLM_ANALYTICS_CONVERSATION_VIEW: 'replay-x-llm-analytics-conversation-view', // owner: @pauldambra #team-replay
++    REPLAY_COLLAPSE_INSPECTOR_ITEMS: 'replay-collapse-inspector-items', // owner: @fasyy612 #team-replay
+     REPLAY_UI_REDESIGN_2026: 'replay-ui-redesign-2026', // owner: #team-replay, New UI layout for replay
+     REORDER_PLATFORM_ADDON_BILLING_SECTION: 'reorder-platform-addon-billing-section', // owner: @reece #team-platform-features
+     REVENUE_ANALYTICS: 'revenue-analytics', // owner: @rafaeelaudibert #team-customer-analytics
+diff --git a/frontend/src/scenes/session-recordings/player/inspector/PlayerInspectorBottomSettings.tsx b/frontend/src/scenes/session-recordings/player/inspector/PlayerInspectorBottomSettings.tsx
+index 9652ac7b888..5b024f8b9e9 100644
+--- a/frontend/src/scenes/session-recordings/player/inspector/PlayerInspectorBottomSettings.tsx
++++ b/frontend/src/scenes/session-recordings/player/inspector/PlayerInspectorBottomSettings.tsx
+@@ -106,11 +106,33 @@ function ShowOnlyMatching(): JSX.Element {
+     )
+ }
+ 
++function GroupRepeatedItems(): JSX.Element {
++    const { groupRepeatedItems } = useValues(miniFiltersLogic)
++    const { setGroupRepeatedItems } = useActions(miniFiltersLogic)
++
++    return (
++        <SettingsToggle
++            title={
++                groupRepeatedItems
++                    ? 'Stop grouping repeated items'
++                    : 'Group repeated events and console logs into a single row'
++            }
++            label="Group similar"
++            onClick={() => setGroupRepeatedItems(!groupRepeatedItems)}
++            active={groupRepeatedItems}
++        />
++    )
++}
++
+ export function PlayerInspectorBottomSettings(): JSX.Element {
++    const { logicProps } = useValues(sessionRecordingPlayerLogic)
++    const { collapseInspectorItems } = useValues(playerInspectorLogic(logicProps))
++
+     return (
+         <SettingsBar border="top">
+             <SyncScrolling />
+             <ShowOnlyMatching />
++            {collapseInspectorItems ? <GroupRepeatedItems /> : null}
+             <HideProperties />
+         </SettingsBar>
+     )
+diff --git a/frontend/src/scenes/session-recordings/player/inspector/PlayerInspectorList.tsx b/frontend/src/scenes/session-recordings/player/inspector/PlayerInspectorList.tsx
+index 9ab05454c41..2cc1b0fdcc2 100644
+--- a/frontend/src/scenes/session-recordings/player/inspector/PlayerInspectorList.tsx
++++ b/frontend/src/scenes/session-recordings/player/inspector/PlayerInspectorList.tsx
+@@ -10,12 +10,13 @@ import { LemonSkeleton } from 'lib/lemon-ui/LemonSkeleton'
+ 
+ import { sessionRecordingPlayerLogic } from '../sessionRecordingPlayerLogic'
+ import { PlayerInspectorListItem } from './components/PlayerInspectorListItem'
+-import { InspectorListItem, playerInspectorLogic } from './playerInspectorLogic'
++import { DisplayGroup, InspectorListItem, playerInspectorLogic } from './playerInspectorLogic'
+ 
+ export const DEFAULT_INSPECTOR_ROW_HEIGHT = 40
+ 
+ interface InspectorRowProps {
+     items: InspectorListItem[]
++    displayGroups: DisplayGroup[]
+     dynamicRowHeight: ReturnType<typeof useDynamicRowHeight>
+ }
+ 
+@@ -23,6 +24,7 @@ function InspectorRow({
+     index,
+     style,
+     items,
++    displayGroups,
+     dynamicRowHeight,
+ }: {
+     ariaAttributes: Record<string, unknown>
+@@ -37,9 +39,20 @@ function InspectorRow({
+         }
+     }, [dynamicRowHeight])
+ 
++    const group = displayGroups[index]
++    const item = items[group.indices[0]]
++    const groupCount = group.indices.length > 1 ? group.indices.length : undefined
++    const groupedItems = group.indices.length > 1 ? group.indices.map((i) => items[i]) : undefined
++
+     return (
+         <div ref={rowRef} style={style} data-index={index}>
+-            <PlayerInspectorListItem key={index} item={items[index]} index={index} />
++            <PlayerInspectorListItem
++                key={index}
++                item={item}
++                index={index}
++                groupCount={groupCount}
++                groupedItems={groupedItems}
++            />
+         </div>
+     )
+ }
+@@ -48,8 +61,15 @@ export function PlayerInspectorList(): JSX.Element {
+     const { logicProps, snapshotsLoaded } = useValues(sessionRecordingPlayerLogic)
+     const inspectorLogic = playerInspectorLogic(logicProps)
+ 
+-    const { items, isLoading, isReady, playbackIndicatorIndex, playbackIndicatorIndexStop, syncScrollPaused } =
+-        useValues(inspectorLogic)
++    const {
++        displayGroups,
++        items,
++        isLoading,
++        isReady,
++        playbackIndicatorIndex,
++        playbackIndicatorIndexStop,
++        syncScrollPaused,
++    } = useValues(inspectorLogic)
+     const { setSyncScrollPaused } = useActions(inspectorLogic)
+ 
+     const dynamicRowHeight = useDynamicRowHeight({ defaultRowHeight: DEFAULT_INSPECTOR_ROW_HEIGHT })
+@@ -88,7 +108,7 @@ export function PlayerInspectorList(): JSX.Element {
+         <div className="flex flex-col bg-primary flex-1 overflow-hidden relative">
+             {!snapshotsLoaded ? (
+                 <div className="p-16 text-center text-secondary">Data will be shown once playback starts</div>
+-            ) : items.length ? (
++            ) : displayGroups.length ? (
+                 <div
+                     className="absolute inset-0"
+                     onMouseEnter={() => (mouseHoverRef.current = true)}
+@@ -100,10 +120,10 @@ export function PlayerInspectorList(): JSX.Element {
+                                 <List<InspectorRowProps>
+                                     style={{ height, width }}
+                                     overscanCount={20}
+-                                    rowCount={items.length}
++                                    rowCount={displayGroups.length}
+                                     rowHeight={dynamicRowHeight}
+                                     rowComponent={InspectorRow}
+-                                    rowProps={{ items, dynamicRowHeight }}
++                                    rowProps={{ items, displayGroups, dynamicRowHeight }}
+                                     listRef={listRef}
+                                     id="PlayerInspectorList"
+                                     onScroll={handleScroll}
+diff --git a/frontend/src/scenes/session-recordings/player/inspector/components/ItemConsoleLog.stories.tsx b/frontend/src/scenes/session-recordings/player/inspector/components/ItemConsoleLog.stories.tsx
+index fc7ce2de2d1..8ba274a5ec3 100644
+--- a/frontend/src/scenes/session-recordings/player/inspector/components/ItemConsoleLog.stories.tsx
++++ b/frontend/src/scenes/session-recordings/player/inspector/components/ItemConsoleLog.stories.tsx
+@@ -41,21 +41,30 @@ const BasicTemplate: StoryFn<typeof ItemConsoleLog> = (props: Partial<ItemConsol
+ }
+ 
+ export const ConsoleLogItem: Story = BasicTemplate.bind({})
++const baseData = {
++    timestamp: dayjs('2019-01-30').valueOf(),
++    windowId: 1,
++    windowNumber: 1,
++    level: 'log' as const,
++    content:
++        'This log message is very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very long',
++}
++
++const baseItem = {
++    data: baseData,
++    timestamp: dayjs('2019-01-30'),
++    timeInRecording: 123,
++    search: 'some text',
++    type: 'console' as const,
++    key: 'some-key',
++}
++
+ ConsoleLogItem.args = {
+-    item: {
+-        data: {
+-            timestamp: dayjs('2019-01-30').valueOf(),
+-            windowId: 1,
+-            windowNumber: 1,
+-            level: 'log',
+-            content:
+-                'This log message is very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very, very long',
+-            count: 12,
+-        },
+-        timestamp: dayjs('2019-01-30'),
+-        timeInRecording: 123,
+-        search: 'some text',
+-        type: 'console',
+-        key: 'some-key',
+-    },
++    item: baseItem,
++    groupCount: 12,
++    groupedItems: Array.from({ length: 12 }, (_, i) => ({
++        ...baseItem,
++        key: `console-${i}`,
++        timeInRecording: 123 + i * 500,
++    })),
+ }
+diff --git a/frontend/src/scenes/session-recordings/player/inspector/components/ItemConsoleLog.tsx b/frontend/src/scenes/session-recordings/player/inspector/components/ItemConsoleLog.tsx
+index 88d6587bd41..1289ffb21d6 100644
+--- a/frontend/src/scenes/session-recordings/player/inspector/components/ItemConsoleLog.tsx
++++ b/frontend/src/scenes/session-recordings/player/inspector/components/ItemConsoleLog.tsx
+@@ -6,41 +6,70 @@ import { CodeSnippet, Language } from 'lib/components/CodeSnippet'
+ import { SimpleKeyValueList } from 'lib/components/SimpleKeyValueList'
+ import { LemonLabel } from 'lib/lemon-ui/LemonLabel/LemonLabel'
+ 
++import { ItemTimeDisplay } from '../../../components/ItemTimeDisplay'
+ import { InspectorListItemAppState, InspectorListItemConsole } from '../playerInspectorLogic'
+ 
+ export interface ItemConsoleLogProps {
+     item: InspectorListItemConsole
++    groupCount?: number
++    groupedItems?: InspectorListItemConsole[]
+ }
+ 
+ export interface ItemAppStateProps {
+     item: InspectorListItemAppState
+ }
+ 
+-export function ItemConsoleLog({ item }: ItemConsoleLogProps): JSX.Element {
++export function ItemConsoleLog({ item, groupCount }: ItemConsoleLogProps): JSX.Element {
++    const count = groupCount ?? item.data.count
++    const showBadge = count && count > 1
++
+     return (
+-        <div className="w-full font-light" data-attr="item-console-log">
++        <div className="w-full font-light flex items-center" data-attr="item-console-log">
+             <div className="px-2 py-1 text-xs cursor-pointer truncate font-mono flex-1">{item.data.content}</div>
+-            {(item.data.count || 1) > 1 ? (
++            {showBadge ? (
+                 <span
+                     className={clsx(
+-                        'rounded-lg px-1 mx-2 text-white text-xs font-semibold',
+-                        item.highlightColor === 'danger' && `bg-fill-error-highlight`,
+-                        item.highlightColor === 'warning' && `bg-fill-warning-highlight`,
+-                        item.highlightColor === 'primary' && `bg-fill-success-highlight`
++                        'inline-flex items-center justify-center rounded-full min-w-4 h-4 px-0.5 mx-2 shrink-0 text-white text-xxs font-bold',
++                        item.highlightColor === 'danger'
++                            ? 'bg-fill-error-highlight'
++                            : item.highlightColor === 'warning'
++                              ? 'bg-fill-warning-highlight'
++                              : 'bg-secondary-3000-hover'
+                     )}
+                 >
+-                    {item.data.count}
++                    {count}
+                 </span>
+             ) : null}
+         </div>
+     )
+ }
+ 
+-export function ItemConsoleLogDetail({ item }: ItemConsoleLogProps): JSX.Element {
++export function ItemConsoleLogDetail({ item, groupedItems }: ItemConsoleLogProps): JSX.Element {
+     return (
+         <div className="w-full font-light" data-attr="item-console-log">
+             <div className="px-2 py-1 text-xs border-t">
+-                {(item.data.count || 1) > 1 ? (
++                {groupedItems && groupedItems.length > 1 ? (
++                    <>
++                        <div className="italic mb-1">
++                            This log occurred <b>{groupedItems.length}</b> times:
++                        </div>
++                        <div className="flex flex-col border rounded bg-surface-primary mb-2 max-h-40 overflow-y-auto">
++                            {groupedItems.map((entry, i) => (
++                                <div
++                                    key={entry.key}
++                                    className={clsx('flex items-center gap-2 font-mono', i > 0 && 'border-t')}
++                                >
++                                    <ItemTimeDisplay
++                                        timestamp={entry.timestamp}
++                                        timeInRecording={entry.timeInRecording}
++                                        className="shrink-0 text-secondary !py-0"
++                                    />
++                                    <span className="truncate">{entry.data.content}</span>
++                                </div>
++                            ))}
++                        </div>
++                    </>
++                ) : (item.data.count || 1) > 1 ? (
+                     <>
+                         <div className="italic">
+                             This log occurred <b>{item.data.count}</b> times in a row.
+diff --git a/frontend/src/scenes/session-recordings/player/inspector/components/ItemEvent.tsx b/frontend/src/scenes/session-recordings/player/inspector/components/ItemEvent.tsx
+index 2fa4a9459f0..20ecebf16e6 100644
+--- a/frontend/src/scenes/session-recordings/player/inspector/components/ItemEvent.tsx
++++ b/frontend/src/scenes/session-recordings/player/inspector/components/ItemEvent.tsx
+@@ -1,6 +1,9 @@
+ import './ImagePreview.scss'
+ 
+-import { IconShare } from '@posthog/icons'
++import clsx from 'clsx'
++import { useState } from 'react'
++
++import { IconCollapse, IconExpand, IconShare } from '@posthog/icons'
+ import { LemonButton, LemonMenu, Link } from '@posthog/lemon-ui'
+ 
+ import { ErrorDisplay, idFrom } from 'lib/components/Errors/ErrorDisplay'
+@@ -18,11 +21,14 @@ import { AutocapturePreviewImage } from 'lib/utils/autocapture-previews'
+ import { insightUrlForEvent } from 'scenes/insights/utils'
+ import { urls } from 'scenes/urls'
+ 
++import { ItemTimeDisplay } from '../../../components/ItemTimeDisplay'
+ import { InspectorListItemEvent } from '../playerInspectorLogic'
+ import { AIEventExpanded, AIEventSummary } from './AIEventItems'
+ 
+ export interface ItemEventProps {
+     item: InspectorListItemEvent
++    groupCount?: number
++    groupedItems?: InspectorListItemEvent[]
+ }
+ 
+ function WebVitalEventSummary({ event }: { event: Record<string, any> }): JSX.Element {
+@@ -72,7 +78,7 @@ function ExceptionTitlePill({ event }: { event: Record<string, any> }): JSX.Elem
+     )
+ }
+ 
+-export function ItemEvent({ item }: ItemEventProps): JSX.Element {
++export function ItemEvent({ item, groupCount }: ItemEventProps): JSX.Element {
+     const subValue =
+         item.data.event === '$pageview' ? (
+             item.data.properties.$pathname || item.data.properties.$current_url
+@@ -104,11 +110,23 @@ export function ItemEvent({ item }: ItemEventProps): JSX.Element {
+                     />
+                     {item.data.event === '$autocapture' ? <span className="text-secondary">(Autocapture)</span> : null}
+                 </div>
+-                {subValue ? (
+-                    <div className="text-secondary truncate" title={isString(subValue) ? subValue : undefined}>
+-                        {subValue}
+-                    </div>
+-                ) : null}
++                <div className="flex items-center gap-1 shrink-0">
++                    {subValue ? (
++                        <div className="text-secondary truncate" title={isString(subValue) ? subValue : undefined}>
++                            {subValue}
++                        </div>
++                    ) : null}
++                    {groupCount && groupCount > 1 ? (
++                        <span
++                            className={clsx(
++                                'inline-flex items-center justify-center rounded-full min-w-4 h-4 px-0.5 text-white text-xxs font-bold',
++                                item.highlightColor === 'danger' ? 'bg-fill-error-highlight' : 'bg-secondary-3000-hover'
++                            )}
++                        >
++                            {groupCount}
++                        </span>
++                    ) : null}
++                </div>
+             </div>
+         </div>
+     )
+@@ -165,76 +183,122 @@ export function ItemEventMenu({ item }: ItemEventProps): JSX.Element {
+     )
+ }
+ 
+-export function ItemEventDetail({ item }: ItemEventProps): JSX.Element {
++function SingleEventDetail({ item }: ItemEventProps): JSX.Element {
++    return item.data.fullyLoaded ? (
++        <EventPropertyTabs
++            size="small"
++            data-attr="replay-event-property-tabs"
++            event={item.data}
++            tabContentComponentFn={({ event, properties, promotedKeys, tabKey }) => {
++                switch (tabKey) {
++                    case 'raw':
++                        return (
++                            <pre className="text-xs text-secondary whitespace-pre-wrap">
++                                {JSON.stringify(properties, null, 2)}
++                            </pre>
++                        )
++                    case 'conversation':
++                        return <AIEventExpanded event={event} />
++                    case '$set_properties':
++                        return (
++                            <>
++                                <p>
++                                    Person properties sent with this event. Will replace any property value that may
++                                    have been set on this person profile before now.{' '}
++                                    <Link to="https://posthog.com/docs/getting-started/person-properties">
++                                        Learn more
++                                    </Link>
++                                </p>
++                                <SimpleKeyValueList item={properties} promotedKeys={promotedKeys} />
++                            </>
++                        )
++                    case '$set_once_properties':
++                        return (
++                            <>
++                                <p>
++                                    "Set once" person properties sent with this event. Will replace any property value
++                                    that have never been set on this person profile before now.{' '}
++                                    <Link to="https://posthog.com/docs/getting-started/person-properties">
++                                        Learn more
++                                    </Link>
++                                </p>
++                                <SimpleKeyValueList item={properties} promotedKeys={promotedKeys} />
++                            </>
++                        )
++                    case 'debug_properties':
++                        return (
++                            <>
++                                <p>PostHog uses some properties to help debug issues with the SDKs.</p>
++                                <SimpleKeyValueList item={properties} promotedKeys={promotedKeys} />
++                            </>
++                        )
++                    case 'error_display':
++                        return <ErrorDisplay eventProperties={properties} eventId={idFrom(event as ErrorEventType)} />
++                    default:
++                        return <SimpleKeyValueList item={properties} promotedKeys={promotedKeys} />
++                }
++            }}
++        />
++    ) : (
++        <div className="text-secondary flex gap-1 items-center">
++            <Spinner textColored />
++            Loading...
++        </div>
++    )
++}
++
++function GroupedEventRow({ event, index }: { event: InspectorListItemEvent; index: number }): JSX.Element {
++    const [expanded, setExpanded] = useState(false)
++
++    return (
++        <div className={index > 0 ? 'border-t' : ''}>
++            <div
++                className="flex items-center gap-1 cursor-pointer hover:bg-surface-primary"
++                onClick={() => setExpanded(!expanded)}
++            >
++                <span className="shrink-0 text-secondary pl-2">
++                    {expanded ? <IconCollapse className="text-sm" /> : <IconExpand className="text-sm" />}
++                </span>
++                <ItemTimeDisplay
++                    timestamp={event.timestamp}
++                    timeInRecording={event.timeInRecording}
++                    className="shrink-0 text-secondary !py-0"
++                />
++                <PropertyKeyInfo
++                    className="truncate"
++                    disablePopover
++                    disableIcon
++                    ellipsis
++                    value={capitalizeFirstLetter(autoCaptureEventToDescription(event.data))}
++                    type={TaxonomicFilterGroupType.Events}
++                />
++            </div>
++            {expanded ? (
++                <div className="pl-6 pb-1">
++                    <SingleEventDetail item={event} />
++                </div>
++            ) : null}
++        </div>
++    )
++}
++
++export function ItemEventDetail({ item, groupedItems }: ItemEventProps): JSX.Element {
+     return (
+         <div data-attr="item-event" className="font-light w-full">
+             <div className="px-2 py-1 text-xs border-t">
+-                {item.data.fullyLoaded ? (
+-                    <EventPropertyTabs
+-                        size="small"
+-                        data-attr="replay-event-property-tabs"
+-                        event={item.data}
+-                        tabContentComponentFn={({ event, properties, promotedKeys, tabKey }) => {
+-                            switch (tabKey) {
+-                                case 'raw':
+-                                    return (
+-                                        <pre className="text-xs text-secondary whitespace-pre-wrap">
+-                                            {JSON.stringify(properties, null, 2)}
+-                                        </pre>
+-                                    )
+-                                case 'conversation':
+-                                    return <AIEventExpanded event={event} />
+-                                case '$set_properties':
+-                                    return (
+-                                        <>
+-                                            <p>
+-                                                Person properties sent with this event. Will replace any property value
+-                                                that may have been set on this person profile before now.{' '}
+-                                                <Link to="https://posthog.com/docs/getting-started/person-properties">
+-                                                    Learn more
+-                                                </Link>
+-                                            </p>
+-                                            <SimpleKeyValueList item={properties} promotedKeys={promotedKeys} />
+-                                        </>
+-                                    )
+-                                case '$set_once_properties':
+-                                    return (
+-                                        <>
+-                                            <p>
+-                                                "Set once" person properties sent with this event. Will replace any
+-                                                property value that have never been set on this person profile before
+-                                                now.{' '}
+-                                                <Link to="https://posthog.com/docs/getting-started/person-properties">
+-                                                    Learn more
+-                                                </Link>
+-                                            </p>
+-                                            <SimpleKeyValueList item={properties} promotedKeys={promotedKeys} />
+-                                        </>
+-                                    )
+-                                case 'debug_properties':
+-                                    return (
+-                                        <>
+-                                            <p>PostHog uses some properties to help debug issues with the SDKs.</p>
+-                                            <SimpleKeyValueList item={properties} promotedKeys={promotedKeys} />
+-                                        </>
+-                                    )
+-                                case 'error_display':
+-                                    return (
+-                                        <ErrorDisplay
+-                                            eventProperties={properties}
+-                                            eventId={idFrom(event as ErrorEventType)}
+-                                        />
+-                                    )
+-                                default:
+-                                    return <SimpleKeyValueList item={properties} promotedKeys={promotedKeys} />
+-                            }
+-                        }}
+-                    />
++                {groupedItems && groupedItems.length > 1 ? (
++                    <>
++                        <div className="italic mb-1">
++                            This event occurred <b>{groupedItems.length}</b> times:
++                        </div>
++                        <div className="flex flex-col border rounded bg-surface-primary mb-2 max-h-80 overflow-y-auto">
++                            {groupedItems.map((groupedEvent, i) => (
++                                <GroupedEventRow key={groupedEvent.key} event={groupedEvent} index={i} />
++                            ))}
++                        </div>
++                    </>
+                 ) : (
+-                    <div className="text-secondary flex gap-1 items-center">
+-                        <Spinner textColored />
+-                        Loading...
+-                    </div>
++                    <SingleEventDetail item={item} />
+                 )}
+             </div>
+         </div>
+diff --git a/frontend/src/scenes/session-recordings/player/inspector/components/PlayerInspectorListItem.tsx b/frontend/src/scenes/session-recordings/player/inspector/components/PlayerInspectorListItem.tsx
+index aecc603ef65..58fceb986af 100644
+--- a/frontend/src/scenes/session-recordings/player/inspector/components/PlayerInspectorListItem.tsx
++++ b/frontend/src/scenes/session-recordings/player/inspector/components/PlayerInspectorListItem.tsx
+@@ -39,7 +39,12 @@ import { CORE_FILTER_DEFINITIONS_BY_GROUP } from '~/taxonomy/taxonomy'
+ import { ItemPerformanceEvent, ItemPerformanceEventDetail } from '../../../apm/playerInspector/ItemPerformanceEvent'
+ import { IconWindow } from '../../icons'
+ import { sessionRecordingPlayerLogic } from '../../sessionRecordingPlayerLogic'
+-import { InspectorListItem, playerInspectorLogic } from '../playerInspectorLogic'
++import {
++    InspectorListItem,
++    InspectorListItemConsole,
++    InspectorListItemEvent,
++    playerInspectorLogic,
++} from '../playerInspectorLogic'
+ import { ItemAppState, ItemAppStateDetail, ItemConsoleLog, ItemConsoleLogDetail } from './ItemConsoleLog'
+ import { ItemDoctor, ItemDoctorDetail } from './ItemDoctor'
+ import { ItemEvent, ItemEventDetail, ItemEventMenu } from './ItemEvent'
+@@ -154,20 +159,22 @@ function IconWithOptionalBadge({
+ function RowItemTitle({
+     item,
+     finalTimestamp,
++    groupCount,
+ }: {
+     item: InspectorListItem
+     finalTimestamp: Dayjs | null
++    groupCount?: number
+ }): JSX.Element {
+     return (
+         <div className="flex items-center text-text-3000" data-attr="row-item-title">
+             {item.type === 'network' ? (
+                 <ItemPerformanceEvent item={item.data} finalTimestamp={finalTimestamp} />
+             ) : item.type === 'console' ? (
+-                <ItemConsoleLog item={item} />
++                <ItemConsoleLog item={item} groupCount={groupCount} />
+             ) : item.type === 'app-state' ? (
+                 <ItemAppState item={item} />
+             ) : item.type === 'events' ? (
+-                <ItemEvent item={item} />
++                <ItemEvent item={item} groupCount={groupCount} />
+             ) : item.type === 'offline-status' ? (
+                 <div className="flex w-full items-start p-2 text-xs font-light font-mono">
+                     {item.offline ? 'Browser went offline' : 'Browser returned online'}
+@@ -202,9 +209,11 @@ function RowItemMenu({ item }: { item: InspectorListItem }): JSX.Element | null
+ function RowItemDetail({
+     item,
+     finalTimestamp,
++    groupedItems,
+ }: {
+     item: InspectorListItem
+     finalTimestamp: Dayjs | null
++    groupedItems?: InspectorListItem[]
+ }): JSX.Element | null {
+     return (
+         <div>
+@@ -213,9 +222,12 @@ function RowItemDetail({
+             ) : item.type === 'app-state' ? (
+                 <ItemAppStateDetail item={item} />
+             ) : item.type === 'console' ? (
+-                <ItemConsoleLogDetail item={item} />
++                <ItemConsoleLogDetail
++                    item={item}
++                    groupedItems={groupedItems as InspectorListItemConsole[] | undefined}
++                />
+             ) : item.type === 'events' ? (
+-                <ItemEventDetail item={item} />
++                <ItemEventDetail item={item} groupedItems={groupedItems as InspectorListItemEvent[] | undefined} />
+             ) : item.type === 'offline-status' ? null : item.type === 'browser-visibility' ? null : item.type ===
+               'doctor' ? (
+                 <ItemDoctorDetail item={item} />
+@@ -230,10 +242,12 @@ const ListItemTitle = memo(function ListItemTitle({
+     item,
+     index,
+     hoverRef,
++    groupCount,
+ }: {
+     item: InspectorListItem
+     index: number
+     hoverRef: React.RefObject<HTMLDivElement>
++    groupCount?: number
+ }) {
+     const { logicProps } = useValues(sessionRecordingPlayerLogic)
+     const { seekToTime } = useActions(sessionRecordingPlayerLogic)
+@@ -304,7 +318,7 @@ const ListItemTitle = memo(function ListItemTitle({
+                         item.highlightColor === 'primary' && `bg-fill-success-highlight`
+                     )}
+                 >
+-                    <RowItemTitle item={item} finalTimestamp={end} />
++                    <RowItemTitle item={item} finalTimestamp={end} groupCount={groupCount} />
+                 </div>
+             </div>
+             {isExpanded && <RowItemMenu item={item} />}
+@@ -326,7 +340,15 @@ const ListItemTitle = memo(function ListItemTitle({
+     )
+ })
+ 
+-const ListItemDetail = memo(function ListItemDetail({ item, index }: { item: InspectorListItem; index: number }) {
++const ListItemDetail = memo(function ListItemDetail({
++    item,
++    index,
++    groupedItems,
++}: {
++    item: InspectorListItem
++    index: number
++    groupedItems?: InspectorListItem[]
++}) {
+     const { logicProps } = useValues(sessionRecordingPlayerLogic)
+ 
+     const { end } = useValues(playerInspectorLogic(logicProps))
+@@ -340,7 +362,7 @@ const ListItemDetail = memo(function ListItemDetail({ item, index }: { item: Ins
+             )}
+         >
+             <div className="text-xs">
+-                <RowItemDetail item={item} finalTimestamp={end} />
++                <RowItemDetail item={item} finalTimestamp={end} groupedItems={groupedItems} />
+                 <LemonDivider dashed />
+ 
+                 <div
+@@ -358,10 +380,14 @@ export const PlayerInspectorListItem = memo(function PlayerInspectorListItem({
+     item,
+     index,
+     onLayout,
++    groupCount,
++    groupedItems,
+ }: {
+     item: InspectorListItem
+     index: number
+     onLayout?: (layout: { width: number; height: number }) => void
++    groupCount?: number
++    groupedItems?: InspectorListItem[]
+ }): JSX.Element {
+     const hoverRef = useRef<HTMLDivElement>(null)
+ 
+@@ -417,9 +443,9 @@ export const PlayerInspectorListItem = memo(function PlayerInspectorListItem({
+                 zIndex: isExpanded ? 1 : 0,
+             }}
+         >
+-            <ListItemTitle item={item} index={index} hoverRef={hoverRef} />
++            <ListItemTitle item={item} index={index} hoverRef={hoverRef} groupCount={groupCount} />
+ 
+-            {isExpanded ? <ListItemDetail item={item} index={index} /> : null}
++            {isExpanded ? <ListItemDetail item={item} index={index} groupedItems={groupedItems} /> : null}
+         </div>
+     )
+ }, objectsEqual)
+diff --git a/frontend/src/scenes/session-recordings/player/inspector/inspectorListCollapsing.test.ts b/frontend/src/scenes/session-recordings/player/inspector/inspectorListCollapsing.test.ts
+new file mode 100644
+index 00000000000..68d776b4adf
+--- /dev/null
++++ b/frontend/src/scenes/session-recordings/player/inspector/inspectorListCollapsing.test.ts
+@@ -0,0 +1,106 @@
++import {
++    InspectorListItemConsole,
++    InspectorListItemEvent,
++    InspectorListItemInactivity,
++    computeDisplayGroups,
++} from 'scenes/session-recordings/player/inspector/playerInspectorLogic'
++
++function makeEvent(overrides: Partial<InspectorListItemEvent> = {}): InspectorListItemEvent {
++    return {
++        type: 'events',
++        timestamp: {} as any,
++        timeInRecording: 1000,
++        search: 'Pageview /',
++        key: `event-${Math.random()}`,
++        data: { event: '$pageview' } as any,
++        ...overrides,
++    }
++}
++
++function makeConsoleLog(overrides: Partial<InspectorListItemConsole> = {}): InspectorListItemConsole {
++    return {
++        type: 'console',
++        timestamp: {} as any,
++        timeInRecording: 1000,
++        search: 'retry failed',
++        key: `console-${Math.random()}`,
++        data: { content: 'retry failed', level: 'warn', timestamp: 1000, windowId: undefined } as any,
++        ...overrides,
++    }
++}
++
++function counts(items: any[], groupSimilar = true): number[] {
++    return computeDisplayGroups(items, groupSimilar).map((g) => g.indices.length)
++}
++
++describe('computeDisplayGroups', () => {
++    it('returns empty for empty input', () => {
++        expect(computeDisplayGroups([], true)).toEqual([])
++    })
++
++    it('does not group events across non-event items', () => {
++        const items = [makeEvent(), makeEvent(), makeConsoleLog(), makeEvent()]
++        expect(counts(items)).toEqual([2, 1, 1])
++    })
++
++    it('breaks event group on different event name or search text', () => {
++        const items = [
++            makeEvent({ search: 'Clicked A' }),
++            makeEvent({ search: 'Clicked A' }),
++            makeEvent({ search: 'Clicked B' }),
++        ]
++        expect(counts(items)).toEqual([2, 1])
++    })
++
++    it('groups highlighted events with same highlight color', () => {
++        const items = [makeEvent({ highlightColor: 'primary' }), makeEvent({ highlightColor: 'primary' }), makeEvent()]
++        expect(counts(items)).toEqual([2, 1])
++    })
++
++    it('breaks event group on different highlight color', () => {
++        const items = [makeEvent({ highlightColor: 'danger' }), makeEvent({ highlightColor: 'primary' })]
++        expect(counts(items)).toEqual([1, 1])
++    })
++
++    it('groups adjacent console logs with same content and highlight', () => {
++        const items = [makeConsoleLog(), makeConsoleLog(), makeConsoleLog()]
++        expect(counts(items)).toEqual([3])
++    })
++
++    it('does not group console logs across non-console items', () => {
++        const items = [makeConsoleLog(), makeEvent(), makeConsoleLog()]
++        expect(counts(items)).toEqual([1, 1, 1])
++    })
++
++    it('breaks console log group on different content or highlight', () => {
++        const items = [
++            makeConsoleLog({ highlightColor: 'danger' }),
++            makeConsoleLog({ highlightColor: 'danger' }),
++            makeConsoleLog({ highlightColor: 'warning' }),
++        ]
++        expect(counts(items)).toEqual([2, 1])
++    })
++
++    it('disables all grouping when groupSimilar is false', () => {
++        const items = [makeEvent(), makeEvent(), makeConsoleLog(), makeConsoleLog()]
++        expect(counts(items, false)).toEqual([1, 1, 1, 1])
++    })
++
++    it('does not group inactivity items', () => {
++        const inactivity: InspectorListItemInactivity = {
++            type: 'inactivity',
++            timestamp: {} as any,
++            timeInRecording: 1000,
++            search: '',
++            key: 'i',
++            durationMs: 5000,
++        }
++        expect(counts([inactivity, inactivity])).toEqual([1, 1])
++    })
++
++    it('tracks correct indices', () => {
++        const items = [makeEvent(), makeEvent(), makeConsoleLog(), makeConsoleLog()]
++        const groups = computeDisplayGroups(items, true)
++        expect(groups).toEqual([{ indices: [0, 1] }, { indices: [2, 3] }])
++    })
++})
+diff --git a/frontend/src/scenes/session-recordings/player/inspector/miniFiltersLogic.ts b/frontend/src/scenes/session-recordings/player/inspector/miniFiltersLogic.ts
+index a77af589c3e..c03aa43dcb8 100644
+--- a/frontend/src/scenes/session-recordings/player/inspector/miniFiltersLogic.ts
++++ b/frontend/src/scenes/session-recordings/player/inspector/miniFiltersLogic.ts
+@@ -135,6 +135,7 @@ export const miniFiltersLogic = kea<miniFiltersLogicType>([
+     path(['scenes', 'session-recordings', 'player', 'miniFiltersLogic']),
+     actions({
+         setShowOnlyMatching: (showOnlyMatching: boolean) => ({ showOnlyMatching }),
++        setGroupRepeatedItems: (groupRepeatedItems: boolean) => ({ groupRepeatedItems }),
+         setMiniFilter: (key: MiniFilterKey, enabled: boolean) => ({ key, enabled }),
+         setMiniFilters: (keys: MiniFilterKey[], enabled: boolean) => ({ keys, enabled }),
+         setSearchQuery: (search: string) => ({ search }),
+@@ -153,6 +154,14 @@ export const miniFiltersLogic = kea<miniFiltersLogicType>([
+             },
+         ],
+ 
++        groupRepeatedItems: [
++            true,
++            { persist: true },
++            {
++                setGroupRepeatedItems: (_, { groupRepeatedItems }) => groupRepeatedItems,
++            },
++        ],
++
+         selectedMiniFilters: [
+             defaultMinifilters,
+             { persist: true },
+diff --git a/frontend/src/scenes/session-recordings/player/inspector/playerInspectorLogic.ts b/frontend/src/scenes/session-recordings/player/inspector/playerInspectorLogic.ts
+index a61894b0576..da5ac40c6b1 100644
+--- a/frontend/src/scenes/session-recordings/player/inspector/playerInspectorLogic.ts
++++ b/frontend/src/scenes/session-recordings/player/inspector/playerInspectorLogic.ts
+@@ -13,6 +13,7 @@ import {
+ 
+ import api from 'lib/api'
+ import { TaxonomicFilterGroupType } from 'lib/components/TaxonomicFilter/types'
++import { FEATURE_FLAGS } from 'lib/constants'
+ import { Dayjs, dayjs } from 'lib/dayjs'
+ import { featureFlagLogic } from 'lib/logic/featureFlagLogic'
+ import { ceilMsToClosestSecond, eventToDescription, humanizeBytes, toParams } from 'lib/utils'
+@@ -189,6 +190,54 @@ export interface PlayerInspectorLogicProps extends SessionRecordingPlayerLogicPr
+     matchingEventsMatchType?: MatchingEventsMatchType
+ }
+ 
++/** Merges adjacent inactivity items into one with a combined duration. */
++function mergeAdjacentInactivity(items: InspectorListItem[]): InspectorListItem[] {
++    return items.reduce((acc, item) => {
++        const previousItem = acc[acc.length - 1]
++        if (item.type === 'inactivity' && previousItem?.type === 'inactivity') {
++            acc[acc.length - 1] = { ...previousItem, durationMs: previousItem.durationMs + item.durationMs }
++            return acc
++        }
++        acc.push(item)
++        return acc
++    }, [] as InspectorListItem[])
++}
++
++export type DisplayGroup = { indices: number[] }
++
++function canGroup(current: InspectorListItem, next: InspectorListItem): boolean {
++    if (current.type !== next.type || current.highlightColor !== next.highlightColor) {
++        return false
++    }
++    switch (current.type) {
++        case 'events':
++            return next.type === 'events' && current.data.event === next.data.event && current.search === next.search
++        case 'console':
++            return next.type === 'console' && current.data.content === next.data.content
++        default:
++            return false
++    }
++}
++
++/** Groups adjacent identical events and console logs into display rows. */
++export function computeDisplayGroups(items: InspectorListItem[], groupSimilar: boolean): DisplayGroup[] {
++    const groups: DisplayGroup[] = []
++
++    for (let i = 0; i < items.length; i++) {
++        if (groupSimilar && groups.length > 0) {
++            const lastGroup = groups[groups.length - 1]
++            if (canGroup(items[lastGroup.indices[0]], items[i])) {
++                lastGroup.indices.push(i)
++                continue
++            }
++        }
++
++        groups.push({ indices: [i] })
++    }
++
++    return groups
++}
++
+ function _isCustomSnapshot(x: unknown): x is customEvent {
+     return (x as customEvent).type === 5
+ }
+@@ -292,7 +341,14 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
+         ],
+         values: [
+             miniFiltersLogic,
+-            ['showOnlyMatching', 'miniFiltersByKey', 'searchQuery', 'miniFiltersForTypeByKey', 'miniFilters'],
++            [
++                'showOnlyMatching',
++                'groupRepeatedItems',
++                'miniFiltersByKey',
++                'searchQuery',
++                'miniFiltersForTypeByKey',
++                'miniFilters',
++            ],
+             sessionRecordingDataCoordinatorLogic(props),
+             [
+                 'sessionPlayerData',
+@@ -429,12 +485,18 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
+             },
+         ],
+ 
++        collapseInspectorItems: [
++            (s) => [s.featureFlags],
++            (featureFlags): boolean => !!featureFlags[FEATURE_FLAGS.REPLAY_COLLAPSE_INSPECTOR_ITEMS],
++        ],
++
+         processedSnapshotData: [
+-            (s) => [s.start, s.sessionPlayerData, s.windowNumberForID],
++            (s) => [s.start, s.sessionPlayerData, s.windowNumberForID, s.collapseInspectorItems],
+             (
+                 start,
+                 sessionPlayerData,
+-                windowNumberForID
++                windowNumberForID,
++                collapseInspectorItems
+             ): {
+                 offlineStatusChanges: InspectorListOfflineStatusChange[]
+                 browserVisibilityChanges: InspectorListBrowserVisibility[]
+@@ -593,8 +655,9 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
+                             if (!consoleLogSeenCache.has(cacheKey)) {
+                                 consoleLogSeenCache.add(cacheKey)
+ 
++                                const collapseConsole = !collapseInspectorItems
+                                 const lastLogLine = consoleLogs[consoleLogs.length - 1]
+-                                if (lastLogLine?.content === content) {
++                                if (collapseConsole && lastLogLine?.content === content) {
+                                     if (lastLogLine.count === undefined) {
+                                         lastLogLine.count = 1
+                                     } else {
+@@ -1026,19 +1089,7 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
+                     hasEventsToDisplay,
+                 })
+ 
+-                // need to collapse adjacent inactivity items
+-                // they look wrong next to each other
+-                return filteredItems.reduce((acc, item, index) => {
+-                    if (item.type === 'inactivity') {
+-                        const previousItem = filteredItems[index - 1]
+-                        if (previousItem?.type === 'inactivity') {
+-                            previousItem.durationMs += item.durationMs
+-                            return acc
+-                        }
+-                    }
+-                    acc.push(item)
+-                    return acc
+-                }, [] as InspectorListItem[])
++                return mergeAdjacentInactivity(filteredItems)
+             },
+             { resultEqualityCheck: equal },
+         ],
+@@ -1205,21 +1256,22 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
+         ],
+ 
+         playbackIndicatorIndex: [
+-            (s) => [s.currentPlayerTime, s.items],
+-            (playerTime, items): number => {
+-                // Returns the index of the event that the playback is closest to
++            (s) => [s.currentPlayerTime, s.items, s.displayGroups],
++            (playerTime, items, displayGroups): number => {
+                 if (!playerTime) {
+                     return 0
+                 }
+-
+                 const timeSeconds = Math.floor(playerTime / 1000)
+-                return items.findIndex((x) => Math.floor(x.timeInRecording / 1000) >= timeSeconds)
++                return displayGroups.findIndex(
++                    (g) => Math.floor(items[g.indices[0]].timeInRecording / 1000) >= timeSeconds
++                )
+             },
+         ],
+ 
+         playbackIndicatorIndexStop: [
+-            (s) => [s.playbackIndicatorIndex, s.items],
+-            (playbackIndicatorIndex, items): number => (items.length + playbackIndicatorIndex) % items.length,
++            (s) => [s.playbackIndicatorIndex, s.displayGroups],
++            (playbackIndicatorIndex, displayGroups): number =>
++                (displayGroups.length + playbackIndicatorIndex) % displayGroups.length,
+         ],
+ 
+         fuse: [
+@@ -1246,6 +1298,17 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
+             { resultEqualityCheck: equal },
+         ],
+ 
++        displayGroups: [
++            (s) => [s.items, s.groupRepeatedItems, s.collapseInspectorItems],
++            (items, groupRepeatedItems, collapseInspectorItems): DisplayGroup[] => {
++                if (!collapseInspectorItems) {
++                    return items.map((_, i) => ({ indices: [i] }))
++                }
++                return computeDisplayGroups(items, groupRepeatedItems)
++            },
++            { resultEqualityCheck: equal },
++        ],
++
+         allItemsList: [(s) => [s.allItems], (allItemsData): InspectorListItem[] => allItemsData.items],
+ 
+         /**
+@@ -1273,11 +1336,13 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
+     listeners(({ values, actions }) => ({
+         setItemExpanded: ({ index, expanded }) => {
+             if (expanded) {
+-                const item = values.items[index]
++                const group = values.displayGroups[index]
++                const item = values.items[group.indices[0]]
+                 actions.reportRecordingInspectorItemExpanded(item.type, index)
+ 
+                 if (item.type === 'events') {
+-                    actions.loadFullEventData(item.data)
++                    const eventsToLoad = group.indices.map((i) => (values.items[i] as InspectorListItemEvent).data)
++                    actions.loadFullEventData(eventsToLoad)
+                 }
+             }
+         },
+diff --git a/frontend/src/types.ts b/frontend/src/types.ts
+index 06a13844b55..dbf469f1d2d 100644
+--- a/frontend/src/types.ts
++++ b/frontend/src/types.ts
+@@ -1118,12 +1118,11 @@ export type RecordingConsoleLogV2 = {
+     windowNumber?: number | '?' | undefined
+     level: LogLevel
+     content: string
++    count?: number
+     // JS code associated with the log - implicitly the empty array when not provided
+     lines?: string[]
+     // stack trace associated with the log - implicitly the empty array when not provided
+     trace?: string[]
+-    // number of times this log message was seen - implicitly 1 when not provided
+-    count?: number
+ }
+ 
+ export interface RecordingSegment {

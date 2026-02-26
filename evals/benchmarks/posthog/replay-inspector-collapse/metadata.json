@@ -1,0 +1,13 @@
+{
+  "id": "replay-inspector-collapse",
+  "name": "Collapse Identical Replay Inspector Rows",
+  "description": "TypeScript/React feature with correctness bugs, performance regression, and UX issues",
+  "source": "posthog/posthog#48304",
+  "source_url": "https://github.com/PostHog/posthog/pull/48304",
+  "languages": ["typescript"],
+  "frameworks": ["react"],
+  "areas": ["correctness", "performance", "frontend", "maintainability"],
+  "difficulty": "hard",
+  "expected_finding_count": 5,
+  "false_positive_trap_count": 0
+}
