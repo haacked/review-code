@@ -256,7 +256,7 @@ Comment structure: `conversation` (discussion), `reviews` (approve/changes), `in
 | architecture | code-reviewer-architecture | Necessity, patterns, code reuse, simplicity |
 | *(frontend detected)* | code-reviewer-frontend | React/TS patterns, components, state, a11y |
 
-If an area is specified, invoke only that agent. Otherwise, invoke all 7 core agents in parallel (+ frontend if `languages.has_frontend` is true). Pass the FULL context (PR info, diff, architectural context, guidelines) to each agent as the prompt.
+Use the Task tool with `subagent_type` from the table above. If an area is specified, invoke only that agent. Otherwise, invoke all 7 core agents in parallel (+ frontend if `languages.has_frontend` is true). Pass the FULL context (PR info, diff, architectural context, guidelines) to each agent as the prompt.
 
 ### Collect and Present Results
 
