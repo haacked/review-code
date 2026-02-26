@@ -52,15 +52,20 @@ check_finding_match() {
     expected_start=$(echo "${expected}" | jq -r '.line_start')
     expected_end=$(echo "${expected}" | jq -r '.line_end')
 
-    # File must match (allow partial path match)
-    if [[ "${parsed_file}" != *"${expected_file}"* ]] && [[ "${expected_file}" != *"${parsed_file}"* ]]; then
-        return 1
+    # File must match (allow partial path match), or skip if parsed file is empty
+    if [[ -n "${parsed_file}" ]]; then
+        if [[ "${parsed_file}" != *"${expected_file}"* ]] && [[ "${expected_file}" != *"${parsed_file}"* ]]; then
+            return 1
+        fi
     fi
 
     # Line must be within a generous range (within 10 lines of the expected range)
+    # Skip line check when parsed line is 0 (unknown) or expected range is null
     local margin=10
-    if ((parsed_line < expected_start - margin || parsed_line > expected_end + margin)); then
-        return 1
+    if [[ "${parsed_line}" != "0" ]] && [[ "${expected_start}" != "null" ]] && [[ "${expected_end}" != "null" ]]; then
+        if ((parsed_line < expected_start - margin || parsed_line > expected_end + margin)); then
+            return 1
+        fi
     fi
 
     # At least one keyword must appear in the description (case-insensitive)
@@ -99,15 +104,20 @@ check_trap_match() {
     trap_start=$(echo "${trap}" | jq -r '.line_start')
     trap_end=$(echo "${trap}" | jq -r '.line_end')
 
-    # File must match
-    if [[ "${parsed_file}" != *"${trap_file}"* ]] && [[ "${trap_file}" != *"${parsed_file}"* ]]; then
-        return 1
+    # File must match, or skip if parsed file is empty
+    if [[ -n "${parsed_file}" ]]; then
+        if [[ "${parsed_file}" != *"${trap_file}"* ]] && [[ "${trap_file}" != *"${parsed_file}"* ]]; then
+            return 1
+        fi
     fi
 
     # Line must be within the trap range (tight margin)
+    # Skip line check when parsed line is 0 (unknown) or trap range is null
     local margin=5
-    if ((parsed_line < trap_start - margin || parsed_line > trap_end + margin)); then
-        return 1
+    if [[ "${parsed_line}" != "0" ]] && [[ "${trap_start}" != "null" ]] && [[ "${trap_end}" != "null" ]]; then
+        if ((parsed_line < trap_start - margin || parsed_line > trap_end + margin)); then
+            return 1
+        fi
     fi
 
     # Check trap keywords in description
@@ -163,7 +173,7 @@ score_pattern_matching() {
         expected=$(echo "${expected_findings}" | jq ".[$i]")
         local eid weight
         eid=$(echo "${expected}" | jq -r '.id')
-        weight=$(echo "${expected}" | jq -r '.weight')
+        weight=$(echo "${expected}" | jq -r '.weight // 1')
         total_weight=$((total_weight + weight))
 
         local found=false

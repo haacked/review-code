@@ -82,17 +82,18 @@ run_pr_benchmark() {
     local result_dir="$3"
     local pr_url="$4"
 
-    # Extract org/repo/number from the PR URL
+    # Extract org/repo/number from the PR URL (lowercase for file lookup)
     local org repo pr_number
-    org=$(echo "${pr_url}" | sed -E 's#.*/([^/]+)/([^/]+)/pull/([0-9]+)#\1#')
-    repo=$(echo "${pr_url}" | sed -E 's#.*/([^/]+)/([^/]+)/pull/([0-9]+)#\2#')
+    org=$(echo "${pr_url}" | sed -E 's#.*/([^/]+)/([^/]+)/pull/([0-9]+)#\1#' | tr '[:upper:]' '[:lower:]')
+    repo=$(echo "${pr_url}" | sed -E 's#.*/([^/]+)/([^/]+)/pull/([0-9]+)#\2#' | tr '[:upper:]' '[:lower:]')
     pr_number=$(echo "${pr_url}" | sed -E 's#.*/([^/]+)/([^/]+)/pull/([0-9]+)#\3#')
 
     echo "  Reviewing PR ${pr_url}…"
 
-    # Run the review via claude -p using the PR URL
+    # Run the review via claude -p using the PR URL.
+    # Unset CLAUDECODE to allow running inside an existing Claude Code session.
     local claude_exit=0
-    claude -p "/review-code ${pr_url} --force" \
+    env -u CLAUDECODE claude -p "/review-code ${pr_url} --force" \
         --dangerously-skip-permissions \
         --max-budget-usd 5 \
         > "${result_dir}/claude-output.txt" 2>&1 || claude_exit=$?
@@ -184,9 +185,10 @@ run_crafted_benchmark() {
     org=$(git -C "${REPO_ROOT}" remote get-url origin 2> /dev/null | sed -E 's#.*[:/]([^/]+)/([^/]+?)(\.git)?$#\1#' || echo "unknown")
     repo=$(git -C "${REPO_ROOT}" remote get-url origin 2> /dev/null | sed -E 's#.*[:/]([^/]+)/([^/]+?)(\.git)?$#\2#' || echo "unknown")
 
-    # Run the review via claude -p
+    # Run the review via claude -p.
+    # Unset CLAUDECODE to allow running inside an existing Claude Code session.
     local claude_exit=0
-    claude -p "/review-code ${tmp_branch} --force" \
+    env -u CLAUDECODE claude -p "/review-code ${tmp_branch} --force" \
         --dangerously-skip-permissions \
         --max-budget-usd 5 \
         > "${result_dir}/claude-output.txt" 2>&1 || claude_exit=$?

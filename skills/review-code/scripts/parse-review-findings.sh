@@ -60,8 +60,8 @@ save_finding() {
 # Uses parent scope variables: in_finding, finding_file, finding_description,
 #   finding_line, current_agent, current_confidence, findings
 flush_pending_finding() {
-    if [[ "${in_finding}" == true ]] && [[ -n "${finding_file}" ]] && [[ -n "${finding_description}" ]]; then
-        save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file}" "${finding_line}" "${finding_description}"
+    if [[ "${in_finding}" == true ]] && [[ -n "${finding_description}" ]]; then
+        save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file:-}" "${finding_line:-0}" "${finding_description}"
     fi
 }
 
@@ -110,6 +110,34 @@ main() {
             finding_description=""
             current_confidence=""
             in_finding=true
+            continue
+        fi
+
+        # Pattern 5: ### `severity`: Description Title
+        # Matches the review format: ### `blocking`: IPv6-Mapped IPv4 Address SSRF Bypass
+        if [[ "${line}" =~ ^\#{2,3}[[:space:]]+\`(blocking|suggestion|nit|question)\`:[[:space:]]*(.+)$ ]]; then
+            flush_pending_finding
+
+            finding_description="${BASH_REMATCH[2]}"
+            finding_file=""
+            finding_line="0"
+            in_finding=true
+            continue
+        fi
+
+        # Pattern 6: **File:** `path/to/file.py` (optionally with line info)
+        # Captures the file path from the first backtick-quoted string after **File:**
+        if [[ "${in_finding}" == true ]] && [[ "${line}" =~ ^\*\*File:\*\*[[:space:]]*\`([^\`]+)\` ]]; then
+            finding_file="${BASH_REMATCH[1]}"
+
+            # Check if file path itself contains :linenum
+            if [[ "${finding_file}" =~ ^(.+):([0-9]+)$ ]]; then
+                finding_file="${BASH_REMATCH[1]}"
+                finding_line="${BASH_REMATCH[2]}"
+            # Check rest of line for "line(s) N" pattern
+            elif [[ "${line}" =~ lines?[[:space:]]+([0-9]+) ]]; then
+                finding_line="${BASH_REMATCH[1]}"
+            fi
             continue
         fi
 
