@@ -536,21 +536,26 @@ EOF
 }
 ```
 
-**IMPORTANT**: The `summary` field should sound like a human wrote it — conversational, brief, and specific to the PR. Match the reviewer's natural voice.
+**IMPORTANT**: The `summary` field should sound like a human reviewer wrote it — warm, conversational, and specific to the PR. It follows a two-part structure:
 
-Good examples (from real reviews):
+1. **Lead with genuine appreciation.** Call out something specific you liked about the PR — a clever approach, a clean refactor, something you learned, or just good taste. Be specific; generic praise ("nice work") is worse than no praise.
+2. **Briefly characterize the inline comments.** One sentence indicating whether the suggestions are blocking or non-blocking.
 
-- "LGTM! Two non-blocking suggestions."
-- "Nice! Some minor suggestions."
-- "Clean, well-scoped PR. No blocking issues. Two inline suggestions on section title design and type annotation."
-- "Noticed a few things that might be worth addressing."
+Good examples (match this voice):
 
-Bad examples (robotic, template-sounding):
+- "Nice job! I really liked how you extracted the retry logic into its own module — much cleaner. Some suggestions inline, but nothing blocking."
+- "TIL about `Intl.Segmenter` — cool find. A couple of blocking issues inline that should be fixed before approval."
+- "This is a great simplification of the auth flow. LGTM, no comments."
+- "Really nice test coverage here. Some suggestions inline, but nothing blocking."
+
+Bad examples (robotic, template-sounding, or vague):
 
 - "Code review with 3 inline suggestions. See review file for full details."
 - "Code review complete with 3 inline suggestions for improved error handling."
+- "Nice work! Some suggestions." (too generic — what specifically was nice?)
+- "LGTM! Two non-blocking suggestions." (fine as a fallback, but try to be more specific)
 
-The summary should NOT be the full review — it's the casual top-level comment on a GitHub review. Keep it short, natural, and specific to what you found.
+The summary should NOT be the full review — it's the casual top-level comment on a GitHub review. Keep it to 1-2 sentences.
 
 **Code Suggestions:**
 
