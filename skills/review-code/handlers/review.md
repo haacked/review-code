@@ -612,6 +612,22 @@ Review kept as draft. Visit GitHub to review and submit:
 <review_url>
 ```
 
+### Review Metadata
+
+When saving the review file, include a metadata header at the top:
+
+```html
+<!-- review-metadata
+reviewed_at: <current ISO 8601 timestamp>
+mode: <mode>
+pr_number: <pr_number if applicable>
+org: <org>
+repo: <repo>
+-->
+```
+
+This metadata is used by the learning system to determine when the review was created.
+
 ### Cleanup Session
 
 After the review is complete, cleanup the session (replace `<SESSION_ID>` with the actual session ID):
