@@ -135,10 +135,8 @@ main() {
     # fall back to file mtime for reviews created before metadata was added.
     local review_file_epoch
     local reviewed_at
-    reviewed_at=$(grep -A1 'review-metadata' "${review_file}" 2> /dev/null \
-        | grep 'reviewed_at:' \
-        | sed 's/.*reviewed_at: *//' \
-        | tr -d ' ' || true)
+    reviewed_at=$(sed -n '/review-metadata/,/-->/{ /reviewed_at:/{ s/.*reviewed_at: *//; s/ *$//; p; q; }; }' \
+        "${review_file}" 2> /dev/null || true)
     if [[ -n "${reviewed_at}" ]]; then
         review_file_epoch=$(iso_to_epoch "${reviewed_at}")
     else
