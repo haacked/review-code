@@ -64,7 +64,7 @@ verify_pending_state() {
     local review_id="$4"
 
     local review
-    review=$(gh api "repos/${owner}/${repo}/pulls/${pr_number}/reviews/${review_id}" 2>/dev/null) || {
+    review=$(gh api "repos/${owner}/${repo}/pulls/${pr_number}/reviews/${review_id}" 2> /dev/null) || {
         jq -n --arg id "${review_id}" \
             '{success: false, error: ("Failed to fetch review " + $id)}'
         return 1
@@ -96,7 +96,7 @@ submit_review() {
     local result
     result=$(echo "${request_body}" | gh api --method POST \
         "repos/${owner}/${repo}/pulls/${pr_number}/reviews/${review_id}/events" \
-        --input - 2>/dev/null) || {
+        --input - 2> /dev/null) || {
         echo "Failed to submit review" >&2
         return 1
     }

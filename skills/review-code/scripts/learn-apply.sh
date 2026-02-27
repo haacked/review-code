@@ -75,7 +75,7 @@ main() {
 
     # Read all learnings using jq slurp (O(n) instead of O(n²) bash loop)
     local learnings
-    learnings=$(jq -s '[.[] | select(. != null)]' "${learnings_file}" 2>/dev/null || echo "[]")
+    learnings=$(jq -s '[.[] | select(. != null)]' "${learnings_file}" 2> /dev/null || echo "[]")
 
     local total_learnings
     total_learnings=$(echo "${learnings}" | jq 'length')

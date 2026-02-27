@@ -55,7 +55,7 @@ get_existing_pending_review() {
 
     # Get all reviews for this PR
     local reviews
-    reviews=$(gh api "repos/${owner}/${repo}/pulls/${pr_number}/reviews" --paginate 2>/dev/null || echo "[]")
+    reviews=$(gh api "repos/${owner}/${repo}/pulls/${pr_number}/reviews" --paginate 2> /dev/null || echo "[]")
 
     # Find pending review from this user
     local pending_review
@@ -72,7 +72,7 @@ get_existing_pending_review() {
 
     # Fetch comments for this pending review
     local comments
-    comments=$(gh api "repos/${owner}/${repo}/pulls/${pr_number}/reviews/${review_id}/comments" --paginate 2>/dev/null || echo "[]")
+    comments=$(gh api "repos/${owner}/${repo}/pulls/${pr_number}/reviews/${review_id}/comments" --paginate 2> /dev/null || echo "[]")
 
     # Return review info with comments
     jq -n \
@@ -99,7 +99,7 @@ delete_pending_review() {
     local pr_number="$3"
     local review_id="$4"
 
-    gh api --method DELETE "repos/${owner}/${repo}/pulls/${pr_number}/reviews/${review_id}" 2>/dev/null || {
+    gh api --method DELETE "repos/${owner}/${repo}/pulls/${pr_number}/reviews/${review_id}" 2> /dev/null || {
         warning "Failed to delete existing pending review ${review_id}"
         return 1
     }
@@ -131,8 +131,8 @@ create_pending_review() {
 
     if ! result=$(echo "${request_body}" | gh api --method POST \
         "repos/${owner}/${repo}/pulls/${pr_number}/reviews" \
-        --input - 2>"${tmpfile}"); then
-        error_output=$(<"${tmpfile}")
+        --input - 2> "${tmpfile}"); then
+        error_output=$(< "${tmpfile}")
         echo "API error: ${error_output}" >&2
         echo "Request body sent:" >&2
         echo "${request_body}" | jq -c '.' >&2
