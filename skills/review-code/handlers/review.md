@@ -493,26 +493,23 @@ EOF
 }
 ```
 
-**IMPORTANT**: The `summary` field should sound like a human reviewer wrote it — warm, conversational, and specific to the PR. It follows a two-part structure:
+**IMPORTANT**: The `summary` field is the casual top-level comment on a GitHub review. Keep it brief — 1-2 short sentences at most. The author already knows what their PR does; never restate or narrate the approach back to them.
 
-1. **Lead with genuine appreciation.** Call out something specific you liked about the PR — a clever approach, a clean refactor, something you learned, or just good taste. Be specific; generic praise ("nice work") is worse than no praise.
-2. **Briefly characterize the inline comments.** One sentence indicating whether the suggestions are blocking or non-blocking.
+**Default to short.** Most PRs deserve a simple "LGTM!", "Nice fix!", or "Looks good!" with a note about inline comments if any. Only elaborate when something genuinely surprised you — a technique you hadn't seen before, an unusually elegant solution, or a TIL moment.
 
-Good examples (match this voice):
+Good examples:
 
-- "Nice job! I really liked how you extracted the retry logic into its own module — much cleaner. Some suggestions inline, but nothing blocking."
-- "TIL about `Intl.Segmenter` — cool find. A couple of blocking issues inline that should be fixed before approval."
-- "This is a great simplification of the auth flow. LGTM, no comments."
-- "Really nice test coverage here. Some suggestions inline, but nothing blocking."
+- "LGTM!"
+- "Nice fix! A couple non-blocking suggestions inline."
+- "Looks good, one blocking issue inline."
+- "TIL about `Intl.Segmenter` — cool find. A couple suggestions inline."
 
-Bad examples (robotic, template-sounding, or vague):
+Bad examples (robotic, narrating the approach, or over-explaining):
 
 - "Code review with 3 inline suggestions. See review file for full details."
 - "Code review complete with 3 inline suggestions for improved error handling."
-- "Nice work! Some suggestions." (too generic — what specifically was nice?)
-- "LGTM! Two non-blocking suggestions." (fine as a fallback, but try to be more specific)
-
-The summary should NOT be the full review — it's the casual top-level comment on a GitHub review. Keep it to 1-2 sentences.
+- "Nice fix for a real validation gap — the two-phase approach (relative date regex first, then dateutil) is clean." (narrates the approach back to the author)
+- "I really liked how you extracted the retry logic into its own module — much cleaner." (restates what the PR does)
 
 **Code Suggestions:**
 
