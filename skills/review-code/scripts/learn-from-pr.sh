@@ -130,11 +130,20 @@ main() {
         }]
     ' 2> /dev/null || echo "[]")
 
-    # Determine files changed after the review was created
-    # Use epoch seconds for reliable date comparison (ISO 8601 string comparison
-    # fails when GitHub API returns +00:00 vs Z suffix)
+    # Determine files changed after the review was created.
+    # Prefer reviewed_at from metadata header (written by review handler),
+    # fall back to file mtime for reviews created before metadata was added.
     local review_file_epoch
-    review_file_epoch=$(get_file_mtime "${review_file}")
+    local reviewed_at
+    reviewed_at=$(grep -A1 'review-metadata' "${review_file}" 2> /dev/null \
+        | grep 'reviewed_at:' \
+        | sed 's/.*reviewed_at: *//' \
+        | tr -d ' ' || true)
+    if [[ -n "${reviewed_at}" ]]; then
+        review_file_epoch=$(iso_to_epoch "${reviewed_at}")
+    else
+        review_file_epoch=$(get_file_mtime "${review_file}")
+    fi
 
     # Check if any commits are after the review file creation
     # Using the commits data already fetched in pr_data to avoid extra API calls
