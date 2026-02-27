@@ -217,15 +217,11 @@ If a comment has no prefix, assume it's a suggestion.
 
 Write comments the way a senior engineer talks in a PR review — direct, specific, and conversational. No filler, no formality, no structured headers.
 
-Rules:
-- Start with the backtick prefix, then flow into natural prose. No `**Issue**:`, `**Impact**:`, `**Recommendation**:` headers.
-- Lead with what's wrong (or what to consider), then explain why. Combine them naturally — don't separate into sections.
-- Be specific: name the function, quote the value, cite the line. Vague observations aren't helpful.
+- No `**Issue**:` / `**Impact**:` / `**Recommendation**:` headers. Start with the prefix, then flow into natural prose.
+- Be specific: name the function, quote the value, cite the line.
 - Offer alternatives with code when possible. Use GitHub's `suggestion` syntax for single-line fixes.
 - Defer to the author on judgment calls: "your call", "worth considering", "that said".
-- Express uncertainty honestly. When you're not 100% sure, say so — "Unless I'm missing something", "I might be wrong, but", "If I'm reading this right". Give the author the benefit of the doubt rather than asserting something you can't fully verify.
-- Keep it short. If the comment needs more than two short paragraphs, you're probably combining multiple findings — split them.
-- Use natural transitions ("More broadly...", "Also worth noting...", "That said...") instead of bullet lists.
+- Express uncertainty honestly: "Unless I'm missing something", "If I'm reading this right". Give the author the benefit of the doubt.
 - Never restate what the code obviously does. The author wrote it — they know.
 
 Good:
@@ -233,14 +229,6 @@ Good:
 `suggestion`: The `except` clause doesn't catch `OverflowError`, which `dateutil.parser.parse()` raises for very large numeric strings like `"9999999999"`. This causes a 500 instead of a clean 400.
 
 More broadly, consider using the existing `determine_parsed_date_for_property_matching` from `posthog/queries/base.py` instead of reimplementing the same two-step parsing here. It already catches broader exceptions and is the established pattern in the feature flag API.
-```
-
-```
-`question`: The feature flag API only validates `is_date_before` and `is_date_after` — notably excluding `is_date_exact`. Is `is_date_exact` fully supported in cohorts, or could validating its value here give users a false sense that it works?
-```
-
-```
-`suggestion`: Consider adding an inline comment documenting the thread pool sizing model. The PR description has great reasoning that won't be easily discoverable later. That said, these values change frequently during tuning so comments can go stale — your call.
 ```
 
 ```
@@ -252,10 +240,6 @@ Bad:
 **Issue**: The `except` clause doesn't catch `OverflowError`.
 **Impact**: This causes a 500 Internal Server Error for large numeric strings.
 **Recommendation**: Add `OverflowError` to the except tuple.
-```
-
-```
-`suggestion`: This code would benefit from improved error handling. The current implementation does not account for all possible exception types that may be raised during date parsing operations. Consider expanding the exception handling to include `OverflowError`.
 ```
 
 {If previous_review exists:}
