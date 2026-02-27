@@ -124,6 +124,8 @@ while IFS= read -r framework; do
     esac
 done < <(echo "${diff_content}" | awk '
     BEGIN { in_block = 0 }
+    # Reset block comment state at diff file boundaries
+    /^diff --git / { in_block = 0; next }
     {
         # Strip optional diff +/- prefix to get actual code content
         line = $0

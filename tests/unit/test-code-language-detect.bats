@@ -356,6 +356,26 @@ EOF
     echo "$result" | jq -e '.frameworks | contains(["flask"]) | not'
 }
 
+@test "block comment state resets at diff file boundaries" {
+    diff=$(cat <<'EOF'
+diff --git a/first.tsx b/first.tsx
++++ b/first.tsx
+@@ -1,0 +1,2 @@
++/*
++import React from 'react'
+diff --git a/second.py b/second.py
++++ b/second.py
+@@ -1,0 +1,1 @@
++from django.http import HttpResponse
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    # The unclosed block comment in first.tsx should not suppress detection in second.py
+    echo "$result" | jq -e '.frameworks | contains(["django"])'
+    echo "$result" | jq -e '.frameworks | contains(["react"]) | not'
+}
+
 @test "performance: single-pass framework detection" {
     # Verify we're using single-pass awk, not multiple greps
     # This is a meta-test that checks the implementation
