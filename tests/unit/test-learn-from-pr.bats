@@ -178,6 +178,78 @@ teardown() {
     fi
 }
 
+@test "learn-from-pr.sh: empty body does not false-positive match when lines are missing" {
+    # The matching jq expression from the script, testing the content-overlap
+    # fallback path (when line numbers are zero/missing). Before the fix,
+    # contains("") was always true, so any two comments on the same file would
+    # match even with completely unrelated (or empty) content.
+    local match_expr='
+        (($c.body // "" | ascii_downcase | .[0:80]) as $cbody |
+        [$claude[] |
+            ((.description // "") | ascii_downcase | .[0:80]) as $cdesc |
+            select(
+                .file == $c.path and (
+                    ((.line // 0) > 0 and ($c.line // 0) > 0 and (((.line // 0) - ($c.line // 0)) | fabs) <= 10)
+                    or
+                    ((.line // 0) == 0 or ($c.line // 0) == 0)
+                    and
+                    (($cbody | length) > 0 and ($cdesc | length) > 0
+                     and
+                     (($cdesc | contains($cbody)) or ($cbody | contains($cdesc))))
+                )
+            )
+        ] | length > 0)'
+
+    # Empty body + empty description on the same file => should NOT match
+    local result
+    result=$(jq -n \
+        --argjson claude '[{"file":"src/auth.py","line":0,"description":""}]' \
+        --argjson c '{"path":"src/auth.py","line":0,"body":""}' \
+        "$match_expr")
+    [ "$result" = "false" ]
+
+    # Empty body + non-empty description => should NOT match
+    result=$(jq -n \
+        --argjson claude '[{"file":"src/auth.py","line":0,"description":"check null handling"}]' \
+        --argjson c '{"path":"src/auth.py","line":0,"body":""}' \
+        "$match_expr")
+    [ "$result" = "false" ]
+
+    # Non-empty body + empty description => should NOT match
+    result=$(jq -n \
+        --argjson claude '[{"file":"src/auth.py","line":0,"description":""}]' \
+        --argjson c '{"path":"src/auth.py","line":0,"body":"check null handling"}' \
+        "$match_expr")
+    [ "$result" = "false" ]
+}
+
+@test "learn-from-pr.sh: content overlap matches when lines are missing but text overlaps" {
+    local match_expr='
+        (($c.body // "" | ascii_downcase | .[0:80]) as $cbody |
+        [$claude[] |
+            ((.description // "") | ascii_downcase | .[0:80]) as $cdesc |
+            select(
+                .file == $c.path and (
+                    ((.line // 0) > 0 and ($c.line // 0) > 0 and (((.line // 0) - ($c.line // 0)) | fabs) <= 10)
+                    or
+                    ((.line // 0) == 0 or ($c.line // 0) == 0)
+                    and
+                    (($cbody | length) > 0 and ($cdesc | length) > 0
+                     and
+                     (($cdesc | contains($cbody)) or ($cbody | contains($cdesc))))
+                )
+            )
+        ] | length > 0)'
+
+    # Both have overlapping content on the same file => should match
+    local result
+    result=$(jq -n \
+        --argjson claude '[{"file":"src/auth.py","line":0,"description":"check null handling in auth"}]' \
+        --argjson c '{"path":"src/auth.py","line":0,"body":"check null handling"}' \
+        "$match_expr")
+    [ "$result" = "true" ]
+}
+
 @test "learn-from-pr.sh: line proximity check works within 10 lines" {
     local comment_line=100
     local finding_line=95

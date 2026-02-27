@@ -190,7 +190,11 @@ main() {
                     .file == $c.path and (
                         ((.line // 0) > 0 and ($c.line // 0) > 0 and (((.line // 0) - ($c.line // 0)) | fabs) <= 10)
                         or
-                        ((.line // 0) == 0 or ($c.line // 0) == 0) and (($cdesc | contains($cbody)) or ($cbody | contains($cdesc)))
+                        ((.line // 0) == 0 or ($c.line // 0) == 0)
+                        and
+                        (($cbody | length) > 0 and ($cdesc | length) > 0
+                         and
+                         (($cdesc | contains($cbody)) or ($cbody | contains($cdesc))))
                     )
                 )
             ] | length > 0) as $caught |
