@@ -7,7 +7,7 @@
 # Returns: 0 if valid, 1 if invalid (with error message to stderr)
 validate_json() {
     local input="$1"
-    if ! echo "${input}" | jq empty 2>/dev/null; then
+    if ! echo "${input}" | jq empty 2> /dev/null; then
         error "Invalid JSON input"
         return 1
     fi
