@@ -279,6 +279,96 @@ teardown() {
 # Date comparison tests
 # =============================================================================
 
+# =============================================================================
+# reviewed_at metadata extraction tests
+# =============================================================================
+
+@test "learn-from-pr.sh: extracts reviewed_at from metadata block" {
+    local review_file="$TEST_DIR/review-with-metadata.md"
+    cat > "$review_file" <<'EOF'
+<!-- review-metadata
+reviewed_at: 2024-06-15T14:30:00Z
+mode: pr
+pr_number: 42
+org: testorg
+repo: testrepo
+-->
+
+# Review for PR #42
+Some review content here.
+EOF
+
+    local reviewed_at
+    reviewed_at=$(sed -n '/review-metadata/,/-->/{ /reviewed_at:/{ s/.*reviewed_at: *//; s/ *$//; p; q; }; }' \
+        "$review_file" 2>/dev/null || true)
+
+    [ "$reviewed_at" = "2024-06-15T14:30:00Z" ]
+}
+
+@test "learn-from-pr.sh: extracts reviewed_at with offset timezone" {
+    local review_file="$TEST_DIR/review-offset-tz.md"
+    cat > "$review_file" <<'EOF'
+<!-- review-metadata
+reviewed_at: 2024-06-15T14:30:00+05:30
+mode: pr
+-->
+EOF
+
+    local reviewed_at
+    reviewed_at=$(sed -n '/review-metadata/,/-->/{ /reviewed_at:/{ s/.*reviewed_at: *//; s/ *$//; p; q; }; }' \
+        "$review_file" 2>/dev/null || true)
+
+    [ "$reviewed_at" = "2024-06-15T14:30:00+05:30" ]
+}
+
+@test "learn-from-pr.sh: returns empty when no metadata block exists" {
+    local review_file="$TEST_DIR/review-no-metadata.md"
+    cat > "$review_file" <<'EOF'
+# Review for PR #42
+Some review content without metadata.
+EOF
+
+    local reviewed_at
+    reviewed_at=$(sed -n '/review-metadata/,/-->/{ /reviewed_at:/{ s/.*reviewed_at: *//; s/ *$//; p; q; }; }' \
+        "$review_file" 2>/dev/null || true)
+
+    [ -z "$reviewed_at" ]
+}
+
+@test "learn-from-pr.sh: ignores reviewed_at outside metadata block" {
+    local review_file="$TEST_DIR/review-stray-field.md"
+    cat > "$review_file" <<'EOF'
+# Review for PR #42
+reviewed_at: 2024-01-01T00:00:00Z
+Some review content.
+EOF
+
+    local reviewed_at
+    reviewed_at=$(sed -n '/review-metadata/,/-->/{ /reviewed_at:/{ s/.*reviewed_at: *//; s/ *$//; p; q; }; }' \
+        "$review_file" 2>/dev/null || true)
+
+    [ -z "$reviewed_at" ]
+}
+
+@test "learn-from-pr.sh: extracts reviewed_at regardless of field order" {
+    local review_file="$TEST_DIR/review-reordered.md"
+    cat > "$review_file" <<'EOF'
+<!-- review-metadata
+mode: pr
+pr_number: 42
+reviewed_at: 2024-06-15T14:30:00Z
+org: testorg
+repo: testrepo
+-->
+EOF
+
+    local reviewed_at
+    reviewed_at=$(sed -n '/review-metadata/,/-->/{ /reviewed_at:/{ s/.*reviewed_at: *//; s/ *$//; p; q; }; }' \
+        "$review_file" 2>/dev/null || true)
+
+    [ "$reviewed_at" = "2024-06-15T14:30:00Z" ]
+}
+
 @test "learn-from-pr.sh: epoch comparison works for dates" {
     local review_file_epoch=1704067200  # Jan 1, 2024 00:00:00 UTC
     local commit_epoch=1704153600       # Jan 2, 2024 00:00:00 UTC
