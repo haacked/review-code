@@ -297,14 +297,14 @@ Use ultrathink to synthesize findings from all agents into a coherent, deduplica
 
 After all agents complete, combine their findings into a single review document.
 
-**Step 2b: Cross-agent corroboration.** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function. Apply these rules:
+**Filtering (cross-agent corroboration).** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function. Apply these rules:
 - **Corroborated (2+ agents):** Keep even if individual confidence is below 40%. Note as corroborated in the review.
 - **Solo finding, confidence >= 40%:** Include as-is.
 - **Solo finding, confidence < 40%:** Drop silently.
 - **Questions and nits:** Exempt from filtering (no minimum confidence).
 - When consolidating corroborated findings, merge into a single entry crediting all contributing agents, using the highest confidence value.
 
-**Step 2c: Priority ordering.** Order findings in the final review by:
+**Priority ordering.** Order findings in the final review by:
 1. Corroborated blocking findings
 2. Solo blocking findings (>= 70% confidence)
 3. Corroborated suggestions
