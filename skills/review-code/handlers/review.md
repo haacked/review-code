@@ -223,7 +223,7 @@ Write comments the way a senior engineer talks in a PR review — direct, specif
 
 - No `**Issue**:` / `**Impact**:` / `**Recommendation**:` headers. Start with the prefix, then flow into natural prose.
 - Be specific: name the function, quote the value, cite the line.
-- Offer alternatives with code when possible. Use GitHub's `suggestion` syntax for single-line fixes.
+- For `blocking:` and `suggestion:` findings, always include a concrete code fix (see Accuracy Requirements above). For `question:` and `nit:`, offer code when it helps. Use GitHub's `suggestion` syntax for single-line fixes.
 - Defer to the author on judgment calls: "your call", "worth considering", "that said".
 - Express uncertainty honestly: "Unless I'm missing something", "If I'm reading this right". Give the author the benefit of the doubt.
 - Never restate what the code obviously does. The author wrote it — they know.
