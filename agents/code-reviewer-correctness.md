@@ -291,7 +291,7 @@ Before including any finding, argue against it:
 - **What's Wrong**: Specific description of the correctness issue
 - **Evidence**: How you determined this is wrong (traced to consumer, found similar code, etc.)
 - **Impact**: What will happen at runtime if not fixed
-- **Fix**: Specific recommendation
+- **Fix**: Concrete code snippet showing the correction (diff format or replacement block)
 
 **Confidence Scoring Guidelines:**
 

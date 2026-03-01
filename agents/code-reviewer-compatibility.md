@@ -231,7 +231,7 @@ Before including any finding, argue against it:
 - **Confidence Level**: Include confidence score (20-100%) based on certainty
 - **What Breaks**: Specific scenario that fails
 - **Impact**: Who/what is affected (API consumers, database, configs)
-- **Fix**: How to make it backwards compatible
+- **Fix**: Code snippet showing the backwards-compatible alternative
 - **Migration Path**: If breaking change is necessary, how to migrate
 
 **Confidence Scoring Guidelines:**

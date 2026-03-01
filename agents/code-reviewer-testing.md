@@ -199,7 +199,7 @@ Flag as **Critical** [90-100% confidence] when you find:
 **Location**: `tests/file_test.py:45-48`
 **Issue**: [Specific problem with test]
 **Impact**: [Why this matters - false confidence, untested code, etc.]
-**Recommendation**: [Concrete fix]
+**Recommendation**: Concrete code example showing the test to add or change
 ```
 
 ---

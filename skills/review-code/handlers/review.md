@@ -117,6 +117,8 @@ $file_access_instructions
 Explore the codebase to understand:
 - Full context of modified files
 - Related code and dependencies
+- Callers of modified functions — who calls the changed code and might be affected?
+  (grep for function/method names, report top 3-5 callers per significantly modified function)
 - Existing patterns for similar functionality
 - Reusable utilities or conventions
 
@@ -200,6 +202,8 @@ For each finding you report:
 2. Verify the line number by reading the actual file (see File Access above)
 3. Only flag code in the diff - do not flag pre-existing issues in unchanged code
 4. For bug claims: read surrounding code to confirm the behavior before reporting
+5. For every `blocking:` or `suggestion:` finding, include a **concrete code fix** — show the recommended change as a diff (`- old` / `+ new`) or replacement code block. If you cannot provide a concrete fix, demote the finding to `question:`.
+
 Do NOT report anything as a bug unless you've verified the behavior by reading the code.
 
 **Comment Prefixes:**
@@ -219,7 +223,7 @@ Write comments the way a senior engineer talks in a PR review — direct, specif
 
 - No `**Issue**:` / `**Impact**:` / `**Recommendation**:` headers. Start with the prefix, then flow into natural prose.
 - Be specific: name the function, quote the value, cite the line.
-- Offer alternatives with code when possible. Use GitHub's `suggestion` syntax for single-line fixes.
+- For `blocking:` and `suggestion:` findings, always include a concrete code fix (see Accuracy Requirements above). For `question:` and `nit:`, offer code when it helps. Use GitHub's `suggestion` syntax for single-line fixes.
 - Defer to the author on judgment calls: "your call", "worth considering", "that said".
 - Express uncertainty honestly: "Unless I'm missing something", "If I'm reading this right". Give the author the benefit of the doubt.
 - Never restate what the code obviously does. The author wrote it — they know.
@@ -289,9 +293,23 @@ Use the Task tool with `subagent_type` from the table above. If an area is speci
 
 ### Collect and Present Results
 
-Use ultrathink to synthesize findings from all agents into a coherent, deduplicated review.
+Use ultrathink to synthesize findings from all agents into a coherent, deduplicated review. Apply confidence-based filtering and cross-agent corroboration before producing the final document.
 
 After all agents complete, combine their findings into a single review document.
+
+**Filtering (cross-agent corroboration).** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function. Apply these rules:
+- **Corroborated (2+ agents):** Keep even if individual confidence is below 40%. Note as corroborated in the review.
+- **Solo finding, confidence >= 40%:** Include as-is.
+- **Solo finding, confidence < 40%:** Drop silently.
+- **Questions and nits:** Exempt from filtering (no minimum confidence).
+- When consolidating corroborated findings, merge into a single entry crediting all contributing agents, using the highest confidence value.
+
+**Priority ordering.** Order findings in the final review by:
+1. Corroborated blocking findings
+2. Solo blocking findings (>= 70% confidence)
+3. Corroborated suggestions
+4. Solo suggestions (>= 40% confidence)
+5. Questions and nits
 
 **Verify findings against the diff before including them in the final review.**
 
