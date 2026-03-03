@@ -77,6 +77,16 @@
       "languages": ["rust"],
       "areas": ["correctness", "testing", "maintainability"],
       "difficulty": "hard"
+    },
+    {
+      "id": "group-types-cache",
+      "category": "posthog",
+      "name": "Redis Cache for Group Types During DB Outage",
+      "description": "Python caching layer with negative-cache data loss, missing exception context, and redundant lookups",
+      "source": "posthog/posthog#49597",
+      "languages": ["python"],
+      "areas": ["correctness", "maintainability", "performance"],
+      "difficulty": "medium"
     }
   ]
 }

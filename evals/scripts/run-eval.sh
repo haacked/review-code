@@ -85,11 +85,23 @@ run_pr_benchmark() {
 
     echo "  Reviewing PR ${pr_url}…"
 
+    # If the benchmark has a frozen diff, tell the reviewer to use it instead of
+    # fetching the latest diff from GitHub. This lets us evaluate against the
+    # original (pre-fix) code even after the PR author pushes corrections.
+    local frozen_diff
+    frozen_diff=$(jq -r '.frozen_diff // false' "${bench_dir}/metadata.json" 2> /dev/null)
+
+    local frozen_env=()
+    if [[ "${frozen_diff}" == "true" ]] && [[ -f "${bench_dir}/diff.patch" ]]; then
+        frozen_env=(REVIEW_CODE_FROZEN_DIFF="${bench_dir}/diff.patch")
+        echo "  Using frozen diff from ${bench_dir}/diff.patch"
+    fi
+
     # Run the review via claude -p using the PR URL.
     # Unset CLAUDECODE to allow running inside an existing Claude Code session.
     echo "  Budget: \$${budget}"
     local claude_exit=0
-    env -u CLAUDECODE claude -p "/review-code ${pr_url} --force" \
+    env -u CLAUDECODE "${frozen_env[@]}" claude -p "/review-code ${pr_url} --force" \
         --dangerously-skip-permissions \
         --max-budget-usd "${budget}" \
         > "${result_dir}/claude-output.txt" 2>&1 || claude_exit=$?

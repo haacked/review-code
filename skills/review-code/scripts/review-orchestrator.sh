@@ -979,9 +979,13 @@ handle_pr_review() {
             }')
     fi
 
-    # Extract diff content from PR data
+    # Extract diff: use frozen diff if available, otherwise from PR data
     local diff_content
-    diff_content=$(echo "${pr_data}" | jq -r '.diff')
+    if [[ -n "${REVIEW_CODE_FROZEN_DIFF:-}" ]] && [[ -f "${REVIEW_CODE_FROZEN_DIFF}" ]]; then
+        diff_content=$(cat "${REVIEW_CODE_FROZEN_DIFF}")
+    else
+        diff_content=$(echo "${pr_data}" | jq -r '.diff')
+    fi
 
     build_review_data "pr" "${diff_content}" "${git_context}" "pr-${pr_number}" "${pr_data}" \
         --arg mode_branch "${head_ref}" \

@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "expected_findings": [
+    {
+      "id": "negative-cache-overwrites-stale-data",
+      "description": "When the 5-minute cache TTL expires during a prolonged DB outage, get_safe_cache returns None, the DB query fails with DatabaseError, and the except branch unconditionally caches [] for 30 seconds. This means users lose group types visibility in 30-second windows throughout the outage, contradicting the docstring's claim of returning cached data. A stale-while-revalidate pattern (separate long-lived cache key or cache.add/NX semantics) would preserve the last known good data instead of clobbering it with an empty list.",
+      "area": "correctness",
+      "severity": "blocking",
+      "weight": 9,
+      "file": "posthog/models/group_type_mapping.py",
+      "line_start": 110,
+      "line_end": 113,
+      "keywords": ["negative cache", "stale", "TTL", "expires", "empty list", "overwrite", "clobber", "outage", "prolonged", "data loss", "stale-while-revalidate", "fallback", "cache.add", "NX", "last known good"]
+    },
+    {
+      "id": "missing-exception-context-in-cache-helpers",
+      "description": "safe_cache_set and safe_cache_delete catch Exception but drop the exception object entirely, logging only the cache key. During incidents this makes it impossible to distinguish connection errors from serialization failures. The existing get_safe_cache in the same file and the DatabaseError handler in get_group_types_for_project both log with exc_info=True, so this is inconsistent.",
+      "area": "maintainability",
+      "severity": "suggestion",
+      "weight": 6,
+      "file": "posthog/utils.py",
+      "line_start": 1221,
+      "line_end": 1231,
+      "keywords": ["exception", "exc_info", "traceback", "context", "swallow", "warning", "cache", "debug", "incident", "safe_cache_set", "safe_cache_delete", "logging"]
+    },
+    {
+      "id": "double-cache-lookup-per-request",
+      "description": "get_has_group_types delegates to self.get_group_types() which calls get_group_types_for_project(). Since DRF calls both get_has_group_types and get_group_types as independent SerializerMethodField methods when rendering a response, get_group_types_for_project is invoked twice per request. The second call is a Redis cache hit so the cost is low, but the round-trip is unnecessary. Calling get_group_types_for_project directly with bool() avoids the indirection.",
+      "area": "performance",
+      "severity": "suggestion",
+      "weight": 5,
+      "file": "posthog/api/team.py",
+      "line_start": 398,
+      "line_end": 398,
+      "keywords": ["double", "twice", "redundant", "duplicate", "lookup", "cache hit", "round-trip", "SerializerMethodField", "get_has_group_types", "get_group_types", "indirection"]
+    }
+  ],
+  "false_positive_traps": [
+    {
+      "id": "cache-invalidation-coverage",
+      "description": "All four mutation endpoints (update_metadata, create_detail_dashboard, destroy, set_default_columns) plus the dashboard deletion path correctly call invalidate_group_types_cache. This is thorough and complete coverage. A reviewer might be tempted to flag missing invalidation paths, but all are covered.",
+      "file": "ee/clickhouse/views/groups.py",
+      "line_start": 115,
+      "line_end": 155,
+      "trap_keywords": ["missing invalidation", "cache stale", "forgot to invalidate", "inconsistent"]
+    }
+  ],
+  "clean_areas": ["security", "compatibility"]
+}

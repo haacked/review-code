@@ -1,0 +1,14 @@
+{
+  "id": "group-types-cache",
+  "name": "Redis Cache for Group Types During DB Outage",
+  "description": "Python caching layer with negative-cache data loss, missing exception context, and redundant lookups",
+  "source": "posthog/posthog#49597",
+  "source_url": "https://github.com/PostHog/posthog/pull/49597",
+  "languages": ["python"],
+  "frameworks": ["django"],
+  "areas": ["correctness", "maintainability", "performance"],
+  "difficulty": "medium",
+  "expected_finding_count": 3,
+  "false_positive_trap_count": 1,
+  "frozen_diff": true
+}
