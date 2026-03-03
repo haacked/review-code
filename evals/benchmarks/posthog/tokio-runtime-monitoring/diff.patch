@@ -17,7 +17,7 @@ index ba2acfb5f657..dec6b891a38a 100644
 --- a/rust/Cargo.toml
 +++ b/rust/Cargo.toml
 @@ -45,6 +45,7 @@ members = [
-
+ 
  [workspace.lints.rust]
  # See https://doc.rust-lang.org/stable/rustc/lints/listing/allowed-by-default.html
 +unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
@@ -33,7 +33,7 @@ index 68778536c0b3..19a191b59ddd 100644
  pub mod site_apps;
  pub mod team;
 +pub mod tokio_monitor;
-
+ 
  // Test modules don't need to be compiled with main binary
  // #[cfg(test)]
 diff --git a/rust/feature-flags/src/metrics/consts.rs b/rust/feature-flags/src/metrics/consts.rs
@@ -117,7 +117,7 @@ index 9e776ffa1df8..9f2d67ba33d7 100644
 @@ -135,6 +136,12 @@ where
              .await;
      });
-
+ 
 +    // Start Tokio runtime monitoring
 +    let tokio_monitor = TokioRuntimeMonitor::new(&tokio::runtime::Handle::current());
 +    tokio::spawn(async move {
@@ -132,7 +132,7 @@ new file mode 100644
 index 000000000000..ad637e918b50
 --- /dev/null
 +++ b/rust/feature-flags/src/tokio_monitor.rs
-@@ -0,0 +1,370 @@
+@@ -0,0 +1,376 @@
 +use std::time::{Duration, Instant};
 +
 +use common_metrics::gauge;
@@ -199,6 +199,8 @@ index 000000000000..ad637e918b50
 +        );
 +
 +        let mut ticker = interval(SAMPLING_INTERVAL);
++        // Skip the immediate first tick so the first report comes after a full interval
++        ticker.tick().await;
 +
 +        loop {
 +            ticker.tick().await;
@@ -218,6 +220,8 @@ index 000000000000..ad637e918b50
 +        unstable_state: &mut UnstableWorkerState,
 +    ) {
 +        let mut ticker = interval(SAMPLING_INTERVAL);
++        // Skip the immediate first tick so the first report comes after a full interval
++        ticker.tick().await;
 +
 +        loop {
 +            ticker.tick().await;

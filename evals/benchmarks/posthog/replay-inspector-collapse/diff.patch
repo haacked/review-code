@@ -1,50 +1,56 @@
 diff --git a/frontend/__snapshots__/components-playerinspector--default--dark.png b/frontend/__snapshots__/components-playerinspector--default--dark.png
-index 7e41f1c445f..b0f82f5c629 100644
+index 7e41f1c445f7..b0f82f5c6299 100644
 Binary files a/frontend/__snapshots__/components-playerinspector--default--dark.png and b/frontend/__snapshots__/components-playerinspector--default--dark.png differ
 diff --git a/frontend/__snapshots__/components-playerinspector--default--light.png b/frontend/__snapshots__/components-playerinspector--default--light.png
-index c7af19ec0b8..c9e5d765ff7 100644
+index c7af19ec0b88..c9e5d765ff73 100644
 Binary files a/frontend/__snapshots__/components-playerinspector--default--light.png and b/frontend/__snapshots__/components-playerinspector--default--light.png differ
 diff --git a/frontend/__snapshots__/components-playerinspector-itemconsole--console-log-item--dark.png b/frontend/__snapshots__/components-playerinspector-itemconsole--console-log-item--dark.png
-index c7c7edae66a..89fb1f033f8 100644
+index c7c7edae66a5..95e6488d4d53 100644
 Binary files a/frontend/__snapshots__/components-playerinspector-itemconsole--console-log-item--dark.png and b/frontend/__snapshots__/components-playerinspector-itemconsole--console-log-item--dark.png differ
 diff --git a/frontend/__snapshots__/components-playerinspector-itemconsole--console-log-item--light.png b/frontend/__snapshots__/components-playerinspector-itemconsole--console-log-item--light.png
-index 1e16024f439..f19a94b62e5 100644
+index 1e16024f439f..988a8e400b5d 100644
 Binary files a/frontend/__snapshots__/components-playerinspector-itemconsole--console-log-item--light.png and b/frontend/__snapshots__/components-playerinspector-itemconsole--console-log-item--light.png differ
 diff --git a/frontend/__snapshots__/components-playerinspector-itemevent--error-event--dark.png b/frontend/__snapshots__/components-playerinspector-itemevent--error-event--dark.png
-index 68e91f09808..f7805f1cec3 100644
+index 68e91f098080..f7805f1cec3c 100644
 Binary files a/frontend/__snapshots__/components-playerinspector-itemevent--error-event--dark.png and b/frontend/__snapshots__/components-playerinspector-itemevent--error-event--dark.png differ
 diff --git a/frontend/__snapshots__/components-playerinspector-itemevent--error-event--light.png b/frontend/__snapshots__/components-playerinspector-itemevent--error-event--light.png
-index d7e06773816..68a4273b22b 100644
+index d7e067738166..68a4273b22b7 100644
 Binary files a/frontend/__snapshots__/components-playerinspector-itemevent--error-event--light.png and b/frontend/__snapshots__/components-playerinspector-itemevent--error-event--light.png differ
 diff --git a/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-current-url--dark.png b/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-current-url--dark.png
-index 86c95a0c7e1..38cb388f4c4 100644
+index 86c95a0c7e19..38cb388f4c4a 100644
 Binary files a/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-current-url--dark.png and b/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-current-url--dark.png differ
 diff --git a/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-current-url--light.png b/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-current-url--light.png
-index 626550a3790..ba291c335e6 100644
+index 626550a3790d..ba291c335e6b 100644
 Binary files a/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-current-url--light.png and b/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-current-url--light.png differ
 diff --git a/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-path--dark.png b/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-path--dark.png
-index 9c7bd7f39d1..66b3adbffbb 100644
+index 9c7bd7f39d10..66b3adbffbb5 100644
 Binary files a/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-path--dark.png and b/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-path--dark.png differ
 diff --git a/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-path--light.png b/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-path--light.png
-index 92c4c8dfa16..6d3f657f6cb 100644
+index 92c4c8dfa165..6d3f657f6cb0 100644
 Binary files a/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-path--light.png and b/frontend/__snapshots__/components-playerinspector-itemevent--page-view-with-path--light.png differ
 diff --git a/frontend/__snapshots__/components-playerinspector-itemevent--sentry-error-event--dark.png b/frontend/__snapshots__/components-playerinspector-itemevent--sentry-error-event--dark.png
-index a64b207e48b..7d684edf1c3 100644
+index a64b207e48b0..7d684edf1c3f 100644
 Binary files a/frontend/__snapshots__/components-playerinspector-itemevent--sentry-error-event--dark.png and b/frontend/__snapshots__/components-playerinspector-itemevent--sentry-error-event--dark.png differ
 diff --git a/frontend/__snapshots__/components-playerinspector-itemevent--sentry-error-event--light.png b/frontend/__snapshots__/components-playerinspector-itemevent--sentry-error-event--light.png
-index 824cba9360b..c8a2d76b88e 100644
+index 824cba9360b1..c8a2d76b88e1 100644
 Binary files a/frontend/__snapshots__/components-playerinspector-itemevent--sentry-error-event--light.png and b/frontend/__snapshots__/components-playerinspector-itemevent--sentry-error-event--light.png differ
 diff --git a/frontend/__snapshots__/components-playerinspector-itemevent--web-vitals-event--dark.png b/frontend/__snapshots__/components-playerinspector-itemevent--web-vitals-event--dark.png
-index 72f0863b6ef..a777ae05b12 100644
+index 72f0863b6ef0..a777ae05b120 100644
 Binary files a/frontend/__snapshots__/components-playerinspector-itemevent--web-vitals-event--dark.png and b/frontend/__snapshots__/components-playerinspector-itemevent--web-vitals-event--dark.png differ
 diff --git a/frontend/__snapshots__/components-playerinspector-itemevent--web-vitals-event--light.png b/frontend/__snapshots__/components-playerinspector-itemevent--web-vitals-event--light.png
-index 479d3352a91..75a21f7773b 100644
+index 479d3352a91e..75a21f7773b4 100644
 Binary files a/frontend/__snapshots__/components-playerinspector-itemevent--web-vitals-event--light.png and b/frontend/__snapshots__/components-playerinspector-itemevent--web-vitals-event--light.png differ
+diff --git a/frontend/__snapshots__/scenes-app-insights-trendsline--trends-bar--light.png b/frontend/__snapshots__/scenes-app-insights-trendsline--trends-bar--light.png
+index 84470c1a807c..0f67ef7667d6 100644
+Binary files a/frontend/__snapshots__/scenes-app-insights-trendsline--trends-bar--light.png and b/frontend/__snapshots__/scenes-app-insights-trendsline--trends-bar--light.png differ
+diff --git a/frontend/__snapshots__/scenes-app-insights-trendsline--trends-line-multi--dark.png b/frontend/__snapshots__/scenes-app-insights-trendsline--trends-line-multi--dark.png
+index 1e66f4300b31..c07c4e1c6afc 100644
+Binary files a/frontend/__snapshots__/scenes-app-insights-trendsline--trends-line-multi--dark.png and b/frontend/__snapshots__/scenes-app-insights-trendsline--trends-line-multi--dark.png differ
 diff --git a/frontend/src/lib/constants.tsx b/frontend/src/lib/constants.tsx
-index ee3e5c64841..9bf2efcaace 100644
+index 392b67ba9b8d..64e36a69b0b0 100644
 --- a/frontend/src/lib/constants.tsx
 +++ b/frontend/src/lib/constants.tsx
-@@ -372,6 +372,7 @@ export const FEATURE_FLAGS = {
+@@ -368,6 +368,7 @@ export const FEATURE_FLAGS = {
      REPLAY_SNAPSHOT_STORE: 'replay-snapshot-store', // owner: @tue #team-replay multivariate=control,test
      REPLAY_WAIT_FOR_IFRAME_READY: 'replay-wait-for-full-snapshot-playback', // owner: @ksvat #team-replay
      REPLAY_X_LLM_ANALYTICS_CONVERSATION_VIEW: 'replay-x-llm-analytics-conversation-view', // owner: @pauldambra #team-replay
@@ -53,10 +59,19 @@ index ee3e5c64841..9bf2efcaace 100644
      REORDER_PLATFORM_ADDON_BILLING_SECTION: 'reorder-platform-addon-billing-section', // owner: @reece #team-platform-features
      REVENUE_ANALYTICS: 'revenue-analytics', // owner: @rafaeelaudibert #team-customer-analytics
 diff --git a/frontend/src/scenes/session-recordings/player/inspector/PlayerInspectorBottomSettings.tsx b/frontend/src/scenes/session-recordings/player/inspector/PlayerInspectorBottomSettings.tsx
-index 9652ac7b888..5b024f8b9e9 100644
+index 9652ac7b8887..a44903c1a0f9 100644
 --- a/frontend/src/scenes/session-recordings/player/inspector/PlayerInspectorBottomSettings.tsx
 +++ b/frontend/src/scenes/session-recordings/player/inspector/PlayerInspectorBottomSettings.tsx
-@@ -106,11 +106,33 @@ function ShowOnlyMatching(): JSX.Element {
+@@ -4,6 +4,8 @@ import { useActions, useValues } from 'kea'
+ 
+ import { BaseIcon, IconCheck } from '@posthog/icons'
+ 
++import { FEATURE_FLAGS } from 'lib/constants'
++import { featureFlagLogic } from 'lib/logic/featureFlagLogic'
+ import { userPreferencesLogic } from 'lib/logic/userPreferencesLogic'
+ import { SettingsBar, SettingsMenu, SettingsToggle } from 'scenes/session-recordings/components/PanelSettings'
+ import { miniFiltersLogic } from 'scenes/session-recordings/player/inspector/miniFiltersLogic'
+@@ -106,11 +108,32 @@ function ShowOnlyMatching(): JSX.Element {
      )
  }
  
@@ -79,19 +94,18 @@ index 9652ac7b888..5b024f8b9e9 100644
 +}
 +
  export function PlayerInspectorBottomSettings(): JSX.Element {
-+    const { logicProps } = useValues(sessionRecordingPlayerLogic)
-+    const { collapseInspectorItems } = useValues(playerInspectorLogic(logicProps))
++    const { featureFlags } = useValues(featureFlagLogic)
 +
      return (
          <SettingsBar border="top">
              <SyncScrolling />
              <ShowOnlyMatching />
-+            {collapseInspectorItems ? <GroupRepeatedItems /> : null}
++            {featureFlags[FEATURE_FLAGS.REPLAY_COLLAPSE_INSPECTOR_ITEMS] ? <GroupRepeatedItems /> : null}
              <HideProperties />
          </SettingsBar>
      )
 diff --git a/frontend/src/scenes/session-recordings/player/inspector/PlayerInspectorList.tsx b/frontend/src/scenes/session-recordings/player/inspector/PlayerInspectorList.tsx
-index 9ab05454c41..2cc1b0fdcc2 100644
+index 9ab05454c414..2cc1b0fdcc2f 100644
 --- a/frontend/src/scenes/session-recordings/player/inspector/PlayerInspectorList.tsx
 +++ b/frontend/src/scenes/session-recordings/player/inspector/PlayerInspectorList.tsx
 @@ -10,12 +10,13 @@ import { LemonSkeleton } from 'lib/lemon-ui/LemonSkeleton'
@@ -180,7 +194,7 @@ index 9ab05454c41..2cc1b0fdcc2 100644
                                      id="PlayerInspectorList"
                                      onScroll={handleScroll}
 diff --git a/frontend/src/scenes/session-recordings/player/inspector/components/ItemConsoleLog.stories.tsx b/frontend/src/scenes/session-recordings/player/inspector/components/ItemConsoleLog.stories.tsx
-index fc7ce2de2d1..8ba274a5ec3 100644
+index fc7ce2de2d10..8ba274a5ec3c 100644
 --- a/frontend/src/scenes/session-recordings/player/inspector/components/ItemConsoleLog.stories.tsx
 +++ b/frontend/src/scenes/session-recordings/player/inspector/components/ItemConsoleLog.stories.tsx
 @@ -41,21 +41,30 @@ const BasicTemplate: StoryFn<typeof ItemConsoleLog> = (props: Partial<ItemConsol
@@ -231,14 +245,15 @@ index fc7ce2de2d1..8ba274a5ec3 100644
 +    })),
  }
 diff --git a/frontend/src/scenes/session-recordings/player/inspector/components/ItemConsoleLog.tsx b/frontend/src/scenes/session-recordings/player/inspector/components/ItemConsoleLog.tsx
-index 88d6587bd41..1289ffb21d6 100644
+index 88d6587bd41b..c2ea299e1909 100644
 --- a/frontend/src/scenes/session-recordings/player/inspector/components/ItemConsoleLog.tsx
 +++ b/frontend/src/scenes/session-recordings/player/inspector/components/ItemConsoleLog.tsx
-@@ -6,41 +6,70 @@ import { CodeSnippet, Language } from 'lib/components/CodeSnippet'
+@@ -5,42 +5,72 @@ import { LemonDivider } from '@posthog/lemon-ui'
+ import { CodeSnippet, Language } from 'lib/components/CodeSnippet'
  import { SimpleKeyValueList } from 'lib/components/SimpleKeyValueList'
  import { LemonLabel } from 'lib/lemon-ui/LemonLabel/LemonLabel'
++import { colonDelimitedDuration } from 'lib/utils'
  
-+import { ItemTimeDisplay } from '../../../components/ItemTimeDisplay'
  import { InspectorListItemAppState, InspectorListItemConsole } from '../playerInspectorLogic'
  
  export interface ItemConsoleLogProps {
@@ -299,13 +314,14 @@ index 88d6587bd41..1289ffb21d6 100644
 +                            {groupedItems.map((entry, i) => (
 +                                <div
 +                                    key={entry.key}
-+                                    className={clsx('flex items-center gap-2 font-mono', i > 0 && 'border-t')}
++                                    className={clsx(
++                                        'flex items-center gap-2 px-2 py-0.5 font-mono',
++                                        i > 0 && 'border-t'
++                                    )}
 +                                >
-+                                    <ItemTimeDisplay
-+                                        timestamp={entry.timestamp}
-+                                        timeInRecording={entry.timeInRecording}
-+                                        className="shrink-0 text-secondary !py-0"
-+                                    />
++                                    <span className="text-secondary shrink-0">
++                                        {colonDelimitedDuration(entry.timeInRecording / 1000, 2)}
++                                    </span>
 +                                    <span className="truncate">{entry.data.content}</span>
 +                                </div>
 +                            ))}
@@ -316,27 +332,29 @@ index 88d6587bd41..1289ffb21d6 100644
                          <div className="italic">
                              This log occurred <b>{item.data.count}</b> times in a row.
 diff --git a/frontend/src/scenes/session-recordings/player/inspector/components/ItemEvent.tsx b/frontend/src/scenes/session-recordings/player/inspector/components/ItemEvent.tsx
-index 2fa4a9459f0..20ecebf16e6 100644
+index 2fa4a9459f00..d954531ee126 100644
 --- a/frontend/src/scenes/session-recordings/player/inspector/components/ItemEvent.tsx
 +++ b/frontend/src/scenes/session-recordings/player/inspector/components/ItemEvent.tsx
-@@ -1,6 +1,9 @@
+@@ -1,6 +1,8 @@
  import './ImagePreview.scss'
  
 -import { IconShare } from '@posthog/icons'
-+import clsx from 'clsx'
 +import { useState } from 'react'
 +
 +import { IconCollapse, IconExpand, IconShare } from '@posthog/icons'
  import { LemonButton, LemonMenu, Link } from '@posthog/lemon-ui'
  
  import { ErrorDisplay, idFrom } from 'lib/components/Errors/ErrorDisplay'
-@@ -18,11 +21,14 @@ import { AutocapturePreviewImage } from 'lib/utils/autocapture-previews'
+@@ -13,7 +15,7 @@ import { TaxonomicFilterGroupType } from 'lib/components/TaxonomicFilter/types'
+ import { TitledSnack } from 'lib/components/TitledSnack'
+ import { IconOpenInNew } from 'lib/lemon-ui/icons'
+ import { Spinner } from 'lib/lemon-ui/Spinner'
+-import { autoCaptureEventToDescription, capitalizeFirstLetter, isString } from 'lib/utils'
++import { autoCaptureEventToDescription, capitalizeFirstLetter, colonDelimitedDuration, isString } from 'lib/utils'
+ import { AutocapturePreviewImage } from 'lib/utils/autocapture-previews'
  import { insightUrlForEvent } from 'scenes/insights/utils'
  import { urls } from 'scenes/urls'
- 
-+import { ItemTimeDisplay } from '../../../components/ItemTimeDisplay'
- import { InspectorListItemEvent } from '../playerInspectorLogic'
- import { AIEventExpanded, AIEventSummary } from './AIEventItems'
+@@ -23,6 +25,8 @@ import { AIEventExpanded, AIEventSummary } from './AIEventItems'
  
  export interface ItemEventProps {
      item: InspectorListItemEvent
@@ -345,7 +363,7 @@ index 2fa4a9459f0..20ecebf16e6 100644
  }
  
  function WebVitalEventSummary({ event }: { event: Record<string, any> }): JSX.Element {
-@@ -72,7 +78,7 @@ function ExceptionTitlePill({ event }: { event: Record<string, any> }): JSX.Elem
+@@ -72,7 +76,7 @@ function ExceptionTitlePill({ event }: { event: Record<string, any> }): JSX.Elem
      )
  }
  
@@ -354,7 +372,7 @@ index 2fa4a9459f0..20ecebf16e6 100644
      const subValue =
          item.data.event === '$pageview' ? (
              item.data.properties.$pathname || item.data.properties.$current_url
-@@ -104,11 +110,23 @@ export function ItemEvent({ item }: ItemEventProps): JSX.Element {
+@@ -104,11 +108,18 @@ export function ItemEvent({ item }: ItemEventProps): JSX.Element {
                      />
                      {item.data.event === '$autocapture' ? <span className="text-secondary">(Autocapture)</span> : null}
                  </div>
@@ -370,12 +388,7 @@ index 2fa4a9459f0..20ecebf16e6 100644
 +                        </div>
 +                    ) : null}
 +                    {groupCount && groupCount > 1 ? (
-+                        <span
-+                            className={clsx(
-+                                'inline-flex items-center justify-center rounded-full min-w-4 h-4 px-0.5 text-white text-xxs font-bold',
-+                                item.highlightColor === 'danger' ? 'bg-fill-error-highlight' : 'bg-secondary-3000-hover'
-+                            )}
-+                        >
++                        <span className="inline-flex items-center justify-center rounded-full min-w-4 h-4 px-0.5 text-white text-xxs font-bold bg-secondary-3000-hover">
 +                            {groupCount}
 +                        </span>
 +                    ) : null}
@@ -383,7 +396,7 @@ index 2fa4a9459f0..20ecebf16e6 100644
              </div>
          </div>
      )
-@@ -165,76 +183,122 @@ export function ItemEventMenu({ item }: ItemEventProps): JSX.Element {
+@@ -165,76 +176,126 @@ export function ItemEventMenu({ item }: ItemEventProps): JSX.Element {
      )
  }
  
@@ -458,17 +471,21 @@ index 2fa4a9459f0..20ecebf16e6 100644
 +    return (
 +        <div className={index > 0 ? 'border-t' : ''}>
 +            <div
-+                className="flex items-center gap-1 cursor-pointer hover:bg-surface-primary"
++                className="flex items-center gap-1 px-2 py-1 cursor-pointer hover:bg-surface-primary"
 +                onClick={() => setExpanded(!expanded)}
 +            >
-+                <span className="shrink-0 text-secondary pl-2">
++                <span
++                    className="shrink-0 cursor-pointer text-secondary"
++                    onClick={(e) => {
++                        e.stopPropagation()
++                        setExpanded(!expanded)
++                    }}
++                >
 +                    {expanded ? <IconCollapse className="text-sm" /> : <IconExpand className="text-sm" />}
 +                </span>
-+                <ItemTimeDisplay
-+                    timestamp={event.timestamp}
-+                    timeInRecording={event.timeInRecording}
-+                    className="shrink-0 text-secondary !py-0"
-+                />
++                <span className="text-secondary shrink-0 font-mono">
++                    {colonDelimitedDuration(event.timeInRecording / 1000, 2)}
++                </span>
 +                <PropertyKeyInfo
 +                    className="truncate"
 +                    disablePopover
@@ -573,7 +590,7 @@ index 2fa4a9459f0..20ecebf16e6 100644
              </div>
          </div>
 diff --git a/frontend/src/scenes/session-recordings/player/inspector/components/PlayerInspectorListItem.tsx b/frontend/src/scenes/session-recordings/player/inspector/components/PlayerInspectorListItem.tsx
-index aecc603ef65..58fceb986af 100644
+index aecc603ef65a..58fceb986af5 100644
 --- a/frontend/src/scenes/session-recordings/player/inspector/components/PlayerInspectorListItem.tsx
 +++ b/frontend/src/scenes/session-recordings/player/inspector/components/PlayerInspectorListItem.tsx
 @@ -39,7 +39,12 @@ import { CORE_FILTER_DEFINITIONS_BY_GROUP } from '~/taxonomy/taxonomy'
@@ -719,10 +736,10 @@ index aecc603ef65..58fceb986af 100644
  }, objectsEqual)
 diff --git a/frontend/src/scenes/session-recordings/player/inspector/inspectorListCollapsing.test.ts b/frontend/src/scenes/session-recordings/player/inspector/inspectorListCollapsing.test.ts
 new file mode 100644
-index 00000000000..68d776b4adf
+index 000000000000..7138739af102
 --- /dev/null
 +++ b/frontend/src/scenes/session-recordings/player/inspector/inspectorListCollapsing.test.ts
-@@ -0,0 +1,106 @@
+@@ -0,0 +1,101 @@
 +import {
 +    InspectorListItemConsole,
 +    InspectorListItemEvent,
@@ -763,9 +780,9 @@ index 00000000000..68d776b4adf
 +        expect(computeDisplayGroups([], true)).toEqual([])
 +    })
 +
-+    it('does not group events across non-event items', () => {
++    it('groups identical events across interleaved console logs', () => {
 +        const items = [makeEvent(), makeEvent(), makeConsoleLog(), makeEvent()]
-+        expect(counts(items)).toEqual([2, 1, 1])
++        expect(counts(items)).toEqual([3, 1])
 +    })
 +
 +    it('breaks event group on different event name or search text', () => {
@@ -777,14 +794,9 @@ index 00000000000..68d776b4adf
 +        expect(counts(items)).toEqual([2, 1])
 +    })
 +
-+    it('groups highlighted events with same highlight color', () => {
++    it('never groups highlighted events', () => {
 +        const items = [makeEvent({ highlightColor: 'primary' }), makeEvent({ highlightColor: 'primary' }), makeEvent()]
-+        expect(counts(items)).toEqual([2, 1])
-+    })
-+
-+    it('breaks event group on different highlight color', () => {
-+        const items = [makeEvent({ highlightColor: 'danger' }), makeEvent({ highlightColor: 'primary' })]
-+        expect(counts(items)).toEqual([1, 1])
++        expect(counts(items)).toEqual([1, 1, 1])
 +    })
 +
 +    it('groups adjacent console logs with same content and highlight', () => {
@@ -830,7 +842,7 @@ index 00000000000..68d776b4adf
 +    })
 +})
 diff --git a/frontend/src/scenes/session-recordings/player/inspector/miniFiltersLogic.ts b/frontend/src/scenes/session-recordings/player/inspector/miniFiltersLogic.ts
-index a77af589c3e..c03aa43dcb8 100644
+index a77af589c3e5..c03aa43dcb89 100644
 --- a/frontend/src/scenes/session-recordings/player/inspector/miniFiltersLogic.ts
 +++ b/frontend/src/scenes/session-recordings/player/inspector/miniFiltersLogic.ts
 @@ -135,6 +135,7 @@ export const miniFiltersLogic = kea<miniFiltersLogicType>([
@@ -857,7 +869,7 @@ index a77af589c3e..c03aa43dcb8 100644
              defaultMinifilters,
              { persist: true },
 diff --git a/frontend/src/scenes/session-recordings/player/inspector/playerInspectorLogic.ts b/frontend/src/scenes/session-recordings/player/inspector/playerInspectorLogic.ts
-index a61894b0576..da5ac40c6b1 100644
+index ee98a92b8a77..b2642e65edc0 100644
 --- a/frontend/src/scenes/session-recordings/player/inspector/playerInspectorLogic.ts
 +++ b/frontend/src/scenes/session-recordings/player/inspector/playerInspectorLogic.ts
 @@ -13,6 +13,7 @@ import {
@@ -868,7 +880,7 @@ index a61894b0576..da5ac40c6b1 100644
  import { Dayjs, dayjs } from 'lib/dayjs'
  import { featureFlagLogic } from 'lib/logic/featureFlagLogic'
  import { ceilMsToClosestSecond, eventToDescription, humanizeBytes, toParams } from 'lib/utils'
-@@ -189,6 +190,54 @@ export interface PlayerInspectorLogicProps extends SessionRecordingPlayerLogicPr
+@@ -189,6 +190,67 @@ export interface PlayerInspectorLogicProps extends SessionRecordingPlayerLogicPr
      matchingEventsMatchType?: MatchingEventsMatchType
  }
  
@@ -887,34 +899,47 @@ index a61894b0576..da5ac40c6b1 100644
 +
 +export type DisplayGroup = { indices: number[] }
 +
-+function canGroup(current: InspectorListItem, next: InspectorListItem): boolean {
-+    if (current.type !== next.type || current.highlightColor !== next.highlightColor) {
-+        return false
-+    }
-+    switch (current.type) {
-+        case 'events':
-+            return next.type === 'events' && current.data.event === next.data.event && current.search === next.search
-+        case 'console':
-+            return next.type === 'console' && current.data.content === next.data.content
-+        default:
-+            return false
-+    }
-+}
-+
-+/** Groups adjacent identical events and console logs into display rows. */
++/** Groups repeated events and adjacent identical console logs into display rows. */
 +export function computeDisplayGroups(items: InspectorListItem[], groupSimilar: boolean): DisplayGroup[] {
 +    const groups: DisplayGroup[] = []
++    let activeEventGroup: number | null = null
 +
 +    for (let i = 0; i < items.length; i++) {
-+        if (groupSimilar && groups.length > 0) {
-+            const lastGroup = groups[groups.length - 1]
-+            if (canGroup(items[lastGroup.indices[0]], items[i])) {
-+                lastGroup.indices.push(i)
-+                continue
++        const item = items[i]
++
++        if (groupSimilar) {
++            if (item.type === 'events' && activeEventGroup !== null) {
++                const leader = items[groups[activeEventGroup].indices[0]] as InspectorListItemEvent
++                if (
++                    leader.data.event === item.data.event &&
++                    leader.search === item.search &&
++                    !leader.highlightColor &&
++                    !item.highlightColor
++                ) {
++                    groups[activeEventGroup].indices.push(i)
++                    continue
++                }
++                activeEventGroup = null
++            }
++
++            if (item.type === 'console' && groups.length > 0) {
++                const lastGroup = groups[groups.length - 1]
++                const lastItem = items[lastGroup.indices[0]] as InspectorListItemConsole
++                if (
++                    lastItem.type === 'console' &&
++                    lastItem.data.content === item.data.content &&
++                    lastItem.highlightColor === item.highlightColor
++                ) {
++                    lastGroup.indices.push(i)
++                    continue
++                }
 +            }
 +        }
 +
 +        groups.push({ indices: [i] })
++        if (groupSimilar && item.type === 'events') {
++            activeEventGroup = groups.length - 1
++        }
 +    }
 +
 +    return groups
@@ -923,7 +948,7 @@ index a61894b0576..da5ac40c6b1 100644
  function _isCustomSnapshot(x: unknown): x is customEvent {
      return (x as customEvent).type === 5
  }
-@@ -292,7 +341,14 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
+@@ -292,7 +354,14 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
          ],
          values: [
              miniFiltersLogic,
@@ -939,39 +964,33 @@ index a61894b0576..da5ac40c6b1 100644
              sessionRecordingDataCoordinatorLogic(props),
              [
                  'sessionPlayerData',
-@@ -429,12 +485,18 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
-             },
+@@ -430,11 +499,12 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
          ],
  
-+        collapseInspectorItems: [
-+            (s) => [s.featureFlags],
-+            (featureFlags): boolean => !!featureFlags[FEATURE_FLAGS.REPLAY_COLLAPSE_INSPECTOR_ITEMS],
-+        ],
-+
          processedSnapshotData: [
 -            (s) => [s.start, s.sessionPlayerData, s.windowNumberForID],
-+            (s) => [s.start, s.sessionPlayerData, s.windowNumberForID, s.collapseInspectorItems],
++            (s) => [s.start, s.sessionPlayerData, s.windowNumberForID, s.featureFlags],
              (
                  start,
                  sessionPlayerData,
 -                windowNumberForID
 +                windowNumberForID,
-+                collapseInspectorItems
++                featureFlags
              ): {
                  offlineStatusChanges: InspectorListOfflineStatusChange[]
                  browserVisibilityChanges: InspectorListBrowserVisibility[]
-@@ -593,8 +655,9 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
+@@ -593,8 +663,9 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
                              if (!consoleLogSeenCache.has(cacheKey)) {
                                  consoleLogSeenCache.add(cacheKey)
  
-+                                const collapseConsole = !collapseInspectorItems
++                                const collapseConsole = !featureFlags[FEATURE_FLAGS.REPLAY_COLLAPSE_INSPECTOR_ITEMS]
                                  const lastLogLine = consoleLogs[consoleLogs.length - 1]
 -                                if (lastLogLine?.content === content) {
 +                                if (collapseConsole && lastLogLine?.content === content) {
                                      if (lastLogLine.count === undefined) {
                                          lastLogLine.count = 1
                                      } else {
-@@ -1026,19 +1089,7 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
+@@ -1026,19 +1097,7 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
                      hasEventsToDisplay,
                  })
  
@@ -992,7 +1011,7 @@ index a61894b0576..da5ac40c6b1 100644
              },
              { resultEqualityCheck: equal },
          ],
-@@ -1205,21 +1256,22 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
+@@ -1205,21 +1264,22 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
          ],
  
          playbackIndicatorIndex: [
@@ -1022,14 +1041,14 @@ index a61894b0576..da5ac40c6b1 100644
          ],
  
          fuse: [
-@@ -1246,6 +1298,17 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
+@@ -1246,6 +1306,17 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
              { resultEqualityCheck: equal },
          ],
  
 +        displayGroups: [
-+            (s) => [s.items, s.groupRepeatedItems, s.collapseInspectorItems],
-+            (items, groupRepeatedItems, collapseInspectorItems): DisplayGroup[] => {
-+                if (!collapseInspectorItems) {
++            (s) => [s.items, s.groupRepeatedItems, s.featureFlags],
++            (items, groupRepeatedItems, featureFlags): DisplayGroup[] => {
++                if (!featureFlags[FEATURE_FLAGS.REPLAY_COLLAPSE_INSPECTOR_ITEMS]) {
 +                    return items.map((_, i) => ({ indices: [i] }))
 +                }
 +                return computeDisplayGroups(items, groupRepeatedItems)
@@ -1040,7 +1059,7 @@ index a61894b0576..da5ac40c6b1 100644
          allItemsList: [(s) => [s.allItems], (allItemsData): InspectorListItem[] => allItemsData.items],
  
          /**
-@@ -1273,11 +1336,13 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
+@@ -1273,11 +1344,13 @@ export const playerInspectorLogic = kea<playerInspectorLogicType>([
      listeners(({ values, actions }) => ({
          setItemExpanded: ({ index, expanded }) => {
              if (expanded) {
@@ -1057,10 +1076,10 @@ index a61894b0576..da5ac40c6b1 100644
              }
          },
 diff --git a/frontend/src/types.ts b/frontend/src/types.ts
-index 06a13844b55..dbf469f1d2d 100644
+index 40d6a4043329..63a7ccfefe5c 100644
 --- a/frontend/src/types.ts
 +++ b/frontend/src/types.ts
-@@ -1118,12 +1118,11 @@ export type RecordingConsoleLogV2 = {
+@@ -1113,12 +1113,11 @@ export type RecordingConsoleLogV2 = {
      windowNumber?: number | '?' | undefined
      level: LogLevel
      content: string

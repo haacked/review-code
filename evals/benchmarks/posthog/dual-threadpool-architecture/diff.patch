@@ -113,10 +113,10 @@ index 68778536c0b3..c331b2ca91b4 100644
  pub mod site_apps;
 diff --git a/rust/feature-flags/src/rayon_pool.rs b/rust/feature-flags/src/rayon_pool.rs
 new file mode 100644
-index 000000000000..bd2241306645
+index 000000000000..0956fc62125e
 --- /dev/null
 +++ b/rust/feature-flags/src/rayon_pool.rs
-@@ -0,0 +1,179 @@
+@@ -0,0 +1,91 @@
 +//! Dedicated thread pool for CPU-bound parallel flag evaluation.
 +//!
 +//! # Thread budget
@@ -132,84 +132,25 @@ index 000000000000..bd2241306645
 +//! threads only run during `eval_parallel()` calls. The budget can slightly exceed the quota
 +//! as long as peak concurrent CPU usage stays within limits.
 +//!
-+//! # Safety cap
++//! # Important: Set TOKIO_WORKER_THREADS
 +//!
-+//! If `EVAL_NUM_THREADS` exceeds `std::thread::available_parallelism()` (which respects
-+//! container CPU limits on Linux), the value is capped and a warning is logged. This
-+//! prevents misconfiguration from causing thread over-subscription.
++//! Tokio's `#[tokio::main]` defaults to `num_cpus`, which reflects the HOST CPU count,
++//! not the container's CFS quota. We should set `TOKIO_WORKER_THREADS` in production to match
++//! the CFS quota, otherwise tokio will create more threads than the container can efficiently run.
 +
 +use std::{env, sync::LazyLock};
 +
-+const DEFAULT_EVAL_NUM_THREADS: usize = 1;
++const DEFAULT_EVAL_NUM_THREADS: usize = 3;
 +const EVAL_NUM_THREADS_ENV: &str = "EVAL_NUM_THREADS";
 +
-+/// Result of resolving the thread count from environment and available parallelism.
-+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-+enum ResolvedThreadCount {
-+    /// Valid env var value within available parallelism.
-+    Configured(usize),
-+    /// Env var value exceeded available parallelism, capped.
-+    Capped { requested: usize, available: usize },
-+    /// No env var, invalid value, or zero; using default.
-+    Default(usize),
-+}
-+
-+impl ResolvedThreadCount {
-+    fn get(&self) -> usize {
-+        match self {
-+            Self::Configured(n) | Self::Default(n) => *n,
-+            Self::Capped { available, .. } => *available,
-+        }
-+    }
-+}
-+
-+/// Resolves the number of threads from an optional env var value and available parallelism.
-+fn resolve_thread_count(env_value: Option<&str>, available: usize) -> ResolvedThreadCount {
-+    let Some(requested) = env_value
-+        .and_then(|s| s.parse::<usize>().ok())
-+        .filter(|&n| n > 0)
-+    else {
-+        return ResolvedThreadCount::Default(DEFAULT_EVAL_NUM_THREADS);
-+    };
-+
-+    if requested > available {
-+        ResolvedThreadCount::Capped {
-+            requested,
-+            available,
-+        }
-+    } else {
-+        ResolvedThreadCount::Configured(requested)
-+    }
-+}
-+
-+/// Returns the available parallelism, respecting container CPU limits on Linux.
-+fn available_parallelism() -> usize {
-+    std::thread::available_parallelism()
-+        .map(|n| n.get())
-+        .unwrap_or_else(|_| {
-+            tracing::warn!("Failed to determine available parallelism, falling back to 1");
-+            1
-+        })
-+}
-+
 +static EVAL_POOL: LazyLock<rayon::ThreadPool> = LazyLock::new(|| {
-+    let available = available_parallelism();
-+    let env_value = env::var(EVAL_NUM_THREADS_ENV).ok();
-+    let resolved = resolve_thread_count(env_value.as_deref(), available);
-+    let num_threads = resolved.get();
-+
-+    if let ResolvedThreadCount::Capped { requested, .. } = resolved {
-+        tracing::warn!(
-+            requested,
-+            available,
-+            num_threads,
-+            "{EVAL_NUM_THREADS_ENV} exceeds available parallelism, capping"
-+        );
-+    }
++    let num_threads = env::var(EVAL_NUM_THREADS_ENV)
++        .ok()
++        .and_then(|s| s.parse().ok())
++        .unwrap_or(DEFAULT_EVAL_NUM_THREADS);
 +
 +    tracing::info!(
 +        num_threads,
-+        available,
 +        "Initializing rayon evaluation thread pool (set {EVAL_NUM_THREADS_ENV} to override)"
 +    );
 +
@@ -228,6 +169,13 @@ index 000000000000..bd2241306645
 +///
 +/// The `block_in_place` call allows tokio to move pending tasks to other workers,
 +/// keeping the async runtime responsive for connection pool operations and I/O.
++///
++/// # Test vs production behavior
++///
++/// In tests (`#[cfg(test)]`), we skip `block_in_place` because `#[tokio::test]`
++/// defaults to a single-threaded runtime where `block_in_place` panics.
++/// The rayon parallel evaluation is still exercised; only the tokio integration
++/// wrapper differs.
 +///
 +/// # Example
 +///
@@ -259,42 +207,6 @@ index 000000000000..bd2241306645
 +    R: Send,
 +{
 +    EVAL_POOL.install(f)
-+}
-+
-+#[cfg(test)]
-+mod tests {
-+    use super::*;
-+    use rstest::rstest;
-+
-+    #[rstest]
-+    #[case::valid_within_limit(Some("4"), 8, ResolvedThreadCount::Configured(4))]
-+    #[case::valid_at_limit(Some("8"), 8, ResolvedThreadCount::Configured(8))]
-+    #[case::exceeds_available(Some("16"), 8, ResolvedThreadCount::Capped { requested: 16, available: 8 })]
-+    #[case::no_env_var(None, 8, ResolvedThreadCount::Default(DEFAULT_EVAL_NUM_THREADS))]
-+    #[case::empty_string(Some(""), 8, ResolvedThreadCount::Default(DEFAULT_EVAL_NUM_THREADS))]
-+    #[case::non_numeric(Some("abc"), 8, ResolvedThreadCount::Default(DEFAULT_EVAL_NUM_THREADS))]
-+    #[case::zero_value(Some("0"), 8, ResolvedThreadCount::Default(DEFAULT_EVAL_NUM_THREADS))]
-+    #[case::negative_value(Some("-1"), 8, ResolvedThreadCount::Default(DEFAULT_EVAL_NUM_THREADS))]
-+    #[case::whitespace_only(Some("   "), 8, ResolvedThreadCount::Default(DEFAULT_EVAL_NUM_THREADS))]
-+    #[case::float_value(Some("4.5"), 8, ResolvedThreadCount::Default(DEFAULT_EVAL_NUM_THREADS))]
-+    fn test_resolve_thread_count(
-+        #[case] env_value: Option<&str>,
-+        #[case] available: usize,
-+        #[case] expected: ResolvedThreadCount,
-+    ) {
-+        assert_eq!(resolve_thread_count(env_value, available), expected);
-+    }
-+
-+    #[rstest]
-+    #[case::configured(ResolvedThreadCount::Configured(4), 4)]
-+    #[case::capped(ResolvedThreadCount::Capped { requested: 16, available: 8 }, 8)]
-+    #[case::default(ResolvedThreadCount::Default(1), 1)]
-+    fn test_resolved_thread_count_get(
-+        #[case] resolved: ResolvedThreadCount,
-+        #[case] expected: usize,
-+    ) {
-+        assert_eq!(resolved.get(), expected);
-+    }
 +}
 diff --git a/rust/feature-flags/tests/test_experience_continuity.rs b/rust/feature-flags/tests/test_experience_continuity.rs
 index 7eb12807220e..7a6559c0c5c2 100644
