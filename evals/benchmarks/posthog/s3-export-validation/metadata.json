@@ -9,5 +9,6 @@
   "areas": ["security", "correctness", "testing"],
   "difficulty": "hard",
   "expected_finding_count": 3,
-  "false_positive_trap_count": 0
+  "false_positive_trap_count": 0,
+  "frozen_diff": true
 }

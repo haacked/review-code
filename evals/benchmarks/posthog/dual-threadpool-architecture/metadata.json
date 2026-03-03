@@ -10,5 +10,6 @@
   "difficulty": "hard",
   "budget_usd": 8,
   "expected_finding_count": 4,
-  "false_positive_trap_count": 1
+  "false_positive_trap_count": 1,
+  "frozen_diff": true
 }
