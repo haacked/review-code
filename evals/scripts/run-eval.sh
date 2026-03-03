@@ -92,9 +92,14 @@ run_pr_benchmark() {
     frozen_diff=$(jq -r '.frozen_diff // false' "${bench_dir}/metadata.json" 2> /dev/null)
 
     local frozen_env=()
-    if [[ "${frozen_diff}" == "true" ]] && [[ -f "${bench_dir}/diff.patch" ]]; then
-        frozen_env=(REVIEW_CODE_FROZEN_DIFF="${bench_dir}/diff.patch")
-        echo "  Using frozen diff from ${bench_dir}/diff.patch"
+    if [[ "${frozen_diff}" == "true" ]]; then
+        if [[ -f "${bench_dir}/diff.patch" ]]; then
+            frozen_env=(REVIEW_CODE_FROZEN_DIFF="${bench_dir}/diff.patch")
+            echo "  Using frozen diff from ${bench_dir}/diff.patch"
+        else
+            echo "  Error: frozen_diff is true but ${bench_dir}/diff.patch not found" >&2
+            return 1
+        fi
     fi
 
     # Run the review via claude -p using the PR URL.
