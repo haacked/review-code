@@ -987,6 +987,12 @@ handle_pr_review() {
         diff_content=$(echo "${pr_data}" | jq -r '.diff')
     fi
 
+    # In benchmark mode (frozen diff), strip PR comments so the reviewer
+    # evaluates the diff independently without seeing what other reviewers found.
+    if [[ -n "${REVIEW_CODE_FROZEN_DIFF:-}" ]]; then
+        pr_data=$(echo "${pr_data}" | jq '.comments = {"conversation": [], "reviews": [], "inline": []}')
+    fi
+
     build_review_data "pr" "${diff_content}" "${git_context}" "pr-${pr_number}" "${pr_data}" \
         --arg mode_branch "${head_ref}" \
         --arg mode_file_ref "${file_ref}"
