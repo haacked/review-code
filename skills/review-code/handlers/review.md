@@ -226,7 +226,8 @@ Write comments the way a senior engineer talks in a PR review — direct, specif
 - For `blocking:` and `suggestion:` findings, always include a concrete code fix (see Accuracy Requirements above). For `question:` and `nit:`, offer code when it helps. Use GitHub's `suggestion` syntax for single-line fixes.
 - Defer to the author on judgment calls: "your call", "worth considering", "that said".
 - Express uncertainty honestly: "Unless I'm missing something", "If I'm reading this right". Give the author the benefit of the doubt.
-- Never restate what the code obviously does. The author wrote it — they know.
+- Never use em dashes. Use commas, parentheses, colons, or separate sentences instead.
+- Never restate what the code obviously does. The author wrote it; they know.
 
 Good:
 ```
