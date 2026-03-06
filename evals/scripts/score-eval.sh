@@ -283,14 +283,16 @@ score_benchmark() {
 
     # Get run metadata
     local manifest="${RESULTS_DIR}/${run_id}/manifest.json"
-    local git_sha timestamp
+    local git_sha timestamp approach
     git_sha=$(jq -r '.git_sha' "${manifest}" 2> /dev/null || echo "unknown")
     timestamp=$(jq -r '.timestamp' "${manifest}" 2> /dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)
+    approach=$(jq -r '.approach // "skill"' "${manifest}" 2> /dev/null)
 
     # Build final score
     local score
     score=$(jq -n \
         --arg run_id "${run_id}" \
+        --arg approach "${approach}" \
         --arg benchmark_id "${benchmark_id}" \
         --arg git_sha "${git_sha}" \
         --arg timestamp "${timestamp}" \
@@ -299,6 +301,7 @@ score_benchmark() {
         --arg composite "${composite}" \
         '{
             run_id: $run_id,
+            approach: $approach,
             benchmark_id: $benchmark_id,
             git_sha: $git_sha,
             timestamp: $timestamp,

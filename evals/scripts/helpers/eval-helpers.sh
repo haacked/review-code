@@ -2,10 +2,11 @@
 # eval-helpers.sh - Shared helper functions for eval scripts
 #
 # Provides:
-#   resolve_benchmark_dir() - Resolve benchmark directory from ID
-#   check_match()           - Generic finding/trap matching logic
-#   check_finding_match()   - Check if a parsed finding matches an expected finding
-#   check_trap_match()      - Check if a parsed finding triggers a false-positive trap
+#   resolve_benchmark_dir()  - Resolve benchmark directory from ID
+#   read_benchmark_diff()    - Read diff content for a benchmark
+#   check_match()            - Generic finding/trap matching logic
+#   check_finding_match()    - Check if a parsed finding matches an expected finding
+#   check_trap_match()       - Check if a parsed finding triggers a false-positive trap
 #
 # Requires EVALS_DIR and REGISTRY to be set by the sourcing script.
 
@@ -21,6 +22,35 @@ resolve_benchmark_dir() {
         return 1
     fi
     echo "${EVALS_DIR}/benchmarks/${category}/${id}"
+}
+
+# Read the diff content for a benchmark.
+# Uses frozen diff.patch if available, otherwise fetches via gh pr diff for PR benchmarks.
+# Args: $1 = bench dir
+# Outputs: diff content on stdout
+read_benchmark_diff() {
+    local bench_dir="$1"
+
+    # Prefer local diff.patch (always present for crafted benchmarks, frozen for PR benchmarks)
+    if [[ -f "${bench_dir}/diff.patch" ]]; then
+        cat "${bench_dir}/diff.patch"
+        return
+    fi
+
+    # For PR benchmarks without a frozen diff, fetch from GitHub
+    local source_url
+    source_url=$(jq -r '.source_url // empty' "${bench_dir}/metadata.json" 2> /dev/null)
+    if [[ -n "${source_url}" ]]; then
+        local org repo pr_number
+        org=$(echo "${source_url}" | sed -E 's#.*/([^/]+)/([^/]+)/pull/([0-9]+)#\1#')
+        repo=$(echo "${source_url}" | sed -E 's#.*/([^/]+)/([^/]+)/pull/([0-9]+)#\2#')
+        pr_number=$(echo "${source_url}" | sed -E 's#.*/([^/]+)/([^/]+)/pull/([0-9]+)#\3#')
+        gh pr diff "${pr_number}" --repo "${org}/${repo}" 2> /dev/null
+        return
+    fi
+
+    echo "Error: no diff available for benchmark in ${bench_dir}" >&2
+    return 1
 }
 
 # Generic match check for findings and traps.
