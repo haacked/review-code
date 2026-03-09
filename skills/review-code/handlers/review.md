@@ -296,7 +296,13 @@ IMPORTANT: Build upon the previous review. Do not duplicate findings. You may:
 - Update status if code changed
 - Mark findings as resolved if fixed
 
+<<<<<<<<< HEAD
 ### Collect and Synthesize Results
+||||||||| parent of f59cd31 (Add diff chunking for large PR reviews)
+Use the Task tool with `subagent_type` from the table above. If an area is specified, invoke only that agent. Otherwise, invoke all 7 core agents in parallel (+ frontend if `languages.has_frontend` is true). Pass the FULL context (PR info, diff, architectural context, guidelines) to each agent as the prompt.
+=========
+Use the Task tool with `subagent_type` from the table above. If an area is specified, invoke only that agent. Otherwise, invoke all 7 core agents in parallel (+ frontend if `languages.has_frontend` is true). Pass the FULL context (PR info, diff, architectural context, guidelines) to each agent as the prompt.<<<<<<< ours
+>>>>>>>>> f59cd31 (Add diff chunking for large PR reviews)
 
 **Chunked review dispatch:**
 
@@ -318,6 +324,32 @@ If `is_chunked` is true, process all chunks in parallel (all agents x all chunks
 2. After all tasks complete, merge all findings into a single pool for synthesis.
 
 If `is_chunked` is false (or `chunk_metadata` is absent), behavior is identical to the non-chunked path above.
+||||||| original
+
+=======
+
+**Chunked review dispatch:**
+
+If `is_chunked` is true, process chunks sequentially (one chunk at a time, all agents in parallel per chunk):
+
+1. For each chunk in the `chunks` array:
+   - Replace `$diff` in the agent context with the chunk's `diff` field (the subset of changes for this chunk)
+   - Add a chunk context header to each agent prompt:
+     ```
+     **Chunk Context:**
+     You are reviewing chunk $chunk.id of $chunk_count: $chunk.label
+     Files in this chunk: $chunk.files (comma-separated list)
+     Other chunks cover: (list labels of other chunks)
+     If you notice issues that may interact with code in other chunks, flag them as questions.
+     ```
+   - Keep all other context the same: full `file_metadata`, full `architectural_context`, full `review_context`, all PR metadata
+   - Invoke all applicable agents in parallel for this chunk
+   - Collect all findings from this chunk before moving to the next
+
+2. After all chunks are processed, merge all findings into a single pool for synthesis.
+
+If `is_chunked` is false (or `chunk_metadata` is absent), behavior is identical to the non-chunked path above.
+>>>>>>> theirs
 
 After all agents complete, synthesize their findings using extended thinking into a coherent, deduplicated review document. Apply confidence-based filtering and cross-agent corroboration before producing the final output.
 **Cross-agent corroboration:** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function.
