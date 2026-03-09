@@ -18,6 +18,7 @@
 #     "url": "https://github.com/PostHog/posthog/pull/123",
 #     "author": "haacked",
 #     "head_ref": "fix-auth",
+#     "head_sha": "abc123def456...",
 #     "base_ref": "main",
 #     "state": "open",
 #     "is_fork": false,
@@ -103,7 +104,7 @@ fetch_pr_metadata() {
         gh_cmd+=(--repo "${repo_spec}")
     fi
 
-    "${gh_cmd[@]}" --json number,title,body,url,author,headRefName,baseRefName,state,isCrossRepository
+    "${gh_cmd[@]}" --json number,title,body,url,author,headRefName,headRefOid,baseRefName,state,isCrossRepository
 }
 
 # Fetch PR diff
@@ -273,6 +274,8 @@ main() {
     state=$(echo "${metadata}" | jq -r '.state')
     local is_fork
     is_fork=$(echo "${metadata}" | jq -r '.isCrossRepository // false')
+    local head_sha
+    head_sha=$(echo "${metadata}" | jq -r '.headRefOid // ""')
 
     # Extract org/repo from URL if not already set
     if [[ -z "${org}" ]]; then
@@ -340,6 +343,7 @@ main() {
     "url": "${url}",
     "author": "${author}",
     "head_ref": "${head_ref}",
+    "head_sha": "${head_sha}",
     "base_ref": "${base_ref}",
     "state": "${state}",
     "is_fork": ${is_fork},

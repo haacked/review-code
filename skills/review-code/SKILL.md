@@ -41,7 +41,7 @@ Run specialized code review agent(s) with comprehensive context on local changes
 **Optional Flags:**
 
 - `--force` or `-f` - Skip the pre-flight context clear prompt
-- `--draft` or `-d` - Create a pending GitHub review with inline comments (PR mode only)
+- `--draft` or `-d` - Create a pending GitHub review with inline comments (PR mode only). Automatically detects and adjusts for comment drift when the PR receives new commits between review generation and draft posting.
 - `--self` - Allow creating draft review on your own PR (for testing)
 
 **Optional File Pattern:**

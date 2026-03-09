@@ -15,8 +15,10 @@
 #     "pr_number": 123,
 #     "reviewer_username": "haacked",
 #     "summary": "Overall review summary...",
+#     "review_commit": "abc123...",           (optional: enables drift detection)
+#     "original_diff": "diff --git ...",      (optional: original diff for content matching)
 #     "comments": [
-#       {"path": "src/auth.ts", "line": 42, "side": "RIGHT", "body": "Consider..."},
+#       {"path": "src/auth.ts", "line": 42, "side": "RIGHT", "body": "Consider...", "line_content": "    some_code()"},
 #       {"path": "src/utils.ts", "line": 15, "side": "RIGHT", "body": "This could..."}
 #     ],
 #     "unmapped_comments": [
@@ -31,7 +33,8 @@
 #     "review_url": "https://github.com/org/repo/pull/123#pullrequestreview-12345",
 #     "inline_count": 5,
 #     "summary_count": 2,
-#     "replaced_existing": true
+#     "replaced_existing": true,
+#     "drift_detected": false
 #   }
 
 set -euo pipefail
@@ -159,6 +162,48 @@ main() {
     summary=$(echo "${input}" | jq -r '.summary // ""')
     comments=$(echo "${input}" | jq -c '.comments // []')
 
+    # Run drift detection if review_commit is provided
+    local review_commit drift_detected=false
+    review_commit=$(echo "${input}" | jq -r '.review_commit // ""')
+
+    if [[ -n "${review_commit}" ]] && [[ "${review_commit}" != "null" ]]; then
+        local drift_input drift_result
+        drift_input=$(echo "${input}" | jq -c '{
+            owner: .owner,
+            repo: .repo,
+            pr_number: .pr_number,
+            review_commit: .review_commit,
+            comments: .comments,
+            original_diff: (.original_diff // "")
+        }')
+
+        if drift_result=$(echo "${drift_input}" | "${SCRIPT_DIR}/detect-comment-drift.sh"); then
+            drift_detected=$(echo "${drift_result}" | jq -r '.drift_detected')
+
+            if [[ "${drift_detected}" == "true" ]]; then
+                local drift_summary
+                drift_summary=$(echo "${drift_result}" | jq -r '.drift_summary // ""')
+                warning "Comment drift detected: ${drift_summary}"
+
+                # Replace comments with remapped versions
+                comments=$(echo "${drift_result}" | jq -c '.comments // []')
+
+                # Merge drift unmapped comments into the existing unmapped_comments
+                local drift_unmapped
+                drift_unmapped=$(echo "${drift_result}" | jq -c '.unmapped_comments // []')
+                local existing_unmapped
+                existing_unmapped=$(echo "${input}" | jq -c '.unmapped_comments // []')
+                unmapped_comments=$(jq -n \
+                    --argjson existing "${existing_unmapped}" \
+                    --argjson drift "${drift_unmapped}" \
+                    '$existing + $drift')
+            fi
+        else
+            # Drift detection failed; proceed with original positions
+            warning "Drift detection failed, using original comment positions"
+        fi
+    fi
+
     # Validate comments have required fields and filter out invalid ones
     # Required: path, line, body
     # Optional but validated: side (must be "LEFT" or "RIGHT" if present)
@@ -183,7 +228,10 @@ main() {
 
     # Use validated comments
     comments="${valid_comments}"
-    unmapped_comments=$(echo "${input}" | jq -c '.unmapped_comments // []')
+    # Only set unmapped_comments from input if drift detection didn't already merge them
+    if [[ -z "${unmapped_comments:-}" ]]; then
+        unmapped_comments=$(echo "${input}" | jq -c '.unmapped_comments // []')
+    fi
 
     # Validate required fields
     require_field "${owner}" "owner" || exit 1
@@ -252,13 +300,15 @@ main() {
         --argjson inline_count "${inline_count}" \
         --argjson summary_count "${unmapped_count}" \
         --argjson replaced_existing "${replaced_existing}" \
+        --argjson drift_detected "${drift_detected}" \
         '{
             success: $success,
             review_id: $review_id,
             review_url: $review_url,
             inline_count: $inline_count,
             summary_count: $summary_count,
-            replaced_existing: $replaced_existing
+            replaced_existing: $replaced_existing,
+            drift_detected: $drift_detected
         }'
 }
 

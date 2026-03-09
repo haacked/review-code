@@ -244,6 +244,20 @@ setup() {
 }
 
 # =============================================================================
+# head_sha tests
+# =============================================================================
+
+@test "pr-context.sh: fetch_pr_metadata requests headRefOid field" {
+    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh' && declare -f fetch_pr_metadata | grep -q 'headRefOid'"
+    [ "$status" -eq 0 ]
+}
+
+@test "pr-context.sh: main outputs head_sha field in JSON" {
+    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh' && declare -f main | grep -q 'head_sha'"
+    [ "$status" -eq 0 ]
+}
+
+# =============================================================================
 # fetch_linked_issues tests
 # =============================================================================
 
