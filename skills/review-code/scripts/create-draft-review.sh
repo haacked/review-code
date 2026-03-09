@@ -154,12 +154,13 @@ main() {
     validate_json "${input}" || exit 1
 
     # Extract fields
-    local owner repo pr_number reviewer summary comments unmapped_comments
+    local owner repo pr_number reviewer summary comments unmapped_comments review_commit
     owner=$(echo "${input}" | jq -r '.owner')
     repo=$(echo "${input}" | jq -r '.repo')
     pr_number=$(echo "${input}" | jq -r '.pr_number')
     reviewer=$(echo "${input}" | jq -r '.reviewer_username')
     summary=$(echo "${input}" | jq -r '.summary // ""')
+    review_commit=$(echo "${input}" | jq -r '.review_commit // ""')
     comments=$(echo "${input}" | jq -c '.comments // []')
     unmapped_comments=$(echo "${input}" | jq -c '.unmapped_comments // []')
 
@@ -170,21 +171,12 @@ main() {
     require_field "${reviewer}" "reviewer_username" || exit 1
 
     # Run drift detection if review_commit is provided
-    local review_commit drift_detected=false
-    review_commit=$(echo "${input}" | jq -r '.review_commit // ""')
+    local drift_detected=false
 
     if [[ -n "${review_commit}" ]] && [[ "${review_commit}" != "null" ]]; then
-        local drift_input drift_result
-        drift_input=$(echo "${input}" | jq -c '{
-            owner: .owner,
-            repo: .repo,
-            pr_number: .pr_number,
-            review_commit: .review_commit,
-            comments: .comments,
-            original_diff: (.original_diff // "")
-        }')
-
-        if drift_result=$(echo "${drift_input}" | "${SCRIPT_DIR}/detect-comment-drift.sh"); then
+        local drift_result
+        # Pass input directly; detect-comment-drift.sh ignores extra fields
+        if drift_result=$(echo "${input}" | "${SCRIPT_DIR}/detect-comment-drift.sh"); then
             drift_detected=$(echo "${drift_result}" | jq -r '.drift_detected')
 
             if [[ "${drift_detected}" == "true" ]]; then
@@ -209,30 +201,28 @@ main() {
         fi
     fi
 
-    # Validate comments have required fields and filter out invalid ones
-    # Required: path, line, body
-    # Optional but validated: side (must be "LEFT" or "RIGHT" if present)
-    local valid_comments invalid_count
-    valid_comments=$(echo "${comments}" | jq -c '[.[] | select(
-        .path != null and .line != null and .body != null and
-        (.side == null or .side == "LEFT" or .side == "RIGHT")
-    )]')
-    invalid_count=$(echo "${comments}" | jq '[.[] | select(
-        .path == null or .line == null or .body == null or
-        (.side != null and .side != "LEFT" and .side != "RIGHT")
-    )] | length')
+    # Validate comments have required fields, filter invalid ones, and strip to API fields.
+    # Single pass: partition into valid and invalid, then extract counts and filtered items.
+    local validation_result
+    validation_result=$(echo "${comments}" | jq -c '{
+        valid: [.[] | select(
+            .path != null and .line != null and .body != null and
+            (.side == null or .side == "LEFT" or .side == "RIGHT")
+        ) | {path, line, side, body}],
+        invalid: [.[] | select(
+            .path == null or .line == null or .body == null or
+            (.side != null and .side != "LEFT" and .side != "RIGHT")
+        )]
+    }')
+    comments=$(echo "${validation_result}" | jq -c '.valid')
+    local invalid_count
+    invalid_count=$(echo "${validation_result}" | jq '.invalid | length')
 
     if [[ "${invalid_count}" -gt 0 ]]; then
         warning "${invalid_count} comments filtered out due to missing required fields or invalid side value"
         echo "Filtered comments:" >&2
-        echo "${comments}" | jq -c '.[] | select(
-            .path == null or .line == null or .body == null or
-            (.side != null and .side != "LEFT" and .side != "RIGHT")
-        )' >&2
+        echo "${validation_result}" | jq -c '.invalid[]' >&2
     fi
-
-    # Use validated comments, stripped to API-recognized fields only
-    comments=$(echo "${valid_comments}" | jq -c '[.[] | {path, line, side, body}]')
 
     # Check for existing pending review
     local existing_review

@@ -319,6 +319,27 @@ remap_comment() {
     return 0
 }
 
+# Build and emit the standard drift result JSON.
+# Args: $1 = drift_detected (true/false), $2 = review_commit, $3 = current_commit,
+#       $4 = comments JSON array, $5 = unmapped_comments JSON array, $6 = drift_summary
+emit_drift_result() {
+    jq -n \
+        --argjson drift_detected "${1}" \
+        --arg review_commit "${2}" \
+        --arg current_commit "${3}" \
+        --argjson comments "${4}" \
+        --argjson unmapped_comments "${5}" \
+        --arg drift_summary "${6}" \
+        '{
+            drift_detected: $drift_detected,
+            review_commit: (if $review_commit == "" then null else $review_commit end),
+            current_commit: (if $current_commit == "" then null else $current_commit end),
+            comments: $comments,
+            unmapped_comments: $unmapped_comments,
+            drift_summary: $drift_summary
+        }'
+}
+
 main() {
     # Read input JSON from stdin
     local input
@@ -337,16 +358,7 @@ main() {
 
     # If no review_commit provided, skip drift detection entirely
     if [[ -z "${review_commit}" ]] || [[ "${review_commit}" == "null" ]]; then
-        jq -n \
-            --argjson comments "${comments}" \
-            '{
-                drift_detected: false,
-                review_commit: null,
-                current_commit: null,
-                comments: $comments,
-                unmapped_comments: [],
-                drift_summary: "skipped (no review commit)"
-            }'
+        emit_drift_result false "" "" "${comments}" "[]" "skipped (no review commit)"
         return 0
     fi
 
@@ -359,35 +371,13 @@ main() {
     local current_commit
     if ! current_commit=$(get_current_pr_head "${owner}" "${repo}" "${pr_number}" 2>&1); then
         warning "Failed to fetch current PR HEAD: ${current_commit}"
-        # Non-fatal: return original comments unchanged
-        jq -n \
-            --arg review_commit "${review_commit}" \
-            --argjson comments "${comments}" \
-            '{
-                drift_detected: false,
-                review_commit: $review_commit,
-                current_commit: null,
-                comments: $comments,
-                unmapped_comments: [],
-                drift_summary: "skipped (failed to fetch current HEAD)"
-            }'
+        emit_drift_result false "${review_commit}" "" "${comments}" "[]" "skipped (failed to fetch current HEAD)"
         return 0
     fi
 
     # If commits match, no drift
     if [[ "${review_commit}" == "${current_commit}" ]]; then
-        jq -n \
-            --arg review_commit "${review_commit}" \
-            --arg current_commit "${current_commit}" \
-            --argjson comments "${comments}" \
-            '{
-                drift_detected: false,
-                review_commit: $review_commit,
-                current_commit: $current_commit,
-                comments: $comments,
-                unmapped_comments: [],
-                drift_summary: "no drift (same commit)"
-            }'
+        emit_drift_result false "${review_commit}" "${current_commit}" "${comments}" "[]" "no drift (same commit)"
         return 0
     fi
 
@@ -395,42 +385,19 @@ main() {
     local current_diff
     if ! current_diff=$(fetch_current_diff "${owner}" "${repo}" "${pr_number}" 2>&1); then
         warning "Failed to fetch current diff: ${current_diff}"
-        # Non-fatal: return original comments unchanged
-        jq -n \
-            --arg review_commit "${review_commit}" \
-            --arg current_commit "${current_commit}" \
-            --argjson comments "${comments}" \
-            '{
-                drift_detected: true,
-                review_commit: $review_commit,
-                current_commit: $current_commit,
-                comments: $comments,
-                unmapped_comments: [],
-                drift_summary: "drift detected but remap failed (could not fetch current diff)"
-            }'
+        emit_drift_result true "${review_commit}" "${current_commit}" "${comments}" "[]" "drift detected but remap failed (could not fetch current diff)"
         return 0
     fi
 
     # Remap each comment
     local remapped_results=""
     local unmapped_results=""
-    local remapped_count=0
     local unmapped_count=0
     local comment_count
     comment_count=$(echo "${comments}" | jq 'length')
 
     if [[ "${comment_count}" -eq 0 ]]; then
-        jq -n \
-            --arg review_commit "${review_commit}" \
-            --arg current_commit "${current_commit}" \
-            '{
-                drift_detected: true,
-                review_commit: $review_commit,
-                current_commit: $current_commit,
-                comments: [],
-                unmapped_comments: [],
-                drift_summary: "drift detected, no comments to remap"
-            }'
+        emit_drift_result true "${review_commit}" "${current_commit}" "[]" "[]" "drift detected, no comments to remap"
         return 0
     fi
 
@@ -439,12 +406,6 @@ main() {
         local result
         if result=$(remap_comment "${comment}" "${original_diff}" "${current_diff}"); then
             remapped_results+="${result}"$'\n'
-            # Count actual remaps (where the line moved)
-            local was_remapped
-            was_remapped=$(echo "${result}" | jq -r '.remapped // false')
-            if [[ "${was_remapped}" == "true" ]]; then
-                remapped_count=$((remapped_count + 1))
-            fi
         else
             unmapped_results+="${result}"$'\n'
             unmapped_count=$((unmapped_count + 1))
@@ -464,23 +425,12 @@ main() {
         unmapped_comments="[]"
     fi
 
-    # Build drift summary
-    local drift_summary="${remapped_count} comments remapped, ${unmapped_count} unmapped"
+    # Count actual remaps (where the line moved) in one pass
+    local remapped_count
+    remapped_count=$(echo "${remapped_comments}" | jq '[.[] | select(.remapped == true)] | length')
 
-    jq -n \
-        --arg review_commit "${review_commit}" \
-        --arg current_commit "${current_commit}" \
-        --argjson comments "${remapped_comments}" \
-        --argjson unmapped_comments "${unmapped_comments}" \
-        --arg drift_summary "${drift_summary}" \
-        '{
-            drift_detected: true,
-            review_commit: $review_commit,
-            current_commit: $current_commit,
-            comments: $comments,
-            unmapped_comments: $unmapped_comments,
-            drift_summary: $drift_summary
-        }'
+    local drift_summary="${remapped_count} comments remapped, ${unmapped_count} unmapped"
+    emit_drift_result true "${review_commit}" "${current_commit}" "${remapped_comments}" "${unmapped_comments}" "${drift_summary}"
 }
 
 # Only run main if script is executed directly (not sourced)
