@@ -15,8 +15,10 @@
 #     "pr_number": 123,
 #     "reviewer_username": "haacked",
 #     "summary": "Overall review summary...",
+#     "review_commit": "abc123...",           (optional: enables drift detection)
+#     "original_diff": "diff --git ...",      (optional: original diff for content matching)
 #     "comments": [
-#       {"path": "src/auth.ts", "line": 42, "side": "RIGHT", "body": "Consider..."},
+#       {"path": "src/auth.ts", "line": 42, "side": "RIGHT", "body": "Consider...", "line_content": "    some_code()"},
 #       {"path": "src/utils.ts", "line": 15, "side": "RIGHT", "body": "This could..."}
 #     ],
 #     "unmapped_comments": [
@@ -31,7 +33,8 @@
 #     "review_url": "https://github.com/org/repo/pull/123#pullrequestreview-12345",
 #     "inline_count": 5,
 #     "summary_count": 2,
-#     "replaced_existing": true
+#     "replaced_existing": true,
+#     "drift_detected": false
 #   }
 
 set -euo pipefail
@@ -151,45 +154,73 @@ main() {
     validate_json "${input}" || exit 1
 
     # Extract fields
-    local owner repo pr_number reviewer summary comments unmapped_comments
+    local owner repo pr_number reviewer summary comments unmapped_comments review_commit
     owner=$(echo "${input}" | jq -r '.owner')
     repo=$(echo "${input}" | jq -r '.repo')
     pr_number=$(echo "${input}" | jq -r '.pr_number')
     reviewer=$(echo "${input}" | jq -r '.reviewer_username')
     summary=$(echo "${input}" | jq -r '.summary // ""')
+    review_commit=$(echo "${input}" | jq -r '.review_commit // ""')
     comments=$(echo "${input}" | jq -c '.comments // []')
-
-    # Validate comments have required fields and filter out invalid ones
-    # Required: path, line, body
-    # Optional but validated: side (must be "LEFT" or "RIGHT" if present)
-    local valid_comments invalid_count
-    valid_comments=$(echo "${comments}" | jq -c '[.[] | select(
-        .path != null and .line != null and .body != null and
-        (.side == null or .side == "LEFT" or .side == "RIGHT")
-    )]')
-    invalid_count=$(echo "${comments}" | jq '[.[] | select(
-        .path == null or .line == null or .body == null or
-        (.side != null and .side != "LEFT" and .side != "RIGHT")
-    )] | length')
-
-    if [[ "${invalid_count}" -gt 0 ]]; then
-        warning "${invalid_count} comments filtered out due to missing required fields or invalid side value"
-        echo "Filtered comments:" >&2
-        echo "${comments}" | jq -c '.[] | select(
-            .path == null or .line == null or .body == null or
-            (.side != null and .side != "LEFT" and .side != "RIGHT")
-        )' >&2
-    fi
-
-    # Use validated comments
-    comments="${valid_comments}"
     unmapped_comments=$(echo "${input}" | jq -c '.unmapped_comments // []')
 
-    # Validate required fields
+    # Validate required fields early, before any network calls
     require_field "${owner}" "owner" || exit 1
     require_field "${repo}" "repo" || exit 1
     require_field "${pr_number}" "pr_number" || exit 1
     require_field "${reviewer}" "reviewer_username" || exit 1
+
+    # Run drift detection if review_commit is provided
+    local drift_detected=false
+
+    if [[ -n "${review_commit}" ]] && [[ "${review_commit}" != "null" ]]; then
+        local drift_result
+        # Pass input directly; detect-comment-drift.sh ignores extra fields
+        if drift_result=$(echo "${input}" | "${SCRIPT_DIR}/detect-comment-drift.sh"); then
+            drift_detected=$(echo "${drift_result}" | jq -r '.drift_detected')
+
+            if [[ "${drift_detected}" == "true" ]]; then
+                local drift_summary
+                drift_summary=$(echo "${drift_result}" | jq -r '.drift_summary // ""')
+                warning "Comment drift detected: ${drift_summary}"
+
+                # Replace comments with remapped versions
+                comments=$(echo "${drift_result}" | jq -c '.comments // []')
+
+                # Merge drift unmapped comments into the existing unmapped_comments
+                local drift_unmapped
+                drift_unmapped=$(echo "${drift_result}" | jq -c '.unmapped_comments // []')
+                unmapped_comments=$(jq -n \
+                    --argjson existing "${unmapped_comments}" \
+                    --argjson drift "${drift_unmapped}" \
+                    '$existing + $drift')
+            fi
+        else
+            # Drift detection failed; proceed with original positions
+            warning "Drift detection failed, using original comment positions"
+        fi
+    fi
+
+    # Validate comments have required fields, filter invalid ones, and strip to API fields.
+    # Single pass: partition into valid and invalid, then extract counts and filtered items.
+    local validation_result
+    validation_result=$(echo "${comments}" | jq -c '
+        def is_valid:
+            .path != null and .line != null and .body != null and
+            (.side == null or .side == "LEFT" or .side == "RIGHT");
+        {
+            valid: [.[] | select(is_valid) | {path, line, side, body}],
+            invalid: [.[] | select(is_valid | not)]
+        }')
+    comments=$(echo "${validation_result}" | jq -c '.valid')
+    local invalid_count
+    invalid_count=$(echo "${validation_result}" | jq '.invalid | length')
+
+    if [[ "${invalid_count}" -gt 0 ]]; then
+        warning "${invalid_count} comments filtered out due to missing required fields or invalid side value"
+        echo "Filtered comments:" >&2
+        echo "${validation_result}" | jq -c '.invalid[]' >&2
+    fi
 
     # Check for existing pending review
     local existing_review
@@ -252,13 +283,15 @@ main() {
         --argjson inline_count "${inline_count}" \
         --argjson summary_count "${unmapped_count}" \
         --argjson replaced_existing "${replaced_existing}" \
+        --argjson drift_detected "${drift_detected}" \
         '{
             success: $success,
             review_id: $review_id,
             review_url: $review_url,
             inline_count: $inline_count,
             summary_count: $summary_count,
-            replaced_existing: $replaced_existing
+            replaced_existing: $replaced_existing,
+            drift_detected: $drift_detected
         }'
 }
 

@@ -1,0 +1,32 @@
+diff --git a/src/auth.ts b/src/auth.ts
+index aaa1111..bbb2222 100644
+--- a/src/auth.ts
++++ b/src/auth.ts
+@@ -1,8 +1,12 @@
+ import { hash } from 'crypto';
+
++export interface AuthConfig {
++    secret: string;
++    expiry: number;
++}
++
+ export function validateToken(token: string): boolean {
+-    return token.length > 0;
++    if (!token) return false;
++    return token.length > 10 && token.startsWith('sk_');
+ }
+
+ export function hashPassword(password: string): string {
+diff --git a/src/utils.ts b/src/utils.ts
+index ccc3333..ddd4444 100644
+--- a/src/utils.ts
++++ b/src/utils.ts
+@@ -1,6 +1,8 @@
+ export function formatDate(date: Date): string {
+     return date.toISOString().split('T')[0];
+ }
++
++export const MAX_RETRIES = 3;
+
+ export function capitalize(str: string): string {
+     if (!str) return str;

@@ -570,15 +570,21 @@ EOF
   "repo": "<repo from session>",
   "pr_number": <number from session>,
   "reviewer_username": "<reviewer from session>",
+  "review_commit": "<pr.head_sha from session, if available>",
+  "original_diff": "<diff from session data>",
   "summary": "<Short, conversational summary — see guidance below>",
   "comments": [
-    {"path": "file.ts", "line": 42, "side": "RIGHT", "body": "Clean comment text"}
+    {"path": "file.ts", "line": 42, "side": "RIGHT", "body": "Clean comment text", "line_content": "    the_actual_code()"}
   ],
   "unmapped_comments": [
     {"description": "General finding that couldn't be mapped to diff"}
   ]
 }
 ```
+
+**Comment drift detection:** When `review_commit` is provided, `create-draft-review.sh` automatically detects if the PR received new commits since the review was generated. If comments have drifted, it remaps them to their correct positions using content-based matching. Comments that cannot be remapped are moved to `unmapped_comments`.
+
+**Extracting `line_content`:** For each comment, extract the code at the target file:line from the diff. Find the file in the diff, locate the target line number within the hunks, and use the code text at that line (without the `+`/`-`/` ` prefix). This enables content-based matching for drift detection.
 
 **IMPORTANT**: The `summary` field is the casual top-level comment on a GitHub review. Keep it brief — 1-2 short sentences at most. The author already knows what their PR does; never restate or narrate the approach back to them.
 
@@ -629,6 +635,8 @@ Review: <review_url>
 Summary:
 - Inline comments: X
 - Summary comments: Y
+{If drift_detected is true:}
+- Note: PR received new commits since review. Comments were adjusted to match current diff.
 
 The review is in PENDING state. Visit GitHub to:
 - Edit or remove any comments
@@ -707,10 +715,11 @@ mode: <mode>
 pr_number: <pr_number if applicable>
 org: <org>
 repo: <repo>
+review_commit: <pr.head_sha if PR mode, omit otherwise>
 -->
 ```
 
-This metadata is used by the learning system to determine when the review was created.
+This metadata is used by the learning system to determine when the review was created. The `review_commit` field records the PR's HEAD SHA at review time, enabling drift detection when creating draft reviews later.
 
 ### Cleanup Session
 

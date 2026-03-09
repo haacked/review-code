@@ -681,6 +681,147 @@ EOF
     [[ "$output" == *'"inline_count": 0'* ]]
 }
 
+# =============================================================================
+# Drift detection integration tests
+# =============================================================================
+
+@test "create-draft-review: accepts optional review_commit field" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"--jq"*".head.sha"* ]]; then
+    echo 'abc123'
+elif [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "review_commit": "abc123", "comments": [{"path": "file.ts", "line": 5, "side": "RIGHT", "body": "Comment"}]}'
+    run bash -c "echo '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"success": true'* ]]
+}
+
+@test "create-draft-review: behavior unchanged when review_commit not provided" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": [{"path": "file.ts", "line": 5, "side": "RIGHT", "body": "Comment"}]}'
+    run bash -c "echo '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"success": true'* ]]
+    [[ "$output" == *'"drift_detected": false'* ]]
+}
+
+@test "create-draft-review: includes drift_detected in output" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": []}'
+    run bash -c "echo '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'has("drift_detected")'
+}
+
+@test "create-draft-review: drift detection failure is non-fatal" {
+    # Create a gh mock that fails for drift detection API calls but works for review creation
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"--jq"*".head.sha"* ]]; then
+    echo "API error" >&2
+    exit 1
+elif [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "review_commit": "abc123", "comments": [{"path": "file.ts", "line": 5, "side": "RIGHT", "body": "Comment"}]}'
+    run bash -c "echo '$input' | '$SCRIPT' 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"success": true'* ]]
+}
+
+@test "create-draft-review: remaps comments when drift is detected" {
+    # Mock: different HEAD SHA triggers drift detection, pr diff returns updated diff
+    local updated_diff="$PROJECT_ROOT/tests/fixtures/diffs/drift-updated.diff"
+    cat > "$MOCK_DIR/gh" << GHEOF
+#!/bin/bash
+if [[ "\$*" == *"--jq"*".head.sha"* ]]; then
+    echo 'def456'
+elif [[ "\$*" == *"pr diff"* ]]; then
+    cat '${updated_diff}'
+elif [[ "\$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "\$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+GHEOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local original_diff
+    original_diff=$(cat "$PROJECT_ROOT/tests/fixtures/diffs/drift-original.diff")
+    local tmpinput
+    tmpinput=$(mktemp)
+
+    local line_content
+    line_content="    return token.length > 10 && token.startsWith('sk_');"
+
+    jq -n \
+        --arg diff "$original_diff" \
+        --arg lc "$line_content" \
+        '{
+            owner: "org",
+            repo: "test",
+            pr_number: 1,
+            reviewer_username: "user",
+            summary: "Test",
+            review_commit: "abc123",
+            original_diff: $diff,
+            comments: [{
+                path: "src/auth.ts",
+                line: 10,
+                side: "RIGHT",
+                body: "Consider validation",
+                line_content: $lc
+            }]
+        }' > "$tmpinput"
+
+    run bash -c "cat '$tmpinput' | '$SCRIPT' 2>/dev/null"
+    rm -f "$tmpinput"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"success": true'* ]]
+    [[ "$output" == *'"drift_detected": true'* ]]
+}
+
 @test "create-draft-review: keeps valid comments when filtering ones with bad side" {
     cat > "$MOCK_DIR/gh" << 'EOF'
 #!/bin/bash
