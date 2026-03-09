@@ -289,6 +289,50 @@ build_review_data() {
     review_context=$(echo "${review_context_json}" | jq -r '.content')
     loaded_context_files=$(echo "${review_context_json}" | jq -r '.loaded_files')
 
+    # Run diff chunking to determine if the diff should be split
+    debug_time "05-chunking" "start"
+    local chunk_result=""
+    local chunk_max_size_kb="${REVIEW_CODE_CHUNK_MAX_SIZE_KB:-200}"
+    [[ "${chunk_max_size_kb}" =~ ^[0-9]+$ ]] || chunk_max_size_kb=200
+    local chunk_max_files="${REVIEW_CODE_CHUNK_MAX_FILES:-30}"
+    [[ "${chunk_max_files}" =~ ^[0-9]+$ ]] || chunk_max_files=30
+    local chunk_threshold_kb="${REVIEW_CODE_CHUNK_THRESHOLD_KB:-400}"
+    [[ "${chunk_threshold_kb}" =~ ^[0-9]+$ ]] || chunk_threshold_kb=400
+    local chunk_threshold_files="${REVIEW_CODE_CHUNK_THRESHOLD_FILES:-50}"
+    [[ "${chunk_threshold_files}" =~ ^[0-9]+$ ]] || chunk_threshold_files=50
+
+    # Write diff to a temp file to avoid ARG_MAX limits with --arg on large diffs
+    local chunk_diff_tmpfile
+    _ORCH_DIFF_TMPFILE=$(mktemp)
+    chunk_diff_tmpfile="${_ORCH_DIFF_TMPFILE}"
+    trap 'rm -f "${_ORCH_DIFF_TMPFILE}"' EXIT
+    printf '%s' "${diff_content}" > "${chunk_diff_tmpfile}"
+
+    chunk_result=$(jq -n \
+        --rawfile diff "${chunk_diff_tmpfile}" \
+        --argjson file_metadata "${file_metadata}" \
+        --argjson max_size "${chunk_max_size_kb}" \
+        --argjson max_files "${chunk_max_files}" \
+        --argjson threshold_kb "${chunk_threshold_kb}" \
+        --argjson threshold_files "${chunk_threshold_files}" \
+        '{
+            diff: $diff,
+            file_metadata: $file_metadata,
+            config: {
+                max_chunk_size_kb: $max_size,
+                max_files_per_chunk: $max_files,
+                min_chunk_threshold_kb: $threshold_kb,
+                min_chunk_threshold_files: $threshold_files
+            }
+        }' | "${SCRIPT_DIR}/chunk-diff.sh" 2> /dev/null || echo "")
+
+    if [[ -z "${chunk_result}" ]]; then
+        debug_trace "05-chunking" "chunk-diff.sh failed or returned empty; falling back to un-chunked review"
+    fi
+
+    debug_save_json "05-chunking" "output.json" <<< "${chunk_result}"
+    debug_time "05-chunking" "end"
+
     # Build summary for user confirmation
     # Extract mode-specific fields to avoid passing large args to jq
     local mode_fields
@@ -329,11 +373,25 @@ build_review_data() {
         fi
     fi
 
+    # Build chunk JSON for inclusion in output (null if not chunked or chunking failed).
+    # Write chunks to a temp file and use --slurpfile to avoid ARG_MAX limits,
+    # since chunk data can be as large as the original diff (400KB+).
+    local chunk_meta_json="null"
+    local chunk_json_tmpfile
+    _ORCH_CHUNK_JSON_TMPFILE=$(mktemp)
+    chunk_json_tmpfile="${_ORCH_CHUNK_JSON_TMPFILE}"
+    trap 'rm -f "${_ORCH_DIFF_TMPFILE}" "${_ORCH_CHUNK_JSON_TMPFILE}"' EXIT
+    echo "null" > "${chunk_json_tmpfile}"
+    if [[ -n "${chunk_result}" ]] && echo "${chunk_result}" | jq -e '.chunked == true' > /dev/null 2>&1; then
+        echo "${chunk_result}" | jq '.chunks' > "${chunk_json_tmpfile}"
+        chunk_meta_json=$(echo "${chunk_result}" | jq '{chunked: .chunked, reason: .reason, chunk_count: .chunk_count}')
+    fi
+
     local -a jq_args=(
         -n
         --arg mode "${mode}"
         --argjson git "${git_context}"
-        --arg diff "${diff_content}"
+        --rawfile diff "${chunk_diff_tmpfile}"
         --argjson lang "${lang_info}"
         --argjson meta "${file_metadata}"
         --argjson file "${file_info}"
@@ -343,6 +401,8 @@ build_review_data() {
         --argjson pr "${pr_json}"
         --arg reviewer_username "${reviewer_username}"
         --arg is_own_pr "${is_own_pr}"
+        --slurpfile chunks "${chunk_json_tmpfile}"
+        --argjson chunk_metadata "${chunk_meta_json}"
     )
 
     # Add mode-specific arguments
@@ -353,7 +413,7 @@ build_review_data() {
     jq_args+=(--arg draft_mode "${draft_mode}")
     jq_args+=(--arg self_mode "${self_mode}")
 
-    # Single jq invocation with conditional pr field
+    # Single jq invocation with conditional pr field and chunk data
     final_output=$(jq "${jq_args[@]}" \
         '{
             status: "ready",
@@ -372,6 +432,7 @@ build_review_data() {
         + (if $draft_mode == "true" then {draft: true} else {} end)
         + (if $self_mode == "true" then {self: true} else {} end)
         + (if $pr != null then {pr: $pr, reviewer_username: $reviewer_username, is_own_pr: ($is_own_pr == "true")} else {} end)
+        + (if $chunks[0] != null then {chunks: $chunks[0], chunk_metadata: $chunk_metadata} else {} end)
         + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")) | with_entries(select(.value != "")))')
     debug_save_json "07-final-output" "output.json" <<< "${final_output}"
     debug_time "07-final-output" "end"

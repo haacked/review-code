@@ -757,3 +757,55 @@ teardown() {
     branch=$(echo "$output" | jq -r '.branch')
     [ "$branch" = "feature-branch" ]
 }
+
+# =============================================================================
+# Diff chunking integration tests
+# =============================================================================
+
+@test "review-orchestrator.sh: small diff does not produce chunks field" {
+    echo "change" > file.txt
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+    [ "$status" -eq 0 ]
+    has_chunks=$(echo "$output" | jq 'has("chunks")')
+    [ "$has_chunks" = "false" ]
+}
+
+@test "review-orchestrator.sh: small diff does not produce chunk_metadata field" {
+    echo "change" > file.txt
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+    [ "$status" -eq 0 ]
+    has_meta=$(echo "$output" | jq 'has("chunk_metadata")')
+    [ "$has_meta" = "false" ]
+}
+
+@test "review-orchestrator.sh: diff field always present regardless of chunking" {
+    echo "change" > file.txt
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'has("diff")'
+}
+
+@test "review-orchestrator.sh: chunk threshold env vars are respected" {
+    # Generate many files and stage them to trigger chunking with low threshold.
+    # Files must be staged so they appear in the diff for local mode.
+    for i in $(seq 1 15); do
+        echo "content $i" > "file${i}.txt"
+    done
+    git add .
+
+    export REVIEW_CODE_CHUNK_THRESHOLD_FILES=5
+    export REVIEW_CODE_CHUNK_THRESHOLD_KB=0
+    export REVIEW_CODE_CHUNK_MAX_FILES=4
+
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+    [ "$status" -eq 0 ]
+
+    # With 15 files and threshold of 5, chunking should activate
+    has_chunks=$(echo "$output" | jq 'has("chunks")')
+    [ "$has_chunks" = "true" ]
+    echo "$output" | jq -e '.chunk_metadata.chunked == true'
+    echo "$output" | jq -e '.chunk_metadata.chunk_count > 1'
+
+    # The full diff must still be present
+    echo "$output" | jq -e 'has("diff")'
+}
