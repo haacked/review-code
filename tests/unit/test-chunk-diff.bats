@@ -366,3 +366,95 @@ index abc..def 100644
     [ "$status" -eq 0 ]
     [[ "$(echo "$output" | jq -r '.reason')" == *"exceeds threshold"* ]]
 }
+
+# =============================================================================
+# Size-based splitting tests
+# =============================================================================
+
+@test "chunk-diff: size-based splitting with low max_chunk_size_kb" {
+    local diff_content
+    diff_content=$(cat "$FIXTURES_DIR/multi-directory.diff")
+    local input
+    # Use a very low max_chunk_size_kb (1KB) but high max_files_per_chunk to force
+    # size-based splitting rather than file-count-based splitting
+    input=$(jq -n --arg diff "$diff_content" \
+        '{"diff": $diff, "config": {"min_chunk_threshold_files": 5, "min_chunk_threshold_kb": 0, "max_chunk_size_kb": 1, "max_files_per_chunk": 100}}')
+
+    run bash -c "printf '%s' '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.chunked == true'
+    # With 1KB limit, there should be many chunks since each file is ~1KB+
+    chunk_count=$(echo "$output" | jq '.chunk_count')
+    [ "$chunk_count" -gt 2 ]
+}
+
+# =============================================================================
+# chunk_count consistency tests
+# =============================================================================
+
+@test "chunk-diff: chunk_count equals chunks array length" {
+    local diff_content
+    diff_content=$(cat "$FIXTURES_DIR/multi-directory.diff")
+    local input
+    input=$(jq -n --arg diff "$diff_content" \
+        '{"diff": $diff, "config": {"min_chunk_threshold_files": 10, "min_chunk_threshold_kb": 0, "max_files_per_chunk": 8}}')
+
+    run bash -c "printf '%s' '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.chunked == true'
+    # Verify chunk_count matches the actual number of chunks and ids are sequential
+    echo "$output" | jq -e '.chunk_count == (.chunks | length)'
+    echo "$output" | jq -e '[.chunks[].id] == [range(1; (.chunks | length) + 1)]'
+}
+
+# =============================================================================
+# Additional test-file pairing pattern tests
+# =============================================================================
+
+@test "chunk-diff: Go _test.go files are paired with implementation files" {
+    local diff_content
+    diff_content=$(cat "$FIXTURES_DIR/multi-directory.diff")
+    local input
+    input=$(jq -n --arg diff "$diff_content" \
+        '{"diff": $diff, "config": {"min_chunk_threshold_files": 10, "min_chunk_threshold_kb": 0, "max_files_per_chunk": 8}}')
+
+    run bash -c "printf '%s' '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+
+    # handler_test.go should be in the same chunk as handler.go
+    impl_chunk=$(echo "$output" | jq --arg f "backend/services/handler.go" '[.chunks[] | select(.files | index($f))] | .[0].id')
+    test_chunk=$(echo "$output" | jq --arg f "backend/services/handler_test.go" '[.chunks[] | select(.files | index($f))] | .[0].id')
+    [ "$impl_chunk" = "$test_chunk" ]
+}
+
+@test "chunk-diff: JS .test.ts files are paired with implementation files" {
+    local diff_content
+    diff_content=$(cat "$FIXTURES_DIR/multi-directory.diff")
+    local input
+    input=$(jq -n --arg diff "$diff_content" \
+        '{"diff": $diff, "config": {"min_chunk_threshold_files": 10, "min_chunk_threshold_kb": 0, "max_files_per_chunk": 8}}')
+
+    run bash -c "printf '%s' '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+
+    # format.test.ts should be in the same chunk as format.ts
+    impl_chunk=$(echo "$output" | jq --arg f "frontend/utils/format.ts" '[.chunks[] | select(.files | index($f))] | .[0].id')
+    test_chunk=$(echo "$output" | jq --arg f "frontend/utils/format.test.ts" '[.chunks[] | select(.files | index($f))] | .[0].id')
+    [ "$impl_chunk" = "$test_chunk" ]
+}
+
+@test "chunk-diff: __tests__ directory files are paired with implementation files" {
+    local diff_content
+    diff_content=$(cat "$FIXTURES_DIR/multi-directory.diff")
+    local input
+    input=$(jq -n --arg diff "$diff_content" \
+        '{"diff": $diff, "config": {"min_chunk_threshold_files": 10, "min_chunk_threshold_kb": 0, "max_files_per_chunk": 8}}')
+
+    run bash -c "printf '%s' '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+
+    # frontend/lib/__tests__/helpers.ts should be in the same chunk as frontend/lib/helpers.ts
+    impl_chunk=$(echo "$output" | jq --arg f "frontend/lib/helpers.ts" '[.chunks[] | select(.files | index($f))] | .[0].id')
+    test_chunk=$(echo "$output" | jq --arg f "frontend/lib/__tests__/helpers.ts" '[.chunks[] | select(.files | index($f))] | .[0].id')
+    [ "$impl_chunk" = "$test_chunk" ]
+}

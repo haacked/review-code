@@ -6,7 +6,8 @@
 #
 # Input (stdin): JSON object with:
 #   - diff: unified diff text (required)
-#   - file_metadata: array of {path, type, language, is_test, likely_test_path} (optional)
+#   - file_metadata: object with modified_files array of {path, type, language, is_test,
+#                   likely_test_path} (optional, from pre-review-context.sh)
 #   - config: {max_chunk_size_kb, max_files_per_chunk, min_chunk_threshold_kb,
 #              min_chunk_threshold_files} (optional, all have defaults)
 #
@@ -29,7 +30,7 @@ set -euo pipefail
 # Default configuration
 DEFAULT_MAX_CHUNK_SIZE_KB=200
 DEFAULT_MAX_FILES_PER_CHUNK=30
-DEFAULT_MIN_CHUNK_THRESHOLD_KB=200
+DEFAULT_MIN_CHUNK_THRESHOLD_KB=400
 DEFAULT_MIN_CHUNK_THRESHOLD_FILES=50
 
 # Parse the diff text into per-file segments.
@@ -53,13 +54,17 @@ parse_diff_segments() {
             gsub(/\n/, "\\n", buf)
             gsub(/\t/, "\\t", buf)
             gsub(/\r/, "\\r", buf)
+            gsub(/\\/, "\\\\", path)
+            gsub(/"/, "\\\"", path)
             printf "{\"path\":\"%s\",\"diff\":\"%s\",\"size_bytes\":%d}\n", path, buf, length(buf)
         }
 
-        # Extract path from "diff --git a/X b/X" - take the b/ side
-        match($0, /b\/(.+)$/)
+        # Extract path from "diff --git a/X b/X" - take the b/ side.
+        # Match on " b/" (with leading space) to avoid false matches on directory
+        # names containing "b" (e.g., lib/, web/, pub/, sub/, contrib/, db/).
+        match($0, / b\/(.+)$/)
         if (RSTART > 0) {
-            path = substr($0, RSTART + 2)
+            path = substr($0, RSTART + 3)
         } else {
             path = "unknown"
         }
@@ -76,106 +81,12 @@ parse_diff_segments() {
             gsub(/\n/, "\\n", buf)
             gsub(/\t/, "\\t", buf)
             gsub(/\r/, "\\r", buf)
+            gsub(/\\/, "\\\\", path)
+            gsub(/"/, "\\\"", path)
             printf "{\"path\":\"%s\",\"diff\":\"%s\",\"size_bytes\":%d}\n", path, buf, length(buf)
         }
     }
     ' "${diff_file}"
-}
-
-# Determine the implementation file that a test file corresponds to.
-# Returns the likely implementation path, or empty string if not a test file.
-get_impl_for_test() {
-    local file_path="$1"
-    local basename
-    basename=$(basename "${file_path}")
-    local dirname
-    dirname=$(dirname "${file_path}")
-
-    # Python: test_foo.py -> foo.py
-    if [[ "${basename}" =~ ^test_ ]]; then
-        echo "${dirname}/${basename#test_}"
-        return
-    fi
-
-    # Go: foo_test.go -> foo.go
-    if [[ "${basename}" =~ _test\.go$ ]]; then
-        echo "${dirname}/${basename%_test.go}.go"
-        return
-    fi
-
-    # Generic: foo_test.ext -> foo.ext
-    if [[ "${basename}" =~ _test\. ]]; then
-        echo "${dirname}/${basename/_test./\.}"
-        return
-    fi
-
-    # JS/TS: foo.test.ext or foo.spec.ext -> foo.ext
-    if [[ "${basename}" =~ \.test\. ]]; then
-        local name="${basename%.test.*}"
-        local ext="${basename##*.}"
-        echo "${dirname}/${name}.${ext}"
-        return
-    fi
-    if [[ "${basename}" =~ \.spec\. ]]; then
-        local name="${basename%.spec.*}"
-        local ext="${basename##*.}"
-        echo "${dirname}/${name}.${ext}"
-        return
-    fi
-
-    # __tests__/foo.ext -> ../foo.ext
-    if [[ "${dirname}" =~ /__tests__$ ]]; then
-        local parent
-        parent=$(dirname "${dirname}")
-        echo "${parent}/${basename}"
-        return
-    fi
-
-    echo ""
-}
-
-# Check whether a file path looks like a test file.
-is_test_file() {
-    local file_path="$1"
-    local basename
-    basename=$(basename "${file_path}")
-    local dirname
-    dirname=$(dirname "${file_path}")
-
-    [[ "${basename}" =~ ^test_ ]] \
-        || [[ "${basename}" =~ _test\. ]] \
-        || [[ "${basename}" =~ \.test\. ]] \
-        || [[ "${basename}" =~ \.spec\. ]] \
-        || [[ "${basename}" =~ _spec\. ]] \
-        || [[ "${dirname}" =~ /__tests__$ ]] \
-        || [[ "${dirname}" =~ /tests?$ ]] \
-        || [[ "${dirname}" =~ /specs?$ ]]
-}
-
-# Generate a human-readable label for a chunk by finding the most common
-# directory prefix among the chunk's files.
-generate_chunk_label() {
-    local files_json="$1"
-    local file_count
-    file_count=$(echo "${files_json}" | jq -r 'length')
-
-    if [[ "${file_count}" -eq 0 ]]; then
-        echo "empty"
-        return
-    fi
-
-    if [[ "${file_count}" -eq 1 ]]; then
-        echo "${files_json}" | jq -r '.[0]'
-        return
-    fi
-
-    # Find the most common top-level directory
-    local top_dir
-    top_dir=$(echo "${files_json}" | jq -r '.[]' | while IFS= read -r f; do
-        dirname "${f}" | cut -d'/' -f1
-    done | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')
-
-    echo "${top_dir} (${file_count} files)"
 }
 
 main() {
@@ -195,22 +106,24 @@ main() {
     local diff_file="${_CHUNK_DIFF_TMPFILE}"
     trap 'rm -f "${_CHUNK_DIFF_TMPFILE}"' EXIT
 
-    echo "${input}" | jq -r '.diff // ""' > "${diff_file}"
+    # Use jq -j (no trailing newline) so an empty diff produces a truly empty file
+    echo "${input}" | jq -j '.diff // ""' > "${diff_file}"
 
-    # Check for empty diff (the file will have at least a trailing newline from echo)
-    local diff_content_check
-    diff_content_check=$(jq -r '.diff // ""' <<< "${input}")
-    if [[ -z "${diff_content_check}" ]]; then
+    # Check for empty diff using the file that was already written
+    if [[ ! -s "${diff_file}" ]]; then
         jq -n '{"chunked": false, "reason": "empty diff"}'
         return
     fi
 
-    # Extract config with defaults
-    local max_chunk_size_kb max_files_per_chunk min_threshold_kb min_threshold_files
-    max_chunk_size_kb=$(echo "${input}" | jq -r ".config.max_chunk_size_kb // ${DEFAULT_MAX_CHUNK_SIZE_KB}")
-    max_files_per_chunk=$(echo "${input}" | jq -r ".config.max_files_per_chunk // ${DEFAULT_MAX_FILES_PER_CHUNK}")
-    min_threshold_kb=$(echo "${input}" | jq -r ".config.min_chunk_threshold_kb // ${DEFAULT_MIN_CHUNK_THRESHOLD_KB}")
-    min_threshold_files=$(echo "${input}" | jq -r ".config.min_chunk_threshold_files // ${DEFAULT_MIN_CHUNK_THRESHOLD_FILES}")
+    # Extract config with defaults (single jq call instead of four)
+    local config_values max_chunk_size_kb max_files_per_chunk min_threshold_kb min_threshold_files
+    config_values=$(jq -r "[
+        .config.max_chunk_size_kb // ${DEFAULT_MAX_CHUNK_SIZE_KB},
+        .config.max_files_per_chunk // ${DEFAULT_MAX_FILES_PER_CHUNK},
+        .config.min_chunk_threshold_kb // ${DEFAULT_MIN_CHUNK_THRESHOLD_KB},
+        .config.min_chunk_threshold_files // ${DEFAULT_MIN_CHUNK_THRESHOLD_FILES}
+    ] | @tsv" <<< "${input}")
+    read -r max_chunk_size_kb max_files_per_chunk min_threshold_kb min_threshold_files <<< "${config_values}"
 
     local max_chunk_size_bytes=$((max_chunk_size_kb * 1024))
 
@@ -244,43 +157,77 @@ main() {
 
     # Step 1: Pair test files with their implementation files.
     # Build a mapping of impl_path -> [test_paths] and track which files are paired.
+    # When file_metadata is available (passed from the orchestrator via pre-review-context.sh),
+    # use its is_test and likely_test_path fields instead of reimplementing test detection.
+    local file_metadata_json
+    file_metadata_json=$(jq -c '.file_metadata // null' <<< "${input}")
+
     local paired_groups
-    paired_groups=$(echo "${segments_json}" | jq -r '
+    paired_groups=$(echo "${segments_json}" | jq -r --argjson meta "${file_metadata_json}" '
         # Build a list of all file paths
         [.[].path] as $all_paths |
+
+        # Build a lookup from path to metadata (when available).
+        # file_metadata is an object with a modified_files array of
+        # {path, type, language, is_test, likely_test_path} entries.
+        (if $meta != null and ($meta | has("modified_files")) then
+            reduce $meta.modified_files[] as $m ({}; . + {($m.path): $m})
+        else {} end) as $meta_lookup |
 
         # For each file, check if it is a test file
         reduce .[] as $seg (
             {"pairs": {}, "paired_set": {}};
 
-            # Check test file patterns
             ($seg.path | split("/") | last) as $basename |
             ($seg.path | split("/")[:-1] | join("/")) as $dirpart |
-            (
+
+            # Use metadata when available, fall back to pattern matching
+            (if $meta_lookup[$seg.path].is_test == true then
+                # Metadata says this is a test file. The likely_test_path field on
+                # source files points test->impl, but for test files we need to
+                # derive the impl path. Use the same pattern-matching logic as
+                # the fallback, since metadata marks test files but does not
+                # provide the reverse mapping.
                 if ($basename | test("^test_")) then
-                    # Python-style: test_foo.py -> foo.py
                     ($dirpart + "/" + ($basename | sub("^test_"; "")))
                 elif ($basename | test("_test\\.go$")) then
-                    # Go-style: foo_test.go -> foo.go
                     ($dirpart + "/" + ($basename | sub("_test\\.go$"; ".go")))
                 elif ($basename | test("_test\\.")) then
-                    # Generic: foo_test.ext -> foo.ext
                     ($dirpart + "/" + ($basename | sub("_test\\."; ".")))
                 elif ($basename | test("\\.test\\.")) then
-                    # JS/TS: foo.test.ext -> foo.ext
                     ($basename | split(".test.")) as $parts |
                     ($dirpart + "/" + $parts[0] + "." + $parts[1])
                 elif ($basename | test("\\.spec\\.")) then
-                    # JS/TS: foo.spec.ext -> foo.ext
                     ($basename | split(".spec.")) as $parts |
                     ($dirpart + "/" + $parts[0] + "." + $parts[1])
                 elif ($dirpart | test("/__tests__$")) then
-                    # __tests__/foo.ext -> ../foo.ext
                     (($dirpart | split("/")[:-1] | join("/")) + "/" + $basename)
                 else
                     null
                 end
-            ) as $impl_path |
+            elif $meta_lookup | has($seg.path) then
+                # Metadata exists but is_test is false, so not a test file
+                null
+            else
+                # No metadata available, fall back to pattern matching
+                if ($basename | test("^test_")) then
+                    ($dirpart + "/" + ($basename | sub("^test_"; "")))
+                elif ($basename | test("_test\\.go$")) then
+                    ($dirpart + "/" + ($basename | sub("_test\\.go$"; ".go")))
+                elif ($basename | test("_test\\.")) then
+                    ($dirpart + "/" + ($basename | sub("_test\\."; ".")))
+                elif ($basename | test("\\.test\\.")) then
+                    ($basename | split(".test.")) as $parts |
+                    ($dirpart + "/" + $parts[0] + "." + $parts[1])
+                elif ($basename | test("\\.spec\\.")) then
+                    ($basename | split(".spec.")) as $parts |
+                    ($dirpart + "/" + $parts[0] + "." + $parts[1])
+                elif ($dirpart | test("/__tests__$")) then
+                    (($dirpart | split("/")[:-1] | join("/")) + "/" + $basename)
+                else
+                    null
+                end
+            end) as $impl_path |
 
             if $impl_path != null and ($all_paths | index($impl_path) != null) then
                 .pairs[$impl_path] = ((.pairs[$impl_path] // []) + [$seg.path]) |

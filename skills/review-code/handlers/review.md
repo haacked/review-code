@@ -302,9 +302,9 @@ Use the Task tool with `subagent_type` from the table above. If an area is speci
 
 **Chunked review dispatch:**
 
-If `is_chunked` is true, process chunks sequentially (one chunk at a time, all agents in parallel per chunk):
+If `is_chunked` is true, process all chunks in parallel (all agents x all chunks dispatched at once):
 
-1. For each chunk in the `chunks` array:
+1. For each chunk in the `chunks` array, for each applicable agent:
    - Replace `$diff` in the agent context with the chunk's `diff` field (the subset of changes for this chunk)
    - Add a chunk context header to each agent prompt:
      ```
@@ -315,10 +315,9 @@ If `is_chunked` is true, process chunks sequentially (one chunk at a time, all a
      If you notice issues that may interact with code in other chunks, flag them as questions.
      ```
    - Keep all other context the same: full `file_metadata`, full `architectural_context`, full `review_context`, all PR metadata
-   - Invoke all applicable agents in parallel for this chunk
-   - Collect all findings from this chunk before moving to the next
+   - Dispatch all (chunk x agent) combinations in parallel via the Task tool
 
-2. After all chunks are processed, merge all findings into a single pool for synthesis.
+2. After all tasks complete, merge all findings into a single pool for synthesis.
 
 If `is_chunked` is false (or `chunk_metadata` is absent), behavior is identical to the non-chunked path above.
 

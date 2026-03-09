@@ -786,10 +786,12 @@ teardown() {
 }
 
 @test "review-orchestrator.sh: chunk threshold env vars are respected" {
-    # Generate many files to trigger chunking with low threshold
+    # Generate many files and stage them to trigger chunking with low threshold.
+    # Files must be staged so they appear in the diff for local mode.
     for i in $(seq 1 15); do
         echo "content $i" > "file${i}.txt"
     done
+    git add .
 
     export REVIEW_CODE_CHUNK_THRESHOLD_FILES=5
     export REVIEW_CODE_CHUNK_THRESHOLD_KB=0
@@ -800,11 +802,9 @@ teardown() {
 
     # With 15 files and threshold of 5, chunking should activate
     has_chunks=$(echo "$output" | jq 'has("chunks")')
-    if [ "$has_chunks" = "true" ]; then
-        # Verify chunk_metadata is present too
-        echo "$output" | jq -e '.chunk_metadata.chunked == true'
-        echo "$output" | jq -e '.chunk_metadata.chunk_count > 1'
-    fi
+    [ "$has_chunks" = "true" ]
+    echo "$output" | jq -e '.chunk_metadata.chunked == true'
+    echo "$output" | jq -e '.chunk_metadata.chunk_count > 1'
 
     # The full diff must still be present
     echo "$output" | jq -e 'has("diff")'

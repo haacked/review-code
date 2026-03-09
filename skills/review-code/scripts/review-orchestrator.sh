@@ -293,18 +293,29 @@ build_review_data() {
     debug_time "05-chunking" "start"
     local chunk_result=""
     local chunk_max_size_kb="${REVIEW_CODE_CHUNK_MAX_SIZE_KB:-200}"
+    [[ "${chunk_max_size_kb}" =~ ^[0-9]+$ ]] || chunk_max_size_kb=200
     local chunk_max_files="${REVIEW_CODE_CHUNK_MAX_FILES:-30}"
-    local chunk_threshold_kb="${REVIEW_CODE_CHUNK_THRESHOLD_KB:-200}"
+    [[ "${chunk_max_files}" =~ ^[0-9]+$ ]] || chunk_max_files=30
+    local chunk_threshold_kb="${REVIEW_CODE_CHUNK_THRESHOLD_KB:-400}"
+    [[ "${chunk_threshold_kb}" =~ ^[0-9]+$ ]] || chunk_threshold_kb=400
     local chunk_threshold_files="${REVIEW_CODE_CHUNK_THRESHOLD_FILES:-50}"
+    [[ "${chunk_threshold_files}" =~ ^[0-9]+$ ]] || chunk_threshold_files=50
+
+    # Write diff to a temp file to avoid ARG_MAX limits with --arg on large diffs
+    local chunk_diff_tmpfile
+    chunk_diff_tmpfile=$(mktemp)
+    printf '%s' "${diff_content}" > "${chunk_diff_tmpfile}"
 
     chunk_result=$(jq -n \
-        --arg diff "${diff_content}" \
+        --rawfile diff "${chunk_diff_tmpfile}" \
+        --argjson file_metadata "${file_metadata}" \
         --argjson max_size "${chunk_max_size_kb}" \
         --argjson max_files "${chunk_max_files}" \
         --argjson threshold_kb "${chunk_threshold_kb}" \
         --argjson threshold_files "${chunk_threshold_files}" \
         '{
             diff: $diff,
+            file_metadata: $file_metadata,
             config: {
                 max_chunk_size_kb: $max_size,
                 max_files_per_chunk: $max_files,
@@ -312,6 +323,12 @@ build_review_data() {
                 min_chunk_threshold_files: $threshold_files
             }
         }' | "${SCRIPT_DIR}/chunk-diff.sh" 2> /dev/null || echo "")
+
+    rm -f "${chunk_diff_tmpfile}"
+
+    if [[ -z "${chunk_result}" ]]; then
+        debug_trace "05-chunking" "chunk-diff.sh failed or returned empty; falling back to un-chunked review"
+    fi
 
     debug_save_json "05-chunking" "output.json" <<< "${chunk_result}"
     debug_time "05-chunking" "end"
