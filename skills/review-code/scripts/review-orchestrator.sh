@@ -303,7 +303,9 @@ build_review_data() {
 
     # Write diff to a temp file to avoid ARG_MAX limits with --arg on large diffs
     local chunk_diff_tmpfile
-    chunk_diff_tmpfile=$(mktemp)
+    _ORCH_DIFF_TMPFILE=$(mktemp)
+    chunk_diff_tmpfile="${_ORCH_DIFF_TMPFILE}"
+    trap 'rm -f "${_ORCH_DIFF_TMPFILE}"' EXIT
     printf '%s' "${diff_content}" > "${chunk_diff_tmpfile}"
 
     chunk_result=$(jq -n \
@@ -323,8 +325,6 @@ build_review_data() {
                 min_chunk_threshold_files: $threshold_files
             }
         }' | "${SCRIPT_DIR}/chunk-diff.sh" 2> /dev/null || echo "")
-
-    rm -f "${chunk_diff_tmpfile}"
 
     if [[ -z "${chunk_result}" ]]; then
         debug_trace "05-chunking" "chunk-diff.sh failed or returned empty; falling back to un-chunked review"
@@ -385,7 +385,7 @@ build_review_data() {
         -n
         --arg mode "${mode}"
         --argjson git "${git_context}"
-        --arg diff "${diff_content}"
+        --rawfile diff "${chunk_diff_tmpfile}"
         --argjson lang "${lang_info}"
         --argjson meta "${file_metadata}"
         --argjson file "${file_info}"

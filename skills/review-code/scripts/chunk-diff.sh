@@ -164,6 +164,33 @@ main() {
 
     local paired_groups
     paired_groups=$(echo "${segments_json}" | jq -r --argjson meta "${file_metadata_json}" '
+        # Derive the implementation file path from a test file name.
+        # Returns null if the file does not match any known test pattern.
+        def impl_path_for_test($basename; $dirpart):
+            if ($basename | test("^test_")) then
+                ($dirpart + "/" + ($basename | sub("^test_"; "")))
+            elif ($basename | test("_test\\.go$")) then
+                ($dirpart + "/" + ($basename | sub("_test\\.go$"; ".go")))
+            elif ($basename | test("_test\\.")) then
+                ($dirpart + "/" + ($basename | sub("_test\\."; ".")))
+            elif ($basename | test("_spec\\.")) then
+                ($dirpart + "/" + ($basename | sub("_spec\\."; ".")))
+            elif ($basename | test("\\.test\\.")) then
+                ($basename | split(".test.")) as $parts |
+                ($dirpart + "/" + $parts[0] + "." + $parts[1])
+            elif ($basename | test("\\.spec\\.")) then
+                ($basename | split(".spec.")) as $parts |
+                ($dirpart + "/" + $parts[0] + "." + $parts[1])
+            elif ($dirpart | test("/__tests__$")) then
+                (($dirpart | split("/")[:-1] | join("/")) + "/" + $basename)
+            elif ($dirpart | test("/tests?$")) then
+                (($dirpart | split("/")[:-1] | join("/")) + "/" + $basename)
+            elif ($dirpart | test("/specs?$")) then
+                (($dirpart | split("/")[:-1] | join("/")) + "/" + $basename)
+            else
+                null
+            end;
+
         # Build a list of all file paths
         [.[].path] as $all_paths |
 
@@ -181,52 +208,12 @@ main() {
             ($seg.path | split("/") | last) as $basename |
             ($seg.path | split("/")[:-1] | join("/")) as $dirpart |
 
-            # Use metadata when available, fall back to pattern matching
-            (if $meta_lookup[$seg.path].is_test == true then
-                # Metadata says this is a test file. The likely_test_path field on
-                # source files points test->impl, but for test files we need to
-                # derive the impl path. Use the same pattern-matching logic as
-                # the fallback, since metadata marks test files but does not
-                # provide the reverse mapping.
-                if ($basename | test("^test_")) then
-                    ($dirpart + "/" + ($basename | sub("^test_"; "")))
-                elif ($basename | test("_test\\.go$")) then
-                    ($dirpart + "/" + ($basename | sub("_test\\.go$"; ".go")))
-                elif ($basename | test("_test\\.")) then
-                    ($dirpart + "/" + ($basename | sub("_test\\."; ".")))
-                elif ($basename | test("\\.test\\.")) then
-                    ($basename | split(".test.")) as $parts |
-                    ($dirpart + "/" + $parts[0] + "." + $parts[1])
-                elif ($basename | test("\\.spec\\.")) then
-                    ($basename | split(".spec.")) as $parts |
-                    ($dirpart + "/" + $parts[0] + "." + $parts[1])
-                elif ($dirpart | test("/__tests__$")) then
-                    (($dirpart | split("/")[:-1] | join("/")) + "/" + $basename)
-                else
-                    null
-                end
-            elif $meta_lookup | has($seg.path) then
-                # Metadata exists but is_test is false, so not a test file
+            # Use metadata to skip pattern matching for known non-test files.
+            # Otherwise, derive the impl path from the test file name.
+            (if ($meta_lookup | has($seg.path)) and $meta_lookup[$seg.path].is_test != true then
                 null
             else
-                # No metadata available, fall back to pattern matching
-                if ($basename | test("^test_")) then
-                    ($dirpart + "/" + ($basename | sub("^test_"; "")))
-                elif ($basename | test("_test\\.go$")) then
-                    ($dirpart + "/" + ($basename | sub("_test\\.go$"; ".go")))
-                elif ($basename | test("_test\\.")) then
-                    ($dirpart + "/" + ($basename | sub("_test\\."; ".")))
-                elif ($basename | test("\\.test\\.")) then
-                    ($basename | split(".test.")) as $parts |
-                    ($dirpart + "/" + $parts[0] + "." + $parts[1])
-                elif ($basename | test("\\.spec\\.")) then
-                    ($basename | split(".spec.")) as $parts |
-                    ($dirpart + "/" + $parts[0] + "." + $parts[1])
-                elif ($dirpart | test("/__tests__$")) then
-                    (($dirpart | split("/")[:-1] | join("/")) + "/" + $basename)
-                else
-                    null
-                end
+                impl_path_for_test($basename; $dirpart)
             end) as $impl_path |
 
             if $impl_path != null and ($all_paths | index($impl_path) != null) then
