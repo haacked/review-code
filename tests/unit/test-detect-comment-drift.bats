@@ -172,6 +172,9 @@ GHEOF
     # The comment should be remapped (line moved from 10 to 18)
     echo "$output" | jq -e '.comments | length == 1'
     echo "$output" | jq -e '.unmapped_comments | length == 0'
+    echo "$output" | jq -e '.comments[0].line == 18'
+    echo "$output" | jq -e '.comments[0].original_line == 10'
+    echo "$output" | jq -e '.comments[0].remapped == true'
 }
 
 @test "detect-comment-drift: uses line_content for matching when provided" {
@@ -225,7 +228,7 @@ GHEOF
     echo "$output" | jq -e '.drift_detected == true'
     echo "$output" | jq -e '.comments | length == 0'
     echo "$output" | jq -e '.unmapped_comments | length == 1'
-    echo "$output" | jq -e '.unmapped_comments[0].reason != null'
+    echo "$output" | jq -e '.unmapped_comments[0].reason == "line content not found in current diff"'
 }
 
 @test "detect-comment-drift: moves comment to unmapped when file removed from diff" {
@@ -259,6 +262,53 @@ GHEOF
 # =============================================================================
 # Content matching edge cases
 # =============================================================================
+
+@test "detect-comment-drift: marks comment as not remapped when line unchanged" {
+    create_mock_gh "def456" "$FIXTURES_DIR/drift-updated.diff"
+
+    local input
+    input=$(jq -n '{
+        owner: "org",
+        repo: "repo",
+        pr_number: 42,
+        review_commit: "abc123",
+        comments: [{
+            path: "src/utils.ts",
+            line: 5,
+            side: "RIGHT",
+            body: "Magic number",
+            line_content: "export const MAX_RETRIES = 3;"
+        }]
+    }')
+
+    run bash -c "echo '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.comments[0].remapped == false'
+    echo "$output" | jq -e '.comments[0].line == 5'
+}
+
+@test "detect-comment-drift: unmaps comment with no line_content and no original_diff" {
+    create_mock_gh "def456" "$FIXTURES_DIR/drift-updated.diff"
+
+    local input
+    input=$(jq -n '{
+        owner: "org",
+        repo: "repo",
+        pr_number: 42,
+        review_commit: "abc123",
+        comments: [{
+            path: "src/auth.ts",
+            line: 5,
+            side: "RIGHT",
+            body: "Some comment"
+        }]
+    }')
+
+    run bash -c "echo '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.unmapped_comments | length == 1'
+    echo "$output" | jq -e '.unmapped_comments[0].reason == "no line content available for matching"'
+}
 
 @test "detect-comment-drift: handles trimmed whitespace matching" {
     create_mock_gh "def456" "$FIXTURES_DIR/drift-updated.diff"
@@ -344,7 +394,22 @@ GHEOF
         find_line_in_diff \"\$(cat '$FIXTURES_DIR/drift-updated.diff')\" 'src/utils.ts' 'export const MAX_RETRIES = 3;' 6
     "
     [ "$status" -eq 0 ]
-    [ -n "$output" ]
+    [ "$output" = "5" ]
+}
+
+@test "detect-comment-drift: find_line_in_diff picks closest match among duplicates" {
+    # Build a diff with duplicate content lines at positions 1, 3, 5
+    local diff
+    diff=$(printf 'diff --git a/f.ts b/f.ts\n--- a/f.ts\n+++ b/f.ts\n@@ -1,5 +1,5 @@\n+return null;\n+something_else();\n+return null;\n+more_code();\n+return null;\n')
+
+    # Original line 4: closest "return null;" is at line 3 (distance 1) vs line 1 (distance 3) and line 5 (distance 1)
+    # When tied, the first found at distance 1 wins (line 3)
+    run bash -c "
+        source '$SCRIPT'
+        find_line_in_diff \"\$1\" 'f.ts' 'return null;' 4
+    " -- "$diff"
+    [ "$status" -eq 0 ]
+    [ "$output" = "3" ] || [ "$output" = "5" ]
 }
 
 @test "detect-comment-drift: returns empty when content not found" {

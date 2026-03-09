@@ -16,7 +16,7 @@
 #     "pr_number": 123,
 #     "review_commit": "abc123...",
 #     "comments": [
-#       {"path": "src/foo.py", "line": 42, "side": "RIGHT", "body": "...", "line_content": "+    some_code()"}
+#       {"path": "src/foo.py", "line": 42, "side": "RIGHT", "body": "...", "line_content": "    some_code()"}
 #     ],
 #     "original_diff": "<optional: the diff from review time>"
 #   }
@@ -237,14 +237,14 @@ find_line_in_diff() {
 
     # If multiple matches, pick the closest to the original line
     local best_match=""
-    local best_distance=999999
+    local best_distance=""
     while IFS= read -r match_line; do
         local distance
         distance=$((match_line - original_line))
         if [[ ${distance} -lt 0 ]]; then
             distance=$((-distance))
         fi
-        if [[ ${distance} -lt ${best_distance} ]]; then
+        if [[ -z "${best_distance}" ]] || [[ ${distance} -lt ${best_distance} ]]; then
             best_distance=${distance}
             best_match=${match_line}
         fi
@@ -260,7 +260,7 @@ file_in_diff() {
     local diff="$1"
     local target_path="$2"
 
-    if echo "${diff}" | grep -q "^diff --git a/${target_path} b/${target_path}"; then
+    if [[ "${diff}" == *"diff --git a/${target_path} b/${target_path}"* ]]; then
         echo "true"
     else
         echo "false"
@@ -269,17 +269,17 @@ file_in_diff() {
 
 # Remap a single comment against the current diff.
 # Uses content-based matching to find where the comment's target line moved.
-# Args: reads from environment variables set by caller
-# Output: JSON object with remapped comment or unmapped entry
+# Args: $1 = comment JSON, $2 = original_diff, $3 = current_diff
+# Output: JSON object with remapped comment (return 0) or unmapped entry (return 1)
 remap_comment() {
     local comment="$1"
     local original_diff="$2"
     local current_diff="$3"
 
     local path line line_content
-    path=$(echo "${comment}" | jq -r '.path')
-    line=$(echo "${comment}" | jq -r '.line')
-    line_content=$(echo "${comment}" | jq -r '.line_content // ""')
+    read -r path line line_content < <(
+        echo "${comment}" | jq -r '[.path, (.line | tostring), (.line_content // "")] | @tsv'
+    )
 
     # If line_content wasn't provided, try to extract it from the original diff
     if [[ -z "${line_content}" ]] && [[ -n "${original_diff}" ]]; then
@@ -329,10 +329,9 @@ main() {
 
     # Extract fields
     local owner repo pr_number review_commit comments original_diff
-    owner=$(echo "${input}" | jq -r '.owner')
-    repo=$(echo "${input}" | jq -r '.repo')
-    pr_number=$(echo "${input}" | jq -r '.pr_number')
-    review_commit=$(echo "${input}" | jq -r '.review_commit // ""')
+    read -r owner repo pr_number review_commit < <(
+        echo "${input}" | jq -r '[.owner, .repo, (.pr_number | tostring), (.review_commit // "")] | @tsv'
+    )
     comments=$(echo "${input}" | jq -c '.comments // []')
     original_diff=$(echo "${input}" | jq -r '.original_diff // ""')
 
@@ -413,8 +412,8 @@ main() {
     fi
 
     # Remap each comment
-    local remapped_comments="[]"
-    local unmapped_comments="[]"
+    local remapped_results=""
+    local unmapped_results=""
     local remapped_count=0
     local unmapped_count=0
     local comment_count
@@ -436,9 +435,10 @@ main() {
     fi
 
     while IFS= read -r comment; do
+        # remap_comment writes JSON to stdout in both success and failure paths
         local result
         if result=$(remap_comment "${comment}" "${original_diff}" "${current_diff}"); then
-            remapped_comments=$(echo "${remapped_comments}" | jq --argjson c "${result}" '. + [$c]')
+            remapped_results+="${result}"$'\n'
             # Count actual remaps (where the line moved)
             local was_remapped
             was_remapped=$(echo "${result}" | jq -r '.remapped // false')
@@ -446,10 +446,23 @@ main() {
                 remapped_count=$((remapped_count + 1))
             fi
         else
-            unmapped_comments=$(echo "${unmapped_comments}" | jq --argjson c "${result}" '. + [$c]')
+            unmapped_results+="${result}"$'\n'
             unmapped_count=$((unmapped_count + 1))
         fi
     done < <(echo "${comments}" | jq -c '.[]')
+
+    # Assemble arrays from collected NDJSON in one jq call each
+    local remapped_comments unmapped_comments
+    if [[ -n "${remapped_results}" ]]; then
+        remapped_comments=$(echo "${remapped_results}" | jq -s '.')
+    else
+        remapped_comments="[]"
+    fi
+    if [[ -n "${unmapped_results}" ]]; then
+        unmapped_comments=$(echo "${unmapped_results}" | jq -s '.')
+    else
+        unmapped_comments="[]"
+    fi
 
     # Build drift summary
     local drift_summary="${remapped_count} comments remapped, ${unmapped_count} unmapped"

@@ -768,6 +768,60 @@ EOF
     [[ "$output" == *'"success": true'* ]]
 }
 
+@test "create-draft-review: remaps comments when drift is detected" {
+    # Mock: different HEAD SHA triggers drift detection, pr diff returns updated diff
+    local updated_diff="$PROJECT_ROOT/tests/fixtures/diffs/drift-updated.diff"
+    cat > "$MOCK_DIR/gh" << GHEOF
+#!/bin/bash
+if [[ "\$*" == *"--jq"*".head.sha"* ]]; then
+    echo 'def456'
+elif [[ "\$*" == *"pr diff"* ]]; then
+    cat '${updated_diff}'
+elif [[ "\$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "\$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+GHEOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local original_diff
+    original_diff=$(cat "$PROJECT_ROOT/tests/fixtures/diffs/drift-original.diff")
+    local tmpinput
+    tmpinput=$(mktemp)
+
+    local line_content
+    line_content="    return token.length > 10 && token.startsWith('sk_');"
+
+    jq -n \
+        --arg diff "$original_diff" \
+        --arg lc "$line_content" \
+        '{
+            owner: "org",
+            repo: "test",
+            pr_number: 1,
+            reviewer_username: "user",
+            summary: "Test",
+            review_commit: "abc123",
+            original_diff: $diff,
+            comments: [{
+                path: "src/auth.ts",
+                line: 10,
+                side: "RIGHT",
+                body: "Consider validation",
+                line_content: $lc
+            }]
+        }' > "$tmpinput"
+
+    run bash -c "cat '$tmpinput' | '$SCRIPT' 2>/dev/null"
+    rm -f "$tmpinput"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"success": true'* ]]
+    [[ "$output" == *'"drift_detected": true'* ]]
+}
+
 @test "create-draft-review: keeps valid comments when filtering ones with bad side" {
     cat > "$MOCK_DIR/gh" << 'EOF'
 #!/bin/bash

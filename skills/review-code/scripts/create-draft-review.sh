@@ -161,6 +161,13 @@ main() {
     reviewer=$(echo "${input}" | jq -r '.reviewer_username')
     summary=$(echo "${input}" | jq -r '.summary // ""')
     comments=$(echo "${input}" | jq -c '.comments // []')
+    unmapped_comments=$(echo "${input}" | jq -c '.unmapped_comments // []')
+
+    # Validate required fields early, before any network calls
+    require_field "${owner}" "owner" || exit 1
+    require_field "${repo}" "repo" || exit 1
+    require_field "${pr_number}" "pr_number" || exit 1
+    require_field "${reviewer}" "reviewer_username" || exit 1
 
     # Run drift detection if review_commit is provided
     local review_commit drift_detected=false
@@ -191,10 +198,8 @@ main() {
                 # Merge drift unmapped comments into the existing unmapped_comments
                 local drift_unmapped
                 drift_unmapped=$(echo "${drift_result}" | jq -c '.unmapped_comments // []')
-                local existing_unmapped
-                existing_unmapped=$(echo "${input}" | jq -c '.unmapped_comments // []')
                 unmapped_comments=$(jq -n \
-                    --argjson existing "${existing_unmapped}" \
+                    --argjson existing "${unmapped_comments}" \
                     --argjson drift "${drift_unmapped}" \
                     '$existing + $drift')
             fi
@@ -226,18 +231,8 @@ main() {
         )' >&2
     fi
 
-    # Use validated comments
-    comments="${valid_comments}"
-    # Only set unmapped_comments from input if drift detection didn't already merge them
-    if [[ -z "${unmapped_comments:-}" ]]; then
-        unmapped_comments=$(echo "${input}" | jq -c '.unmapped_comments // []')
-    fi
-
-    # Validate required fields
-    require_field "${owner}" "owner" || exit 1
-    require_field "${repo}" "repo" || exit 1
-    require_field "${pr_number}" "pr_number" || exit 1
-    require_field "${reviewer}" "reviewer_username" || exit 1
+    # Use validated comments, stripped to API-recognized fields only
+    comments=$(echo "${valid_comments}" | jq -c '[.[] | {path, line, side, body}]')
 
     # Check for existing pending review
     local existing_review

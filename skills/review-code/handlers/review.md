@@ -546,7 +546,6 @@ EOF
 **Comment drift detection:** When `review_commit` is provided, `create-draft-review.sh` automatically detects if the PR received new commits since the review was generated. If comments have drifted, it remaps them to their correct positions using content-based matching. Comments that cannot be remapped are moved to `unmapped_comments`.
 
 **Extracting `line_content`:** For each comment, extract the code at the target file:line from the diff. Find the file in the diff, locate the target line number within the hunks, and use the code text at that line (without the `+`/`-`/` ` prefix). This enables content-based matching for drift detection.
-```
 
 **IMPORTANT**: The `summary` field is the casual top-level comment on a GitHub review. Keep it brief — 1-2 short sentences at most. The author already knows what their PR does; never restate or narrate the approach back to them.
 
