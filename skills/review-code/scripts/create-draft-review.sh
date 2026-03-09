@@ -204,16 +204,14 @@ main() {
     # Validate comments have required fields, filter invalid ones, and strip to API fields.
     # Single pass: partition into valid and invalid, then extract counts and filtered items.
     local validation_result
-    validation_result=$(echo "${comments}" | jq -c '{
-        valid: [.[] | select(
+    validation_result=$(echo "${comments}" | jq -c '
+        def is_valid:
             .path != null and .line != null and .body != null and
-            (.side == null or .side == "LEFT" or .side == "RIGHT")
-        ) | {path, line, side, body}],
-        invalid: [.[] | select(
-            .path == null or .line == null or .body == null or
-            (.side != null and .side != "LEFT" and .side != "RIGHT")
-        )]
-    }')
+            (.side == null or .side == "LEFT" or .side == "RIGHT");
+        {
+            valid: [.[] | select(is_valid) | {path, line, side, body}],
+            invalid: [.[] | select(is_valid | not)]
+        }')
     comments=$(echo "${validation_result}" | jq -c '.valid')
     local invalid_count
     invalid_count=$(echo "${validation_result}" | jq '.invalid | length')
