@@ -68,6 +68,14 @@ From the session file JSON, extract these fields:
 - `languages` — detected languages
 - `file_info.file_path` — where to save the review
 - `file_ref` — (optional) git ref for reading PR files when on a different branch
+- `chunks` — (optional) array of chunk objects when the diff was split
+- `chunk_metadata` — (optional) object with `chunked`, `reason`, `chunk_count`
+
+**Check for chunked diff:**
+
+If `chunk_metadata` exists and `chunk_metadata.chunked` is `true`, set `is_chunked = true`. Extract `chunk_count` from `chunk_metadata.chunk_count` and the `chunks` array. Display to the user:
+
+"This is a large PR ({chunk_metadata.reason}). Splitting into {chunk_count} chunks for focused review."
 
 **Extract mode-specific fields:**
 
@@ -292,14 +300,36 @@ Comment structure: `conversation` (discussion), `reviews` (approve/changes), `in
 
 Use the Task tool with `subagent_type` from the table above. If an area is specified, invoke only that agent. Otherwise, invoke all 7 core agents in parallel (+ frontend if `languages.has_frontend` is true). Pass the FULL context (PR info, diff, architectural context, guidelines) to each agent as the prompt.
 
+**Chunked review dispatch:**
+
+If `is_chunked` is true, process chunks sequentially (one chunk at a time, all agents in parallel per chunk):
+
+1. For each chunk in the `chunks` array:
+   - Replace `$diff` in the agent context with the chunk's `diff` field (the subset of changes for this chunk)
+   - Add a chunk context header to each agent prompt:
+     ```
+     **Chunk Context:**
+     You are reviewing chunk $chunk.id of $chunk_count: $chunk.label
+     Files in this chunk: $chunk.files (comma-separated list)
+     Other chunks cover: (list labels of other chunks)
+     If you notice issues that may interact with code in other chunks, flag them as questions.
+     ```
+   - Keep all other context the same: full `file_metadata`, full `architectural_context`, full `review_context`, all PR metadata
+   - Invoke all applicable agents in parallel for this chunk
+   - Collect all findings from this chunk before moving to the next
+
+2. After all chunks are processed, merge all findings into a single pool for synthesis.
+
+If `is_chunked` is false (or `chunk_metadata` is absent), behavior is identical to the non-chunked path above.
+
 ### Collect and Present Results
 
 Use ultrathink to synthesize findings from all agents into a coherent, deduplicated review. Apply confidence-based filtering and cross-agent corroboration before producing the final document.
 
 After all agents complete, combine their findings into a single review document.
 
-**Filtering (cross-agent corroboration).** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function. Apply these rules:
-- **Corroborated (2+ agents):** Keep even if individual confidence is below 40%. Note as corroborated in the review.
+**Filtering (cross-agent and cross-chunk corroboration).** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function. This applies both across agents within the same chunk and across chunks that touch related code. Apply these rules:
+- **Corroborated (2+ agents or chunks):** Keep even if individual confidence is below 40%. Note as corroborated in the review.
 - **Solo finding, confidence >= 40%:** Include as-is.
 - **Solo finding, confidence < 40%:** Drop silently.
 - **Questions and nits:** Exempt from filtering (no minimum confidence).
@@ -312,9 +342,13 @@ After all agents complete, combine their findings into a single review document.
 4. Solo suggestions (>= 40% confidence)
 5. Questions and nits
 
+**Important:** The final review document does NOT separate findings by chunk. Present a unified review organized by the priority ordering above, the same as for non-chunked reviews.
+
 **Verify findings against the diff before including them in the final review.**
 
-After collecting findings from agents, validate that each finding references code actually in the diff. This catches wrong line numbers, findings about unrelated files, and stale references.
+After collecting findings from all agents (across all chunks if chunked), validate that each finding references code actually in the diff. This catches wrong line numbers, findings about unrelated files, and stale references.
+
+**Important:** Always use the FULL diff from the session data (not chunk diffs) for position mapping. The position mapper needs the complete diff to map findings to correct GitHub inline comment positions.
 
 **Step 1: Extract and validate.** For each agent's findings that reference a specific file and line, build a targets array and run it through the position mapper:
 
@@ -357,6 +391,12 @@ Where the `targets` array contains `{"path": "<file>", "line": <number>}` object
 - Architecture Review
 
 **For area-specific reviews**, include only that area's findings.
+
+If `is_chunked` is true, add a "Review Scope" note at the top of the review document (after the metadata header):
+
+```markdown
+> **Review Scope:** This review covered $chunk_count chunks ($total_file_count files total).
+```
 
 Save the complete review to `$review_file` and inform the user with a clickable file link:
 

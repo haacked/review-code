@@ -289,6 +289,33 @@ build_review_data() {
     review_context=$(echo "${review_context_json}" | jq -r '.content')
     loaded_context_files=$(echo "${review_context_json}" | jq -r '.loaded_files')
 
+    # Run diff chunking to determine if the diff should be split
+    debug_time "05-chunking" "start"
+    local chunk_result=""
+    local chunk_max_size_kb="${REVIEW_CODE_CHUNK_MAX_SIZE_KB:-200}"
+    local chunk_max_files="${REVIEW_CODE_CHUNK_MAX_FILES:-30}"
+    local chunk_threshold_kb="${REVIEW_CODE_CHUNK_THRESHOLD_KB:-200}"
+    local chunk_threshold_files="${REVIEW_CODE_CHUNK_THRESHOLD_FILES:-50}"
+
+    chunk_result=$(jq -n \
+        --arg diff "${diff_content}" \
+        --argjson max_size "${chunk_max_size_kb}" \
+        --argjson max_files "${chunk_max_files}" \
+        --argjson threshold_kb "${chunk_threshold_kb}" \
+        --argjson threshold_files "${chunk_threshold_files}" \
+        '{
+            diff: $diff,
+            config: {
+                max_chunk_size_kb: $max_size,
+                max_files_per_chunk: $max_files,
+                min_chunk_threshold_kb: $threshold_kb,
+                min_chunk_threshold_files: $threshold_files
+            }
+        }' | "${SCRIPT_DIR}/chunk-diff.sh" 2> /dev/null || echo "")
+
+    debug_save_json "05-chunking" "output.json" <<< "${chunk_result}"
+    debug_time "05-chunking" "end"
+
     # Build summary for user confirmation
     # Extract mode-specific fields to avoid passing large args to jq
     local mode_fields
@@ -329,6 +356,14 @@ build_review_data() {
         fi
     fi
 
+    # Build chunk JSON for inclusion in output (null if not chunked or chunking failed)
+    local chunk_json="null"
+    local chunk_meta_json="null"
+    if [[ -n "${chunk_result}" ]] && echo "${chunk_result}" | jq -e '.chunked == true' > /dev/null 2>&1; then
+        chunk_json=$(echo "${chunk_result}" | jq '.chunks')
+        chunk_meta_json=$(echo "${chunk_result}" | jq '{chunked: .chunked, reason: .reason, chunk_count: .chunk_count}')
+    fi
+
     local -a jq_args=(
         -n
         --arg mode "${mode}"
@@ -343,6 +378,8 @@ build_review_data() {
         --argjson pr "${pr_json}"
         --arg reviewer_username "${reviewer_username}"
         --arg is_own_pr "${is_own_pr}"
+        --argjson chunks "${chunk_json}"
+        --argjson chunk_metadata "${chunk_meta_json}"
     )
 
     # Add mode-specific arguments
@@ -353,7 +390,7 @@ build_review_data() {
     jq_args+=(--arg draft_mode "${draft_mode}")
     jq_args+=(--arg self_mode "${self_mode}")
 
-    # Single jq invocation with conditional pr field
+    # Single jq invocation with conditional pr field and chunk data
     final_output=$(jq "${jq_args[@]}" \
         '{
             status: "ready",
@@ -372,6 +409,7 @@ build_review_data() {
         + (if $draft_mode == "true" then {draft: true} else {} end)
         + (if $self_mode == "true" then {self: true} else {} end)
         + (if $pr != null then {pr: $pr, reviewer_username: $reviewer_username, is_own_pr: ($is_own_pr == "true")} else {} end)
+        + (if $chunks != null then {chunks: $chunks, chunk_metadata: $chunk_metadata} else {} end)
         + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")) | with_entries(select(.value != "")))')
     debug_save_json "07-final-output" "output.json" <<< "${final_output}"
     debug_time "07-final-output" "end"
