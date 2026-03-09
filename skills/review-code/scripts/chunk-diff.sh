@@ -43,21 +43,22 @@ parse_diff_segments() {
     # Each record captures the file path (from the "diff --git a/... b/..." line)
     # and the full diff text for that file.
     awk '
+    function emit() {
+        sz = length(buf)
+        gsub(/\\/, "\\\\", buf)
+        gsub(/"/, "\\\"", buf)
+        gsub(/\n/, "\\n", buf)
+        gsub(/\t/, "\\t", buf)
+        gsub(/\r/, "\\r", buf)
+        gsub(/\\/, "\\\\", path)
+        gsub(/"/, "\\\"", path)
+        printf "{\"path\":\"%s\",\"diff\":\"%s\",\"size_bytes\":%d}\n", path, buf, sz
+    }
+
     BEGIN { path = ""; buf = "" }
 
     /^diff --git / {
-        # Emit previous segment if we have one
-        if (path != "") {
-            # JSON-escape the buffer: backslashes, quotes, newlines, tabs, carriage returns
-            gsub(/\\/, "\\\\", buf)
-            gsub(/"/, "\\\"", buf)
-            gsub(/\n/, "\\n", buf)
-            gsub(/\t/, "\\t", buf)
-            gsub(/\r/, "\\r", buf)
-            gsub(/\\/, "\\\\", path)
-            gsub(/"/, "\\\"", path)
-            printf "{\"path\":\"%s\",\"diff\":\"%s\",\"size_bytes\":%d}\n", path, buf, length(buf)
-        }
+        if (path != "") emit()
 
         # Extract path from "diff --git a/X b/X" - take the b/ side.
         # Match on " b/" (with leading space) to avoid false matches on directory
@@ -75,16 +76,7 @@ parse_diff_segments() {
     { buf = buf $0 "\n" }
 
     END {
-        if (path != "") {
-            gsub(/\\/, "\\\\", buf)
-            gsub(/"/, "\\\"", buf)
-            gsub(/\n/, "\\n", buf)
-            gsub(/\t/, "\\t", buf)
-            gsub(/\r/, "\\r", buf)
-            gsub(/\\/, "\\\\", path)
-            gsub(/"/, "\\\"", path)
-            printf "{\"path\":\"%s\",\"diff\":\"%s\",\"size_bytes\":%d}\n", path, buf, length(buf)
-        }
+        if (path != "") emit()
     }
     ' "${diff_file}"
 }
@@ -158,7 +150,8 @@ main() {
     # Step 1: Pair test files with their implementation files.
     # Build a mapping of impl_path -> [test_paths] and track which files are paired.
     # When file_metadata is available (passed from the orchestrator via pre-review-context.sh),
-    # use its is_test and likely_test_path fields instead of reimplementing test detection.
+    # use its likely_test_path for forward mapping and is_test to skip known non-test files.
+    # Fall back to filename pattern matching when metadata is absent.
     local file_metadata_json
     file_metadata_json=$(jq -c '.file_metadata // null' <<< "${input}")
 
@@ -201,27 +194,48 @@ main() {
             reduce $meta.modified_files[] as $m ({}; . + {($m.path): $m})
         else {} end) as $meta_lookup |
 
-        # For each file, check if it is a test file
+        # Step 1a: Use likely_test_path forward mapping when metadata is available.
+        # For each non-test file with a likely_test_path, check if that test file
+        # is in the diff and pair them.
+        (if ($meta_lookup | length) > 0 then
+            reduce ($meta_lookup | to_entries[]) as $entry (
+                {"pairs": {}, "paired_set": {}};
+                $entry.key as $file_path |
+                $entry.value as $m |
+                if $m.is_test != true and
+                   ($m.likely_test_path // "") != "" and
+                   ($all_paths | index($m.likely_test_path) != null) then
+                    .pairs[$file_path] = ((.pairs[$file_path] // []) + [$m.likely_test_path]) |
+                    .paired_set[$file_path] = true |
+                    .paired_set[$m.likely_test_path] = true
+                else . end
+            )
+        else null end) as $meta_pairs |
+
+        # Step 1b: Fall back to pattern matching for files not paired by metadata.
         reduce .[] as $seg (
-            {"pairs": {}, "paired_set": {}};
+            ($meta_pairs // {"pairs": {}, "paired_set": {}});
 
-            ($seg.path | split("/") | last) as $basename |
-            ($seg.path | split("/")[:-1] | join("/")) as $dirpart |
-
-            # Use metadata to skip pattern matching for known non-test files.
-            # Otherwise, derive the impl path from the test file name.
-            (if ($meta_lookup | has($seg.path)) and $meta_lookup[$seg.path].is_test != true then
-                null
+            # Skip files already paired via metadata
+            if .paired_set[$seg.path] == true then .
             else
-                impl_path_for_test($basename; $dirpart)
-            end) as $impl_path |
+                ($seg.path | split("/") | last) as $basename |
+                ($seg.path | split("/")[:-1] | join("/")) as $dirpart |
 
-            if $impl_path != null and ($all_paths | index($impl_path) != null) then
-                .pairs[$impl_path] = ((.pairs[$impl_path] // []) + [$seg.path]) |
-                .paired_set[$seg.path] = true |
-                .paired_set[$impl_path] = true
-            else
-                .
+                # Use metadata to skip pattern matching for known non-test files.
+                (if ($meta_lookup | has($seg.path)) and $meta_lookup[$seg.path].is_test != true then
+                    null
+                else
+                    impl_path_for_test($basename; $dirpart)
+                end) as $impl_path |
+
+                if $impl_path != null and ($all_paths | index($impl_path) != null) then
+                    .pairs[$impl_path] = ((.pairs[$impl_path] // []) + [$seg.path]) |
+                    .paired_set[$seg.path] = true |
+                    .paired_set[$impl_path] = true
+                else
+                    .
+                end
             end
         )
     ')
@@ -242,16 +256,17 @@ main() {
         ($pair_groups + $single_groups) | sort_by(.[0])
     ')
 
-    # Step 3: Bin-pack groups into chunks respecting size and file count limits
-    local chunks_json
-    chunks_json=$(echo "${segments_json}" | jq --argjson groups "${grouping_units}" \
+    # Steps 3+4: Bin-pack groups into chunks, then build final output with diffs and labels.
+    # Combined into a single jq invocation to avoid rebuilding the segment lookup twice.
+    local final_output
+    final_output=$(echo "${segments_json}" | jq --argjson groups "${grouping_units}" \
         --argjson max_size "${max_chunk_size_bytes}" \
         --argjson max_files "${max_files_per_chunk}" '
         # Build a lookup from path to segment
         (reduce .[] as $seg ({}; . + {($seg.path): $seg})) as $seg_lookup |
 
         # Bin-pack groups into chunks
-        reduce $groups[] as $group (
+        (reduce $groups[] as $group (
             {"chunks": [], "current": {"files": [], "size": 0}};
 
             # Calculate group size and file count
@@ -278,57 +293,47 @@ main() {
         else
             .
         end |
-        .chunks
-    ')
+        .chunks) as $chunks |
 
-    local chunk_count
-    chunk_count=$(echo "${chunks_json}" | jq 'length')
+        # If only one chunk, no point in chunking
+        if ($chunks | length) <= 1 then
+            {"chunked": false, "reason":
+                ("all files fit in a single chunk (" +
+                 (reduce .[] as $s (0; . + $s.size_bytes) | . / 1024 | floor | tostring) +
+                 "KB, " + (length | tostring) + " files)")}
+        else
+            {
+                "chunked": true,
+                "reason": ("diff exceeds threshold (" +
+                    (reduce .[] as $s (0; . + $s.size_bytes) | . / 1024 | floor | tostring) +
+                    "KB, " + (length | tostring) + " files)"),
+                "chunk_count": ($chunks | length),
+                "chunks": [
+                    $chunks | to_entries[] |
+                    .key as $idx |
+                    .value as $chunk |
 
-    # If only one chunk, no point in chunking
-    if [[ "${chunk_count}" -le 1 ]]; then
-        jq -n \
-            --arg reason "all files fit in a single chunk (${diff_size_kb}KB, ${file_count} files)" \
-            '{"chunked": false, "reason": $reason}'
-        return
-    fi
+                    # Concatenate diffs for files in this chunk
+                    (reduce $chunk.files[] as $f ("";
+                        . + ($seg_lookup[$f].diff // "")
+                    )) as $chunk_diff |
 
-    # Step 4: Build final output with chunk diffs and labels
-    local final_output
-    final_output=$(echo "${segments_json}" | jq --argjson chunks "${chunks_json}" '
-        # Build path -> segment lookup
-        (reduce .[] as $seg ({}; . + {($seg.path): $seg})) as $seg_lookup |
+                    # Calculate chunk size
+                    ($chunk_diff | length / 1024 | floor) as $size_kb |
 
-        {
-            "chunked": true,
-            "reason": ("diff exceeds threshold (" +
-                (reduce .[] as $s (0; . + $s.size_bytes) | . / 1024 | floor | tostring) +
-                "KB, " + (length | tostring) + " files)"),
-            "chunk_count": ($chunks | length),
-            "chunks": [
-                $chunks | to_entries[] |
-                .key as $idx |
-                .value as $chunk |
+                    # Generate label from most common top-level directory
+                    ([$chunk.files[] | split("/")[0]] | group_by(.) | sort_by(-length) | .[0][0] // "root") as $top_dir |
 
-                # Concatenate diffs for files in this chunk
-                (reduce $chunk.files[] as $f ("";
-                    . + ($seg_lookup[$f].diff // "")
-                )) as $chunk_diff |
-
-                # Calculate chunk size
-                ($chunk_diff | length / 1024 | floor) as $size_kb |
-
-                # Generate label from most common top-level directory
-                ([$chunk.files[] | split("/")[0]] | group_by(.) | sort_by(-length) | .[0][0] // "root") as $top_dir |
-
-                {
-                    "id": ($idx + 1),
-                    "label": ($top_dir + " (" + ($chunk.files | length | tostring) + " files)"),
-                    "files": $chunk.files,
-                    "diff": $chunk_diff,
-                    "size_kb": $size_kb
-                }
-            ]
-        }
+                    {
+                        "id": ($idx + 1),
+                        "label": ($top_dir + " (" + ($chunk.files | length | tostring) + " files)"),
+                        "files": $chunk.files,
+                        "diff": $chunk_diff,
+                        "size_kb": $size_kb
+                    }
+                ]
+            }
+        end
     ')
 
     echo "${final_output}"

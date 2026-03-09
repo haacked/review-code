@@ -232,8 +232,6 @@ setup() {
     run bash -c "printf '%s' '$input' | '$SCRIPT'"
     [ "$status" -eq 0 ]
 
-    # Collect all files across all chunks
-    all_chunk_files=$(echo "$output" | jq '[.chunks[].files[]] | sort')
     # Count unique files
     unique_count=$(echo "$output" | jq '[.chunks[].files[]] | unique | length')
     total_count=$(echo "$output" | jq '[.chunks[].files[]] | length')
@@ -457,4 +455,157 @@ index abc..def 100644
     impl_chunk=$(echo "$output" | jq --arg f "frontend/lib/helpers.ts" '[.chunks[] | select(.files | index($f))] | .[0].id')
     test_chunk=$(echo "$output" | jq --arg f "frontend/lib/__tests__/helpers.ts" '[.chunks[] | select(.files | index($f))] | .[0].id')
     [ "$impl_chunk" = "$test_chunk" ]
+}
+
+@test "chunk-diff: Ruby _spec.rb files are paired with implementation files" {
+    local diff_content
+    diff_content=$(cat "$FIXTURES_DIR/multi-directory.diff")
+    local input
+    input=$(jq -n --arg diff "$diff_content" \
+        '{"diff": $diff, "config": {"min_chunk_threshold_files": 10, "min_chunk_threshold_kb": 0, "max_files_per_chunk": 8}}')
+
+    run bash -c "printf '%s' '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+
+    # parser_spec.rb should be in the same chunk as parser.rb
+    impl_chunk=$(echo "$output" | jq --arg f "backend/services/parser.rb" '[.chunks[] | select(.files | index($f))] | .[0].id')
+    test_chunk=$(echo "$output" | jq --arg f "backend/services/parser_spec.rb" '[.chunks[] | select(.files | index($f))] | .[0].id')
+    [ "$impl_chunk" = "$test_chunk" ]
+}
+
+@test "chunk-diff: Angular .spec.ts files are paired with implementation files" {
+    local diff_content
+    diff_content=$(cat "$FIXTURES_DIR/multi-directory.diff")
+    local input
+    input=$(jq -n --arg diff "$diff_content" \
+        '{"diff": $diff, "config": {"min_chunk_threshold_files": 10, "min_chunk_threshold_kb": 0, "max_files_per_chunk": 8}}')
+
+    run bash -c "printf '%s' '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+
+    # app.component.spec.ts should be in the same chunk as app.component.ts
+    impl_chunk=$(echo "$output" | jq --arg f "frontend/components/app.component.ts" '[.chunks[] | select(.files | index($f))] | .[0].id')
+    test_chunk=$(echo "$output" | jq --arg f "frontend/components/app.component.spec.ts" '[.chunks[] | select(.files | index($f))] | .[0].id')
+    [ "$impl_chunk" = "$test_chunk" ]
+}
+
+@test "chunk-diff: generic _test suffix files are paired with implementation files" {
+    local diff_content
+    diff_content=$(cat "$FIXTURES_DIR/multi-directory.diff")
+    local input
+    input=$(jq -n --arg diff "$diff_content" \
+        '{"diff": $diff, "config": {"min_chunk_threshold_files": 10, "min_chunk_threshold_kb": 0, "max_files_per_chunk": 8}}')
+
+    run bash -c "printf '%s' '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+
+    # utils_test.py should be in the same chunk as utils.py
+    impl_chunk=$(echo "$output" | jq --arg f "backend/models/utils.py" '[.chunks[] | select(.files | index($f))] | .[0].id')
+    test_chunk=$(echo "$output" | jq --arg f "backend/models/utils_test.py" '[.chunks[] | select(.files | index($f))] | .[0].id')
+    [ "$impl_chunk" = "$test_chunk" ]
+}
+
+# =============================================================================
+# Threshold boundary tests
+# =============================================================================
+
+@test "chunk-diff: exceeds file threshold only still triggers chunking" {
+    local diff_content
+    diff_content=$(cat "$FIXTURES_DIR/multi-directory.diff")
+    local input
+    # High KB threshold (won't be exceeded), low file threshold (will be exceeded)
+    input=$(jq -n --arg diff "$diff_content" \
+        '{"diff": $diff, "config": {"min_chunk_threshold_files": 10, "min_chunk_threshold_kb": 9999, "max_files_per_chunk": 8}}')
+
+    run bash -c "printf '%s' '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.chunked == true'
+}
+
+@test "chunk-diff: exceeds KB threshold only still triggers chunking" {
+    local diff_content
+    diff_content=$(cat "$FIXTURES_DIR/multi-directory.diff")
+    local input
+    # Low KB threshold (will be exceeded), high file threshold (won't be exceeded)
+    input=$(jq -n --arg diff "$diff_content" \
+        '{"diff": $diff, "config": {"min_chunk_threshold_files": 9999, "min_chunk_threshold_kb": 1, "max_files_per_chunk": 8}}')
+
+    run bash -c "printf '%s' '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.chunked == true'
+}
+
+# =============================================================================
+# file_metadata integration tests
+# =============================================================================
+
+@test "chunk-diff: file_metadata likely_test_path pairs files via forward mapping" {
+    # Build a small diff with four files
+    local diff=""
+    for f in src/app.py src/my_app_test.py src/utils.py src/helper.py; do
+        diff="${diff}diff --git a/$f b/$f
+index abc..def 100644
+--- a/$f
++++ b/$f
+@@ -1,3 +1,4 @@
++line from $f
+"
+    done
+
+    # my_app_test.py would not be paired by filename patterns (no matching impl),
+    # but file_metadata says app.py's likely_test_path is my_app_test.py
+    local metadata
+    metadata=$(jq -nc '{modified_files: [
+        {path: "src/app.py", is_test: false, likely_test_path: "src/my_app_test.py"},
+        {path: "src/my_app_test.py", is_test: true, likely_test_path: ""},
+        {path: "src/utils.py", is_test: false, likely_test_path: ""},
+        {path: "src/helper.py", is_test: false, likely_test_path: ""}
+    ]}')
+    local input
+    input=$(jq -n --arg diff "$diff" --argjson meta "$metadata" \
+        '{"diff": $diff, "file_metadata": $meta, "config": {"min_chunk_threshold_files": 2, "min_chunk_threshold_kb": 0, "max_files_per_chunk": 2}}')
+
+    run bash -c "printf '%s' '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.chunked == true'
+
+    # app.py and my_app_test.py should be in the same chunk via likely_test_path
+    impl_chunk=$(echo "$output" | jq --arg f "src/app.py" '[.chunks[] | select(.files | index($f))] | .[0].id')
+    test_chunk=$(echo "$output" | jq --arg f "src/my_app_test.py" '[.chunks[] | select(.files | index($f))] | .[0].id')
+    [ "$impl_chunk" = "$test_chunk" ]
+}
+
+@test "chunk-diff: file_metadata is_test=false skips pattern matching" {
+    # Build a diff with a file named test_config.py that is NOT a test file
+    local diff=""
+    for f in src/test_config.py src/config.py src/other.py src/another.py; do
+        diff="${diff}diff --git a/$f b/$f
+index abc..def 100644
+--- a/$f
++++ b/$f
+@@ -1,3 +1,4 @@
++line from $f
+"
+    done
+
+    # Metadata says test_config.py is NOT a test (despite the name)
+    local metadata
+    metadata=$(jq -nc '{modified_files: [
+        {path: "src/test_config.py", is_test: false, likely_test_path: ""},
+        {path: "src/config.py", is_test: false, likely_test_path: ""},
+        {path: "src/other.py", is_test: false, likely_test_path: ""},
+        {path: "src/another.py", is_test: false, likely_test_path: ""}
+    ]}')
+    local input
+    input=$(jq -n --arg diff "$diff" --argjson meta "$metadata" \
+        '{"diff": $diff, "file_metadata": $meta, "config": {"min_chunk_threshold_files": 2, "min_chunk_threshold_kb": 0, "max_files_per_chunk": 2}}')
+
+    run bash -c "printf '%s' '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.chunked == true'
+
+    # test_config.py should NOT be paired with config.py since metadata says it's not a test
+    impl_chunk=$(echo "$output" | jq --arg f "src/config.py" '[.chunks[] | select(.files | index($f))] | .[0].id')
+    test_chunk=$(echo "$output" | jq --arg f "src/test_config.py" '[.chunks[] | select(.files | index($f))] | .[0].id')
+    [ "$impl_chunk" != "$test_chunk" ]
 }

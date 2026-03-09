@@ -373,11 +373,17 @@ build_review_data() {
         fi
     fi
 
-    # Build chunk JSON for inclusion in output (null if not chunked or chunking failed)
-    local chunk_json="null"
+    # Build chunk JSON for inclusion in output (null if not chunked or chunking failed).
+    # Write chunks to a temp file and use --slurpfile to avoid ARG_MAX limits,
+    # since chunk data can be as large as the original diff (400KB+).
     local chunk_meta_json="null"
+    local chunk_json_tmpfile
+    _ORCH_CHUNK_JSON_TMPFILE=$(mktemp)
+    chunk_json_tmpfile="${_ORCH_CHUNK_JSON_TMPFILE}"
+    trap 'rm -f "${_ORCH_DIFF_TMPFILE}" "${_ORCH_CHUNK_JSON_TMPFILE}"' EXIT
+    echo "null" > "${chunk_json_tmpfile}"
     if [[ -n "${chunk_result}" ]] && echo "${chunk_result}" | jq -e '.chunked == true' > /dev/null 2>&1; then
-        chunk_json=$(echo "${chunk_result}" | jq '.chunks')
+        echo "${chunk_result}" | jq '.chunks' > "${chunk_json_tmpfile}"
         chunk_meta_json=$(echo "${chunk_result}" | jq '{chunked: .chunked, reason: .reason, chunk_count: .chunk_count}')
     fi
 
@@ -395,7 +401,7 @@ build_review_data() {
         --argjson pr "${pr_json}"
         --arg reviewer_username "${reviewer_username}"
         --arg is_own_pr "${is_own_pr}"
-        --argjson chunks "${chunk_json}"
+        --slurpfile chunks "${chunk_json_tmpfile}"
         --argjson chunk_metadata "${chunk_meta_json}"
     )
 
@@ -426,7 +432,7 @@ build_review_data() {
         + (if $draft_mode == "true" then {draft: true} else {} end)
         + (if $self_mode == "true" then {self: true} else {} end)
         + (if $pr != null then {pr: $pr, reviewer_username: $reviewer_username, is_own_pr: ($is_own_pr == "true")} else {} end)
-        + (if $chunks != null then {chunks: $chunks, chunk_metadata: $chunk_metadata} else {} end)
+        + (if $chunks[0] != null then {chunks: $chunks[0], chunk_metadata: $chunk_metadata} else {} end)
         + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")) | with_entries(select(.value != "")))')
     debug_save_json "07-final-output" "output.json" <<< "${final_output}"
     debug_time "07-final-output" "end"
