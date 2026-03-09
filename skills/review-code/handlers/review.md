@@ -6,70 +6,70 @@ If STATUS is "ready", get the session file path (replace `<SESSION_ID>` with the
 ~/.claude/skills/review-code/scripts/review-status-handler.sh get-session-file "<SESSION_ID>"
 ```
 
-Save the output as `SESSION_FILE`. Then read the session file using the Read tool and extract `display_summary` to show the user what will be reviewed.
+Save the output as `SESSION_FILE`. Read the session file using the Read tool and extract `display_summary` to show the user what will be reviewed.
 
-**All subsequent data extraction uses the Read tool on the same SESSION_FILE — no re-running the orchestrator.**
+**All subsequent data extraction uses the Read tool on the same SESSION_FILE. Do not re-run the orchestrator.**
 
-Proceed directly with the review.
+### Handle Existing Review Files
 
-**Check for existing review and branch review:**
+From the session file JSON, extract:
+- `file_info.file_exists`: whether a review file already exists
+- `file_info.file_path`: path to the existing review
+- `file_info.has_branch_review`: whether both PR and branch reviews exist (defaults to false)
+- `file_info.branch_review_path`: path to the branch review
+- `file_info.needs_rename`: whether the branch review should migrate to PR format (defaults to false)
+- `file_info.pr_number`: the associated PR number
 
-From the session file JSON, extract these fields:
-- `file_info.file_exists` — whether a review file already exists
-- `file_info.file_path` — path to the existing review
-- `file_info.has_branch_review` — whether both PR and branch reviews exist (defaults to false)
-- `file_info.branch_review_path` — path to the branch review
-- `file_info.needs_rename` — whether the branch review should migrate to PR format (defaults to false)
-- `file_info.pr_number` — the associated PR number
-
-**If `has_branch_review` is true (both PR and branch reviews exist):**
+**If `has_branch_review` is true** (both PR and branch reviews exist):
 
 Use AskUserQuestion:
 - Question: "A branch review exists alongside the PR review. Merge before proceeding?"
 - Options:
-  1. "Merge and continue" - Merge branch review into PR review, then proceed with new review
-  2. "Continue without merging" - Keep both files, proceed with review
-  3. "Cancel" - Stop and handle manually
+  1. "Merge and continue": Merge branch review into PR review, then proceed
+  2. "Continue without merging": Keep both files, proceed
+  3. "Cancel": Stop and handle manually
 
 If user selects "Merge and continue":
 1. Read both files using the Read tool
 2. Append branch review content to PR review with separator: `\n\n---\n\n## Previous Branch Review\n\n`
 3. Write merged content to PR review file
 4. Delete branch review file: `rm "$branch_review_path"`
-5. Continue with the review
 
-**If `needs_rename` is true (branch review exists, but should migrate to PR):**
+**If `needs_rename` is true** (branch review exists but should migrate to PR format):
 
 Use AskUserQuestion:
 - Question: "A PR (#$pr_number) exists. Migrate branch review to PR format before proceeding?"
 - Options:
-  1. "Migrate and continue" - Rename to PR format, then proceed
-  2. "Continue as branch review" - Keep current format, proceed
-  3. "Cancel" - Stop and handle manually
+  1. "Migrate and continue": Rename to PR format, then proceed
+  2. "Continue as branch review": Keep current format, proceed
+  3. "Cancel": Stop and handle manually
 
 If user selects "Migrate and continue":
 1. Compute new path with `pr-$pr_number.md` filename
 2. Move file: `mv "$file_path" "$new_path"`
 3. Update `review_file` variable to new path
-4. Continue with the review
 
-**If `existing` is not null (review file already exists):**
+**If `file_info.file_exists` is true** (a review file exists but neither of the above conditions apply):
 
-Use AskUserQuestion to ask what to do with the existing review.
+Use AskUserQuestion to ask what to do with the existing review:
+- Options:
+  1. "Overwrite": Replace the existing review
+  2. "Append": Add new findings to the existing review
+  3. "Cancel": Stop without reviewing
 
-**Extract the data needed for building agent context:**
+### Extract Session Data
 
-From the session file JSON, extract these fields:
-- `mode` — review mode (pr, branch, commit, range, local)
-- `diff` — the code changes to review
-- `file_metadata` — metadata about changed files
-- `review_context` — language/framework-specific guidelines
-- `git` — git repository context
-- `languages` — detected languages
-- `file_info.file_path` — where to save the review
-- `file_ref` — (optional) git ref for reading PR files when on a different branch
-- `chunks` — (optional) array of chunk objects when the diff was split
-- `chunk_metadata` — (optional) object with `chunked`, `reason`, `chunk_count`
+From the session file JSON, extract these fields for building agent context:
+- `mode`: review mode (pr, branch, commit, range, local)
+- `diff`: the code changes to review
+- `file_metadata`: metadata about changed files
+- `review_context`: language/framework-specific guidelines
+- `git`: git repository context
+- `languages`: detected languages
+- `file_info.file_path`: where to save the review
+- `file_ref`: (optional) git ref for reading PR files when on a different branch
+- `chunks`: (optional) array of chunk objects when the diff was split
+- `chunk_metadata`: (optional) object with `chunked`, `reason`, `chunk_count`
 
 **Check for chunked diff:**
 
@@ -77,29 +77,28 @@ If `chunk_metadata` exists and `chunk_metadata.chunked` is `true`, set `is_chunk
 
 "This is a large PR ({chunk_metadata.reason}). Splitting into {chunk_count} chunks for focused review."
 
-**Extract mode-specific fields:**
-
-- **For PR mode:** `pr` — PR details (number, title, author, body, comments, etc.); `file_ref` — git ref for file access (present when reviewing from a different branch in the same repo)
-- **For branch/commit/range modes:** `branch`, `base_branch`, `commit`, `range`
-- **For area-specific reviews:** `area`
+Mode-specific fields:
+- **PR mode:** `pr`: PR details (number, title, author, body, comments, etc.); `file_ref`: git ref for file access (present when reviewing from a different branch)
+- **Branch/commit/range modes:** `branch`, `base_branch`, `commit`, `range`
+- **Area-specific reviews:** `area`
 
 ### Prepare File Access Instructions
 
-Build `$file_access_instructions` based on the review context. This block is included in both the context explorer and specialized agent prompts:
+Build `$file_access_instructions` based on the session data. This block is included in both the context explorer and agent prompts.
 
-{If file_ref is set:}
+**If `file_ref` is set:**
 ```
 **File Access:**
-You are reviewing from a different branch in the same repo. To read files as they appear in the PR, use `git show "$file_ref:<path>"` via the Bash tool (always quote the argument to handle paths with spaces or special characters). Do NOT use `git checkout` or `git switch` — this would modify the user's working tree. The Read, Grep, and Glob tools operate on the current working tree (which may differ from the PR branch), so use them for finding patterns and conventions but not for reading the PR's file contents. `git show` works for any file that exists at the ref, including files newly added in the PR. If `git show` fails (e.g., the file was deleted or renamed, the path is wrong, or the ref was not fetched), fall back to the diff content.
+You are reviewing from a different branch in the same repo. To read files as they appear in the PR, use `git show "$file_ref:<path>"` via the Bash tool (always quote the argument to handle paths with spaces or special characters). Do NOT use `git checkout` or `git switch`: this would modify the user's working tree. The Read, Grep, and Glob tools operate on the current working tree (which may differ from the PR branch), so use them for finding patterns and conventions but not for reading the PR's file contents. `git show` works for any file that exists at the ref, including files newly added in the PR. If `git show` fails (e.g., the file was deleted or renamed, the path is wrong, or the ref was not fetched), fall back to the diff content.
 ```
 
-{If file_ref is NOT set and working_dir is not null:}
+**If `file_ref` is NOT set and `working_dir` is not null:**
 ```
 **File Access:**
 You are on the PR's branch. Use the Read tool to read files normally.
 ```
 
-{If working_dir is null:}
+**If `working_dir` is null:**
 ```
 **File Access:**
 No local checkout available. Work from the diff content only.
@@ -107,7 +106,7 @@ No local checkout available. Work from the diff content only.
 
 ### Gather Architectural Context
 
-Before invoking specialized agents, use the context explorer to understand the codebase:
+Before invoking specialized agents, use the context explorer to understand the codebase.
 
 Invoke the Task tool with subagent_type "Explore" and prompt:
 
@@ -125,7 +124,7 @@ $file_access_instructions
 Explore the codebase to understand:
 - Full context of modified files
 - Related code and dependencies
-- Callers of modified functions — who calls the changed code and might be affected?
+- Callers of modified functions (who calls the changed code and might be affected?)
   (grep for function/method names, report top 3-5 callers per significantly modified function)
 - Existing patterns for similar functionality
 - Reusable utilities or conventions
@@ -133,13 +132,26 @@ Explore the codebase to understand:
 Time-box yourself to 2-3 minutes of exploration.
 ```
 
-Save the explorer's output as: `architectural_context="<output from Task>"`
+Save the explorer's output as `$architectural_context`.
 
 ### Invoke Specialized Review Agents
 
-Now invoke the appropriate review agent(s) based on the mode and area.
+Invoke the appropriate agent(s) based on mode and area. If an area is specified, invoke only that agent. Otherwise, invoke all 7 core agents in parallel (plus the frontend agent if `languages.has_frontend` is true).
 
-**Build the context to pass to agents:**
+**Agent selection:**
+
+| Area | `subagent_type` | Focus |
+|------|----------------|-------|
+| security | code-reviewer-security | Vulnerabilities, exploits, security hardening |
+| performance | code-reviewer-performance | Bottlenecks, inefficiencies, optimization |
+| correctness | code-reviewer-correctness | Intent verification, integration boundaries |
+| maintainability | code-reviewer-maintainability | Readability, simplicity, long-term code health |
+| testing | code-reviewer-testing | Test coverage, quality, edge cases |
+| compatibility | code-reviewer-compatibility | Backwards compatibility with shipped code |
+| architecture | code-reviewer-architecture | Necessity, patterns, code reuse, simplicity |
+| *(frontend detected)* | code-reviewer-frontend | React/TS patterns, components, state, a11y |
+
+**Build the context to pass to each agent:**
 
 ```markdown
 {For PR mode:}
@@ -208,9 +220,9 @@ $file_access_instructions
 For each finding you report:
 1. Quote the exact code you're referencing
 2. Verify the line number by reading the actual file (see File Access above)
-3. Only flag code in the diff - do not flag pre-existing issues in unchanged code
+3. Only flag code in the diff. Do not flag pre-existing issues in unchanged code.
 4. For bug claims: read surrounding code to confirm the behavior before reporting
-5. For every `blocking:` or `suggestion:` finding, include a **concrete code fix** — show the recommended change as a diff (`- old` / `+ new`) or replacement code block. If you cannot provide a concrete fix, demote the finding to `question:`.
+5. For every `blocking:` or `suggestion:` finding, include a **concrete code fix**: show the recommended change as a diff (`- old` / `+ new`) or replacement code block. If you cannot provide a concrete fix, demote the finding to `question:`.
 
 Do NOT report anything as a bug unless you've verified the behavior by reading the code.
 
@@ -218,16 +230,16 @@ Do NOT report anything as a bug unless you've verified the behavior by reading t
 
 Prefix every finding so the author knows what action is expected. The prefix must be code-formatted in the comment body (e.g., `` `blocking`: This must be fixed ``):
 
-- `blocking` — This must be fixed before merge. Use sparingly — reserve it for bugs, security issues, or things that will break.
-- `nit` — A minor style or naming suggestion. Take it or leave it.
-- `suggestion` — A different approach worth considering, but the author's call.
-- `question` — You don't understand something. Not necessarily a problem, but you'd like clarification.
+- `blocking`: Must be fixed before merge. Reserve for bugs, security issues, or breakage.
+- `nit`: Minor style or naming suggestion. Take it or leave it.
+- `suggestion`: A different approach worth considering, but the author's call.
+- `question`: You don't understand something. Not necessarily a problem.
 
-If a comment has no prefix, assume it's a suggestion.
+If a comment has no prefix, treat it as a suggestion.
 
 **Inline Comment Voice:**
 
-Write comments the way a senior engineer talks in a PR review — direct, specific, and conversational. No filler, no formality, no structured headers.
+Write comments the way a senior engineer talks in a PR review: direct, specific, and conversational. No filler, no formality, no structured headers.
 
 - No `**Issue**:` / `**Impact**:` / `**Recommendation**:` headers. Start with the prefix, then flow into natural prose.
 - Be specific: name the function, quote the value, cite the line.
@@ -255,22 +267,11 @@ Bad:
 **Recommendation**: Add `OverflowError` to the except tuple.
 ```
 
-{If previous_review exists:}
-**Previous Review:**
-$previous_review
-
-IMPORTANT: Build upon the previous review. Do not duplicate findings. You may:
-- Reference previous findings: "As noted in the previous review..."
-- Add new findings discovered since last review
-- Update status if code changed
-- Mark findings as resolved if fixed
-```
-
 **Handling Existing PR Comments:**
 
-When the context includes PR comments (`$pr_comments`), instruct agents to:
+When the context includes PR comments (`$pr_comments`):
 1. **Never claim credit** for issues already identified by other reviewers
-2. **Evaluate each finding** - Is it legitimate? Correct? A false positive?
+2. **Evaluate each finding**: Is it legitimate? Correct? A false positive?
 3. **Attribute with assessment**: `[Found by @username] Issue description` + your analysis
 4. **Track fix status**: `Fixed in <commit>`, `Open`, or `Invalid`
 5. **Summarize at the start** in a table:
@@ -285,20 +286,17 @@ When the context includes PR comments (`$pr_comments`), instruct agents to:
 
 Comment structure: `conversation` (discussion), `reviews` (approve/changes), `inline` (line-level with `path`, `line`, `author`, `body`)
 
-**Agent selection by area:**
+{If previous_review exists:}
+**Previous Review:**
+$previous_review
 
-| Area | `subagent_type` | Focus |
-|------|----------------|-------|
-| security | code-reviewer-security | Vulnerabilities, exploits, security hardening |
-| performance | code-reviewer-performance | Bottlenecks, inefficiencies, optimization |
-| correctness | code-reviewer-correctness | Intent verification, integration boundaries |
-| maintainability | code-reviewer-maintainability | Readability, simplicity, long-term code health |
-| testing | code-reviewer-testing | Test coverage, quality, edge cases |
-| compatibility | code-reviewer-compatibility | Backwards compatibility with shipped code |
-| architecture | code-reviewer-architecture | Necessity, patterns, code reuse, simplicity |
-| *(frontend detected)* | code-reviewer-frontend | React/TS patterns, components, state, a11y |
+IMPORTANT: Build upon the previous review. Do not duplicate findings. You may:
+- Reference previous findings: "As noted in the previous review..."
+- Add new findings discovered since last review
+- Update status if code changed
+- Mark findings as resolved if fixed
 
-Use the Task tool with `subagent_type` from the table above. If an area is specified, invoke only that agent. Otherwise, invoke all 7 core agents in parallel (+ frontend if `languages.has_frontend` is true). Pass the FULL context (PR info, diff, architectural context, guidelines) to each agent as the prompt.
+### Collect and Synthesize Results
 
 **Chunked review dispatch:**
 
@@ -321,20 +319,17 @@ If `is_chunked` is true, process all chunks in parallel (all agents x all chunks
 
 If `is_chunked` is false (or `chunk_metadata` is absent), behavior is identical to the non-chunked path above.
 
-### Collect and Present Results
+After all agents complete, synthesize their findings using extended thinking into a coherent, deduplicated review document. Apply confidence-based filtering and cross-agent corroboration before producing the final output.
+**Cross-agent corroboration:** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function.
 
-Use ultrathink to synthesize findings from all agents into a coherent, deduplicated review. Apply confidence-based filtering and cross-agent corroboration before producing the final document.
-
-After all agents complete, combine their findings into a single review document.
-
-**Filtering (cross-agent and cross-chunk corroboration).** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function. This applies both across agents within the same chunk and across chunks that touch related code. Apply these rules:
+**Filtering rules:**
 - **Corroborated (2+ agents or chunks):** Keep even if individual confidence is below 40%. Note as corroborated in the review.
 - **Solo finding, confidence >= 40%:** Include as-is.
 - **Solo finding, confidence < 40%:** Drop silently.
-- **Questions and nits:** Exempt from filtering (no minimum confidence).
+- **Questions and nits:** Exempt from filtering. Include regardless of confidence.
 - When consolidating corroborated findings, merge into a single entry crediting all contributing agents, using the highest confidence value.
 
-**Priority ordering.** Order findings in the final review by:
+**Priority ordering in the final review:**
 1. Corroborated blocking findings
 2. Solo blocking findings (>= 70% confidence)
 3. Corroborated suggestions
@@ -343,13 +338,12 @@ After all agents complete, combine their findings into a single review document.
 
 **Important:** The final review document does NOT separate findings by chunk. Present a unified review organized by the priority ordering above, the same as for non-chunked reviews.
 
-**Verify findings against the diff before including them in the final review.**
+### Validate Findings Against the Diff
 
-After collecting findings from all agents (across all chunks if chunked), validate that each finding references code actually in the diff. This catches wrong line numbers, findings about unrelated files, and stale references.
+Before including any finding in the final review, verify it references code actually in the diff (across all chunks if chunked). This catches wrong line numbers, findings about unrelated files, and stale references.
 
 **Important:** Always use the FULL diff from the session data (not chunk diffs) for position mapping. The position mapper needs the complete diff to map findings to correct GitHub inline comment positions.
-
-**Step 1: Extract and validate.** For each agent's findings that reference a specific file and line, build a targets array and run it through the position mapper:
+**Step 1: Run the position mapper.** For each agent finding that references a specific file and line, build a targets array and run:
 
 ```bash
 ~/.claude/skills/review-code/scripts/diff-position-mapper.sh <<'EOF'
@@ -357,7 +351,7 @@ After collecting findings from all agents (across all chunks if chunked), valida
 EOF
 ```
 
-Where the `targets` array contains `{"path": "<file>", "line": <number>}` objects extracted from the agent findings, and `diff` is the diff string from the session data.
+Where `targets` contains `{"path": "<file>", "line": <number>}` objects, and `diff` is the diff string from the session data.
 
 **Step 2: Handle results.** Check the `mappings` array in the output:
 
@@ -370,7 +364,9 @@ Where the `targets` array contains `{"path": "<file>", "line": <number>}` object
 
 **Step 3: Spot-check bug claims.** For any remaining finding that claims a bug or incorrect behavior, use the Read tool to verify the claim is accurate before including it.
 
-**Review title by mode:**
+### Compose the Review Document
+
+**Title by mode:**
 
 | Mode | Title format |
 |------|-------------|
@@ -380,7 +376,7 @@ Where the `targets` array contains `{"path": "<file>", "line": <number>}` object
 | Range | `Range Review: $range` |
 | Local | `Code Review: (org/repo) - (branch) (uncommitted)` |
 
-**For comprehensive reviews**, include sections for each area:
+**For comprehensive reviews**, include a section for each area:
 - Security Review
 - Performance Review
 - Correctness Review
@@ -397,6 +393,20 @@ If `is_chunked` is true, add a "Review Scope" note at the top of the review docu
 > **Review Scope:** This review covered $chunk_count chunks ($total_file_count files total).
 ```
 
+Include the metadata header at the top of the file:
+
+```html
+<!-- review-metadata
+reviewed_at: <current ISO 8601 timestamp>
+mode: <mode>
+pr_number: <pr_number if applicable>
+org: <org>
+repo: <repo>
+review_commit: <pr.head_sha if PR mode, omit otherwise>
+-->
+```
+
+This metadata is used by the learning system to determine when the review was created. The `review_commit` field records the PR's HEAD SHA at review time, enabling drift detection when creating draft reviews later.
 Save the complete review to `$review_file` and inform the user with a clickable file link:
 
 ```
@@ -410,21 +420,19 @@ Review saved to: $review_file
 You can open it directly: file://$review_file
 ```
 
-**CRITICAL: Do NOT post the full review to GitHub.** The detailed review is saved to the markdown file only. If `--draft` mode is enabled, a separate draft review with inline comments will be created in the next step - but that draft should contain only brief inline comments, NOT the full review summary.
+**Do NOT post the full review to GitHub.** The detailed review is saved to the markdown file only. If `--draft` mode is enabled, a separate draft review with inline comments will be created in the next step. That draft contains only brief inline comments, not the full review summary.
 
 ### Generate Suggested Comments (PR Mode Only)
 
-If this is a PR review and the reviewer is NOT the PR author, generate suggested inline comments for the review file. This helps the reviewer quickly identify what comments to post on the PR.
-
-**Check if suggested comments should be generated:**
+If this is a PR review and `is_own_pr` is false, generate suggested inline comments for the review file.
 
 From the session data, extract:
-- `is_own_pr` — whether the current user authored the PR (defaults to false)
-- `pr.comments.inline` — existing inline comments on the PR (defaults to empty array)
+- `is_own_pr`: whether the current user authored the PR (defaults to false)
+- `pr.comments.inline`: existing inline comments on the PR (defaults to empty array)
 
-**If `is_own_pr` is "false":**
+**If `is_own_pr` is false:**
 
-When combining agent findings into the review document, add a "Suggested Comments" section with the following:
+When combining agent findings into the review document, add a "Suggested Comments" section:
 
 1. **Extract findings with locations**: From each agent's output, identify findings that have a specific file path and line number.
 
@@ -454,7 +462,7 @@ For each finding that needs a new comment:
 #### `<file_path>:<line_number>`
 
 ```text
-<comment text — direct, specific, conversational (see Inline Comment Voice above)>
+<comment text: direct, specific, conversational (see Inline Comment Voice above)>
 ```
 
 *From: <Agent Name> (<confidence>% confidence)*
@@ -499,7 +507,7 @@ List findings where existing comments are sufficient:
 
 5. **Append to review file**: Add the "Suggested Comments" section after the main review content.
 
-6. **Display summary to user**: After saving, show a brief summary:
+6. **Display summary to user**: After saving, show:
 
 ```
 Suggested Comments:
@@ -514,15 +522,12 @@ See the review file for copy/paste ready comments.
 
 If `--draft` was specified and this is a PR review (not own PR), create a pending GitHub review with inline comments.
 
-**CRITICAL RULES for draft reviews:**
-- The draft review contains ONLY inline comments at specific file:line locations
-- The review summary should be a brief 1-2 sentence overview, NOT the full review
+**Rules for draft reviews:**
+- The draft contains ONLY inline comments at specific file:line locations
+- The review summary is a brief 1-2 sentence overview, not the full review
 - The full detailed review stays in the markdown file only
-- NEVER use `gh pr review` directly - always use `create-draft-review.sh`
-- NEVER post the full review summary to GitHub
-- NEVER include confidence percentages in GitHub comments — confidence is internal review metadata only
-
-**Check if draft mode is enabled:**
+- NEVER use `gh pr review` directly. Always use `create-draft-review.sh`
+- NEVER include confidence percentages in GitHub comments. Confidence is internal metadata only
 
 From the session data, extract: `draft` (defaults to false), `is_own_pr` (defaults to false), `self` (defaults to false), and `mode`.
 
@@ -535,12 +540,9 @@ If any condition fails, skip draft review creation.
 
 **If conditions are met:**
 
-1. **Extract suggested comments from the review**: Parse the "Suggested Comments" section to get:
-   - File path
-   - Line number
-   - Comment body — extract ONLY the text inside the ` ```text ``` ` code block
+1. **Extract suggested comments from the review**: Parse the "Suggested Comments" section to get file path, line number, and comment body. Extract ONLY the text inside the ` ```text ``` ` code block. Do NOT include the `*From: <Agent Name> (<confidence>% confidence)*` line. Confidence percentages are internal metadata and must never appear in GitHub comments.
 
-   Look for the pattern in the review file:
+   Look for this pattern in the review file:
    ```
    #### `<file_path>:<line_number>`
    ```text
@@ -548,9 +550,7 @@ If any condition fails, skip draft review creation.
    ```
    ```
 
-   **CRITICAL**: Do NOT include the `*From: <Agent Name> (<confidence>% confidence)*` metadata line in the comment body. Confidence percentages are internal review metadata only — they must never appear in public GitHub comments. Extract only what is inside the ` ```text ``` ` block.
-
-2. **Map comment locations to diff positions**: Build a targets array from the extracted comments and run through the position mapper:
+2. **Map comment locations to diff positions**: Build a targets array and run through the position mapper:
 
 ```bash
 ~/.claude/skills/review-code/scripts/diff-position-mapper.sh <<'EOF'
@@ -572,7 +572,7 @@ EOF
   "reviewer_username": "<reviewer from session>",
   "review_commit": "<pr.head_sha from session, if available>",
   "original_diff": "<diff from session data>",
-  "summary": "<Short, conversational summary — see guidance below>",
+  "summary": "<Short, conversational summary (see guidance below)>",
   "comments": [
     {"path": "file.ts", "line": 42, "side": "RIGHT", "body": "Clean comment text", "line_content": "    the_actual_code()"}
   ],
@@ -586,23 +586,20 @@ EOF
 
 **Extracting `line_content`:** For each comment, extract the code at the target file:line from the diff. Find the file in the diff, locate the target line number within the hunks, and use the code text at that line (without the `+`/`-`/` ` prefix). This enables content-based matching for drift detection.
 
-**IMPORTANT**: The `summary` field is the casual top-level comment on a GitHub review. Keep it brief — 1-2 short sentences at most. The author already knows what their PR does; never restate or narrate the approach back to them.
+**Writing the summary:** The `summary` field is the casual top-level comment on a GitHub review. Keep it to 1-2 short sentences. The author knows what their PR does, so never restate or narrate the approach back to them.
 
-**Default to short.** Most PRs deserve a simple "LGTM!", "Nice fix!", or "Looks good!" with a note about inline comments if any. Only elaborate when something genuinely surprised you — a technique you hadn't seen before, an unusually elegant solution, or a TIL moment.
+Default to short. Most PRs deserve a simple "LGTM!", "Nice fix!", or "Looks good!" with a note about inline comments if any. Only elaborate when something genuinely surprised you.
 
 Good examples:
-
 - "LGTM!"
 - "Nice fix! A couple non-blocking suggestions inline."
 - "Looks good, one blocking issue inline."
-- "TIL about `Intl.Segmenter` — cool find. A couple suggestions inline."
+- "TIL about `Intl.Segmenter`, cool find. A couple suggestions inline."
 
 Bad examples (robotic, narrating the approach, or over-explaining):
-
 - "Code review with 3 inline suggestions. See review file for full details."
-- "Code review complete with 3 inline suggestions for improved error handling."
-- "Nice fix for a real validation gap — the two-phase approach (relative date regex first, then dateutil) is clean." (narrates the approach back to the author)
-- "I really liked how you extracted the retry logic into its own module — much cleaner." (restates what the PR does)
+- "Nice fix for a real validation gap. The two-phase approach (relative date regex first, then dateutil) is clean." (narrates the approach)
+- "I really liked how you extracted the retry logic into its own module, much cleaner." (restates what the PR does)
 
 **Code Suggestions:**
 
@@ -614,7 +611,7 @@ replacement code here
 ```
 ````
 
-This renders as an "Apply suggestion" button that the PR author can click to commit the change.
+This renders as an "Apply suggestion" button the PR author can click to commit the change.
 
 5. **Create the pending review**:
 
@@ -647,7 +644,6 @@ The review is in PENDING state. Visit GitHub to:
 If failed, show the error and suggest using the review file manually.
 
 **Error handling:**
-
 - **Not PR mode**: "The --draft flag only works when reviewing a pull request"
 - **Own PR**: "Cannot create draft review on your own pull request"
 - **No mappable comments**: Create review with summary only, warn user
@@ -655,22 +651,22 @@ If failed, show the error and suggest using the review file manually.
   1. Display the error message to the user
   2. Tell them: "Draft review creation failed. The review has been saved to the markdown file."
   3. Suggest: "You can copy comments from the review file and post them manually on GitHub."
-  4. **STOP HERE** - Do NOT attempt to post comments using `gh pr review` or any other method as a fallback. This will submit the review instead of keeping it pending.
+  4. **STOP HERE.** Do NOT attempt to post comments using `gh pr review` or any other method as a fallback. This will submit the review instead of keeping it pending.
 
 ### Offer to Submit Review
 
 After creating the draft review successfully, offer to submit it from within Claude Code.
 
-**Only proceed if the draft review was created successfully** (the `create-draft-review.sh` output has `success: true` and a valid `review_id`).
+Only proceed if the draft review was created successfully (the `create-draft-review.sh` output has `success: true` and a valid `review_id`).
 
 Use `AskUserQuestion` with these options:
 
-1. "Submit as Comment" — neutral feedback, no approval or rejection
-2. "Submit as Approve" — approve the PR
-3. "Submit as Request Changes" — request changes before merge
-4. "Keep as draft" — don't submit now; visit GitHub to review and submit manually
+1. "Submit as Comment": neutral feedback, no approval or rejection
+2. "Submit as Approve": approve the PR
+3. "Submit as Request Changes": request changes before merge
+4. "Keep as draft": don't submit now; visit GitHub to review and submit manually
 
-**If the user selects one of the submit options:**
+**If the user selects a submit option:**
 
 Map the selection to an event value:
 - "Submit as Comment" → `COMMENT`
@@ -684,8 +680,6 @@ Call `submit-review.sh` with the review ID from the draft creation output:
 {"owner": "<owner>", "repo": "<repo>", "pr_number": <number>, "review_id": <review_id>, "event": "<EVENT>"}
 EOF
 ```
-
-**Display the result:**
 
 If successful:
 ```
@@ -703,27 +697,9 @@ If failed, show the error and tell the user they can submit manually on GitHub.
 Review kept as draft. Visit GitHub to review and submit:
 <review_url>
 ```
-
-### Review Metadata
-
-When saving the review file, include a metadata header at the top:
-
-```html
-<!-- review-metadata
-reviewed_at: <current ISO 8601 timestamp>
-mode: <mode>
-pr_number: <pr_number if applicable>
-org: <org>
-repo: <repo>
-review_commit: <pr.head_sha if PR mode, omit otherwise>
--->
-```
-
-This metadata is used by the learning system to determine when the review was created. The `review_commit` field records the PR's HEAD SHA at review time, enabling drift detection when creating draft reviews later.
-
 ### Cleanup Session
 
-After the review is complete, cleanup the session (replace `<SESSION_ID>` with the actual session ID):
+After the review is complete, clean up the session (replace `<SESSION_ID>` with the actual session ID):
 
 ```bash
 ~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
