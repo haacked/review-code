@@ -301,7 +301,32 @@ IMPORTANT: Build upon the previous review. Do not duplicate findings. You may:
 
 If `is_chunked` is true, process all chunks in parallel (all agents x all chunks dispatched at once):
 
-1. For each chunk in the `chunks` array, for each applicable agent:
+1. **Per-chunk analysis (chunked reviews only):**
+
+   Before dispatching review agents for chunks, run a quick analysis per chunk in parallel:
+
+   For each chunk in the `chunks` array, invoke the Task tool with subagent_type "Explore" (all chunks in parallel):
+
+   > Analyze this chunk of a larger PR to understand its purpose and architecture.
+   >
+   > **Chunk:** $chunk.id of $chunk_count: $chunk.label
+   > **Files:** $chunk.files
+   >
+   > **Diff for this chunk:**
+   > $chunk.diff
+   >
+   > $file_access_instructions
+   >
+   > Provide a brief (2-3 paragraph) summary covering:
+   > 1. What this chunk accomplishes and how it fits the PR's overall goal
+   > 2. Key architectural patterns, interfaces, and dependencies
+   > 3. Integration points with other chunks or system components
+   >
+   > Time-box to 1-2 minutes of exploration.
+
+   Save each chunk's analysis result as `$chunk_analyses[chunk.id]`.
+
+2. For each chunk in the `chunks` array, for each applicable agent:
    - Replace `$diff` in the agent context with the chunk's `diff` field (the subset of changes for this chunk)
    - Add a chunk context header to each agent prompt:
      ```
@@ -311,10 +336,15 @@ If `is_chunked` is true, process all chunks in parallel (all agents x all chunks
      Other chunks cover: (list labels of other chunks)
      If you notice issues that may interact with code in other chunks, flag them as questions.
      ```
+   - Add the per-chunk analysis to each agent prompt:
+     ```
+     **Chunk Analysis:**
+     $chunk_analyses[chunk.id]
+     ```
    - Keep all other context the same: full `file_metadata`, full `architectural_context`, full `review_context`, all PR metadata
    - Dispatch all (chunk x agent) combinations in parallel via the Task tool
 
-2. After all tasks complete, merge all findings into a single pool for synthesis.
+3. After all tasks complete, merge all findings into a single pool for synthesis.
 
 If `is_chunked` is false (or `chunk_metadata` is absent), behavior is identical to the non-chunked path above.
 
