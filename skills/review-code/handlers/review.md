@@ -442,6 +442,25 @@ Where `targets` contains `{"path": "<file>", "line": <number>}` objects, and `di
 
 **Step 3: Spot-check bug claims.** For any remaining finding that claims a bug or incorrect behavior, use the Read tool to verify the claim is accurate before including it.
 
+### Validate Blocking Findings
+
+Skip this step if there are no `blocking:` findings after position mapping, or if this is an area-specific review (single agent).
+
+For each `blocking:` finding that survived position mapping, resume the agent that produced it (using the agent ID from the Task tool) and ask:
+
+> "Verify your blocking finding at `<file>:<line>`: <brief description>. Read the actual file and confirm:
+> 1. The issue exists as described
+> 2. It will cause a real problem (not theoretical)
+> 3. Your suggested fix is correct
+>
+> Respond with CONFIRMED or DISMISSED with a brief explanation."
+
+Handle results:
+
+- **CONFIRMED**: Keep the finding as `blocking:`
+- **DISMISSED**: Downgrade to `suggestion:` with a note that it was reviewed and deemed non-critical
+- **Agent unreachable** (resume fails): Keep the finding as-is
+
 ### Compose the Review Document
 
 **Title by mode:**
