@@ -307,8 +307,9 @@ If `is_chunked` is true:
 
    For each chunk in the `chunks` array, invoke the Task tool with subagent_type "Explore" (all chunks in parallel):
 
-   > Analyze this chunk of a larger PR to understand its purpose and architecture.
+   > Analyze this chunk of a larger PR to understand its purpose and implementation details.
    >
+   > **PR:** #$pr_number - $pr_title
    > **Chunk:** $chunk.id of $chunk_count: $chunk.label
    > **Files:** $chunk.files
    >
@@ -317,10 +318,15 @@ If `is_chunked` is true:
    >
    > $file_access_instructions
    >
+   > **Context from full-diff analysis (already gathered):**
+   > $architectural_context
+   >
+   > Build on this context. Focus on chunk-specific details not covered above.
+   >
    > Provide a brief (2-3 paragraph) summary covering:
    > 1. What this chunk accomplishes and how it fits the PR's overall goal
-   > 2. Key architectural patterns, interfaces, and dependencies
-   > 3. Integration points with other chunks or system components
+   > 2. Chunk-specific implementation details: data flow, error handling, edge cases
+   > 3. Integration points with other system components
    >
    > Time-box to 1-2 minutes of exploration.
 
