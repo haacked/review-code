@@ -334,12 +334,6 @@ IMPORTANT: Build upon the previous review. Do not duplicate findings. You may:
 - Update status if code changed
 - Mark findings as resolved if fixed
 
-### Pre-Synthesis Scope Filtering
-
-Before synthesizing agent results, drop any finding that references a file not present in the diff. This catches agents flagging issues in unrelated files early, reducing noise before synthesis.
-
-Findings referencing files in the diff are kept regardless of line number. The more precise "Validate Findings Against the Diff" step handles line-level filtering later via the position mapper and agent resume.
-
 ### Collect and Synthesize Results
 **Chunked review dispatch:**
 
@@ -403,7 +397,9 @@ If `is_chunked` is true:
 
 If `is_chunked` is false (or `chunk_metadata` is absent), behavior is identical to the non-chunked path above.
 
-After all agents complete, synthesize their findings using extended thinking into a coherent, deduplicated review document. Apply confidence-based filtering and cross-agent corroboration before producing the final output.
+**Pre-synthesis scope filtering:** After all agents complete, drop any finding that references a file not present in the diff. This catches agents flagging issues in unrelated files early, reducing noise before synthesis. Keep findings referencing files in the diff regardless of line number; the "Validate Findings Against the Diff" step handles line-level filtering later.
+
+Synthesize the remaining findings using extended thinking into a coherent, deduplicated review document. Apply confidence-based filtering and cross-agent corroboration before producing the final output.
 **Cross-agent corroboration:** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function.
 
 **Filtering rules:**
