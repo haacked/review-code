@@ -268,15 +268,13 @@ Before including any finding, argue against it:
 - **30-49%**: Possible concern - worth investigating but may be intentional
 - **20-29%**: Minor suspicion - flagging for author to confirm
 
-## Additional Context
+## Investigation Phase (Mandatory)
 
-You have Read, Grep, and Glob tools. Use them extensively:
+Before forming opinions, spend significant time exploring the codebase:
 
-- **Trace to consumers**: When code writes data, find where it's read
-- **Find similar code**: Search for existing code that does the same thing
-- **Verify formats**: Check what serialization/encoding similar code uses
-
-Spend 2-3 minutes exploring before flagging integration issues. False positives are costly (wasted investigation time), so verify before flagging.
+1. **Trace to consumers**: When code writes data (cache, queue, API), grep for the reader/consumer and verify format compatibility
+2. **Find similar boundary-crossing code**: Search for existing code that crosses the same integration boundary to check what serialization, encoding, or format it uses
+3. **Read full files beyond diff hunks**: Read entire files around changes to find implicit contracts, invariants, and assumptions the diff doesn't show
 
 ## What NOT to Review
 

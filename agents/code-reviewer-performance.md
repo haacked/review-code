@@ -129,9 +129,16 @@ Impact: 10k items → ~5000ms; Set-based approach → ~5ms
 Fix: Replace nested loop with Set for O(n) lookup
 ```
 
-## Using Your Tools
+## Investigation Phase (Mandatory)
 
-You have Read, Grep, and Glob tools. Use them to search for similar queries and loops to identify systemic patterns, and to check schemas for indexes. Spend up to 1-2 minutes on exploration before flagging issues.
+Before forming opinions, spend significant time exploring the codebase:
+
+1. **Find hot paths and call frequency**: Grep for callers of modified functions to understand how often they execute and whether they're in request paths or background jobs
+2. **Check data scale**: Look for model counts, pagination limits, or batch sizes to estimate realistic N values before claiming O(n²) impact
+3. **Search for systemic patterns**: Grep for similar query or loop patterns across the codebase to identify whether an issue is isolated or widespread
+4. **Verify indexes and schema**: Read migration files and schema definitions to confirm whether indexes exist before flagging missing-index issues
+
+Findings without evidence of realistic scale impact should be dropped.
 
 Profiling tools to recommend when relevant:
 

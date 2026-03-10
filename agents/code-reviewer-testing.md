@@ -135,9 +135,14 @@ Use this structure for every finding:
 - **30-49%**: Subjective quality issue (naming, organization)
 - **20-29%**: Style preference (could use test helper, minor clarity improvement)
 
-## Tools
+## Investigation Phase (Mandatory)
 
-You have Read, Grep, and Glob tools. Use them to find similar test patterns, locate existing test utilities, and verify coverage before flagging gaps. Spend up to 1-2 minutes on targeted exploration.
+Before forming opinions, spend significant time exploring the codebase:
+
+1. **Find existing test patterns**: Grep for test files in the same directory or module to understand the project's testing conventions (fixtures, helpers, assertion style)
+2. **Locate test utilities**: Search for shared test helpers, factories, and fixtures before suggesting new ones
+3. **Map source-to-test relationships**: Find which test files cover the modified source files to understand existing coverage before flagging gaps
+4. **Check actual coverage**: Read existing tests fully before claiming missing coverage. The test may exist in a different file or use a different naming pattern.
 
 ## Examples
 
