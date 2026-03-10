@@ -373,19 +373,19 @@ build_review_data() {
         fi
     fi
 
-    # Build chunk JSON for inclusion in output (null if not chunked or chunking failed).
-    # Write chunks to a temp file and use --slurpfile to avoid ARG_MAX limits,
-    # since chunk data can be as large as the original diff (400KB+).
+    # Write large JSON variables to temp files and use --slurpfile to avoid
+    # ARG_MAX limits. PR context embeds the diff (~1MB+), and chunk data can
+    # be as large as the original diff (400KB+). On macOS, ARG_MAX is 1MB.
     local chunk_meta_json="null"
-    local chunk_json_tmpfile
-    _ORCH_CHUNK_JSON_TMPFILE=$(mktemp)
-    chunk_json_tmpfile="${_ORCH_CHUNK_JSON_TMPFILE}"
-    trap 'rm -f "${_ORCH_DIFF_TMPFILE}" "${_ORCH_CHUNK_JSON_TMPFILE}"' EXIT
-    echo "null" > "${chunk_json_tmpfile}"
+    _ORCH_LARGE_ARGS_TMPDIR=$(mktemp -d)
+    local large_args_tmpdir="${_ORCH_LARGE_ARGS_TMPDIR}"
+    trap 'rm -f "${_ORCH_DIFF_TMPFILE}"; rm -rf "${_ORCH_LARGE_ARGS_TMPDIR}"' EXIT
+    echo "null" > "${large_args_tmpdir}/chunks.json"
     if [[ -n "${chunk_result}" ]] && echo "${chunk_result}" | jq -e '.chunked == true' > /dev/null 2>&1; then
-        echo "${chunk_result}" | jq '.chunks' > "${chunk_json_tmpfile}"
+        echo "${chunk_result}" | jq '.chunks' > "${large_args_tmpdir}/chunks.json"
         chunk_meta_json=$(echo "${chunk_result}" | jq '{chunked: .chunked, reason: .reason, chunk_count: .chunk_count}')
     fi
+    printf '%s' "${pr_json}" > "${large_args_tmpdir}/pr.json"
 
     local -a jq_args=(
         -n
@@ -398,10 +398,10 @@ build_review_data() {
         --arg context "${review_context}"
         --argjson summary "${summary}"
         --arg display "${display_summary}"
-        --argjson pr "${pr_json}"
+        --slurpfile pr "${large_args_tmpdir}/pr.json"
         --arg reviewer_username "${reviewer_username}"
         --arg is_own_pr "${is_own_pr}"
-        --slurpfile chunks "${chunk_json_tmpfile}"
+        --slurpfile chunks "${large_args_tmpdir}/chunks.json"
         --argjson chunk_metadata "${chunk_meta_json}"
     )
 
@@ -431,7 +431,7 @@ build_review_data() {
         + (if $force_mode == "true" then {force: true} else {} end)
         + (if $draft_mode == "true" then {draft: true} else {} end)
         + (if $self_mode == "true" then {self: true} else {} end)
-        + (if $pr != null then {pr: $pr, reviewer_username: $reviewer_username, is_own_pr: ($is_own_pr == "true")} else {} end)
+        + (if $pr[0] != null then {pr: $pr[0], reviewer_username: $reviewer_username, is_own_pr: ($is_own_pr == "true")} else {} end)
         + (if $chunks[0] != null then {chunks: $chunks[0], chunk_metadata: $chunk_metadata} else {} end)
         + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")) | with_entries(select(.value != "")))')
     debug_save_json "07-final-output" "output.json" <<< "${final_output}"

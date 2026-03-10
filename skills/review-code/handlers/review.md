@@ -297,7 +297,6 @@ IMPORTANT: Build upon the previous review. Do not duplicate findings. You may:
 - Mark findings as resolved if fixed
 
 ### Collect and Synthesize Results
-
 **Chunked review dispatch:**
 
 If `is_chunked` is true, process all chunks in parallel (all agents x all chunks dispatched at once):
