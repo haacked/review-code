@@ -440,26 +440,12 @@ Where `targets` contains `{"path": "<file>", "line": <number>}` objects, and `di
   3. Include only if the agent confirms relevance and provides justification.
 - **Error: `"file not in diff"`**: Drop the finding. The file was not part of the changes.
 
-**Step 3: Spot-check bug claims.** For any remaining non-blocking finding that claims a bug or incorrect behavior, use the Read tool to verify the claim is accurate before including it. (Blocking findings are validated more thoroughly in the next section.)
+**Step 3: Verify factual claims.** For any remaining finding that claims a bug or incorrect behavior:
 
-### Validate Blocking Findings
+- **If `blocking:` (and not an area-specific review)**: Resume the originating agent (using the agent ID from the Task tool) and ask it to re-read the file and confirm the issue is real, not theoretical, and that the suggested fix is correct. Include `$file_access_instructions` in the resume prompt so the agent reads the correct file version. If the agent responds DISMISSED, downgrade to `suggestion:`. If the agent is unreachable, keep as-is.
+- **Otherwise**: Use the Read tool to verify the claim is accurate before including it.
 
-Skip this step if there are no `blocking:` findings after the validation steps above, or if this is an area-specific review (single agent).
-
-For each `blocking:` finding that survived validation, resume the agent that produced it (using the agent ID from the Task tool) and ask:
-
-> "Verify your blocking finding at `<file>:<line>`: <brief description>. Read the actual file and confirm:
-> 1. The issue exists as described
-> 2. It will cause a real problem (not theoretical)
-> 3. Your suggested fix is correct
->
-> Respond with CONFIRMED or DISMISSED with a brief explanation."
-
-Handle results:
-
-- **CONFIRMED**: Keep the finding as `blocking:`
-- **DISMISSED**: Downgrade to `suggestion:` with a note that it was reviewed and deemed non-critical
-- **Agent unreachable** (resume fails): Keep the finding as-is
+Skip blocking validation for area-specific reviews (single agent), since the originating agent is the only agent and re-asking it provides no independent verification.
 
 ### Compose the Review Document
 
