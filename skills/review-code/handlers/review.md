@@ -299,9 +299,9 @@ IMPORTANT: Build upon the previous review. Do not duplicate findings. You may:
 ### Collect and Synthesize Results
 **Chunked review dispatch:**
 
-If `is_chunked` is true, process all chunks in parallel (all agents x all chunks dispatched at once):
+If `is_chunked` is true:
 
-1. **Per-chunk analysis (chunked reviews only):**
+1. **Per-chunk analysis:**
 
    Before dispatching review agents for chunks, run a quick analysis per chunk in parallel:
 
