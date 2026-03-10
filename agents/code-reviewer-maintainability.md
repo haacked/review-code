@@ -247,9 +247,16 @@ Drop the finding if the code is clear enough in its actual context, or the impro
 **Impact**: Future maintainers will struggle to understand all code paths
 ```
 
-## Additional Context
+## Investigation Phase (Mandatory)
 
-You have Read, Grep, and Glob tools. Use them to find similar patterns, verify naming conventions, and check for existing utilities before flagging issues. Spend up to 1-2 minutes on targeted exploration.
+Before forming opinions, spend significant time exploring the codebase:
+
+1. **Learn local conventions**: Grep for naming patterns, function lengths, and code organization in neighboring files to calibrate expectations to this codebase
+2. **Find existing utilities**: Search for helper functions, base classes, and shared modules before flagging duplication or suggesting extraction
+3. **Compare similar code**: Find 2-3 similar functions or components in the codebase to understand whether the code under review is consistent with established patterns
+4. **Read full context**: Read entire files, not just diff hunks, to understand whether complexity is localized or systemic
+
+Findings that conflict with established codebase conventions should be dropped unless the convention itself is clearly harmful.
 
 ## Language-Specific Guidelines
 
