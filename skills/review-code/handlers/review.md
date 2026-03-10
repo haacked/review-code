@@ -334,6 +334,12 @@ IMPORTANT: Build upon the previous review. Do not duplicate findings. You may:
 - Update status if code changed
 - Mark findings as resolved if fixed
 
+### Pre-Synthesis Scope Filtering
+
+Before synthesizing agent results, drop any finding that references a file not present in the diff. This catches agents flagging issues in unrelated files early, reducing noise before synthesis.
+
+Findings referencing files in the diff are kept regardless of line number. The more precise "Validate Findings Against the Diff" step handles line-level filtering later via the position mapper and agent resume.
+
 ### Collect and Synthesize Results
 **Chunked review dispatch:**
 
