@@ -313,6 +313,9 @@ If `is_chunked` is true:
    > **Chunk:** $chunk.id of $chunk_count: $chunk.label
    > **Files:** $chunk.files
    >
+   > **File Metadata:**
+   > $file_metadata
+   >
    > **Diff for this chunk:**
    > $chunk.diff
    >
