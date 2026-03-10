@@ -307,35 +307,37 @@ If `is_chunked` is true:
 
    For each chunk in the `chunks` array, invoke the Task tool with subagent_type "Explore" (all chunks in parallel):
 
-   > Analyze this chunk of a larger PR to understand its purpose and implementation details.
-   >
-   > **PR:** #$pr_number - $pr_title
-   > **Chunk:** $chunk.id of $chunk_count: $chunk.label
-   > **Files:** $chunk.files
-   >
-   > **File Metadata:**
-   > $file_metadata
-   >
-   > **Diff for this chunk:**
-   > $chunk.diff
-   >
-   > $file_access_instructions
-   >
-   > **Context from full-diff analysis (already gathered):**
-   > $architectural_context
-   >
-   > Build on this context. Focus on chunk-specific details not covered above.
-   >
-   > Provide a brief (2-3 paragraph) summary covering:
-   > 1. What this chunk accomplishes and how it fits the PR's overall goal
-   > 2. Chunk-specific implementation details: data flow, error handling, edge cases
-   > 3. Integration points with other system components
-   >
-   > Time-box to 1-2 minutes of exploration.
+   ```markdown
+   Analyze this chunk of a larger PR to understand its purpose and implementation details.
+
+   **PR:** #$pr_number - $pr_title
+   **Chunk:** $chunk.id of $chunk_count: $chunk.label
+   **Files:** $chunk.files
+
+   **File Metadata:**
+   $file_metadata
+
+   **Diff for this chunk:**
+   $chunk.diff
+
+   $file_access_instructions
+
+   **Context from full-diff analysis (already gathered):**
+   $architectural_context
+
+   Build on this context. Focus on chunk-specific details not covered above.
+
+   Provide a brief (2-3 paragraph) summary covering:
+   1. What this chunk accomplishes and how it fits the PR's overall goal
+   2. Chunk-specific implementation details: data flow, error handling, edge cases
+   3. Integration points with other system components
+
+   Time-box to 1-2 minutes of exploration.
+   ```
 
    Save each chunk's analysis result as `$chunk_analyses[chunk.id]`.
 
-2. For each chunk in the `chunks` array, for each applicable agent:
+2. After all per-chunk analyses complete, for each chunk in the `chunks` array, for each applicable agent:
    - Replace `$diff` in the agent context with the chunk's `diff` field (the subset of changes for this chunk)
    - Add a chunk context header to each agent prompt:
      ```
