@@ -335,7 +335,7 @@ If `is_chunked` is true:
    Time-box to 1-2 minutes of exploration.
    ```
 
-   Save each chunk's analysis result as `$chunk_analyses[chunk.id]`.
+   Save each chunk's analysis result as `$chunk_analyses[$chunk.id]`.
 
 2. After all per-chunk analyses complete, for each chunk in the `chunks` array, for each applicable agent:
    - Replace `$diff` in the agent context with the chunk's `diff` field (the subset of changes for this chunk)
@@ -350,7 +350,7 @@ If `is_chunked` is true:
    - Add the per-chunk analysis to each agent prompt:
      ```
      **Chunk Analysis:**
-     $chunk_analyses[chunk.id]
+     $chunk_analyses[$chunk.id]
      ```
    - Keep all other context the same: full `file_metadata`, full `architectural_context`, full `review_context`, all PR metadata
    - Dispatch all (chunk x agent) combinations in parallel via the Task tool
