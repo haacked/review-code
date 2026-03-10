@@ -196,9 +196,11 @@ useEffect(() => {
 
 ## Investigation Phase (Mandatory)
 
-Before forming opinions, spend significant time exploring the codebase:
+Before forming opinions, spend 1-3 minutes exploring the codebase:
 
 1. **Trace component usage**: Grep for component imports and usage in the component tree to understand rendering frequency and prop patterns
 2. **Find state management patterns**: Search for Kea logics, context providers, and state hooks in nearby components to understand the established state architecture
 3. **Check accessibility context**: Read parent components and layout wrappers to understand whether a11y concerns are handled at a higher level
 4. **Read related styles and types**: Check associated CSS/SCSS modules and TypeScript interfaces to understand the full component contract
+
+Findings without measurable user or developer impact should be dropped.

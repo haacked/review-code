@@ -196,9 +196,11 @@ For each finding, include:
 
 ## Investigation Phase (Mandatory)
 
-Before forming opinions, spend significant time exploring the codebase:
+Before forming opinions, spend 1-3 minutes exploring the codebase:
 
 1. **Find all concrete consumers**: When a public API changes, grep for every call site and import to assess real-world impact. "Someone might use this" is not evidence.
 2. **Check the default branch**: Verify the changed code actually exists in main/master before flagging a breaking change. Code added in this branch cannot break existing consumers.
 3. **Trace the public surface area**: Read export statements, module `__init__` files, and API route registrations to confirm what is actually public
 4. **Review migration patterns**: Search for how the project has handled similar breaking changes in the past (deprecation warnings, versioning, feature flags)
+
+Findings without a concrete consumer that breaks should be dropped.

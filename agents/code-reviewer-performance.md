@@ -131,7 +131,7 @@ Fix: Replace nested loop with Set for O(n) lookup
 
 ## Investigation Phase (Mandatory)
 
-Before forming opinions, spend significant time exploring the codebase:
+Before forming opinions, spend 1-3 minutes exploring the codebase:
 
 1. **Find hot paths and call frequency**: Grep for callers of modified functions to understand how often they execute and whether they're in request paths or background jobs
 2. **Check data scale**: Look for model counts, pagination limits, or batch sizes to estimate realistic N values before claiming O(n²) impact

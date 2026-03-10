@@ -249,7 +249,7 @@ Drop the finding if the code is clear enough in its actual context, or the impro
 
 ## Investigation Phase (Mandatory)
 
-Before forming opinions, spend significant time exploring the codebase:
+Before forming opinions, spend 1-3 minutes exploring the codebase:
 
 1. **Learn local conventions**: Grep for naming patterns, function lengths, and code organization in neighboring files to calibrate expectations to this codebase
 2. **Find existing utilities**: Search for helper functions, base classes, and shared modules before flagging duplication or suggesting extraction

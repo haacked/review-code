@@ -186,11 +186,9 @@ Location: file:lines
 
 ## Investigation Phase (Mandatory)
 
-Before forming opinions, spend significant time exploring the codebase:
+Before forming opinions, spend 1-3 minutes exploring the codebase:
 
 1. **Find 3 similar implementations**: Grep for similar features, services, or components to understand established patterns before suggesting alternatives
 2. **Check for existing solutions**: Search for utilities, helpers, and libraries already in the project that might solve the same problem
 3. **Map the dependency graph**: Read imports and module boundaries to understand how the new code fits into the existing architecture
 4. **Read full context**: Read entire files and neighboring modules, not just the diff, to understand the architectural landscape
-
-Never flag a pattern violation without verifying what the actual established pattern is.

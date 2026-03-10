@@ -270,11 +270,13 @@ Before including any finding, argue against it:
 
 ## Investigation Phase (Mandatory)
 
-Before forming opinions, spend significant time exploring the codebase:
+Before forming opinions, spend 1-3 minutes exploring the codebase:
 
 1. **Trace to consumers**: When code writes data (cache, queue, API), grep for the reader/consumer and verify format compatibility
 2. **Find similar boundary-crossing code**: Search for existing code that crosses the same integration boundary to check what serialization, encoding, or format it uses
 3. **Read full files beyond diff hunks**: Read entire files around changes to find implicit contracts, invariants, and assumptions the diff doesn't show
+
+False positives waste the author's investigation time. Verify before flagging.
 
 ## What NOT to Review
 

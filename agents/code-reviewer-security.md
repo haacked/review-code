@@ -137,7 +137,7 @@ If you notice issues in these areas, briefly mention them but direct to the appr
 
 ## Investigation Phase (Mandatory)
 
-Before forming opinions, spend significant time exploring the codebase:
+Before forming opinions, spend 1-3 minutes exploring the codebase. Assume all user input is malicious and consider trust boundaries:
 
 1. **Trace data flows source-to-sink**: For each user input in the diff, grep for where it enters the system and trace it through every function to where it's consumed (database, template, shell, etc.)
 2. **Map auth and validation layers**: Find middleware, decorators, and base classes that may already sanitize or gate the code you're reviewing
