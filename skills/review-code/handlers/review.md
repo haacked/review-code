@@ -397,7 +397,10 @@ If `is_chunked` is true:
 
 If `is_chunked` is false (or `chunk_metadata` is absent), behavior is identical to the non-chunked path above.
 
-After all agents complete, synthesize their findings using extended thinking into a coherent, deduplicated review document. Apply confidence-based filtering and cross-agent corroboration before producing the final output.
+**Pre-synthesis scope filtering:** After all agents complete, drop any finding that references a file not present in the diff. Findings that don't reference a specific file (e.g., general architectural observations) pass through. This catches agents flagging issues in unrelated files early, reducing noise before synthesis. Keep findings referencing files in the diff regardless of line number; the "Validate Findings Against the Diff" step handles line-level filtering later.
+
+Synthesize the remaining findings using extended thinking into a coherent, deduplicated review document. Apply confidence-based filtering and cross-agent corroboration before producing the final output.
+
 **Cross-agent corroboration:** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function.
 
 **Filtering rules:**
@@ -438,7 +441,7 @@ Where `targets` contains `{"path": "<file>", "line": <number>}` objects, and `di
   1. Resume the agent that produced this finding (using the agent ID from the Task tool).
   2. Ask: "Your finding at `<file>:<line>` references a line outside the changed hunks in the diff. Is this finding still relevant to the changes (e.g., the issue interacts with the changed code), or should it be dropped?"
   3. Include only if the agent confirms relevance and provides justification.
-- **Error: `"file not in diff"`**: Drop the finding. The file was not part of the changes.
+- **Error: `"file not in diff"`**: Drop the finding. The file was not part of the changes. (The pre-synthesis scope filter above should have already caught these; this serves as a safety net.)
 
 **Step 3: Spot-check bug claims.** For any remaining finding that claims a bug or incorrect behavior, use the Read tool to verify the claim is accurate before including it.
 
