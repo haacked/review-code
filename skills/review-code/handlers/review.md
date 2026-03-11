@@ -70,6 +70,44 @@ From the session file JSON, extract these fields for building agent context:
 - `file_ref`: (optional) git ref for reading PR files when on a different branch
 - `chunks`: (optional) array of chunk objects when the diff was split
 - `chunk_metadata`: (optional) object with `chunked`, `reason`, `chunk_count`
+- `debug_session_dir`: (optional) path to debug session directory when debug mode is enabled
+
+### Debug Mode Setup
+
+Extract `debug_session_dir` from the session JSON. If it is a non-empty string, debug mode is active for this review. Store it as `$debug_session_dir`.
+
+When `$debug_session_dir` is set, write debug artifacts at key stages by calling the bridge script. Each write is a single Bash call. Debug writes must never block or fail the review: if a write fails, ignore the error and continue.
+
+**Helper pattern for debug writes:**
+
+To save content:
+```bash
+echo '{"action":"save","debug_dir":"$debug_session_dir","stage":"<stage>","filename":"<name>","content":"<text>"}' | ~/.claude/skills/review-code/scripts/debug-artifact-writer.sh
+```
+
+To record timing:
+```bash
+echo '{"action":"time","debug_dir":"$debug_session_dir","stage":"<stage>","event":"start"}' | ~/.claude/skills/review-code/scripts/debug-artifact-writer.sh
+```
+
+To write stats:
+```bash
+echo '{"action":"stats","debug_dir":"$debug_session_dir","stage":"<stage>","data":{"key":"value"}}' | ~/.claude/skills/review-code/scripts/debug-artifact-writer.sh
+```
+
+For content with special characters (quotes, newlines), use jq to build the JSON safely:
+```bash
+jq -n --arg dir "$debug_session_dir" --arg content "$variable_with_content" \
+  '{"action":"save","debug_dir":$dir,"stage":"08-context-explorer","filename":"result.md","content":$content}' \
+  | ~/.claude/skills/review-code/scripts/debug-artifact-writer.sh
+```
+
+**Stages to instrument (when `$debug_session_dir` is set):**
+
+- **08-context-explorer**: Record timing (start/end). Save the explorer prompt as `prompt.md` and the result (`$architectural_context`) as `result.md`.
+- **09-per-chunk-analysis** (chunked reviews only): Record timing (start/end). For each chunk, save the prompt as `chunk-{id}-prompt.md` and result as `chunk-{id}-result.md`.
+- **10-agent-dispatch**: Record timing (start/end). For each agent (or chunk x agent combination), save the prompt as `{agent}-prompt.md` (or `chunk-{id}-{agent}-prompt.md`) and result as `{agent}-result.md` (or `chunk-{id}-{agent}-result.md`). Save stats with agent count.
+- **11-synthesis**: Record timing (start/end). Save the merged findings as `merged-findings.md` and corroboration results as `corroboration.md`.
 
 **Check for chunked diff:**
 

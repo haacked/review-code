@@ -69,6 +69,10 @@ When DEBUG mode is enabled, review-code creates a session directory containing:
     ├── 03-language-detection/    # Language/framework detection
     ├── 04-context-loading/       # Context files loaded
     ├── 07-final-output/          # Final JSON output to Claude
+    ├── 08-context-explorer/      # Architectural context exploration (Claude-side)
+    ├── 09-per-chunk-analysis/    # Per-chunk analysis (Claude-side, chunked only)
+    ├── 10-agent-dispatch/        # Review agent prompts and results (Claude-side)
+    ├── 11-synthesis/             # Finding merge and corroboration (Claude-side)
     ├── timing.ndjson             # Timing data for each stage
     └── README.md                 # Human-readable summary
 ```
@@ -272,7 +276,8 @@ All functions are no-ops when `REVIEW_CODE_DEBUG` is not set to `1`.
 
 Currently integrated into:
 
-- ✅ `lib/review-orchestrator.sh` - Main orchestration, timing, final output
+- ✅ `lib/review-orchestrator.sh` - Main orchestration, timing, final output (stages 00-07)
+- ✅ `handlers/review.md` - Claude-side stages via `debug-artifact-writer.sh` (stages 08-11)
 - ✅ Core helper functions tested
 - 🔄 Diff pipeline (future: detailed before/after diffs)
 - 🔄 Context loading (future: which files loaded)

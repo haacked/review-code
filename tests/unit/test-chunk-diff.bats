@@ -349,6 +349,99 @@ index abc..def 100644
     echo "$output" | jq -e '.chunks | all(.label | contains("files"))'
 }
 
+@test "chunk-diff: dominant directory (>= 70%) gets single-dir label" {
+    # Create 20 files: 8 aaa/ + 2 bbb/ + 10 zzz/
+    # Chunk 1 (sorted): aaa/* (8) + bbb/* (2) = 80% aaa → single label
+    local diff=""
+    for i in $(seq 1 8); do
+        diff="${diff}diff --git a/aaa/f${i}.py b/aaa/f${i}.py
+index abc..def 100644
+--- a/aaa/f${i}.py
++++ b/aaa/f${i}.py
+@@ -1,3 +1,4 @@
++line ${i}
+"
+    done
+    for i in $(seq 1 2); do
+        diff="${diff}diff --git a/bbb/f${i}.py b/bbb/f${i}.py
+index abc..def 100644
+--- a/bbb/f${i}.py
++++ b/bbb/f${i}.py
+@@ -1,3 +1,4 @@
++line ${i}
+"
+    done
+    for i in $(seq 1 10); do
+        diff="${diff}diff --git a/zzz/f${i}.py b/zzz/f${i}.py
+index abc..def 100644
+--- a/zzz/f${i}.py
++++ b/zzz/f${i}.py
+@@ -1,3 +1,4 @@
++line ${i}
+"
+    done
+
+    local input
+    input=$(jq -n --arg diff "$diff" \
+        '{"diff": $diff, "config": {"min_chunk_threshold_files": 5, "min_chunk_threshold_kb": 0, "max_files_per_chunk": 10}}')
+
+    run bash -c "printf '%s' '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.chunked == true'
+
+    # The chunk containing aaa/ files should have a single-dir label (no " + ")
+    local aaa_label
+    aaa_label=$(echo "$output" | jq -r '[.chunks[] | select(.files | any(startswith("aaa/")))] | .[0].label')
+    [[ "$aaa_label" == aaa\ * ]]
+    [[ "$aaa_label" != *" + "* ]]
+}
+
+@test "chunk-diff: mixed directory (< 70%) gets dual-dir label" {
+    # Create 20 files: 5 aaa/ + 5 bbb/ + 10 zzz/
+    # Chunk 1 (sorted): aaa/* (5) + bbb/* (5) = 50% each → dual label
+    local diff=""
+    for i in $(seq 1 5); do
+        diff="${diff}diff --git a/aaa/f${i}.py b/aaa/f${i}.py
+index abc..def 100644
+--- a/aaa/f${i}.py
++++ b/aaa/f${i}.py
+@@ -1,3 +1,4 @@
++line ${i}
+"
+    done
+    for i in $(seq 1 5); do
+        diff="${diff}diff --git a/bbb/f${i}.py b/bbb/f${i}.py
+index abc..def 100644
+--- a/bbb/f${i}.py
++++ b/bbb/f${i}.py
+@@ -1,3 +1,4 @@
++line ${i}
+"
+    done
+    for i in $(seq 1 10); do
+        diff="${diff}diff --git a/zzz/f${i}.py b/zzz/f${i}.py
+index abc..def 100644
+--- a/zzz/f${i}.py
++++ b/zzz/f${i}.py
+@@ -1,3 +1,4 @@
++line ${i}
+"
+    done
+
+    local input
+    input=$(jq -n --arg diff "$diff" \
+        '{"diff": $diff, "config": {"min_chunk_threshold_files": 5, "min_chunk_threshold_kb": 0, "max_files_per_chunk": 10}}')
+
+    run bash -c "printf '%s' '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.chunked == true'
+
+    # The chunk containing both aaa/ and bbb/ should have a dual-dir label with " + "
+    local mixed_label
+    mixed_label=$(echo "$output" | jq -r '[.chunks[] | select(.files | any(startswith("aaa/")))] | .[0].label')
+    [[ "$mixed_label" == *" + "* ]]
+}
+
 # =============================================================================
 # Reason string tests
 # =============================================================================
