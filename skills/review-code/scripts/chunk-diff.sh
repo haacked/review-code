@@ -321,12 +321,20 @@ main() {
                     # Calculate chunk size
                     ($chunk_diff | length / 1024 | floor) as $size_kb |
 
-                    # Generate label from most common top-level directory
-                    ([$chunk.files[] | split("/")[0]] | group_by(.) | sort_by(-length) | .[0][0] // "root") as $top_dir |
+                    # Generate label from top-level directory distribution
+                    # If top dir covers >= 70% of files, use single label; otherwise show top 2
+                    ([$chunk.files[] | split("/")[0]] | group_by(.) | sort_by(-length)) as $dir_groups |
+                    ($chunk.files | length) as $total_files |
+                    ($dir_groups[0] | length) as $top_count |
+                    (if ($top_count * 10 >= $total_files * 7) then
+                        ($dir_groups[0][0] // "root")
+                    else
+                        ($dir_groups[0][0] // "root") + " + " + ($dir_groups[1][0] // "other")
+                    end) as $label_prefix |
 
                     {
                         "id": ($idx + 1),
-                        "label": ($top_dir + " (" + ($chunk.files | length | tostring) + " files)"),
+                        "label": ($label_prefix + " (" + ($chunk.files | length | tostring) + " files)"),
                         "files": $chunk.files,
                         "diff": $chunk_diff,
                         "size_kb": $size_kb

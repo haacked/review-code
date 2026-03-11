@@ -408,10 +408,11 @@ build_review_data() {
     # Add mode-specific arguments
     jq_args+=("$@")
 
-    # Add force_mode, draft_mode, and self_mode to jq args
+    # Add force_mode, draft_mode, self_mode, and debug_session_dir to jq args
     jq_args+=(--arg force_mode "${force_mode}")
     jq_args+=(--arg draft_mode "${draft_mode}")
     jq_args+=(--arg self_mode "${self_mode}")
+    jq_args+=(--arg debug_session_dir "${DEBUG_SESSION_DIR:-}")
 
     # Single jq invocation with conditional pr field and chunk data
     final_output=$(jq "${jq_args[@]}" \
@@ -433,6 +434,7 @@ build_review_data() {
         + (if $self_mode == "true" then {self: true} else {} end)
         + (if $pr[0] != null then {pr: $pr[0], reviewer_username: $reviewer_username, is_own_pr: ($is_own_pr == "true")} else {} end)
         + (if $chunks[0] != null then {chunks: $chunks[0], chunk_metadata: $chunk_metadata} else {} end)
+        + (if $debug_session_dir != "" then {debug_session_dir: $debug_session_dir} else {} end)
         + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")) | with_entries(select(.value != "")))')
     debug_save_json "07-final-output" "output.json" <<< "${final_output}"
     debug_time "07-final-output" "end"
