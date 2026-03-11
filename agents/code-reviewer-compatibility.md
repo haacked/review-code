@@ -194,6 +194,13 @@ For each finding, include:
 **Fix**: Deprecate with a warning and delegate to the new implementation
 ```
 
-## Tools
+## Investigation Phase (Mandatory)
 
-You have Read, Grep, and Glob tools. When a signature changes, grep for call sites to assess real-world impact. Spend up to two minutes on exploration before writing your report.
+Before forming opinions, spend 1-3 minutes exploring the codebase:
+
+1. **Find all concrete consumers**: When a public API changes, grep for every call site and import to assess real-world impact. "Someone might use this" is not evidence.
+2. **Check the default branch**: Verify the changed code actually exists in main/master before flagging a breaking change. Code added in this branch cannot break existing consumers.
+3. **Trace the public surface area**: Read export statements, module `__init__` files, and API route registrations to confirm what is actually public
+4. **Review migration patterns**: Search for how the project has handled similar breaking changes in the past (deprecation warnings, versioning, feature flags)
+
+Findings without a concrete consumer that breaks should be dropped.
