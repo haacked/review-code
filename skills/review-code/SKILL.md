@@ -55,6 +55,8 @@ Examples:
 - `/review-code feature-branch "*.py"` - Review only Python files in branch
 - `/review-code 123 "src/**/*.ts"` - Review only TypeScript files in PR #123
 
+**Post-review learning:** After completing a PR review, you may be prompted to analyze recently merged PRs that have unanalyzed reviews. This improves future review quality by learning from outcomes. You can also run `/review-code learn` manually.
+
 **Usage examples:**
 
 - `/review-code` - Comprehensive review of local uncommitted changes (default)

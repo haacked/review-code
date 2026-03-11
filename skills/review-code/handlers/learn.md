@@ -52,6 +52,29 @@ Also extract `learn_data` from `LEARN_RESULT` for use in later steps.
 
 **Step 2: Process prompts for uncertain items**
 
+**Quick mode (when invoked from post-review prompt):**
+
+If this learn flow was triggered from the post-review learning opportunity (not from a direct `/review-code learn` invocation), use auto-categorization instead of interactive prompts:
+
+- Unaddressed findings with confidence < 85% → record as "low priority" (type: "deferred", user_feedback: "auto: low priority")
+- Unaddressed findings with confidence >= 85% → record as "deferred" (type: "deferred", user_feedback: "auto: high confidence deferred")
+- Missed findings where the file was modified after review → record as "add to patterns" (type: "missed_pattern", user_feedback: "auto: file was modified")
+- All other missed findings → skip
+
+Display a summary table instead of individual prompts:
+```
+Auto-categorized N findings:
+- X low priority (confidence < 85%)
+- Y deferred (confidence >= 85%)
+- Z patterns to learn from
+
+Use '/review-code learn <pr>' for interactive categorization.
+```
+
+Then proceed to Step 3 to record learnings and Step 4 to mark as analyzed.
+
+**Interactive mode (default):**
+
 For each item in `prompts_needed`, ask the user:
 
 For **"unaddressed" findings** (Claude found, file not modified after review):
