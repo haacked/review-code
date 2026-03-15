@@ -186,7 +186,7 @@ Invoke the appropriate agent(s) based on mode and area. If an area is specified,
 | maintainability | code-reviewer-maintainability | Readability, simplicity, long-term code health |
 | testing | code-reviewer-testing | Test coverage, quality, edge cases |
 | compatibility | code-reviewer-compatibility | Backwards compatibility with shipped code |
-| architecture | code-reviewer-architecture | Necessity, patterns, code reuse, simplicity |
+| architecture | code-reviewer-architecture | Necessity, patterns, code reuse, simplicity, solution proportionality |
 | *(frontend detected)* | code-reviewer-frontend | React/TS patterns, components, state, a11y |
 
 **Build the context to pass to each agent:**
