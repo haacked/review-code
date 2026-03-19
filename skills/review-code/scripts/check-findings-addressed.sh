@@ -52,7 +52,16 @@ parse_diff() {
     }
 
     /^@@/ {
+        # Parse both sides: @@ -oldStart,oldCount +newStart,newCount @@
         s = $0
+        # Old side
+        idx = index(s, "-")
+        if (idx > 0) {
+            rest = substr(s, idx + 1)
+            old_line = rest + 0
+            if (old_line < 1) old_line = 1
+        }
+        # New side
         idx = index(s, "+")
         if (idx > 0) {
             rest = substr(s, idx + 1)
@@ -69,11 +78,13 @@ parse_diff() {
     }
 
     current_file != "" && /^-/ && !/^---/ {
-        print current_file ":" new_line > modified_out
+        print current_file ":" old_line > modified_out
+        old_line++
         next
     }
 
     current_file != "" && /^ / {
+        old_line++
         new_line++
         next
     }

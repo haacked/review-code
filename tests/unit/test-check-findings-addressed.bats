@@ -239,6 +239,23 @@ setup() {
     echo "$output" | jq -e '.[0].auto_status == "likely_fixed"' > /dev/null
 }
 
+@test "check-findings-addressed.sh: tracks consecutive deletions at distinct old-side line numbers" {
+    # Finding at line 7, which is the 3rd of 4 consecutive deleted lines (5-8).
+    # Without old-side tracking, all deletions would map to the same new_line.
+    local input
+    input=$(jq -nc '{
+        findings: [{
+            number: "1", prefix: "blocking", title: "Bug on line 7",
+            file: "src/app.py", line: 7, conclusion: null,
+            agent: "correctness", confidence: 80, description: "desc"
+        }],
+        diff: "diff --git a/src/app.py b/src/app.py\nindex abc..def 100644\n--- a/src/app.py\n+++ b/src/app.py\n@@ -3,8 +3,4 @@\n line3\n line4\n-old line5\n-old line6\n-old line7\n-old line8\n line9\n line10\n"
+    }')
+    run bash -c "echo '$input' | $SCRIPT"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].auto_status == "likely_fixed"' > /dev/null
+}
+
 @test "check-findings-addressed.sh: can be sourced without executing main" {
     run bash -c "source '$SCRIPT' && echo 'sourced ok'"
     [ "$status" -eq 0 ]
