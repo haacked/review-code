@@ -605,6 +605,28 @@ Review saved to: $review_file
 You can open it directly: file://$review_file
 ```
 
+**Previous findings summary (append mode only):**
+
+If this is an append-mode review and `$annotated_findings` is available, add a brief summary after the completion message:
+
+Compute the counts from `$annotated_findings`:
+- `concluded_count`: findings with `auto_status == "concluded"`
+- `fixed_count`: findings with `auto_status == "likely_fixed"` that agents confirmed as fixed
+- `open_count`: findings still open (not concluded, not confirmed fixed)
+- `total_previous`: total number of previous findings
+
+If all previous findings are resolved (`open_count == 0`):
+```
+Previous findings: All $total_previous findings from the previous review are addressed.
+```
+
+Otherwise, list the unresolved ones:
+```
+Previous findings: $open_count of $total_previous still open:
+- #<number>: <title> (<auto_status>)
+- #<number>: <title> (<auto_status>)
+```
+
 **Do NOT post the full review to GitHub.** The detailed review is saved to the markdown file only. If `--draft` mode is enabled, a separate draft review with inline comments will be created in the next step. That draft contains only brief inline comments, not the full review summary.
 
 ### Generate Suggested Comments (PR Mode Only)
