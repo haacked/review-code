@@ -226,12 +226,18 @@ main() {
         # Detect file:line reference patterns
         # Pattern 1: #### `path/to/file.py:123`
         if [[ "${line}" =~ ^\#{3,4}[[:space:]]+\`([^:]+):([0-9]+)\` ]]; then
-            flush_pending_finding
-            reset_finding_state
-
-            finding_file="${BASH_REMATCH[1]}"
-            finding_line="${BASH_REMATCH[2]}"
-            in_finding=true
+            if [[ "${in_finding}" == true && -n "${finding_title}" && ( -z "${finding_file}" || "${finding_file}" == "" ) ]]; then
+                # Inside a finding with title but no file (e.g. numbered heading above) - update location
+                finding_file="${BASH_REMATCH[1]}"
+                finding_line="${BASH_REMATCH[2]}"
+            else
+                # Standalone file:line heading or finding already has a file - start new finding
+                flush_pending_finding
+                reset_finding_state
+                finding_file="${BASH_REMATCH[1]}"
+                finding_line="${BASH_REMATCH[2]}"
+                in_finding=true
+            fi
             continue
         fi
 

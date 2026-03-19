@@ -139,9 +139,12 @@ Mode-specific fields:
 If the user selected "Append" and `$parsed_findings` is a non-empty array, now that `$diff` is available, cross-reference findings against the diff:
 
 ```bash
-jq -n --arg diff "$diff" --argjson findings "$parsed_findings" \
+diff_file="$(mktemp)"
+printf '%s' "$diff" > "$diff_file"
+jq -n --rawfile diff "$diff_file" --argjson findings "$parsed_findings" \
   '{"findings": $findings, "diff": $diff}' \
   | ~/.claude/skills/review-code/scripts/check-findings-addressed.sh
+rm -f "$diff_file"
 ```
 
 Save the output as `$annotated_findings`.

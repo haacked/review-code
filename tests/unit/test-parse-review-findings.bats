@@ -556,6 +556,27 @@ EOF
     echo "$output" | jq -e '.[0].title == "Token hash prefix logging shows only 5 hash chars"' > /dev/null
 }
 
+@test "parse-review-findings.sh: numbered heading followed by Pattern 1 location produces single finding" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+### 1. `blocking`: Missing input validation
+
+#### `src/handlers/auth.py:45`
+
+The function does not validate the token format before passing it to the database query.
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    # Should produce exactly one finding, not two
+    echo "$output" | jq -e 'length == 1' > /dev/null
+    echo "$output" | jq -e '.[0].number == "1"' > /dev/null
+    echo "$output" | jq -e '.[0].prefix == "blocking"' > /dev/null
+    echo "$output" | jq -e '.[0].title == "Missing input validation"' > /dev/null
+    echo "$output" | jq -e '.[0].file == "src/handlers/auth.py"' > /dev/null
+    echo "$output" | jq -e '.[0].line == 45' > /dev/null
+}
+
 @test "parse-review-findings.sh: finding without number has null number" {
     cat > "$TEST_DIR/review.md" << 'EOF'
 ## Security Review

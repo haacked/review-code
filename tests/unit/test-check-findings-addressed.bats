@@ -224,6 +224,21 @@ setup() {
     echo "$output" | jq -e '.[0].auto_status == "likely_fixed"' > /dev/null
 }
 
+@test "check-findings-addressed.sh: marks finding as likely_fixed when entire file is deleted" {
+    local input
+    input=$(jq -nc '{
+        findings: [{
+            number: "1", prefix: "blocking", title: "Security issue in removed file",
+            file: "src/old_module.py", line: 42, conclusion: null,
+            agent: "security", confidence: 80, description: "desc"
+        }],
+        diff: "diff --git a/src/old_module.py b/src/old_module.py\ndeleted file mode 100644\nindex abc..000 100644\n--- a/src/old_module.py\n+++ /dev/null\n@@ -1,50 +0,0 @@\n-line1\n-line2\n-line3\n"
+    }')
+    run bash -c "echo '$input' | $SCRIPT"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].auto_status == "likely_fixed"' > /dev/null
+}
+
 @test "check-findings-addressed.sh: can be sourced without executing main" {
     run bash -c "source '$SCRIPT' && echo 'sourced ok'"
     [ "$status" -eq 0 ]

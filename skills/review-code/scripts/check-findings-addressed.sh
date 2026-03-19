@@ -24,6 +24,26 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=helpers/error-helpers.sh
 source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 
+# Extract file paths of fully deleted files from a unified diff.
+# Output: one file path per line for each deleted file.
+build_deleted_files() {
+    local diff="$1"
+
+    echo "${diff}" | awk '
+    /^diff --git/ {
+        idx = index($0, " b/")
+        if (idx > 0) pending_file = substr($0, idx + 3)
+        else pending_file = ""
+        next
+    }
+    /^\+\+\+ \/dev\/null/ {
+        if (pending_file != "") print pending_file
+        next
+    }
+    { next }
+    '
+}
+
 # Build a set of modified lines from a unified diff.
 # Output: one "file:line" per line for each added/modified line in the diff.
 build_modified_lines() {
@@ -50,6 +70,8 @@ build_modified_lines() {
             rest = substr(s, idx + 1)
             # Extract number before comma or space
             new_line = rest + 0
+            # Clamp to 1 for deleted-file hunks (+0,0)
+            if (new_line < 1) new_line = 1
         }
         next
     }
@@ -88,21 +110,30 @@ main() {
     fi
     diff=$(echo "${extracted}" | jq -r '.d')
 
-    # Build modified lines as a newline-separated string for jq lookup
-    local modified_lines_str=""
+    # Build modified lines and deleted files to temp files to avoid ARG_MAX limits
+    local modified_file deleted_file
+    modified_file=$(mktemp)
+    deleted_file=$(mktemp)
+    trap 'rm -f "${modified_file}" "${deleted_file}"' RETURN
     if [[ -n "${diff}" ]]; then
-        modified_lines_str=$(build_modified_lines "${diff}")
+        build_modified_lines "${diff}" > "${modified_file}"
+        build_deleted_files "${diff}" > "${deleted_file}"
     fi
 
-    echo "${findings}" | jq -c --arg modified "$modified_lines_str" '
+    echo "${findings}" | jq -c --rawfile modified "${modified_file}" --rawfile deleted "${deleted_file}" '
         # Build a set of exact "file:line" strings from modified lines
         ($modified | split("\n") | map(select(. != "")) |
             map({(.): true}) | add // {}
         ) as $modified_set |
+        # Build a set of fully deleted file paths
+        ($deleted | split("\n") | map(select(. != "")) |
+            map({(.): true}) | add // {}
+        ) as $deleted_set |
         [.[] | . + {
             auto_status: (
                 if .conclusion != null then "concluded"
                 elif (.file == "" or .file == null or .line == 0 or .line == null) then "inconclusive"
+                elif ($deleted_set[.file] == true) then "likely_fixed"
                 else
                     # Check symmetric window: any modified line within ±10 of the finding
                     .file as $f | .line as $l |
