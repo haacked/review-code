@@ -57,6 +57,48 @@ Use AskUserQuestion to ask what to do with the existing review:
   2. "Append": Add new findings to the existing review
   3. "Cancel": Stop without reviewing
 
+**If the user selected "Append":**
+
+Read the existing review file using the Read tool and save as `$previous_review`.
+
+Then parse existing findings for structured tracking:
+
+```bash
+~/.claude/skills/review-code/scripts/parse-review-findings.sh "$review_file"
+```
+
+Save the JSON output as `$parsed_findings`. If parsing fails or returns an empty array, skip structured findings context and proceed with raw `$previous_review` only.
+
+Then check which findings were addressed in the new diff (extract `diff` from the session file first):
+
+```bash
+jq -n --arg diff "$diff" --argjson findings "$parsed_findings" \
+  '{"findings": $findings, "diff": $diff}' \
+  | ~/.claude/skills/review-code/scripts/check-findings-addressed.sh
+```
+
+Save the output as `$annotated_findings`.
+
+Build `$findings_status_summary` from `$annotated_findings` as a markdown table:
+
+```markdown
+**Previous Findings Status:**
+
+| # | Finding | Prefix | Conclusion | Auto-detection |
+|---|---------|--------|------------|----------------|
+```
+
+For each finding, populate the row:
+- **#**: the finding number (or "-" if unnumbered)
+- **Finding**: the title (truncated to 60 chars)
+- **Prefix**: blocking, suggestion, nit, question
+- **Conclusion**: the CONCLUSION status if present, otherwise "Open"
+- **Auto-detection**: the `auto_status` value with context:
+  - `concluded`: "(has conclusion)"
+  - `likely_fixed`: "(lines modified in new diff, needs confirmation)"
+  - `still_open`: "(referenced code unchanged)"
+  - `inconclusive`: "(no file reference to check)"
+
 ### Extract Session Data
 
 From the session file JSON, extract these fields for building agent context:
@@ -324,10 +366,22 @@ When the context includes PR comments (`$pr_comments`):
 
 Comment structure: `conversation` (discussion), `reviews` (approve/changes), `inline` (line-level with `path`, `line`, `author`, `body`)
 
-{If previous_review exists:}
+{If previous_review exists (append mode):}
 **Previous Review:**
 $previous_review
 
+{If $annotated_findings exists (structured append mode):}
+$findings_status_summary
+
+**Append Mode Instructions:**
+1. **Concluded findings** (have a CONCLUSION annotation): Do not re-raise. These are resolved.
+2. **Likely fixed findings** (lines modified in new diff): Confirm whether the fix actually addresses the issue. If yes, note "Confirmed fixed" in your output. If the change is unrelated, note it as still open.
+3. **Still open findings** (referenced code unchanged): Only re-raise if you have new information. Otherwise, skip.
+4. **New findings**: Report any new issues not already covered by the previous review. Focus your analysis here.
+
+Before reporting a finding, check the Previous Findings table. If the same file and concern appear there, skip it unless you have new information.
+
+{If previous_review exists but $annotated_findings does not (fallback append mode):}
 IMPORTANT: Build upon the previous review. Do not duplicate findings. You may:
 - Reference previous findings: "As noted in the previous review..."
 - Add new findings discovered since last review
@@ -485,6 +539,48 @@ review_commit: <pr.head_sha if PR mode, omit otherwise>
 ```
 
 This metadata is used by the learning system to determine when the review was created. The `review_commit` field records the PR's HEAD SHA at review time, enabling drift detection when creating draft reviews later.
+
+**Append Mode Composition:**
+
+When composing an append-mode review (user selected "Append" and `$previous_review` exists), produce a merged document instead of a fresh review:
+
+1. **Keep the existing review content intact** (everything from the previous review file).
+2. **Remove any existing `## Summary of Status` section** from the previous content. If the file already contains `## Summary of Status`, strip everything from that heading to the end of the file before appending.
+3. **Add a follow-up section** with a separator:
+
+```markdown
+---
+
+## Follow-up Review (<current date YYYY-MM-DD>, commit <short-sha>)
+
+**Changes since last review:** <brief summary of what was addressed/changed>
+```
+
+4. Under the follow-up section, include only NEW findings from agents (not duplicates of previous findings). Use the priority ordering (blocking, suggestions, questions, nits).
+5. **Number new findings** continuing from the highest number in the previous review. Extract the highest finding number from `$annotated_findings` and start new findings from that number + 1. Questions use Q-prefix (Q1, Q2, ...) and nits use N-prefix (N1, N2, ...) with their own numbering sequences, also continuing from the highest existing number in each category.
+6. For findings that agents confirmed as fixed (from the "likely_fixed" auto-detections), add `CONCLUSION: Fixed` annotations to the corresponding findings in the previous review content.
+7. **Generate the Summary of Status table** at the very bottom of the file. This table covers ALL findings across all review rounds:
+
+```markdown
+## Summary of Status
+
+| # | Finding | Status |
+|---|---------|--------|
+| 1 | `FLAGS_REDIS_URL` guard | Fixed |
+| 2 | `capture_old_secret_tokens` check | Fixed |
+| 6 | Signal handler split | Open |
+| 8 | PSAK team delete retry | New |
+```
+
+Rules for the Status column:
+- Use the CONCLUSION annotation value if present (e.g., "Fixed", "Fixed - removed dead code", "Won't fix", "Invalid", "Deferred")
+- "Open": no CONCLUSION and not addressed in latest diff
+- "New": finding introduced in the current follow-up review
+
+> **Tip:** Add `CONCLUSION: <status>` after any finding to track its resolution.
+> Supported statuses: Fixed, Won't fix, Invalid, Deferred (with optional reason after ` - `).
+> Run a follow-up review to auto-detect fixes and generate a summary table.
+
 Save the complete review to `$review_file` and inform the user with a clickable file link:
 
 ```

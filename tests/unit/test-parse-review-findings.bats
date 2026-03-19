@@ -487,3 +487,312 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *"sourced ok"* ]]
 }
+
+# =============================================================================
+# Finding number, prefix, title extraction tests
+# =============================================================================
+
+@test "parse-review-findings.sh: extracts number, prefix, title from numbered finding" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+### 1. `blocking`: Missing FLAGS_REDIS_URL guard (Architecture, 85%)
+
+**`posthog/storage/team_access_cache.py:22-28`**
+
+Every analogous Redis consumer guards against FLAGS_REDIS_URL being None.
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].number == "1"' > /dev/null
+    echo "$output" | jq -e '.[0].prefix == "blocking"' > /dev/null
+    echo "$output" | jq -e '.[0].title == "Missing FLAGS_REDIS_URL guard"' > /dev/null
+}
+
+@test "parse-review-findings.sh: extracts number from #### heading" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Architecture Review
+
+#### 8. `suggestion`: PSAK invalidation on team delete lacks retry safety (Correctness 95% + Architecture 80%, 2 agents)
+
+**`posthog/tasks/team_metadata.py:158-160`**
+
+When a team is deleted, PSAKs are invalidated via direct call.
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].number == "8"' > /dev/null
+    echo "$output" | jq -e '.[0].prefix == "suggestion"' > /dev/null
+    echo "$output" | jq -e '.[0].title == "PSAK invalidation on team delete lacks retry safety"' > /dev/null
+}
+
+@test "parse-review-findings.sh: extracts Q-prefix question number" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+### Q1: Does the Rust service use secure_value directly? (Security, 50%)
+
+**`posthog/models/remote_config.py:664-668`**
+
+Some question about the Rust service.
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].number == "Q1"' > /dev/null
+    echo "$output" | jq -e '.[0].prefix == "question"' > /dev/null
+    echo "$output" | jq -e '.[0].title == "Does the Rust service use secure_value directly?"' > /dev/null
+}
+
+@test "parse-review-findings.sh: extracts N-prefix nit number" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+### N2: Token hash prefix logging shows only 5 hash chars
+
+**`posthog/storage/team_access_cache.py:49`**
+
+token_hash[:12] on a sha256$hex value yields too short a prefix.
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].number == "N2"' > /dev/null
+    echo "$output" | jq -e '.[0].prefix == "nit"' > /dev/null
+    echo "$output" | jq -e '.[0].title == "Token hash prefix logging shows only 5 hash chars"' > /dev/null
+}
+
+@test "parse-review-findings.sh: finding without number has null number" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+### `blocking`: Some unnamed finding
+
+Some description.
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].number == null' > /dev/null
+    echo "$output" | jq -e '.[0].prefix == "blocking"' > /dev/null
+}
+
+# =============================================================================
+# CONCLUSION extraction tests
+# =============================================================================
+
+@test "parse-review-findings.sh: extracts CONCLUSION: Fixed" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+### 1. `blocking`: Missing guard
+
+**`posthog/storage/cache.py:22`**
+
+Every analogous consumer guards against this.
+
+CONCLUSION: Fixed
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].conclusion.status == "Fixed"' > /dev/null
+    echo "$output" | jq -e '.[0].conclusion.reason == null' > /dev/null
+}
+
+@test "parse-review-findings.sh: extracts CONCLUSION with reason" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Architecture Review
+
+### 5. `suggestion`: Unconditional invalidation on full save
+
+**`posthog/models/remote_config.py:637-641`**
+
+When update_fields=None, the handler always calls schedule_fn.
+
+CONCLUSION: Fixed - removed dead code instead
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].conclusion.status == "Fixed"' > /dev/null
+    echo "$output" | jq -e '.[0].conclusion.reason == "removed dead code instead"' > /dev/null
+}
+
+@test "parse-review-findings.sh: extracts CONCLUSION: Won't fix" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Performance Review
+
+### 2. `suggestion`: Error count semantics differ
+
+**`src/flags.rs:90`**
+
+The error_count semantics differ between paths.
+
+CONCLUSION: Won't fix - not worth the complexity
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].conclusion.status == "Won'\''t fix"' > /dev/null
+    echo "$output" | jq -e '.[0].conclusion.reason == "not worth the complexity"' > /dev/null
+}
+
+@test "parse-review-findings.sh: extracts CONCLUSION: Invalid" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Correctness Review
+
+### 3. `blocking`: Race condition on cache
+
+**`posthog/cache.py:50`**
+
+Potential race condition.
+
+CONCLUSION: Invalid - false positive, guard exists upstream
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].conclusion.status == "Invalid"' > /dev/null
+    echo "$output" | jq -e '.[0].conclusion.reason == "false positive, guard exists upstream"' > /dev/null
+}
+
+@test "parse-review-findings.sh: extracts CONCLUSION: Deferred" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Testing Review
+
+### 4. `suggestion`: Add integration test
+
+**`tests/test_cache.py:100`**
+
+Missing integration test for this path.
+
+CONCLUSION: Deferred - will address in follow-up PR
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].conclusion.status == "Deferred"' > /dev/null
+    echo "$output" | jq -e '.[0].conclusion.reason == "will address in follow-up PR"' > /dev/null
+}
+
+@test "parse-review-findings.sh: extracts freeform CONCLUSION" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Performance Review
+
+### 2. `suggestion`: Error count semantics
+
+**`src/flags.rs:90`**
+
+Semantics differ between paths.
+
+CONCLUSION: NOT WORTH FIXING
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].conclusion.status == "NOT WORTH FIXING"' > /dev/null
+    echo "$output" | jq -e '.[0].conclusion.reason == null' > /dev/null
+}
+
+@test "parse-review-findings.sh: no conclusion yields null" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+### 6. `suggestion`: Signal handler split
+
+**`posthog/models/remote_config.py:596-772`**
+
+Signal handlers are split across two files.
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].conclusion == null' > /dev/null
+}
+
+@test "parse-review-findings.sh: case-insensitive CONCLUSION matching" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+### 1. `blocking`: Some issue
+
+**`auth.py:10`**
+
+Description.
+
+Conclusion: Fixed
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].conclusion.status == "Fixed"' > /dev/null
+}
+
+@test "parse-review-findings.sh: CONCLUSION does not leak into next finding" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+### 1. `blocking`: First issue
+
+**`auth.py:10`**
+
+Description of first issue.
+
+CONCLUSION: Fixed
+
+### 2. `suggestion`: Second issue
+
+**`auth.py:20`**
+
+Description of second issue.
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'length == 2' > /dev/null
+    echo "$output" | jq -e '.[0].conclusion.status == "Fixed"' > /dev/null
+    echo "$output" | jq -e '.[1].conclusion == null' > /dev/null
+}
+
+# =============================================================================
+# Real-world format: haacked-build-auth-cache.md style
+# =============================================================================
+
+@test "parse-review-findings.sh: real-world numbered finding with bold file ref" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Blocking Findings
+
+### 1. `blocking`: Missing FLAGS_REDIS_URL guard in _get_redis_client (Architecture, 85%)
+
+**`posthog/storage/team_access_cache.py:22-28`**
+
+Every analogous Redis consumer in the codebase guards against FLAGS_REDIS_URL.
+
+CONCLUSION: Fixed.
+
+---
+
+## Corroborated Suggestions
+
+### 2. `suggestion`: capture_old_secret_tokens missing _state.adding check (Security + Performance, 3 agents)
+
+**`posthog/storage/team_access_cache_signal_handlers.py:75-76`**
+
+The function only checks not instance.pk.
+
+CONCLUSION: Fixed
+
+---
+
+## Solo Suggestions
+
+### 6. `suggestion`: Signal handler registration split across modules (Maintainability, 60%)
+
+**`posthog/models/remote_config.py:596-772`**
+
+A maintainer has to check both files.
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'length == 3' > /dev/null
+
+    # Finding 1: concluded
+    echo "$output" | jq -e '.[0].number == "1"' > /dev/null
+    echo "$output" | jq -e '.[0].prefix == "blocking"' > /dev/null
+    echo "$output" | jq -e '.[0].conclusion.status == "Fixed"' > /dev/null
+
+    # Finding 2: concluded
+    echo "$output" | jq -e '.[1].number == "2"' > /dev/null
+    echo "$output" | jq -e '.[1].prefix == "suggestion"' > /dev/null
+    echo "$output" | jq -e '.[1].conclusion.status == "Fixed"' > /dev/null
+
+    # Finding 6: open
+    echo "$output" | jq -e '.[2].number == "6"' > /dev/null
+    echo "$output" | jq -e '.[2].prefix == "suggestion"' > /dev/null
+    echo "$output" | jq -e '.[2].conclusion == null' > /dev/null
+}
