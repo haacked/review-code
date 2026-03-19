@@ -69,35 +69,7 @@ Then parse existing findings for structured tracking:
 
 Save the JSON output as `$parsed_findings`. If parsing fails or returns an empty array, skip structured findings context and proceed with raw `$previous_review` only.
 
-Then check which findings were addressed in the new diff (extract `diff` from the session file first):
-
-```bash
-jq -n --arg diff "$diff" --argjson findings "$parsed_findings" \
-  '{"findings": $findings, "diff": $diff}' \
-  | ~/.claude/skills/review-code/scripts/check-findings-addressed.sh
-```
-
-Save the output as `$annotated_findings`.
-
-Build `$findings_status_summary` from `$annotated_findings` as a markdown table:
-
-```markdown
-**Previous Findings Status:**
-
-| # | Finding | Prefix | Conclusion | Auto-detection |
-|---|---------|--------|------------|----------------|
-```
-
-For each finding, populate the row:
-- **#**: the finding number (or "-" if unnumbered)
-- **Finding**: the title (truncated to 60 chars)
-- **Prefix**: blocking, suggestion, nit, question
-- **Conclusion**: the CONCLUSION status if present, otherwise "Open"
-- **Auto-detection**: the `auto_status` value with context:
-  - `concluded`: "(has conclusion)"
-  - `likely_fixed`: "(lines modified in new diff, needs confirmation)"
-  - `still_open`: "(referenced code unchanged)"
-  - `inconclusive`: "(no file reference to check)"
+The remaining append-mode setup (cross-referencing findings against the diff) requires `$diff`, which is extracted in the next section. See "Annotate Findings Against Diff" below.
 
 ### Extract Session Data
 
@@ -161,6 +133,38 @@ Mode-specific fields:
 - **PR mode:** `pr`: PR details (number, title, author, body, comments, etc.); `file_ref`: git ref for file access (present when reviewing from a different branch)
 - **Branch/commit/range modes:** `branch`, `base_branch`, `commit`, `range`
 - **Area-specific reviews:** `area`
+
+### Annotate Findings Against Diff (Append Mode Only)
+
+If the user selected "Append" and `$parsed_findings` is a non-empty array, now that `$diff` is available, cross-reference findings against the diff:
+
+```bash
+jq -n --arg diff "$diff" --argjson findings "$parsed_findings" \
+  '{"findings": $findings, "diff": $diff}' \
+  | ~/.claude/skills/review-code/scripts/check-findings-addressed.sh
+```
+
+Save the output as `$annotated_findings`.
+
+Build `$findings_status_summary` from `$annotated_findings` as a markdown table:
+
+```markdown
+**Previous Findings Status:**
+
+| # | Finding | Prefix | Conclusion | Auto-detection |
+|---|---------|--------|------------|----------------|
+```
+
+For each finding, populate the row:
+- **#**: the finding number (or "-" if unnumbered)
+- **Finding**: the title (truncated to 60 chars)
+- **Prefix**: blocking, suggestion, nit, question
+- **Conclusion**: the CONCLUSION status if present, otherwise "Open"
+- **Auto-detection**: the `auto_status` value with context:
+  - `concluded`: "(has conclusion)"
+  - `likely_fixed`: "(lines modified in new diff, needs confirmation)"
+  - `still_open`: "(referenced code unchanged)"
+  - `inconclusive`: "(no file reference to check)"
 
 ### Prepare File Access Instructions
 
@@ -231,7 +235,7 @@ Invoke the appropriate agent(s) based on mode and area. If an area is specified,
 | architecture | code-reviewer-architecture | Necessity, patterns, code reuse, simplicity, solution proportionality |
 | *(frontend detected)* | code-reviewer-frontend | React/TS patterns, components, state, a11y |
 
-**Build the context to pass to each agent:**
+**Build the context to pass to each agent.** When in append mode, include `$findings_status_summary` (if available) and the appropriate append-mode instructions in the agent prompt (see conditional blocks below).
 
 ```markdown
 {For PR mode:}
@@ -370,23 +374,27 @@ Comment structure: `conversation` (discussion), `reviews` (approve/changes), `in
 **Previous Review:**
 $previous_review
 
-{If $annotated_findings exists (structured append mode):}
-$findings_status_summary
+  {If $annotated_findings also exists (structured append mode):}
+  $findings_status_summary
 
-**Append Mode Instructions:**
-1. **Concluded findings** (have a CONCLUSION annotation): Do not re-raise. These are resolved.
-2. **Likely fixed findings** (lines modified in new diff): Confirm whether the fix actually addresses the issue. If yes, note "Confirmed fixed" in your output. If the change is unrelated, note it as still open.
-3. **Still open findings** (referenced code unchanged): Only re-raise if you have new information. Otherwise, skip.
-4. **New findings**: Report any new issues not already covered by the previous review. Focus your analysis here.
+  **Append Mode Instructions:**
+  1. **Concluded findings** (have a CONCLUSION annotation): Do not re-raise. These are resolved.
+  2. **Likely fixed findings** (lines modified in new diff): Confirm whether the fix actually addresses the issue. If yes, note "Confirmed fixed" in your output. If the change is unrelated, note it as still open.
+  3. **Still open findings** (referenced code unchanged): Only re-raise if you have new information. Otherwise, skip.
+  4. **New findings**: Report any new issues not already covered by the previous review. Focus your analysis here.
 
-Before reporting a finding, check the Previous Findings table. If the same file and concern appear there, skip it unless you have new information.
+  Before reporting a finding, check the Previous Findings table. If the same file and concern appear there, skip it unless you have new information.
 
-{If previous_review exists but $annotated_findings does not (fallback append mode):}
-IMPORTANT: Build upon the previous review. Do not duplicate findings. You may:
-- Reference previous findings: "As noted in the previous review..."
-- Add new findings discovered since last review
-- Update status if code changed
-- Mark findings as resolved if fixed
+  {Else (no $annotated_findings, fallback append mode):}
+  IMPORTANT: Build upon the previous review. Do not duplicate findings. You may:
+  - Reference previous findings: "As noted in the previous review..."
+  - Add new findings discovered since last review
+  - Update status if code changed
+  - Mark findings as resolved if fixed
+
+{End if previous_review}
+
+See "Append Mode Composition" below for how to assemble the final output document in append mode.
 
 ### Collect and Synthesize Results
 **Chunked review dispatch:**
@@ -557,9 +565,9 @@ When composing an append-mode review (user selected "Append" and `$previous_revi
 ```
 
 4. Under the follow-up section, include only NEW findings from agents (not duplicates of previous findings). Use the priority ordering (blocking, suggestions, questions, nits).
-5. **Number new findings** continuing from the highest number in the previous review. Extract the highest finding number from `$annotated_findings` and start new findings from that number + 1. Questions use Q-prefix (Q1, Q2, ...) and nits use N-prefix (N1, N2, ...) with their own numbering sequences, also continuing from the highest existing number in each category.
-6. For findings that agents confirmed as fixed (from the "likely_fixed" auto-detections), add `CONCLUSION: Fixed` annotations to the corresponding findings in the previous review content.
-7. **Generate the Summary of Status table** at the very bottom of the file. This table covers ALL findings across all review rounds:
+5. **Number new findings** continuing from the highest number in the previous review. If `$annotated_findings` is available, extract the highest finding number from it and start new findings from that number + 1. If `$annotated_findings` is not available (fallback mode), scan `$previous_review` text for the highest finding number in each category (numeric, Q-prefix, N-prefix). Questions use Q-prefix (Q1, Q2, ...) and nits use N-prefix (N1, N2, ...) with their own numbering sequences, also continuing from the highest existing number in each category.
+6. For findings that agents confirmed as fixed (from the "likely_fixed" auto-detections), add a `CONCLUSION: Fixed` line immediately after the last line of the finding's content block in the previous review (before the next finding heading or section separator).
+7. **Generate the Summary of Status table** at the very bottom of the file. This table covers ALL findings across all review rounds. Sort by finding number: numeric findings first (1, 2, 3...), then Q-prefixed (Q1, Q2...), then N-prefixed (N1, N2...):
 
 ```markdown
 ## Summary of Status
