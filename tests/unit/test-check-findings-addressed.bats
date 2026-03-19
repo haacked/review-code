@@ -177,6 +177,53 @@ setup() {
     echo "$output" | jq -e '.[0].auto_status == "still_open"' > /dev/null
 }
 
+@test "check-findings-addressed.sh: marks finding as likely_fixed when addressed by deletion" {
+    local input
+    input=$(jq -nc '{
+        findings: [{
+            number: "1", prefix: "blocking", title: "Remove dead code",
+            file: "src/auth.py", line: 5, conclusion: null,
+            agent: "maintainability", confidence: 70, description: "desc"
+        }],
+        diff: "diff --git a/src/auth.py b/src/auth.py\nindex abc..def 100644\n--- a/src/auth.py\n+++ b/src/auth.py\n@@ -3,5 +3,3 @@\n line3\n line4\n-old line5\n-old line6\n line7\n"
+    }')
+    run bash -c "echo '$input' | $SCRIPT"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].auto_status == "likely_fixed"' > /dev/null
+}
+
+@test "check-findings-addressed.sh: detects fix within symmetric window (finding before modified line)" {
+    # Finding at line 15, modification at line 22 (within +10 of finding)
+    local input
+    input=$(jq -nc '{
+        findings: [{
+            number: "1", prefix: "suggestion", title: "Issue nearby",
+            file: "src/auth.py", line: 15, conclusion: null,
+            agent: "correctness", confidence: 60, description: "desc"
+        }],
+        diff: "diff --git a/src/auth.py b/src/auth.py\nindex abc..def 100644\n--- a/src/auth.py\n+++ b/src/auth.py\n@@ -20,6 +20,8 @@\n line20\n line21\n+new guard\n+return None\n line22\n line23\n line24\n"
+    }')
+    run bash -c "echo '$input' | $SCRIPT"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].auto_status == "likely_fixed"' > /dev/null
+}
+
+@test "check-findings-addressed.sh: detects fix within symmetric window (finding after modified line)" {
+    # Finding at line 12, modification at line 5 (within -10 of finding)
+    local input
+    input=$(jq -nc '{
+        findings: [{
+            number: "1", prefix: "suggestion", title: "Issue nearby",
+            file: "src/auth.py", line: 12, conclusion: null,
+            agent: "correctness", confidence: 60, description: "desc"
+        }],
+        diff: "diff --git a/src/auth.py b/src/auth.py\nindex abc..def 100644\n--- a/src/auth.py\n+++ b/src/auth.py\n@@ -3,6 +3,7 @@\n line3\n line4\n+new line\n line5\n line6\n line7\n"
+    }')
+    run bash -c "echo '$input' | $SCRIPT"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].auto_status == "likely_fixed"' > /dev/null
+}
+
 @test "check-findings-addressed.sh: can be sourced without executing main" {
     run bash -c "source '$SCRIPT' && echo 'sourced ok'"
     [ "$status" -eq 0 ]

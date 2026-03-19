@@ -62,7 +62,8 @@ build_modified_lines() {
     }
 
     current_file != "" && /^-/ && !/^---/ {
-        # Deleted lines do not advance new_line
+        # Mark current position as touched so deletions count as modifications
+        print current_file ":" new_line
         next
     }
 
@@ -77,14 +78,15 @@ main() {
     local input
     input=$(cat)
 
-    # Single jq call to extract both fields and check for empty findings
-    local findings diff
-    findings=$(echo "${input}" | jq -c '.findings // []')
+    # Extract both fields and check for empty findings
+    local findings diff extracted
+    extracted=$(echo "${input}" | jq -c '{f: (.findings // []), d: (.diff // "")}')
+    findings=$(echo "${extracted}" | jq -c '.f')
     if [[ "${findings}" == "[]" ]]; then
         echo "[]"
         return 0
     fi
-    diff=$(echo "${input}" | jq -r '.diff // ""')
+    diff=$(echo "${extracted}" | jq -r '.d')
 
     # Build modified lines as a newline-separated string for jq lookup
     local modified_lines_str=""
@@ -93,16 +95,8 @@ main() {
     fi
 
     echo "${findings}" | jq -c --arg modified "$modified_lines_str" '
+        # Build a set of exact "file:line" strings from modified lines
         ($modified | split("\n") | map(select(. != "")) |
-            # Build lookup: for each "file:line", expand to file:line through file:line+10
-            map(
-                split(":") |
-                { file: .[0], line: (.[1] | tonumber) }
-            ) |
-            # Create a set of "file:line" strings for the range
-            [.[] | .file as $f | range(.line; .line - 10; -1) |  # lines from line down to line-10
-                "\($f):\(.)"] |
-            unique |
             map({(.): true}) | add // {}
         ) as $modified_set |
         [.[] | . + {
@@ -110,10 +104,10 @@ main() {
                 if .conclusion != null then "concluded"
                 elif (.file == "" or .file == null or .line == 0 or .line == null) then "inconclusive"
                 else
-                    # Check if any line in range [line, line+10] is in modified set
+                    # Check symmetric window: any modified line within ±10 of the finding
                     .file as $f | .line as $l |
                     if (
-                        [range($l; $l + 11)] |
+                        [range(($l - 10 | if . < 1 then 1 else . end); $l + 11)] |
                         any(. as $ln | $modified_set["\($f):\($ln)"] == true)
                     ) then "likely_fixed"
                     else "still_open"
