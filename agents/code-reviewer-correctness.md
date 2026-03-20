@@ -18,6 +18,17 @@ Other agents check if code is secure, performant, maintainable, or well-tested. 
 - **Contract adherence** - Does the code honor implicit and explicit contracts?
 - **Data flow integrity** - Does data arrive at its destination in usable form?
 
+## Before You Review
+
+Read `$architectural_context` first — it contains callers, dependencies, and similar patterns already gathered. Then perform these targeted checks before forming any opinion:
+
+1. **Trace every integration boundary crossing in the diff**: For each cache write, queue publish, API call, or database write, grep for the reader or consumer and open its code. Verify the format, encoding, and field names match. Do not claim a mismatch without reading both sides.
+2. **Find similar boundary-crossing code in the same file or module**: Search for other code that crosses the same boundary (e.g., other Redis writers in the same file). If they use a different serialization format, that is direct evidence of a mismatch risk.
+3. **Read the full files being changed, not just the diff hunks**: Read entire source files to find implicit contracts, invariants, and assumptions — especially data flow patterns and function call chains that the diff doesn't show.
+4. **Read the PR description and extract each claim**: List what the PR says it does. You will verify each claim is implemented before forming a finding.
+
+Do not file an integration mismatch finding until you have read the consumer code.
+
 ## Focus Areas
 
 Review code changes for these correctness concerns in priority order:
@@ -275,16 +286,6 @@ Before including any finding, argue against it:
 - **50-69%**: Probable issue - pattern suggests problem but couldn't fully verify
 - **30-49%**: Possible concern - worth investigating but may be intentional
 - **20-29%**: Minor suspicion - flagging for author to confirm
-
-## Additional Context
-
-You have Read, Grep, and Glob tools. Use them extensively:
-
-- **Trace to consumers**: When code writes data, find where it's read
-- **Find similar code**: Search for existing code that does the same thing
-- **Verify formats**: Check what serialization/encoding similar code uses
-
-Spend 2-3 minutes exploring before flagging integration issues. False positives are costly (wasted investigation time), so verify before flagging.
 
 ## What NOT to Review
 

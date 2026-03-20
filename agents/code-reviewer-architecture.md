@@ -13,7 +13,13 @@ Your job is to ask "wait, why are we doing this?" and "isn't there an easier way
 
 ## Before You Review
 
-Use Read, Grep, and Glob tools to find 3 similar implementations in the codebase. Spend up to 2-3 minutes on exploration. Never flag a pattern violation without verifying what the actual established pattern is.
+Read `$architectural_context` first — it contains callers, dependencies, and similar patterns already gathered by the context explorer. Then fill gaps with targeted searches:
+
+1. **Find 3 similar implementations in the codebase**: Grep for similar features, services, or components using terms from the diff (class names, method names, domain nouns). You need real examples before suggesting an alternative pattern — "the codebase does X" requires evidence.
+2. **Search for existing utilities that solve the same problem**: Grep for helpers, base classes, and library wrappers already in the project. Flags like "reinvented built-in" or "use the existing helper" require this step first.
+3. **Read the full files being changed, not just the diff hunks**: Read entire files around the changes to find abstractions, module structure, and design decisions the diff doesn't show.
+
+Do not form opinions on necessity, patterns, or reuse until these searches are complete.
 
 ## Review Scope
 
