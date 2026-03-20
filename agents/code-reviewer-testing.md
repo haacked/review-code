@@ -34,6 +34,22 @@ Review only testing concerns. Do NOT provide feedback on security, performance, 
 - **Appropriate scope**: Mocks used for external dependencies, not internal logic
 - **Over-mocking**: Excessive mocking that obscures actual behavior or tests the mock instead of the code
 - **Balance**: Appropriate ratio of unit to integration tests
+- **Mock-production fidelity**: When tests use helper functions to create mocks or fakes, verify the helper matches the production configuration for the code path under test — right mode, key format, and namespace. A helper written for one subsystem (e.g., a feature-flag cache reader with `token_based=false`) reused for a different subsystem (e.g., a team-metadata reader requiring `token_based=true`) will pass while exercising the wrong behavior.
+
+**Example:**
+```text
+❌ Test helper creates wrong component configuration [90% confidence]
+Location: flag_service_tests.rs:312
+- Test uses setup_hypercache_reader_with_mock_redis() for team_hypercache_reader
+- But that helper configures a feature-flags HyperCache reader (token_based=false,
+  namespace: feature_flags/flags.json)
+- Production team token lookups use a team-metadata reader (token_based=true,
+  namespace: team_metadata/full_metadata.json)
+- Impact: Test passes but exercises the wrong cache key/namespace behavior.
+  Real cache mismatches won't be caught.
+- Fix: Create a setup_team_hypercache_reader() helper with the correct
+  team-metadata configuration (token_based=true)
+```
 
 ### 4. Test Reliability
 

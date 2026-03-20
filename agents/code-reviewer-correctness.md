@@ -132,6 +132,14 @@ Location: cache.rs:45
 
 **A function may be locally correct but break invariants expected by other code.**
 
+**Return Value Semantics:**
+
+When code branches on a value from another function (error variants, enums, status codes, booleans), trace into the producer and enumerate ALL conditions that yield the value being handled. Flag when the handler assumes a narrower meaning than the producer actually returns.
+
+- Handler assumes "not found" but the producer also returns the same value for transient failures, timeouts, or deserialization errors
+- New code returns an existing variant in a context that doesn't match the variant's name, message, or downstream handler expectations
+- Handler takes an irreversible action (negative caching, deletion) on a value that can also signal a temporary condition
+
 **Optimization Safety:**
 
 When code includes optimizations that skip work (early returns, caching, conditional execution), verify the optimization preserves behavior in ALL code paths:
