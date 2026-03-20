@@ -93,63 +93,7 @@ Impact: Writes succeed, reads fail silently (falls back to PostgreSQL)
 Fix: Use pickle encoding like insert_flags_for_team_in_redis
 ```
 
-### 3. Error and Result Semantics (Critical)
-
-**Trace into the producing function to understand ALL conditions that yield the variant the diff handles.**
-
-A handler that treats `CacheMiss` as "item not found" is wrong if the producer also returns `CacheMiss` for timeouts or deserialization failures. The handler's assumed meaning must match the producer's full set of return conditions.
-
-**For each error/result branch in the diff:**
-1. Read the function that produces the error/result type
-2. Enumerate ALL conditions that yield the variant being handled
-3. Compare the handler's assumed meaning against the full set of conditions
-4. Flag when the handler assumes a narrow meaning but the type covers broader failures
-
-**Red Flags:**
-- Handler treats an error as "not found" but the producer also returns it for transient failures (timeouts, connection errors)
-- Handler writes to a negative cache on error, but the error may signal a transient failure rather than a definitive absence
-- Comment says "X means Y" but the implementation shows X also means Z
-
-**Error Variant Reuse:**
-
-When new code returns an existing error variant, verify the variant's semantics fit the new context:
-
-- Does the error's name/message accurately describe what happened in the new code path?
-- Will downstream handlers that match on this variant behave correctly, and will logs/metrics be accurate? (e.g., "Row not found in postgres" surfacing from a path that never touches Postgres)
-
-**Example:**
-```text
-❌ Error variant has broader meaning than handler assumes [90% confidence]
-Location: flag_service.rs:122-125
-
-Handler assumes:
-  HyperCacheError::CacheMiss  →  "token does not exist"
-
-But HyperCacheReader::get_with_source() returns CacheMiss for:
-  - Key genuinely not found in Redis or S3 (authoritative miss)
-  - Redis connection timeout or get error
-  - S3 timeout or download error
-  - JSON/pickle deserialization failure
-
-Impact: When skip_pg=true, a Redis timeout causes the token to be
-negative-cached for 300s. Valid requests fail even after cache recovers.
-
-Fix: Distinguish authoritative "not found" from transient cache failures.
-Return a retriable error for transient failures instead of treating all
-CacheMiss variants as "token invalid".
-
-⚠️ Error variant semantics don't match usage [80% confidence]
-Location: flag_service.rs:124
-- Code returns FlagError::RowNotFound when PG fallback is skipped
-- But RowNotFound's message is "Row not found in postgres"
-- This path never touches Postgres — it's a deliberate cache-only lookup
-- Downstream: is_token_not_found() matches RowNotFound → inserts into negative cache
-  (correct behavior, but misleading error identity in logs/metrics)
-- Fix: Add a dedicated error variant like TeamCacheMiss or TokenNotInCache
-  that is_token_not_found() also matches
-```
-
-### 4. Basic Logic Correctness (Critical)
+### 3. Basic Logic Correctness (Critical)
 
 **Does the code do what it's supposed to do within its own scope?**
 
@@ -184,9 +128,17 @@ Location: cache.rs:45
 - Fix: Use >= for boundary condition
 ```
 
-### 5. Cross-Function Correctness (Critical)
+### 4. Cross-Function Correctness (Critical)
 
 **A function may be locally correct but break invariants expected by other code.**
+
+**Return Value Semantics:**
+
+When code branches on a value from another function (error variants, enums, status codes, booleans), trace into the producer and enumerate ALL conditions that yield the value being handled. Flag when the handler assumes a narrower meaning than the producer actually returns.
+
+- Handler assumes "not found" but the producer also returns the same value for transient failures, timeouts, or deserialization errors
+- New code returns an existing variant in a context that doesn't match the variant's name, message, or downstream handler expectations
+- Handler takes an irreversible action (negative caching, deletion) on a value that can also signal a temporary condition
 
 **Optimization Safety:**
 
@@ -235,7 +187,7 @@ Location: cache_service.py:89
 - Fix: Either expand `warm_cache()` or handle cache misses in `get_cached_user()`
 ```
 
-### 6. Behavioral Change Analysis (Critical)
+### 5. Behavioral Change Analysis (Critical)
 
 **Every removed or modified line had a reason to exist. Verify the old behavior wasn't lost by accident.**
 
@@ -265,7 +217,7 @@ Location: cache_service.py:45
 - Question: Was removing the cache intentional? The PR description doesn't mention it.
 ```
 
-### 7. Utility Adoption (Important)
+### 6. Utility Adoption (Important)
 
 **When helpers exist, verify they're actually used.**
 
