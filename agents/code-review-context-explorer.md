@@ -22,6 +22,7 @@ For each file in the diff:
 - **Callers**: For each significantly modified function or method (especially those whose signature, return type, or error behavior changed), grep for call sites. Report the top 3-5 most relevant callers. Prioritize public API functions over private helpers.
 - **Similar Patterns**: Search for similar code patterns elsewhere in the codebase
 - **Related Tests**: Find test files that cover the modified code
+- **Error/Result Semantics**: When the diff branches on error or result variants, read the producing function and document every condition that yields each variant handled
 
 ### 3. Architectural Context
 
@@ -74,6 +75,7 @@ Focus on context that will help reviewers make better decisions. Be selective â€
 - **Dependencies**: Uses `EmailService` from `backend/services/email.py`
 - **Callers**: Called by signup flow in `backend/api/signup.py`
 - **Similar Patterns**: Password reset in `backend/api/password_reset.py` uses similar flow
+- **Error/Result Semantics**: `TokenStore.get()` returns `TokenNotFound` for both expired tokens and missing tokens â€” callers treating it as "invalid token" will reject expired-but-renewable tokens
 
 ### Architectural Context
 - **Existing Patterns**: Other verification endpoints follow this sequence:

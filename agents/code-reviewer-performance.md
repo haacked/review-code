@@ -53,6 +53,7 @@ Never reduce confidence because a query is in a conditional path. Ask: "What mak
 - Excessive object allocations in loops
 - String concatenation in loops instead of builders
 - Unbounded caches without eviction policies
+- Allocations or clones before conditional early returns — defer expensive work (`.to_string()`, `.clone()`, acquiring connections) until after the condition that guards whether it's needed
 
 ### 4. Async & Concurrency (Important)
 
