@@ -112,9 +112,9 @@ Challenge yourself:
 1. **What is the strongest case this is fine?** Is the component simple enough that memoization is unnecessary? Is the a11y concern irrelevant for this element's role?
 2. **Can you point to the concrete impact?** "This could be improved" is not a finding. Name the user or developer impact.
 3. **Did you verify assumptions?** Check actual usage — don't flag re-render issues for components that render once.
-4. **Is the case against stronger than the case for?** Drop it if so.
+4. **Is the case against stronger than the case for?** For non-blocking findings, drop it. For `blocking:` findings, note your uncertainty but still report — an independent validator will evaluate it.
 
-Drop findings where the impact is negligible or the suggestion is a micro-optimization with no measurable benefit.
+**Drop non-blocking findings** where the impact is negligible or the suggestion is a micro-optimization with no measurable benefit. **For `blocking:` findings**, report them even if uncertain — include your confidence level and the validator will make the final call.
 
 ## Output Format
 

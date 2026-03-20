@@ -121,9 +121,9 @@ Before including any finding, argue against it:
 1. What is the strongest case this test gap doesn't matter? Is the untested path trivial, already covered by integration tests, or unreachable?
 2. Can you point to the specific scenario that is untested? "More tests would be nice" is not enough.
 3. Did you verify your assumption? Read the existing tests before flagging missing coverage.
-4. Would the suggested test verify behavior or implementation details?
+4. Would the suggested test verify implementation details rather than behavior? For non-blocking findings, drop it if so. For `blocking:` findings, note your uncertainty but still report — an independent validator will evaluate it.
 
-Drop the finding if the untested code is trivial or if the suggested test would verify implementation details rather than behavior.
+**Drop non-blocking findings if** the untested code is trivial or the suggested test would verify implementation details rather than behavior. **For `blocking:` findings**, report them even if uncertain — include your confidence level and the validator will make the final call.
 
 ## Output Format
 
