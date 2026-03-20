@@ -156,7 +156,7 @@ Evaluate whether the total implementation is proportionate to the problem being 
 - The codebase already uses this level of architecture for similar features (check with Grep/Glob)
 - There is a known scaling requirement or domain modeling need (e.g., a well-designed domain layer with value objects and aggregates may have a high infrastructure-to-logic ratio by deliberate design)
 
-If any justification applies, do not file a proportionality finding. If none apply, proceed.
+If any justification applies, either skip the finding or downgrade it to a question/suggestion that explicitly cites the justification. Only file a proportionality finding when the evidence is strong despite the justification. If none apply, proceed.
 
 **Watch for:**
 - Infrastructure-to-logic ratio: the PR adds significantly more supporting code (types, helpers, configuration, registries, factories, base classes) than actual business logic. Estimate by line count: if lines of types, helpers, registries, factories, and base classes exceed lines of business logic by 3:1 or more, question why.
