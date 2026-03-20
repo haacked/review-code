@@ -440,7 +440,37 @@ Where `targets` contains `{"path": "<file>", "line": <number>}` objects, and `di
   3. Include only if the agent confirms relevance and provides justification.
 - **Error: `"file not in diff"`**: Drop the finding. The file was not part of the changes.
 
-**Step 3: Spot-check bug claims.** For any remaining finding that claims a bug or incorrect behavior, use the Read tool to verify the claim is accurate before including it.
+**Step 3: Verify factual claims.** For any remaining finding that claims a bug or incorrect behavior:
+
+- **If `blocking:`**: Invoke the Task tool with `subagent_type` "finding-validator" for each blocking finding, using this prompt:
+
+  ````
+  Validate this blocking finding from a code review.
+
+  **Finding:**
+  - **Source agent:** $agent_name
+  - **Location:** $file:$line
+  - **Confidence:** $confidence%
+  - **Description:** $finding_description
+  - **Proposed fix:**
+  $proposed_fix
+
+  **Code context from the diff:**
+  ```
+  $relevant_diff_snippet
+  ```
+
+  $file_access_instructions
+
+  Read the file at `$file` (around line `$line`) and determine whether this finding is real or a false positive. Try to disprove it. Respond with CONFIRMED or DISMISSED and your reasoning.
+  ````
+
+  Dispatch all blocking finding validations **in parallel**. For each result:
+  - **DISMISSED**: downgrade to `suggestion:` and append the validator's reasoning (e.g., "*Downgraded from blocking: [validator reasoning]*").
+  - **CONFIRMED**: keep as `blocking:`.
+  - **Unreachable or errors**: keep the finding as-is.
+
+- **Otherwise** (non-blocking findings): Use the Read tool to verify the claim is accurate before including it.
 
 ### Compose the Review Document
 

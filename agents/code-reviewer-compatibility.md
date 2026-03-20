@@ -152,9 +152,9 @@ Challenge each finding before including it:
 
 1. Is the changed code actually in the default branch, or was it added in this branch?
 2. Can you name a concrete caller or consumer that would break? Grep for call sites — "someone might use this" is not sufficient.
-3. Is the case against flagging this stronger than the case for it?
+3. Is the case against flagging this stronger than the case for it? For non-blocking findings, drop it. For `blocking:` findings, note your uncertainty but still report — an independent validator will evaluate it.
 
-Drop the finding if you cannot identify a concrete consumer that breaks, or if the code was introduced in the current branch.
+**Drop non-blocking findings if** you cannot identify a concrete consumer that breaks, or if the code was introduced in the current branch. **For `blocking:` findings**, report them even if uncertain — include your confidence level and the validator will make the final call.
 
 ## Output Format
 

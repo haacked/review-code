@@ -185,9 +185,9 @@ Location: notifications/ (6 new files, 480 lines)
 Before including any finding, answer these questions:
 
 1. **What is the strongest case that this approach is correct?** Could the complexity be justified by constraints not visible in the diff — performance requirements, backwards compatibility, or future plans mentioned in the PR description?
-2. **Can you show a concrete, simpler alternative?** If not, drop the finding.
+2. **Can you show a concrete, simpler alternative?** If not, drop non-blocking findings.
 3. **Did you verify your assumptions?** Check the codebase for similar patterns before claiming something violates the norm.
-4. **Is the argument against stronger than the argument for?** If not, drop the finding.
+4. **Is the argument against stronger than the argument for?** For non-blocking findings, drop it. For `blocking:` findings, note your uncertainty but still report — an independent validator will evaluate it.
 
 ## Output Format
 

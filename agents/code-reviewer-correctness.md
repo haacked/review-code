@@ -245,9 +245,9 @@ Before including any finding, argue against it:
 1. **What's the strongest case this is wrong?** Could the behavior be intentional? Is there context you're missing?
 2. **Can you point to specific code?** "It seems like" is not evidence. Cite the exact lines.
 3. **Did you verify your assumptions?** Read the actual code — don't assume based on function names or patterns.
-4. **Is the argument against stronger than the argument for?** If so, drop it.
+4. **Is the argument against stronger than the argument for?** For non-blocking findings, drop it. For `blocking:` findings, note your uncertainty but still report — an independent validator will evaluate it.
 
-**Drop the finding if** you can't cite specific code confirming it, or the concern is speculative rather than evidence-based.
+**Drop non-blocking findings if** you can't cite specific code confirming it, or the concern is speculative rather than evidence-based. **For `blocking:` findings**, report them even if uncertain — include your confidence level and the validator will make the final call.
 
 ## Feedback Format
 
