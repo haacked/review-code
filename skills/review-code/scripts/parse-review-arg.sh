@@ -17,6 +17,8 @@ DRAFT_MODE="false"
 SELF_MODE="false"
 APPLY_MODE="false"
 LEARN_MODE="false"
+OVERWRITE_MODE="false"
+APPEND_MODE="false"
 remaining_args=()
 
 for arg_item in "$@"; do
@@ -28,6 +30,10 @@ for arg_item in "$@"; do
         SELF_MODE="true"
     elif [[ "${arg_item}" == "--apply" ]]; then
         APPLY_MODE="true"
+    elif [[ "${arg_item}" == "--overwrite" ]]; then
+        OVERWRITE_MODE="true"
+    elif [[ "${arg_item}" == "--append" ]]; then
+        APPEND_MODE="true"
     else
         remaining_args+=("${arg_item}")
     fi
@@ -183,6 +189,16 @@ build_json_output() {
         jq_args+=("--arg" "apply_mode" "true")
     fi
 
+    # Add overwrite_mode if enabled
+    if [[ "${OVERWRITE_MODE}" == "true" ]]; then
+        jq_args+=("--arg" "overwrite_mode" "true")
+    fi
+
+    # Add append_mode if enabled
+    if [[ "${APPEND_MODE}" == "true" ]]; then
+        jq_args+=("--arg" "append_mode" "true")
+    fi
+
     jq -nc "${jq_args[@]}" "${jq_filter}"
 }
 
@@ -208,6 +224,14 @@ validate_draft_mode() {
 validate_apply_mode() {
     if [[ "${APPLY_MODE}" == "true" ]] && [[ "${LEARN_MODE}" != "true" ]]; then
         build_json_error "--apply flag only works with learn mode. Use '/review-code learn --apply'"
+        exit 1
+    fi
+}
+
+# Helper: Validate overwrite and append are not both specified
+validate_overwrite_append_mode() {
+    if [[ "${OVERWRITE_MODE}" == "true" ]] && [[ "${APPEND_MODE}" == "true" ]]; then
+        build_json_error "--overwrite and --append are mutually exclusive. Use one or the other."
         exit 1
     fi
 }
@@ -491,6 +515,9 @@ detect_no_arg() {
 if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
     # Validate --apply flag is only used with learn mode (early check)
     validate_apply_mode
+
+    # Validate --overwrite and --append are mutually exclusive
+    validate_overwrite_append_mode
 
     # 0. Learn Mode (Highest Priority - before review modes)
     if detect_learn_mode; then

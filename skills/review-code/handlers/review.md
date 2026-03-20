@@ -51,11 +51,14 @@ If user selects "Migrate and continue":
 
 **If `file_info.file_exists` is true** (a review file exists but neither of the above conditions apply):
 
-Use AskUserQuestion to ask what to do with the existing review:
-- Options:
-  1. "Overwrite": Replace the existing review
-  2. "Append": Add new findings to the existing review
-  3. "Cancel": Stop without reviewing
+First, check the session JSON for `overwrite` and `append` flags:
+- If `overwrite` is true: proceed as "Overwrite" (replace the existing review) without prompting.
+- If `append` is true: proceed as "Append" (add new findings to the existing review) without prompting.
+- Otherwise, use AskUserQuestion to ask what to do with the existing review:
+  - Options:
+    1. "Overwrite": Replace the existing review
+    2. "Append": Add new findings to the existing review
+    3. "Cancel": Stop without reviewing
 
 ### Extract Session Data
 
