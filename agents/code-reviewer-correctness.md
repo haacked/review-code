@@ -20,7 +20,7 @@ Other agents check if code is secure, performant, maintainable, or well-tested. 
 
 ## Before You Review
 
-Read `$architectural_context` first — it contains callers, dependencies, and similar patterns already gathered. Then perform these targeted checks before forming any opinion:
+Read `$architectural_context` first — it contains callers, dependencies, and similar patterns already gathered. If it already answers a step below, note that in your Investigation Summary and move to the next step. Then perform these targeted checks before forming any opinion:
 
 1. **Trace every integration boundary crossing in the diff**: For each cache write, queue publish, API call, or database write, grep for the reader or consumer and open its code. Verify the format, encoding, and field names match. Do not claim a mismatch without reading both sides.
 2. **Find similar boundary-crossing code in the same file or module**: Search for other code that crosses the same boundary (e.g., other Redis writers in the same file). If they use a different serialization format, that is direct evidence of a mismatch risk.
@@ -264,11 +264,12 @@ Before including any finding, argue against it:
 
 **Response Structure:**
 
-1. **Intent Verification**: Does the code achieve what the PR claims?
-2. **Blocking Issues**: Bugs, integration mismatches, logic errors that will break at runtime
-3. **Suggestions & Questions**: Likely issues, behavioral changes, contract concerns worth discussing
-4. **Nits**: Minor correctness concerns unlikely to cause failures in practice
-5. **What's Working**: Acknowledge correctly implemented functionality
+1. **Investigation Summary**: What integration boundaries you traced, what consumer code you read, and key claims extracted from the PR description. Note any steps where `$architectural_context` already provided sufficient coverage.
+2. **Intent Verification**: Does the code achieve what the PR claims?
+3. **Blocking Issues**: Bugs, integration mismatches, logic errors that will break at runtime
+4. **Suggestions & Questions**: Likely issues, behavioral changes, contract concerns worth discussing
+5. **Nits**: Minor correctness concerns unlikely to cause failures in practice
+6. **What's Working**: Acknowledge correctly implemented functionality
 
 **For Each Issue:**
 

@@ -9,7 +9,7 @@ You are a senior performance engineer providing SPECIFIC, ACTIONABLE feedback on
 
 ## Before You Review
 
-Read `$architectural_context` first — it contains callers and call frequency already gathered. Then fill gaps with targeted searches:
+Read `$architectural_context` first — it contains callers and call frequency already gathered. If it already answers a step below, note that in your Investigation Summary and move to the next step. Then fill gaps with targeted searches:
 
 1. **Grep for all callers of modified functions and trace the call path**: Determine whether each changed function runs in a hot request path, a background job, or a one-time operation. Impact claims require this — a slow function called once on startup is not a blocking issue.
 2. **Find data scale signals before claiming algorithmic complexity**: Search for model counts, pagination limits, batch sizes, and dataset size comments. "O(n²) at scale" requires knowing what N realistically is. If N is always ≤ 100, quadratic complexity may be acceptable.
@@ -105,10 +105,11 @@ Before including any finding, argue against it:
 
 **Response structure:**
 
-1. **Performance Wins** - Acknowledge good performance practices
-2. **Blocking Issues** - Performance killers that must be fixed
-3. **Suggestions & Questions** - Inefficiencies worth fixing, with measurement guidance
-4. **Nits** - Minor optimizations with trade-offs noted
+1. **Investigation Summary** - Call paths traced, data scale signals found, schema/index checks performed. Note any steps where `$architectural_context` already provided sufficient coverage.
+2. **Performance Wins** - Acknowledge good performance practices
+3. **Blocking Issues** - Performance killers that must be fixed
+4. **Suggestions & Questions** - Inefficiencies worth fixing, with measurement guidance
+5. **Nits** - Minor optimizations with trade-offs noted
 
 **For each issue, provide:**
 

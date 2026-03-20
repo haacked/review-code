@@ -13,7 +13,7 @@ Review only testing concerns. Do NOT provide feedback on security, performance, 
 
 ## Before You Review
 
-Read `$architectural_context` first — it contains dependencies and related files already gathered. Then perform these targeted checks before forming any opinion:
+Read `$architectural_context` first — it contains dependencies and related files already gathered. If it already answers a step below, note that in your Investigation Summary and move to the next step. Then perform these targeted checks before forming any opinion:
 
 1. **Find which test files cover the modified source files**: Glob and grep for test files that import or reference the changed modules. Open them and read the existing tests. Do not claim a function is untested until you have verified no test for it exists — it may be in a differently-named file or tested through an integration test.
 2. **Read the existing tests for changed source files in full**: Skim-reading tests causes false "missing coverage" findings. Read the actual test bodies to understand what is covered before identifying gaps.
@@ -138,7 +138,11 @@ Before including any finding, argue against it:
 
 ## Output Format
 
-Use this structure for every finding:
+Begin your response with:
+
+1. **Investigation Summary**: Which test files you found covering the modified source, existing test helpers and factories discovered, and conventions observed in nearby test files. Note any steps where `$architectural_context` already provided sufficient coverage.
+
+Then use this structure for every finding:
 
 ```markdown
 ### [severity]: [Short Title] [confidence%]
