@@ -151,24 +151,22 @@ Location: notifications/realtime.py
 
 Evaluate whether the total implementation is proportionate to the problem being solved. Assume the feature is correct and necessary. Ask: does the amount of supporting code make sense for what the actual logic accomplishes?
 
-**Before flagging, check for justifications:**
-- The PR description or linked issues mention upcoming extensions that need this architecture
-- The codebase already uses this level of architecture for similar features (check with Grep/Glob)
-- There is a known scaling requirement or domain modeling need (e.g., a well-designed domain layer with value objects and aggregates may have a high infrastructure-to-logic ratio by deliberate design)
+**Before flagging, check for justifications using Grep/Glob:**
+- Does the PR description or a linked issue mention upcoming extensions that require this architecture?
+- Does the codebase already use this level of architecture for similar features?
+- Is there an explicit scaling requirement or deliberate domain modeling strategy (e.g., a DDD-style domain layer where a high infrastructure-to-logic ratio is intentional)?
 
-If any justification applies, either skip the finding or downgrade it to a question/suggestion that explicitly cites the justification. Only file a proportionality finding when the evidence is strong despite the justification. If none apply, proceed.
+Use justifications as follows:
+- **Strong justification** (explicit extension plans, codebase precedent): downgrade to a `question` that cites the justification, or skip entirely.
+- **Weak or absent justification**: file the finding as `blocking` or `suggestion` with concrete evidence.
 
 **Watch for:**
-- Infrastructure-to-logic ratio: the PR adds significantly more supporting code (types, helpers, configuration, registries, factories, base classes) than actual business logic. Estimate by line count: if lines of types, helpers, registries, factories, and base classes exceed lines of business logic by 3:1 or more, question why.
-- Indirection depth: count how many files or classes a single user action must pass through before reaching the actual logic. Three or more pass-through layers (e.g., handler calls service calls repository calls adapter) where each layer adds fewer than 5 lines of logic beyond the delegating call is a signal.
-- Layering for the sake of separation: a class or module with a single public method that exists only to call another class's single method, repeated across layers
-- Generalization without variation: generic or parameterized code where only one set of parameters is ever used in the codebase
+- Infrastructure-to-logic ratio: the PR adds significantly more supporting code (types, helpers, configuration, registries, factories, base classes) than actual business logic. Estimate by line count: if infrastructure lines exceed business logic lines by 3:1 or more, question why.
+- Indirection depth: count pass-through layers between a user action and the actual logic. Three or more layers (e.g., handler → service → repository → adapter) where each layer adds little beyond a delegating call is a signal.
+- Layering for the sake of separation: a class or module with a single public method that exists only to call another class's single method, repeated across layers.
+- Generalization without variation: generic or parameterized code where only one set of parameters is ever used in the codebase.
 
-When flagging disproportionate solutions, include:
-1. A count of infrastructure lines vs. logic lines (e.g., "~453 lines of infrastructure, ~27 lines of logic")
-2. A concrete simpler alternative (e.g., "A single function with direct calls achieves the same result in ~40 lines")
-
-**Note:** Proportionality findings are inherently holistic. If you cannot point to specific code evidence (line counts, class counts, indirection depth), do not file a finding. The Self-Challenge Gate's "concrete alternative" requirement applies: you must propose a simpler implementation, not just observe that the current one feels heavy.
+**Required to file a finding:** You must have specific code evidence — line counts, class counts, or a measurable indirection depth. If you can only say the implementation "feels heavy," do not file. You must also propose a concrete simpler alternative (see Self-Challenge Gate).
 
 **Example finding:**
 ```
