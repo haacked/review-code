@@ -401,13 +401,13 @@ If `is_chunked` is false (or `chunk_metadata` is absent), behavior is identical 
 
 After all agent results are collected (including all chunks in chunked mode), apply this filter before synthesis:
 
-1. **Build the in-scope file list.** Extract the set of file paths present in `file_metadata`. These are the only files the PR touches.
+1. **Build the in-scope file list.** Let `IN_SCOPE_PATHS` be the set of file paths from `file_metadata.modified_files[].path`. These are the only files the PR is considered to touch for this filter.
 
-2. **For each finding, check whether it is located at a specific file.** A finding has a specific file location if it names a path as the target of the issue (e.g., `` `src/api/views.py:42` ``, a section header like `#### src/api/views.py`, or an explicit `path:` field). Passing mentions of a filename inside prose (e.g., "This pattern is also used in `utils/helpers.py`") do not count.
+2. **For each finding, check whether it is located at a specific file.** A finding has a specific file location if it names a path as the target of the issue (e.g., `src/api/views.py:42`, a section header like `#### src/api/views.py`, or an explicit `path:` field). Passing mentions of a filename inside prose (e.g., "This pattern is also used in `utils/helpers.py`") do not count.
 
 3. **Apply the rule:**
-   - Finding is located at a file **in** `file_metadata`: keep it.
-   - Finding is located at a file **not in** `file_metadata`: drop it silently.
+   - Finding is located at a file **in** `IN_SCOPE_PATHS`: keep it.
+   - Finding is located at a file **not in** `IN_SCOPE_PATHS`: drop it silently.
    - Finding has **no specific file location** (e.g., a general architectural observation): keep it.
 
 This filter reduces noise before the expensive extended-thinking synthesis step. Line-level precision is handled later by the "Validate Findings Against the Diff" step.
