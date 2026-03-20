@@ -1,6 +1,6 @@
 ---
 name: code-reviewer-architecture
-description: "Use this agent when you need high-level design and architecture review of code changes. Focuses exclusively on necessity, simplicity, established patterns, code reuse, and solution proportionality. Examples: Before adding new dependencies, when implementing new features, for refactoring efforts. Use this to question premises and suggest better approaches."
+description: "Use this agent when you need high-level design and architecture review of code changes. Focuses exclusively on necessity, simplicity, established patterns, and code reuse. Examples: Before adding new dependencies, when implementing new features, for refactoring efforts. Use this to question premises and suggest better approaches."
 model: opus
 color: blue
 ---
@@ -149,18 +149,24 @@ Location: notifications/realtime.py
 
 ### 9. Solution Proportionality (Critical)
 
-Step back from individual code patterns. Sections 1 and 7 flag individual over-built pieces; this section flags the overall PR when those pieces, even if individually defensible, accumulate into a disproportionate whole. Unlike Section 8 (which questions whether the feature should exist), this section assumes the feature is correct and asks whether the implementation is proportionate to it.
+Evaluate whether the total implementation is proportionate to the problem being solved. Assume the feature is correct and necessary. Ask: does the amount of supporting code make sense for what the actual logic accomplishes?
+
+**Before flagging, check for justifications using Grep/Glob:**
+- Does the PR description or a linked issue mention upcoming extensions that require this architecture?
+- Does the codebase already use this level of architecture for similar features?
+- Is there an explicit scaling requirement or deliberate domain modeling strategy (e.g., a DDD-style domain layer where a high infrastructure-to-logic ratio is intentional)?
+
+Use justifications as follows:
+- **Strong justification** (explicit extension plans, codebase precedent): downgrade to a `question` that cites the justification, or skip entirely.
+- **Weak or absent justification**: file the finding as `blocking` or `suggestion` with concrete evidence.
 
 **Watch for:**
-- Infrastructure-to-logic ratio: the PR adds significantly more supporting code (types, helpers, configuration, registries, factories, base classes) than actual business logic. Estimate by line count: if lines of types, helpers, registries, factories, and base classes exceed lines of business logic by 3:1 or more, question why.
-- Indirection depth: count how many files or classes a single user action must pass through before reaching the actual logic. Three or more pass-through layers (e.g., handler calls service calls repository calls adapter) with each layer doing little more than delegating is a signal.
-- Layering for the sake of separation: a class or module with a single public method that exists only to call another class's single method, repeated across layers
-- Generalization without variation: generic or parameterized code where only one set of parameters is ever used in the codebase
+- Infrastructure-to-logic ratio: the PR adds significantly more supporting code (types, helpers, configuration, registries, factories, base classes) than actual business logic. Estimate by line count: if infrastructure lines exceed business logic lines by 3:1 or more, question why.
+- Indirection depth: count pass-through layers between a user action and the actual logic. Three or more layers (e.g., handler → service → repository → adapter) where each layer adds little beyond a delegating call is a signal.
+- Layering for the sake of separation: a class or module with a single public method that exists only to call another class's single method, repeated across layers.
+- Generalization without variation: generic or parameterized code where only one set of parameters is ever used in the codebase.
 
-When flagging disproportionate solutions, include:
-1. A count of infrastructure lines vs. logic lines (e.g., "~453 lines of infrastructure, ~27 lines of logic")
-2. A concrete simpler alternative (e.g., "A single function with direct calls achieves the same result in ~40 lines")
-3. Acknowledgment of when the complexity IS justified: the PR description mentions upcoming extensions, the codebase already uses this level of architecture for similar features, or there is a known scaling requirement
+**Required to file a finding:** You must have specific code evidence — line counts, class counts, or a measurable indirection depth. If you can only say the implementation "feels heavy," do not file. You must also propose a concrete simpler alternative (see Self-Challenge Gate).
 
 **Example finding:**
 ```
