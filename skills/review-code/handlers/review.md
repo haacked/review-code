@@ -397,7 +397,23 @@ If `is_chunked` is true:
 
 If `is_chunked` is false (or `chunk_metadata` is absent), behavior is identical to the non-chunked path above.
 
-After all agents complete, synthesize their findings using extended thinking into a coherent, deduplicated review document. Apply confidence-based filtering and cross-agent corroboration before producing the final output.
+**Pre-synthesis scope filter**
+
+After all agent results are collected (including all chunks in chunked mode), apply this filter before synthesis:
+
+1. **Build the in-scope file list.** Let `IN_SCOPE_PATHS` be the set of file paths from `file_metadata.modified_files[].path`. These are the only files the PR is considered to touch for this filter.
+
+2. **For each finding, check whether it is located at a specific file.** A finding has a specific file location if it names a path as the target of the issue (e.g., `src/api/views.py:42`, a section header like `#### src/api/views.py`, or an explicit `path:` field). Passing mentions of a filename inside prose (e.g., "This pattern is also used in `utils/helpers.py`") do not count.
+
+3. **Apply the rule:**
+   - Finding is located at a file **in** `IN_SCOPE_PATHS`: keep it.
+   - Finding is located at a file **not in** `IN_SCOPE_PATHS`: drop it silently.
+   - Finding has **no specific file location** (e.g., a general architectural observation): keep it.
+
+This filter reduces noise before the expensive extended-thinking synthesis step. Line-level precision is handled later by the "Validate Findings Against the Diff" step.
+
+Synthesize the remaining findings using extended thinking into a coherent, deduplicated review document. Apply confidence-based filtering and cross-agent corroboration before producing the final output.
+
 **Cross-agent corroboration:** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function.
 
 **Filtering rules:**
@@ -438,7 +454,7 @@ Where `targets` contains `{"path": "<file>", "line": <number>}` objects, and `di
   1. Resume the agent that produced this finding (using the agent ID from the Task tool).
   2. Ask: "Your finding at `<file>:<line>` references a line outside the changed hunks in the diff. Is this finding still relevant to the changes (e.g., the issue interacts with the changed code), or should it be dropped?"
   3. Include only if the agent confirms relevance and provides justification.
-- **Error: `"file not in diff"`**: Drop the finding. The file was not part of the changes.
+- **Error: `"file not in diff"`**: Drop the finding silently. The pre-synthesis scope filter is the primary gate for this; the position mapper serves as a backstop for any that slip through.
 
 **Step 3: Verify factual claims.** For any remaining finding that claims a bug or incorrect behavior:
 
