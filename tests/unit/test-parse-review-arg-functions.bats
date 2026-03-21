@@ -638,3 +638,116 @@ reset_globals() {
     [ "$FIND_MODE" = "true" ]
     [ "$LEARN_MODE" = "false" ]
 }
+
+# =============================================================================
+# Overwrite / Append mode tests
+# =============================================================================
+
+@test "overwrite mode: OVERWRITE_MODE is false by default" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh"
+    [ "$OVERWRITE_MODE" = "false" ]
+}
+
+@test "append mode: APPEND_MODE is false by default" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh"
+    [ "$APPEND_MODE" = "false" ]
+}
+
+@test "overwrite mode: --overwrite sets OVERWRITE_MODE" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "--overwrite" "123"
+    [ "$OVERWRITE_MODE" = "true" ]
+    [ "$arg" = "123" ]
+}
+
+@test "append mode: --append sets APPEND_MODE" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "--append" "123"
+    [ "$APPEND_MODE" = "true" ]
+    [ "$arg" = "123" ]
+}
+
+@test "overwrite mode: --overwrite as second argument" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "123" "--overwrite"
+    [ "$OVERWRITE_MODE" = "true" ]
+    [ "$arg" = "123" ]
+}
+
+@test "append mode: --append as second argument" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "123" "--append"
+    [ "$APPEND_MODE" = "true" ]
+    [ "$arg" = "123" ]
+}
+
+@test "overwrite mode: build_json_output includes overwrite_mode when set" {
+    file_pattern=""
+    OVERWRITE_MODE="true"
+    run build_json_output "test" "key" "val"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"overwrite_mode":"true"'* ]]
+}
+
+@test "overwrite mode: build_json_output excludes overwrite_mode when false" {
+    file_pattern=""
+    OVERWRITE_MODE="false"
+    run build_json_output "test" "key" "val"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *'"overwrite_mode"'* ]]
+}
+
+@test "append mode: build_json_output includes append_mode when set" {
+    file_pattern=""
+    APPEND_MODE="true"
+    run build_json_output "test" "key" "val"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"append_mode":"true"'* ]]
+}
+
+@test "append mode: build_json_output excludes append_mode when false" {
+    file_pattern=""
+    APPEND_MODE="false"
+    run build_json_output "test" "key" "val"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *'"append_mode"'* ]]
+}
+
+@test "overwrite + append: mutually exclusive validation fails" {
+    OVERWRITE_MODE="true"
+    APPEND_MODE="true"
+    run validate_overwrite_append_mode
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"mutually exclusive"* ]]
+}
+
+@test "overwrite + append: validation passes with only overwrite" {
+    OVERWRITE_MODE="true"
+    APPEND_MODE="false"
+    run validate_overwrite_append_mode
+    [ "$status" -eq 0 ]
+}
+
+@test "overwrite + append: validation passes with only append" {
+    OVERWRITE_MODE="false"
+    APPEND_MODE="true"
+    run validate_overwrite_append_mode
+    [ "$status" -eq 0 ]
+}
+
+@test "overwrite + append: validation passes with neither" {
+    OVERWRITE_MODE="false"
+    APPEND_MODE="false"
+    run validate_overwrite_append_mode
+    [ "$status" -eq 0 ]
+}
+
+@test "overwrite mode: combines with --force" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "--force" "--overwrite" "123"
+    [ "$FORCE_MODE" = "true" ]
+    [ "$OVERWRITE_MODE" = "true" ]
+    [ "$arg" = "123" ]
+}
+
+@test "append mode: combines with --draft" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "--draft" "--append" "123"
+    [ "$DRAFT_MODE" = "true" ]
+    [ "$APPEND_MODE" = "true" ]
+    [ "$arg" = "123" ]
+}
