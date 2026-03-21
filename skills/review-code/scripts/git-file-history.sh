@@ -47,7 +47,7 @@ main() {
 
         file_count=$((file_count + 1))
         if [[ ${file_count} -gt ${MAX_FILES} ]]; then
-            break
+            continue
         fi
 
         # Single git log call: author and date in one pass (tab-separated)
