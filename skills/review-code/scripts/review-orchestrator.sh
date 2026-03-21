@@ -274,14 +274,18 @@ build_review_data() {
     local file_metadata
     file_metadata=$(echo "${diff_content}" | "${SCRIPT_DIR}/pre-review-context.sh")
 
-    # Compute git history metrics for modified files
-    local git_history
-    git_history=$(echo "${file_metadata}" | jq -r '.modified_files[].path' | "${SCRIPT_DIR}/git-file-history.sh")
+    # Compute git history metrics for modified files (only when inside a git repo)
+    local git_history='{}'
+    if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+        git_history=$(echo "${file_metadata}" | jq -r '.modified_files[].path' | "${SCRIPT_DIR}/git-file-history.sh")
 
-    # Validate git_history is valid JSON (safety check)
-    if ! echo "${git_history}" | jq empty 2> /dev/null; then
-        error "Invalid JSON from git-file-history.sh"
-        exit 1
+        # Validate git_history is valid JSON (safety check)
+        if ! echo "${git_history}" | jq empty 2> /dev/null; then
+            error "Invalid JSON from git-file-history.sh"
+            exit 1
+        fi
+    else
+        debug_trace "build_review_data" "Not inside a git repository; skipping git history analysis"
     fi
 
     # Merge git history into file_metadata

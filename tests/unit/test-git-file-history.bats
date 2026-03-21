@@ -46,7 +46,7 @@ teardown() {
     run bash -c 'echo "file.txt" | "$PROJECT_ROOT/skills/review-code/scripts/git-file-history.sh"'
     [ "$status" -eq 0 ]
 
-    echo "$output" | jq -e '."file.txt" | has("recent_commits", "recent_authors", "last_modified", "high_churn")' > /dev/null
+    echo "$output" | jq -e '."file.txt" | has("recent_commits") and has("recent_authors") and has("last_modified") and has("high_churn")' > /dev/null
 }
 
 # =============================================================================
