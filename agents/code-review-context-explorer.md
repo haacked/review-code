@@ -38,6 +38,16 @@ Gather only when relevant to the changes:
 - **Security-Sensitive**: Find existing security patterns when auth or validation code changes
 - **Performance-Critical**: Find similar optimizations when queries or loops are modified
 
+### 5. Git History Context
+
+Check `file_metadata` for files with `git_history.high_churn: true`. For each high-churn file:
+- Run `git log --oneline -5 <file>` to show recent changes
+- Note if recent commits show a pattern of fixes (stability concern) or if many different authors are modifying the file (coordination risk)
+
+For code that looks surprising or non-obvious during your investigation:
+- Run `git log -1 --format="%s%n%n%b" -S "<surprising_code_snippet>" -- <file>` to find the commit that introduced it and understand why it was written that way
+- Only include this context when it would help reviewers understand intent
+
 ## Output Format
 
 ```markdown
@@ -56,6 +66,10 @@ Gather only when relevant to the changes:
 
 ### Special Context
 [Database schema, API patterns, security context, etc. — only if relevant]
+
+### Git History Context
+- **High-Churn Files**: Files with frequent recent changes and their recent commit summaries
+- **Notable History**: Commit messages explaining non-obvious code patterns
 
 ### Key Files for Review
 1. `path/to/file.py` — Modified file doing X

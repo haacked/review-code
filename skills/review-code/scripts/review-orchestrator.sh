@@ -274,6 +274,24 @@ build_review_data() {
     local file_metadata
     file_metadata=$(echo "${diff_content}" | "${SCRIPT_DIR}/pre-review-context.sh")
 
+    # Compute git history metrics for modified files
+    local git_history
+    git_history=$(echo "${file_metadata}" | jq -r '.modified_files[].path' | "${SCRIPT_DIR}/git-file-history.sh")
+
+    # Validate git_history is valid JSON (safety check)
+    if ! echo "${git_history}" | jq empty 2> /dev/null; then
+        error "Invalid JSON from git-file-history.sh"
+        exit 1
+    fi
+
+    # Merge git history into file_metadata
+    file_metadata=$(echo "${file_metadata}" | jq --argjson history "${git_history}" '
+        .modified_files |= map(
+            . + {git_history: ($history[.path] // {recent_commits: 0, recent_authors: 0, last_modified: null, high_churn: false})}
+        )
+        | . + {has_high_churn_files: ([.modified_files[] | select(.git_history.high_churn == true)] | length > 0)}
+    ')
+
     # Extract org/repo from git_context
     local org repo
     org=$(echo "${git_context}" | jq -r '.org')
