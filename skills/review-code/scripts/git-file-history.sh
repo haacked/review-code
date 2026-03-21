@@ -50,9 +50,9 @@ main() {
             continue
         fi
 
-        # Single git log call: author and date in one pass (tab-separated)
+        # Single git log call: author email and date in one pass (tab-separated)
         local log_output
-        log_output=$(git log --since="30 days ago" --format="%an%x09%as" -- "${file_path}" 2> /dev/null || echo "")
+        log_output=$(git log --since="30 days ago" --format="%ae%x09%as" -- "${file_path}" 2> /dev/null || echo "")
 
         local recent_commits=0
         local recent_authors=0
