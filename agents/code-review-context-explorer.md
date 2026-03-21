@@ -41,12 +41,12 @@ Gather only when relevant to the changes:
 ### 5. Git History Context
 
 Check `file_metadata` for files with `git_history.high_churn: true`. For each high-churn file:
-- Run `git log --oneline -5 <file>` to show recent changes
-- Note if recent commits show a pattern of fixes (stability concern) or if many different authors are modifying the file (coordination risk)
+- Run `git log --oneline -5 <file>` to surface recent changes
+- Classify the pattern: repeated fix commits (stability risk), many distinct authors (coordination risk), or neutral (feature build-up)
 
 For code that looks surprising or non-obvious during your investigation:
-- Run `git log -1 --format="%s%n%n%b" -S "<surprising_code_snippet>" -- <file>` to find the commit that introduced it and understand why it was written that way
-- Only include this context when it would help reviewers understand intent
+- Run `git log -1 --format="%s%n%n%b" -S "<surprising_code_snippet>" -- <file>` to find the commit that introduced it
+- Include the commit subject and body when they explain *why* the code is written the way it is — skip it when the commit message adds nothing beyond what the code says
 
 ## Output Format
 
@@ -68,8 +68,8 @@ For code that looks surprising or non-obvious during your investigation:
 [Database schema, API patterns, security context, etc. — only if relevant]
 
 ### Git History Context
-- **High-Churn Files**: Files with frequent recent changes and their recent commit summaries
-- **Notable History**: Commit messages explaining non-obvious code patterns
+- **High-Churn Files**: `path/to/file` — recent commit pattern (e.g., "5 of last 5 commits are bug fixes — stability risk")
+- **Surprising Code**: Commit that introduced `<snippet>` — subject and body if they explain intent
 
 ### Key Files for Review
 1. `path/to/file.py` — Modified file doing X
@@ -102,6 +102,10 @@ Focus on context that will help reviewers make better decisions. Be selective �
 
 ### Special Context
 **Security**: Three other endpoints validate email format using `EmailValidator.is_valid()`
+
+### Git History Context
+- **High-Churn Files**: `backend/api/auth.py` — 4 of last 5 commits are bug fixes ("Fix token expiry edge case", "Fix double-send on retry") — stability risk
+- **Surprising Code**: The `time.sleep(0.1)` in `send_verification_email` was added in "Throttle email sends to avoid SES rate limit" (2024-08) — intentional, not a performance bug
 
 ### Key Files for Review
 1. `backend/api/auth.py` — New verification endpoint
