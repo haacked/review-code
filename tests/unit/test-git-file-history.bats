@@ -70,13 +70,15 @@ teardown() {
 }
 
 @test "git-file-history.sh: counts unique authors correctly" {
-    # Add commits from different authors
+    # Add commits from different authors (must change email since script uses %ae)
     git config user.name "Author Two"
+    git config user.email "author2@example.com"
     echo "change 2" >> file.txt
     git add file.txt
     git commit -m "Change by author 2"
 
     git config user.name "Author Three"
+    git config user.email "author3@example.com"
     echo "change 3" >> file.txt
     git add file.txt
     git commit -m "Change by author 3"
@@ -94,13 +96,15 @@ teardown() {
 # =============================================================================
 
 @test "git-file-history.sh: flags high churn at 3+ authors" {
-    # Add commits from 2 more authors (total 3)
+    # Add commits from 2 more authors (total 3, must change email since script uses %ae)
     git config user.name "Author Two"
+    git config user.email "author2@example.com"
     echo "change 2" >> file.txt
     git add file.txt
     git commit -m "Change by author 2"
 
     git config user.name "Author Three"
+    git config user.email "author3@example.com"
     echo "change 3" >> file.txt
     git add file.txt
     git commit -m "Change by author 3"
