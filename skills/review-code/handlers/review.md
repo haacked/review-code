@@ -169,6 +169,8 @@ Explore the codebase to understand:
   (grep for function/method names, report top 3-5 callers per significantly modified function)
 - Existing patterns for similar functionality
 - Reusable utilities or conventions
+- Git history for high-churn files and surprising code
+  (check `git_history.high_churn` flags in file_metadata; run `git log` for flagged files and for any code whose purpose is non-obvious)
 
 Time-box yourself to 2-3 minutes of exploration.
 ```
