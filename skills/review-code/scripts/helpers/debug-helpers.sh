@@ -266,6 +266,24 @@ debug_finalize() {
             echo ""
         fi
 
+        # Agent token usage (if available)
+        if [[ -f "${DEBUG_SESSION_DIR}/12-token-usage/stats.json" ]]; then
+            echo "Agent Token Usage:"
+            echo "------------------"
+            jq -r '
+                .agents // {} | to_entries | sort_by(.key) | .[]
+                | "  \(.key): ~\(.value.total_tokens // "?") tokens (\(.value.duration_ms // "?")ms, \(.value.tool_uses // "?") tool calls)"
+            ' "${DEBUG_SESSION_DIR}/12-token-usage/stats.json" 2> /dev/null
+            local total_tokens agent_count
+            total_tokens=$(jq -r '.total_tokens // "?"' "${DEBUG_SESSION_DIR}/12-token-usage/stats.json" 2> /dev/null)
+            agent_count=$(jq -r '.agent_count // "?"' "${DEBUG_SESSION_DIR}/12-token-usage/stats.json" 2> /dev/null)
+            if [[ "${total_tokens}" != "?" ]] && [[ "${total_tokens}" != "null" ]]; then
+                echo "  ---"
+                echo "  Total: ~${total_tokens} tokens across ${agent_count} agents"
+            fi
+            echo ""
+        fi
+
         # List all stages with artifacts
         echo "Debug Artifacts by Stage:"
         echo "-------------------------"
