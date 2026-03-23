@@ -580,7 +580,8 @@ Where `$total_tokens` is the sum of all `total_tokens` from `$token_usage` and `
 ```bash
 jq -n --argjson agents '<JSON object with per-agent {total_tokens, tool_uses, duration_ms}>' \
   --arg total '<total_tokens sum>' --arg count '<agent_count>' \
-  '{"action":"stats","debug_dir":"$debug_session_dir","stage":"12-token-usage","data":{"agents":$agents,"total_tokens":($total|tonumber),"agent_count":($count|tonumber)}}' \
+  --arg dir "$debug_session_dir" \
+  '{"action":"stats","debug_dir":$dir,"stage":"12-token-usage","data":{"agents":$agents,"total_tokens":($total|tonumber),"agent_count":($count|tonumber)}}' \
   | ~/.claude/skills/review-code/scripts/debug-artifact-writer.sh
 ```
 
