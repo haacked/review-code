@@ -273,10 +273,10 @@ debug_finalize() {
             jq -r '
                 .agents // {} | to_entries | sort_by(.key) | .[]
                 | "  \(.key): ~\(.value.total_tokens // "?") tokens (\(.value.duration_ms // "?")ms, \(.value.tool_uses // "?") tool calls)"
-            ' "${DEBUG_SESSION_DIR}/12-token-usage/stats.json" 2> /dev/null
+            ' "${DEBUG_SESSION_DIR}/12-token-usage/stats.json" 2> /dev/null || true
             local total_tokens agent_count
-            total_tokens=$(jq -r '.total_tokens // "?"' "${DEBUG_SESSION_DIR}/12-token-usage/stats.json" 2> /dev/null)
-            agent_count=$(jq -r '.agent_count // "?"' "${DEBUG_SESSION_DIR}/12-token-usage/stats.json" 2> /dev/null)
+            total_tokens=$(jq -r '.total_tokens // "?"' "${DEBUG_SESSION_DIR}/12-token-usage/stats.json" 2> /dev/null || echo "?")
+            agent_count=$(jq -r '.agent_count // "?"' "${DEBUG_SESSION_DIR}/12-token-usage/stats.json" 2> /dev/null || echo "?")
             if [[ "${total_tokens}" != "?" ]] && [[ "${total_tokens}" != "null" ]]; then
                 echo "  ---"
                 echo "  Total: ~${total_tokens} tokens across ${agent_count} agents"
