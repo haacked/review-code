@@ -552,12 +552,13 @@ token_usage:
   <agent_name>: <total_tokens>
   ...
   total: <sum of all total_tokens>
+diff_tokens: <diff_tokens from session data>
 -->
 ```
 
 The `token_usage` block records per-agent token consumption and the aggregate total. For chunked reviews, sum tokens by agent type across chunks (e.g., all `chunk-*-code-reviewer-security` entries become a single `code-reviewer-security` total). Always include the `total` field as the sum of all agents.
 
-This metadata is used by the learning system to determine when the review was created. The `review_commit` field records the PR's HEAD SHA at review time, enabling drift detection when creating draft reviews later.
+This metadata is used by the learning system to determine when the review was created. The `review_commit` field records the PR's HEAD SHA at review time, enabling drift detection when creating draft reviews later. The `diff_tokens` field is an estimated token count of the diff (~4 chars per token).
 Save the complete review to `$review_file` and inform the user with a clickable file link:
 
 ```
@@ -586,6 +587,48 @@ jq -n --argjson agents '<JSON object with per-agent {total_tokens, tool_uses, du
 ```
 
 **Do NOT post the full review to GitHub.** The detailed review is saved to the markdown file only. If `--draft` mode is enabled, a separate draft review with inline comments will be created in the next step. That draft contains only brief inline comments, not the full review summary.
+
+### Log Token Usage
+
+After saving the review, append a line to a central token usage log. This tracks token counts across reviews over time.
+
+Derive the log path from the review file's directory: take the parent of the `org/repo/` directory (i.e., the review root) and append `token-usage.jsonl`. For example, if `$review_file` is `~/dev/ai/reviews/posthog/posthog/pr-123.md`, the log path is `~/dev/ai/reviews/token-usage.jsonl`.
+
+In practice, this is the great-grandparent directory of `$review_file` (three directories up):
+
+```bash
+token_usage_log="$(dirname "$(dirname "$(dirname "$review_file")")")/token-usage.jsonl"
+```
+
+Each line is a JSON object:
+
+```json
+{"reviewed_at": "<ISO 8601 timestamp>", "org": "<org>", "repo": "<repo>", "mode": "<mode>", "identifier": "<pr_number or branch name>", "diff_tokens": <diff_tokens>, "files_changed": <number>, "lines_added": <number>, "lines_removed": <number>}
+```
+
+Extract these values from the session data:
+- `reviewed_at`: the current ISO 8601 timestamp (same as the review metadata)
+- `org`, `repo`: from `summary.repository` (split on `/`)
+- `mode`: from `summary.mode`
+- `identifier`: PR number if PR mode, branch name if branch mode, commit hash for commit mode, etc.
+- `diff_tokens`: from the top-level `diff_tokens` field
+- `files_changed`, `lines_added`, `lines_removed`: from `summary.stats`
+
+Use `Bash` with `jq` to append the JSON line (ensures correct escaping and consistent format):
+
+```bash
+jq -nc \
+  --arg reviewed_at "<timestamp>" \
+  --arg org "<org>" \
+  --arg repo "<repo>" \
+  --arg mode "<mode>" \
+  --arg identifier "<identifier>" \
+  --argjson diff_tokens <diff_tokens> \
+  --argjson files_changed <files_changed> \
+  --argjson lines_added <lines_added> \
+  --argjson lines_removed <lines_removed> \
+  '$ARGS.named' >> "$token_usage_log"
+```
 
 ### Generate Suggested Comments (PR Mode Only)
 
