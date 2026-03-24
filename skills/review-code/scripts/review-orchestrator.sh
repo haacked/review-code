@@ -359,6 +359,10 @@ build_review_data() {
     debug_save_json "05-chunking" "output.json" <<< "${chunk_result}"
     debug_time "05-chunking" "end"
 
+    # Estimate diff token count (~4 chars per token for code)
+    local diff_tokens
+    diff_tokens=$((${#diff_content} / 4))
+
     # Build summary for user confirmation
     # Extract mode-specific fields to avoid passing large args to jq
     local mode_fields
@@ -441,6 +445,7 @@ build_review_data() {
     jq_args+=(--arg overwrite_mode "${overwrite_mode}")
     jq_args+=(--arg append_mode "${append_mode}")
     jq_args+=(--arg debug_session_dir "${DEBUG_SESSION_DIR:-}")
+    jq_args+=(--argjson diff_tokens "${diff_tokens}")
 
     # Single jq invocation with conditional pr field and chunk data
     final_output=$(jq "${jq_args[@]}" \
@@ -449,6 +454,7 @@ build_review_data() {
             mode: $mode,
             git: $git,
             diff: $diff,
+            diff_tokens: $diff_tokens,
             languages: $lang,
             file_metadata: $meta,
             file_info: $file,
