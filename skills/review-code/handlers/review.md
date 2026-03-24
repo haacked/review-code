@@ -590,7 +590,15 @@ jq -n --argjson agents '<JSON object with per-agent {total_tokens, tool_uses, du
 
 ### Log Token Usage
 
-After saving the review, append a line to the central token usage log at `~/.claude/skills/review-code/reviews/token-usage.jsonl`. This tracks token counts across reviews over time.
+After saving the review, append a line to a central token usage log. This tracks token counts across reviews over time.
+
+Derive the log path from the review file's directory: take the parent of the `org/repo/` directory (i.e., the review root) and append `token-usage.jsonl`. For example, if `$review_file` is `~/dev/ai/reviews/posthog/posthog/pr-123.md`, the log path is `~/dev/ai/reviews/token-usage.jsonl`.
+
+In practice, this is the grandparent directory of `$review_file`:
+
+```bash
+token_usage_log="$(dirname "$(dirname "$(dirname "$review_file")")")/token-usage.jsonl"
+```
 
 Each line is a JSON object:
 
@@ -619,7 +627,7 @@ jq -nc \
   --argjson files_changed <files_changed> \
   --argjson lines_added <lines_added> \
   --argjson lines_removed <lines_removed> \
-  '$ARGS.named' >> ~/.claude/skills/review-code/reviews/token-usage.jsonl
+  '$ARGS.named' >> "$token_usage_log"
 ```
 
 ### Generate Suggested Comments (PR Mode Only)
