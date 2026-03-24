@@ -594,7 +594,7 @@ After saving the review, append a line to a central token usage log. This tracks
 
 Derive the log path from the review file's directory: take the parent of the `org/repo/` directory (i.e., the review root) and append `token-usage.jsonl`. For example, if `$review_file` is `~/dev/ai/reviews/posthog/posthog/pr-123.md`, the log path is `~/dev/ai/reviews/token-usage.jsonl`.
 
-In practice, this is the grandparent directory of `$review_file`:
+In practice, this is the great-grandparent directory of `$review_file` (three directories up):
 
 ```bash
 token_usage_log="$(dirname "$(dirname "$(dirname "$review_file")")")/token-usage.jsonl"
