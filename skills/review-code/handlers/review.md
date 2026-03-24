@@ -111,6 +111,19 @@ jq -n --arg dir "$debug_session_dir" --arg content "$variable_with_content" \
 - **09-per-chunk-analysis** (chunked reviews only): Record timing (start/end). For each chunk, save the prompt as `chunk-{id}-prompt.md` and result as `chunk-{id}-result.md`.
 - **10-agent-dispatch**: Record timing (start/end). For each agent (or chunk x agent combination), save the prompt as `{agent}-prompt.md` (or `chunk-{id}-{agent}-prompt.md`) and result as `{agent}-result.md` (or `chunk-{id}-{agent}-result.md`). Save stats with agent count.
 - **11-synthesis**: Record timing (start/end). Save the merged findings as `merged-findings.md` and corroboration results as `corroboration.md`.
+- **12-token-usage**: After the review is complete, save stats with per-agent token usage and aggregate totals (see "Track Token Usage" below).
+
+### Track Token Usage
+
+Track API token consumption across all agents dispatched during the review. The Agent/Task tool returns usage metadata at the end of each response:
+
+```
+<usage>total_tokens: NNN
+tool_uses: NNN
+duration_ms: NNN</usage>
+```
+
+Maintain a `$token_usage` map throughout the review. After each Agent/Task tool invocation completes (context explorer, review agents, chunk analyzers, finding validators), parse the `<usage>` block from its response and record `total_tokens`, `tool_uses`, and `duration_ms` keyed by agent name (e.g., `context_explorer`, `code-reviewer-security`, `chunk-1-analysis`, `validator-1`). If the usage block is absent from a response, skip that entry.
 
 **Check for chunked diff:**
 
@@ -175,7 +188,7 @@ Explore the codebase to understand:
 Time-box yourself to 2-3 minutes of exploration.
 ```
 
-Save the explorer's output as `$architectural_context`.
+Save the explorer's output as `$architectural_context`. Extract usage metadata from the response and record in `$token_usage["context_explorer"]`.
 
 ### Invoke Specialized Review Agents
 
@@ -340,6 +353,9 @@ IMPORTANT: Build upon the previous review. Do not duplicate findings. You may:
 - Mark findings as resolved if fixed
 
 ### Collect and Synthesize Results
+
+After all review agents complete, extract usage metadata from each agent's response and record in `$token_usage` keyed by agent type (e.g., `$token_usage["code-reviewer-security"]`). For chunked reviews, key by `chunk-{id}-{agent-type}`.
+
 **Chunked review dispatch:**
 
 If `is_chunked` is true:
@@ -378,7 +394,7 @@ If `is_chunked` is true:
    Time-box to 1-2 minutes of exploration.
    ```
 
-   Save each chunk's analysis result as `$chunk_analyses[$chunk.id]`.
+   Save each chunk's analysis result as `$chunk_analyses[$chunk.id]`. Extract usage metadata from each response and record in `$token_usage` as `chunk-{id}-analysis`.
 
 2. After all per-chunk analyses complete, for each chunk in the `chunks` array, for each applicable agent:
    - Replace `$diff` in the agent context with the chunk's `diff` field (the subset of changes for this chunk)
@@ -486,7 +502,7 @@ Where `targets` contains `{"path": "<file>", "line": <number>}` objects, and `di
   Read the file at `$file` (around line `$line`) and determine whether this finding is real or a false positive. Try to disprove it. Respond with CONFIRMED or DISMISSED and your reasoning.
   ````
 
-  Dispatch all blocking finding validations **in parallel**. For each result:
+  Dispatch all blocking finding validations **in parallel**. Extract usage metadata from each validator's response and record in `$token_usage` as `validator-{N}` (numbered sequentially). For each result:
   - **DISMISSED**: downgrade to `suggestion:` and append the validator's reasoning (e.g., "*Downgraded from blocking: [validator reasoning]*").
   - **CONFIRMED**: keep as `blocking:`.
   - **Unreachable or errors**: keep the finding as-is.
@@ -532,8 +548,14 @@ pr_number: <pr_number if applicable>
 org: <org>
 repo: <repo>
 review_commit: <pr.head_sha if PR mode, omit otherwise>
+token_usage:
+  <agent_name>: <total_tokens>
+  ...
+  total: <sum of all total_tokens>
 -->
 ```
+
+The `token_usage` block records per-agent token consumption and the aggregate total. For chunked reviews, sum tokens by agent type across chunks (e.g., all `chunk-*-code-reviewer-security` entries become a single `code-reviewer-security` total). Always include the `total` field as the sum of all agents.
 
 This metadata is used by the learning system to determine when the review was created. The `review_commit` field records the PR's HEAD SHA at review time, enabling drift detection when creating draft reviews later.
 Save the complete review to `$review_file` and inform the user with a clickable file link:
@@ -547,6 +569,20 @@ Pull Request: $pr_url
 Review saved to: $review_file
 
 You can open it directly: file://$review_file
+
+Token usage: ~$total_tokens tokens across $agent_count agents
+```
+
+Where `$total_tokens` is the sum of all `total_tokens` from `$token_usage` and `$agent_count` is the number of entries.
+
+**Write token usage debug artifacts (when `$debug_session_dir` is set):** Build a JSON object from `$token_usage` and save via the debug bridge:
+
+```bash
+jq -n --argjson agents '<JSON object with per-agent {total_tokens, tool_uses, duration_ms}>' \
+  --arg total '<total_tokens sum>' --arg count '<agent_count>' \
+  --arg dir "$debug_session_dir" \
+  '{"action":"stats","debug_dir":$dir,"stage":"12-token-usage","data":{"agents":$agents,"total_tokens":($total|tonumber),"agent_count":($count|tonumber)}}' \
+  | ~/.claude/skills/review-code/scripts/debug-artifact-writer.sh
 ```
 
 **Do NOT post the full review to GitHub.** The detailed review is saved to the markdown file only. If `--draft` mode is enabled, a separate draft review with inline comments will be created in the next step. That draft contains only brief inline comments, not the full review summary.
