@@ -57,10 +57,12 @@ main() {
     fi
 
     # Skip if diff exceeds Copilot's practical limits
-    if [[ ${#diff} -gt ${COPILOT_MAX_DIFF_BYTES} ]]; then
+    local diff_bytes
+    diff_bytes=$(printf '%s' "${diff}" | LC_ALL=C wc -c | tr -d '[:space:]')
+    if [[ "${diff_bytes}" -gt ${COPILOT_MAX_DIFF_BYTES} ]]; then
         copilot_json_output true false \
             raw_output "" \
-            error "diff too large for copilot (${#diff} bytes, max ${COPILOT_MAX_DIFF_BYTES})" \
+            error "diff too large for copilot (${diff_bytes} bytes, max ${COPILOT_MAX_DIFF_BYTES})" \
             duration_ms 0
         return 0
     fi

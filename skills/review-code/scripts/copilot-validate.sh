@@ -76,12 +76,13 @@ extract_reasoning() {
 }
 
 validate_json_output() {
-    local verdict="$1"
-    local reasoning="$2"
-    local duration_ms="$3"
+    local available="$1"
+    local verdict="$2"
+    local reasoning="$3"
+    local duration_ms="$4"
 
     jq -n \
-        --argjson available true \
+        --argjson available "${available}" \
         --arg verdict "${verdict}" \
         --arg reasoning "${reasoning}" \
         --argjson duration_ms "${duration_ms}" \
@@ -91,7 +92,7 @@ validate_json_output() {
 main() {
     # Check availability first
     if ! copilot_available; then
-        validate_json_output "INCONCLUSIVE" "copilot not installed" 0
+        validate_json_output false "INCONCLUSIVE" "copilot not installed" 0
         return 0
     fi
 
@@ -109,7 +110,7 @@ main() {
 
     # Return INCONCLUSIVE if no diff context to validate against
     if [[ -z "${diff_context}" ]]; then
-        validate_json_output "INCONCLUSIVE" "no diff context provided" 0
+        validate_json_output true "INCONCLUSIVE" "no diff context provided" 0
         return 0
     fi
 
@@ -135,15 +136,15 @@ main() {
             verdict=$(parse_verdict "${parsed_text}")
             reasoning=$(extract_reasoning "${parsed_text}")
 
-            validate_json_output "${verdict}" "${reasoning}" "${duration_ms}"
+            validate_json_output true "${verdict}" "${reasoning}" "${duration_ms}"
             ;;
         1)
             # Timeout
-            validate_json_output "INCONCLUSIVE" "copilot timed out after ${timeout_secs}s" "${duration_ms}"
+            validate_json_output true "INCONCLUSIVE" "copilot timed out after ${timeout_secs}s" "${duration_ms}"
             ;;
         *)
             # Other error
-            validate_json_output "INCONCLUSIVE" "copilot exited with error" "${duration_ms}"
+            validate_json_output true "INCONCLUSIVE" "copilot exited with error" "${duration_ms}"
             ;;
     esac
 }
