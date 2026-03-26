@@ -53,7 +53,7 @@ parse_verdict() {
 
     # Extract the first non-empty line, strip markdown formatting and whitespace
     local first_line
-    first_line=$(echo "${text}" | sed '/^[[:space:]]*$/d' | head -1 | tr -d '[:space:]*\`#')
+    first_line=$(echo "${text}" | sed '/^[[:space:]]*$/d' | head -1 | tr -d '[:space:]*`#')
 
     case "${first_line}" in
         CONFIRMED* | confirmed*)
