@@ -38,7 +38,27 @@ Gather only when relevant to the changes:
 - **Security-Sensitive**: Find existing security patterns when auth or validation code changes
 - **Performance-Critical**: Find similar optimizations when queries or loops are modified
 
-### 5. Git History Context
+### 5. Reference Implementations
+
+When the PR description, commit message, or code comments indicate the changes are a **port, migration, or rewrite** of existing code (e.g., "port from Python to Rust", "migrate from Django", "rewrite of X"):
+
+- **Locate the original implementation** in the codebase. Search for the original module, class, or function names mentioned in the description or visible in the diff (e.g., imported types, similar function names in a different language directory).
+- **Read the original code** and document its key behaviors: input validation, error handling, edge cases, return values, and side effects.
+- **Note behavioral differences** between the original and the new implementation visible in the diff. Flag anything that looks like an unintentional divergence.
+- **Include the original code path** in the "Key Files for Review" section so review agents can cross-reference.
+
+When code is being ported, the original implementation is the specification. Review agents need it to verify correctness. Spend no more than 60 seconds on this section; focus on entry points and public API rather than reading every helper.
+
+### 6. Commit Messages
+
+If **Commit Messages** are provided in the prompt, use them to understand the author's intent behind the changes. Commit messages explain *why* changes were made and can reveal:
+- The purpose of a port, migration, or refactor
+- Bug context (e.g., "Fix race condition when...")
+- Intentional design decisions that might otherwise look like mistakes
+
+Include relevant commit message context in your output when it helps explain the changes.
+
+### 7. Git History Context
 
 Check `file_metadata` for files with `git_history.high_churn: true`. For each high-churn file:
 - Run `git log --oneline -5 <file>` to surface recent changes
@@ -66,6 +86,12 @@ For code that looks surprising or non-obvious during your investigation:
 
 ### Special Context
 [Database schema, API patterns, security context, etc. — only if relevant]
+
+### Reference Implementation
+[Only if the changes are a port, migration, or rewrite]
+- **Original:** `path/to/original/module.py` — [purpose and key behaviors]
+- **Key Behaviors:** [list of behaviors the port should preserve]
+- **Potential Divergences:** [any differences spotted between original and port]
 
 ### Git History Context
 - **High-Churn Files**: `path/to/file` — recent commit pattern (e.g., "5 of last 5 commits are bug fixes — stability risk")
@@ -103,12 +129,18 @@ Focus on context that will help reviewers make better decisions. Be selective �
 ### Special Context
 **Security**: Three other endpoints validate email format using `EmailValidator.is_valid()`
 
+### Reference Implementation
+- **Original:** `backend/api/auth_legacy.py` — Django email verification with token generation, Redis storage, and retry throttling
+- **Key Behaviors:** Validates email format before generating token; catches `OverflowError` from date parsing; rate-limits to 3 verification emails per hour per user
+- **Potential Divergences:** New implementation doesn't appear to include the rate-limiting check present in the original
+
 ### Git History Context
 - **High-Churn Files**: `backend/api/auth.py` — 4 of last 5 commits are bug fixes ("Fix token expiry edge case", "Fix double-send on retry") — stability risk
 - **Surprising Code**: The `time.sleep(0.1)` in `send_verification_email` was added in "Throttle email sends to avoid SES rate limit" (2024-08) — intentional, not a performance bug
 
 ### Key Files for Review
 1. `backend/api/auth.py` — New verification endpoint
-2. `backend/api/password_reset.py` — Existing similar pattern
-3. `backend/services/token_generator.py` — Should be reused
+2. `backend/api/auth_legacy.py` — Original Django implementation (reference for port)
+3. `backend/api/password_reset.py` — Existing similar pattern
+4. `backend/services/token_generator.py` — Should be reused
 ```

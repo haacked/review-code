@@ -71,6 +71,7 @@ From the session file JSON, extract these fields for building agent context:
 - `languages`: detected languages
 - `file_info.file_path`: where to save the review
 - `file_ref`: (optional) git ref for reading PR files when on a different branch
+- `commit_messages`: (optional) commit messages for the reviewed changes (subject + body, truncated to 8KB)
 - `chunks`: (optional) array of chunk objects when the diff was split
 - `chunk_metadata`: (optional) object with `chunked`, `reason`, `chunk_count`
 - `debug_session_dir`: (optional) path to debug session directory when debug mode is enabled
@@ -167,6 +168,40 @@ Invoke the Task tool with subagent_type "Explore" and prompt:
 ```markdown
 Gather architectural context for this code review.
 
+{For PR mode:}
+**PR:** #$pr_number - $pr_title
+**Description:**
+$pr_body
+
+{If pr.linked_issues is not empty:}
+**Linked Issues:**
+{For each issue in pr.linked_issues:}
+- #$issue.number: $issue.title
+{End for}
+
+{For branch mode with associated PR:}
+**Branch:** $branch vs $base_branch
+**Associated PR:** #$pr_number - $pr_title
+**Description:**
+$pr_body
+
+{For branch mode without PR:}
+**Branch:** $branch vs $base_branch
+
+{For commit mode:}
+**Commit:** $commit
+
+{For range mode:}
+**Range:** $range
+
+{For local mode:}
+**Local changes** (unstaged/staged)
+
+{For all modes:}
+{If commit_messages is not empty:}
+**Commit Messages:**
+$commit_messages
+
 **File Metadata:**
 $file_metadata
 
@@ -182,6 +217,7 @@ Explore the codebase to understand:
   (grep for function/method names, report top 3-5 callers per significantly modified function)
 - Existing patterns for similar functionality
 - Reusable utilities or conventions
+- Reference implementations (if the description indicates a port, migration, or rewrite)
 - Git history for high-churn files and surprising code
   (check `git_history.high_churn` flags in file_metadata; run `git log` for flagged files and for any code whose purpose is non-obvious)
 
@@ -260,6 +296,10 @@ Reviewing branch: $branch vs $base_branch
 Reviewing range: $range
 
 {For all modes:}
+{If commit_messages is not empty:}
+**Commit Messages:**
+$commit_messages
+
 **Code Changes:**
 $diff
 
