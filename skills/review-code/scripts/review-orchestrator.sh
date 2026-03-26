@@ -322,13 +322,15 @@ build_review_data() {
                 fi
                 ;;
             "pr")
-                local cm_branch
+                local cm_branch cm_file_ref cm_head_ref
                 cm_branch=$(echo "${mode_args_json}" | jq -r '.mode_branch // ""')
-                if [[ -n "${cm_branch}" && -n "${pr_context}" ]]; then
+                cm_file_ref=$(echo "${mode_args_json}" | jq -r '.mode_file_ref // ""')
+                cm_head_ref="${cm_file_ref:-${cm_branch}}"
+                if [[ -n "${cm_head_ref}" && -n "${pr_context}" ]]; then
                     local cm_base
                     cm_base=$(echo "${pr_context}" | jq -r '.base_ref // ""')
                     if [[ -n "${cm_base}" ]]; then
-                        commit_messages=$(git log --format="%h %s%n%w(0,4,4)%b" "${cm_base}..${cm_branch}" 2> /dev/null | head -c 8192 || true)
+                        commit_messages=$(git log --format="%h %s%n%w(0,4,4)%b" "${cm_base}..${cm_head_ref}" 2> /dev/null | head -c 8192 || true)
                     fi
                 fi
                 ;;
