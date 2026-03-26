@@ -3,10 +3,11 @@
 #
 # Usage:
 #   echo '{"finding_description": "...", "file": "src/auth.ts", "line": 42,
-#          "proposed_fix": "...", "repo_dir": "/path/to/repo", "timeout_seconds": 90}' \
+#          "proposed_fix": "...", "diff_context": "<relevant diff snippet>",
+#          "timeout_seconds": 90}' \
 #     | copilot-validate.sh
 #
-# Input (stdin): JSON with finding details and repo access info
+# Input (stdin): JSON with finding details and diff context
 # Output (stdout): JSON with available, verdict (CONFIRMED|DISMISSED|INCONCLUSIVE), reasoning, duration_ms
 
 set -euo pipefail
@@ -20,6 +21,7 @@ build_validation_prompt() {
     local file="$2"
     local line="$3"
     local proposed_fix="$4"
+    local diff_context="$5"
 
     cat << PROMPT
 You are a skeptical senior engineer. A code reviewer flagged this blocking issue:
@@ -28,10 +30,13 @@ You are a skeptical senior engineer. A code reviewer flagged this blocking issue
 **File:** ${file}:${line}
 **Proposed fix:** ${proposed_fix}
 
-Read the file at ${file} (around line ${line}). Try to DISPROVE this finding.
-Look for guards, upstream checks, framework features, or misreadings that make it wrong.
+Here is the relevant code from the diff:
 
-Your default posture is that the finding is wrong until proven otherwise. Consider:
+\`\`\`diff
+${diff_context}
+\`\`\`
+
+Try to DISPROVE this finding. Your default posture is that the finding is wrong until proven otherwise. Consider:
 - Is the finding based on a misreading of the code?
 - Does the code handle this case correctly through a path the reviewer missed?
 - Is there a guard, check, middleware, or framework feature that prevents the issue?
@@ -70,10 +75,23 @@ extract_reasoning() {
     echo "${text}" | awk '/^[[:space:]]*$/ && !v {next} !v {v=1; next} 1'
 }
 
+validate_json_output() {
+    local verdict="$1"
+    local reasoning="$2"
+    local duration_ms="$3"
+
+    jq -n \
+        --argjson available true \
+        --arg verdict "${verdict}" \
+        --arg reasoning "${reasoning}" \
+        --argjson duration_ms "${duration_ms}" \
+        '$ARGS.named'
+}
+
 main() {
     # Check availability first
     if ! copilot_available; then
-        jq -n '{available: false, verdict: "INCONCLUSIVE", reasoning: "copilot not installed", duration_ms: 0}'
+        validate_json_output "INCONCLUSIVE" "copilot not installed" 0
         return 0
     fi
 
@@ -81,25 +99,29 @@ main() {
     local input
     input=$(cat)
 
-    local finding_description file line proposed_fix repo_dir timeout_secs
-    finding_description=$(echo "${input}" | jq -r '.finding_description // ""')
-    file=$(echo "${input}" | jq -r '.file // ""')
-    line=$(echo "${input}" | jq -r '.line // 0')
-    proposed_fix=$(echo "${input}" | jq -r '.proposed_fix // "none provided"')
-    repo_dir=$(echo "${input}" | jq -r '.repo_dir // "."')
-    timeout_secs=$(echo "${input}" | jq -r '.timeout_seconds // "'"${COPILOT_VALIDATE_TIMEOUT}"'"')
+    local finding_description file line proposed_fix diff_context timeout_secs
+    finding_description=$(jq -r '.finding_description // ""' <<< "${input}")
+    file=$(jq -r '.file // ""' <<< "${input}")
+    line=$(jq -r '.line // 0' <<< "${input}")
+    proposed_fix=$(jq -r '.proposed_fix // "none provided"' <<< "${input}")
+    diff_context=$(jq -r '.diff_context // ""' <<< "${input}")
+    timeout_secs=$(jq -r '.timeout_seconds // "'"${COPILOT_VALIDATE_TIMEOUT}"'"' <<< "${input}")
+
+    # Return INCONCLUSIVE if no diff context to validate against
+    if [[ -z "${diff_context}" ]]; then
+        validate_json_output "INCONCLUSIVE" "no diff context provided" 0
+        return 0
+    fi
 
     # Build the validation prompt
     local prompt
-    prompt=$(build_validation_prompt "${finding_description}" "${file}" "${line}" "${proposed_fix}")
+    prompt=$(build_validation_prompt "${finding_description}" "${file}" "${line}" "${proposed_fix}" "${diff_context}")
 
-    # Run copilot with timeout
+    # Run copilot with timeout, passing diff context in the prompt (no --add-dir)
     local raw_output="" duration_ms=0
     local run_result=0
     copilot_run_with_timeout "${timeout_secs}" raw_output duration_ms \
         -p "${prompt}" \
-        --yolo \
-        --add-dir "${repo_dir}" \
         --output-format json \
         --silent || run_result=$?
 
@@ -107,36 +129,21 @@ main() {
         0)
             # Success: parse the output
             local parsed_text
-            parsed_text=$(echo "${raw_output}" | copilot_parse_final_message)
+            parsed_text=$(copilot_parse_final_message <<< "${raw_output}")
 
             local verdict reasoning
             verdict=$(parse_verdict "${parsed_text}")
             reasoning=$(extract_reasoning "${parsed_text}")
 
-            jq -n \
-                --argjson available true \
-                --arg verdict "${verdict}" \
-                --arg reasoning "${reasoning}" \
-                --argjson duration_ms "${duration_ms}" \
-                '$ARGS.named'
+            validate_json_output "${verdict}" "${reasoning}" "${duration_ms}"
             ;;
         1)
             # Timeout
-            jq -n \
-                --argjson available true \
-                --arg verdict "INCONCLUSIVE" \
-                --arg reasoning "copilot timed out after ${timeout_secs}s" \
-                --argjson duration_ms "${duration_ms}" \
-                '$ARGS.named'
+            validate_json_output "INCONCLUSIVE" "copilot timed out after ${timeout_secs}s" "${duration_ms}"
             ;;
         *)
             # Other error
-            jq -n \
-                --argjson available true \
-                --arg verdict "INCONCLUSIVE" \
-                --arg reasoning "copilot exited with error" \
-                --argjson duration_ms "${duration_ms}" \
-                '$ARGS.named'
+            validate_json_output "INCONCLUSIVE" "copilot exited with error" "${duration_ms}"
             ;;
     esac
 }

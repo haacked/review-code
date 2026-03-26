@@ -1,20 +1,38 @@
 #!/usr/bin/env bash
-# copilot-review.sh - Run Copilot CLI code review and return results as JSON
+# copilot-review.sh - Run Copilot CLI code review on a diff and return results as JSON
 #
 # Usage:
-#   echo '{"repo_dir": "/path/to/repo", "timeout_seconds": 180}' | copilot-review.sh
+#   echo '{"diff": "<diff text>", "timeout_seconds": 180}' | copilot-review.sh
 #
-# Input (stdin): JSON with repo_dir and optional timeout_seconds
+# Input (stdin): JSON with diff (required) and optional timeout_seconds
 # Output (stdout): JSON with available, timed_out, raw_output, duration_ms
 #
-# Copilot runs its own /review command with file access to the repo.
-# Output is raw text for the Claude orchestrator to parse during synthesis.
+# Passes the diff directly in the prompt instead of using --add-dir,
+# which avoids hitting Copilot's context window limits on large repos.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=helpers/copilot-helpers.sh
 source "${SCRIPT_DIR}/helpers/copilot-helpers.sh"
+
+build_review_prompt() {
+    local diff="$1"
+
+    cat << PROMPT
+Review the following code diff. For each issue found, report:
+- File path and line number
+- Severity (blocking, suggestion, nit)
+- Description of the issue
+- Suggested fix if applicable
+
+Focus on bugs, security issues, correctness problems, and significant maintainability concerns. Skip trivial style issues.
+
+\`\`\`diff
+${diff}
+\`\`\`
+PROMPT
+}
 
 main() {
     # Check availability first
@@ -23,30 +41,39 @@ main() {
         return 0
     fi
 
-    # Parse input JSON from stdin
-    local input
+    # Parse input JSON from stdin (single jq call for all fields)
+    local input diff timeout_secs
     input=$(cat)
+    diff=$(jq -r '.diff // ""' <<< "${input}")
+    timeout_secs=$(jq -r '.timeout_seconds // "'"${COPILOT_REVIEW_TIMEOUT}"'"' <<< "${input}")
 
-    local repo_dir timeout_secs
-    repo_dir=$(echo "${input}" | jq -r '.repo_dir // "."')
-    timeout_secs=$(echo "${input}" | jq -r '.timeout_seconds // "'"${COPILOT_REVIEW_TIMEOUT}"'"')
-
-    # Validate repo_dir exists
-    if [[ ! -d "${repo_dir}" ]]; then
+    # Validate diff is not empty
+    if [[ -z "${diff}" ]]; then
         copilot_json_output true false \
             raw_output "" \
-            error "repo_dir does not exist: ${repo_dir}" \
+            error "diff is empty" \
             duration_ms 0
         return 0
     fi
 
-    # Run copilot review with timeout
+    # Skip if diff exceeds Copilot's practical limits
+    if [[ ${#diff} -gt ${COPILOT_MAX_DIFF_BYTES} ]]; then
+        copilot_json_output true false \
+            raw_output "" \
+            error "diff too large for copilot (${#diff} bytes, max ${COPILOT_MAX_DIFF_BYTES})" \
+            duration_ms 0
+        return 0
+    fi
+
+    # Build the review prompt with the diff embedded
+    local prompt
+    prompt=$(build_review_prompt "${diff}")
+
+    # Run copilot with timeout, passing diff in the prompt (no --add-dir)
     local raw_output="" duration_ms=0
     local run_result=0
     copilot_run_with_timeout "${timeout_secs}" raw_output duration_ms \
-        -p "/review" \
-        --yolo \
-        --add-dir "${repo_dir}" \
+        -p "${prompt}" \
         --output-format json \
         --silent || run_result=$?
 
@@ -54,7 +81,7 @@ main() {
         0)
             # Success: parse the JSONL output to extract the review text
             local parsed_output
-            parsed_output=$(echo "${raw_output}" | copilot_parse_final_message)
+            parsed_output=$(copilot_parse_final_message <<< "${raw_output}")
             copilot_json_output true false \
                 raw_output "${parsed_output}" \
                 duration_ms "${duration_ms}"
