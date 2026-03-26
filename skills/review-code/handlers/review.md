@@ -397,19 +397,22 @@ IMPORTANT: Build upon the previous review. Do not duplicate findings. You may:
 
 ### Copilot Cross-Model Review (Parallel)
 
-If `copilot_available` is true in the session data **and** `working_dir` is not null, dispatch a Copilot review **in parallel** with the Claude agent Task tool calls above. Add this as an additional Bash tool call alongside the agent dispatches:
+If `copilot_available` is true in the session data, dispatch a Copilot review **in parallel** with the Claude agent Task tool calls above. The diff is passed directly in the prompt (not via `--add-dir`) to stay within Copilot's context window. Add this as an additional Bash tool call alongside the agent dispatches:
 
 ```bash
-echo '{"repo_dir":"<working_dir>","timeout_seconds":180}' | ~/.claude/skills/review-code/scripts/copilot-review.sh
+jq -n --arg diff "$diff" --argjson timeout_seconds 180 '$ARGS.named' \
+  | ~/.claude/skills/review-code/scripts/copilot-review.sh
 ```
+
+Where `$diff` is the diff from the session data. Use `jq` to safely encode the diff as JSON (handles newlines, quotes, and special characters).
 
 Save the JSON output as `$copilot_review`. This runs concurrently with all Claude agents and should not block or delay them.
 
-**Skip conditions:** If `copilot_available` is false or absent, or if `working_dir` is null, skip this step entirely.
+**Skip conditions:** If `copilot_available` is false or absent, skip this step entirely.
 
 **Error handling:** If the script returns `available: false`, `timed_out: true`, or contains an `error` field, ignore the Copilot result and continue with Claude-only review. Never fail or stop the review because of a Copilot error.
 
-If `$copilot_review` succeeds, record `copilot_review` in `$token_usage` with the `duration_ms` value from the output.
+If `$copilot_review` succeeds, record `copilot_review` in `$token_usage` with `{ total_tokens: 0, tool_uses: 0, duration_ms }` using the `duration_ms` value from the output.
 
 ### Collect and Synthesize Results
 
@@ -589,7 +592,7 @@ Where `targets` contains `{"path": "<file>", "line": <number>}` objects, and `di
 
 ### Copilot Cross-Model Validation (Parallel)
 
-If `copilot_available` is true in the session data **and** `working_dir` is not null, also validate each blocking finding with Copilot **in parallel with** the Claude finding-validator dispatches above. For each blocking finding, dispatch a Bash tool call:
+If `copilot_available` is true in the session data, also validate each blocking finding with Copilot **in parallel with** the Claude finding-validator dispatches above. For each blocking finding, extract the relevant diff snippet for the finding's file (the hunk(s) containing the finding's line) and dispatch a Bash tool call:
 
 ```bash
 jq -n \
@@ -597,12 +600,14 @@ jq -n \
   --arg file "<file>" \
   --argjson line <line> \
   --arg proposed_fix "<proposed fix>" \
-  --arg repo_dir "<working_dir>" \
+  --arg diff_context "<relevant diff snippet for this file>" \
   --argjson timeout_seconds 90 \
   '$ARGS.named' | ~/.claude/skills/review-code/scripts/copilot-validate.sh
 ```
 
-Save each result as `$copilot_validate_N`. Record in `$token_usage` as `copilot-validate-{N}` with `duration_ms`.
+Where `diff_context` is the portion of the diff relevant to this finding's file and surrounding hunks. This keeps the prompt small and focused for Copilot's context window.
+
+Save each result as `$copilot_validate_N`. Record in `$token_usage` as `copilot-validate-{N}` with `{ total_tokens: 0, tool_uses: 0, duration_ms }`.
 
 **Combine Claude validator and Copilot validator verdicts:**
 
@@ -614,7 +619,7 @@ Save each result as `$copilot_validate_N`. Record in `$token_usage` as `copilot-
 | DISMISSED | DISMISSED | Downgrade to `suggestion:` with strong confidence that this is not blocking. |
 | Any | INCONCLUSIVE | Ignore Copilot result. Use Claude validator verdict only. |
 
-**Skip conditions:** If `copilot_available` is false or absent, or if `working_dir` is null, skip Copilot validation entirely and use Claude validator results only.
+**Skip conditions:** If `copilot_available` is false or absent, skip Copilot validation entirely and use Claude validator results only.
 
 ### Compose the Review Document
 

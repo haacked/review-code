@@ -6,6 +6,10 @@
 COPILOT_REVIEW_TIMEOUT="${COPILOT_REVIEW_TIMEOUT:-180}"
 COPILOT_VALIDATE_TIMEOUT="${COPILOT_VALIDATE_TIMEOUT:-90}"
 
+# Max diff size (bytes) to send to Copilot. Diffs larger than this exceed
+# both Copilot's context window and OS argument length limits (ARG_MAX).
+COPILOT_MAX_DIFF_BYTES="${COPILOT_MAX_DIFF_BYTES:-262144}"
+
 # Check if Copilot CLI is installed
 # Returns: 0 if available, 1 if not
 copilot_available() {
@@ -78,7 +82,7 @@ copilot_parse_final_message() {
 
     # Extract content from the last matching JSON object, trying structured types first,
     # then falling back to any object with a "content" field
-    result=$(echo "${raw_jsonl}" | jq -r '
+    result=$(printf '%s\n' "${raw_jsonl}" | jq -r '
 		if (.type == "result" or .type == "assistant.message" or .type == "message") then
 			(.data.content // .content // .message // .text // empty)
 		elif .content != null then
@@ -117,5 +121,5 @@ copilot_json_output() {
     done
 
     # All variadic pairs are strings; convert _ms fields to numbers in jq
-    jq -n "${jq_args[@]}" '$ARGS.named | with_entries(if .key | endswith("_ms") then .value |= tonumber else . end)'
+    jq -n "${jq_args[@]}" '$ARGS.named | with_entries(if .key | endswith("_ms") then .value |= (tonumber? // 0) else . end)'
 }
