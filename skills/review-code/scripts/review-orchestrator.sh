@@ -278,9 +278,15 @@ build_review_data() {
     local file_metadata
     file_metadata=$(echo "${diff_content}" | "${SCRIPT_DIR}/pre-review-context.sh")
 
+    # Check once if we're inside a git repo (used by history and commit message gathering)
+    local in_git_repo=false
+    if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+        in_git_repo=true
+    fi
+
     # Compute git history metrics for modified files (only when inside a git repo)
     local git_history='{}'
-    if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+    if [[ "${in_git_repo}" == "true" ]]; then
         git_history=$(echo "${file_metadata}" | jq -r '.modified_files[].path' | "${SCRIPT_DIR}/git-file-history.sh")
 
         # Validate git_history is valid JSON (safety check)
@@ -305,7 +311,7 @@ build_review_data() {
     local mode_args_json
     mode_args_json=$(jq -n "$@" '$ARGS.named' 2> /dev/null || echo '{}')
     local commit_messages=""
-    if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+    if [[ "${in_git_repo}" == "true" ]]; then
         case "${mode}" in
             "branch")
                 local cm_branch cm_base
@@ -330,7 +336,7 @@ build_review_data() {
                 local cm_commit
                 cm_commit=$(echo "${mode_args_json}" | jq -r '.mode_commit // ""')
                 if [[ -n "${cm_commit}" ]]; then
-                    commit_messages=$(git log --format="%h %s%n%w(0,4,4)%b" -1 "${cm_commit}" 2> /dev/null || true)
+                    commit_messages=$(git log --format="%h %s%n%w(0,4,4)%b" -1 "${cm_commit}" 2> /dev/null | head -c 8192 || true)
                 fi
                 ;;
             "range")
@@ -407,9 +413,8 @@ build_review_data() {
     diff_tokens=$((${#diff_content} / 4))
 
     # Build summary for user confirmation
-    # Extract mode-specific fields to avoid passing large args to jq
-    local mode_fields
-    mode_fields=$(jq -n "$@" '$ARGS.named')
+    # Reuse mode_args_json (already parsed from "$@" above)
+    local mode_fields="${mode_args_json}"
     local summary
     summary=$(build_summary "${mode}" "${diff_content}" "${git_context}" "${mode_fields}" "${pr_context}")
 
