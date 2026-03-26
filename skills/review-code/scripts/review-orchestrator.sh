@@ -25,6 +25,8 @@ set -euo pipefail
 
 # shellcheck source=lib/helpers/gh-wrapper.sh
 source "${SCRIPT_DIR}/helpers/gh-wrapper.sh"
+# shellcheck source=lib/helpers/copilot-helpers.sh
+source "${SCRIPT_DIR}/helpers/copilot-helpers.sh"
 
 # Main orchestration function
 main() {
@@ -498,6 +500,13 @@ build_review_data() {
     jq_args+=(--argjson diff_tokens "${diff_tokens}")
     jq_args+=(--arg commit_messages "${commit_messages}")
 
+    # Check if Copilot CLI is available for cross-model review
+    local copilot_is_available="false"
+    if copilot_available; then
+        copilot_is_available="true"
+    fi
+    jq_args+=(--arg copilot_available "${copilot_is_available}")
+
     # Single jq invocation with conditional pr field and chunk data
     final_output=$(jq "${jq_args[@]}" \
         '{
@@ -523,6 +532,7 @@ build_review_data() {
         + (if $chunks[0] != null then {chunks: $chunks[0], chunk_metadata: $chunk_metadata} else {} end)
         + (if $debug_session_dir != "" then {debug_session_dir: $debug_session_dir} else {} end)
         + (if $commit_messages != "" then {commit_messages: $commit_messages} else {} end)
+        + (if $copilot_available == "true" then {copilot_available: true} else {} end)
         + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")) | with_entries(select(.value != "")))')
     debug_save_json "07-final-output" "output.json" <<< "${final_output}"
     debug_time "07-final-output" "end"
