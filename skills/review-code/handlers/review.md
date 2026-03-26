@@ -167,6 +167,36 @@ Invoke the Task tool with subagent_type "Explore" and prompt:
 ```markdown
 Gather architectural context for this code review.
 
+{For PR mode:}
+**PR:** #$pr_number - $pr_title
+**Description:**
+$pr_body
+
+{If pr.linked_issues is not empty:}
+**Linked Issues:**
+{For each issue in pr.linked_issues:}
+- #$issue.number: $issue.title
+{End for}
+
+{For branch mode with associated PR:}
+**Branch:** $branch vs $base_branch
+**Associated PR:** #$pr_number - $pr_title
+**Description:**
+$pr_body
+
+{For branch mode without PR:}
+**Branch:** $branch vs $base_branch
+
+{For commit mode:}
+**Commit:** $commit
+
+{For range mode:}
+**Range:** $range
+
+{For local mode:}
+**Local changes** (unstaged/staged)
+
+{For all modes:}
 **File Metadata:**
 $file_metadata
 
@@ -182,6 +212,7 @@ Explore the codebase to understand:
   (grep for function/method names, report top 3-5 callers per significantly modified function)
 - Existing patterns for similar functionality
 - Reusable utilities or conventions
+- Reference implementations (if the description indicates a port, migration, or rewrite)
 - Git history for high-churn files and surprising code
   (check `git_history.high_churn` flags in file_metadata; run `git log` for flagged files and for any code whose purpose is non-obvious)
 
