@@ -49,7 +49,16 @@ When the PR description, commit message, or code comments indicate the changes a
 
 When code is being ported, the original implementation is the specification. Review agents need it to verify correctness. Spend no more than 60 seconds on this section; focus on entry points and public API rather than reading every helper.
 
-### 6. Git History Context
+### 6. Commit Messages
+
+If **Commit Messages** are provided in the prompt, use them to understand the author's intent behind the changes. Commit messages explain *why* changes were made and can reveal:
+- The purpose of a port, migration, or refactor
+- Bug context (e.g., "Fix race condition when...")
+- Intentional design decisions that might otherwise look like mistakes
+
+Include relevant commit message context in your output when it helps explain the changes.
+
+### 7. Git History Context
 
 Check `file_metadata` for files with `git_history.high_churn: true`. For each high-churn file:
 - Run `git log --oneline -5 <file>` to surface recent changes

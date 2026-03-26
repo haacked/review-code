@@ -71,6 +71,7 @@ From the session file JSON, extract these fields for building agent context:
 - `languages`: detected languages
 - `file_info.file_path`: where to save the review
 - `file_ref`: (optional) git ref for reading PR files when on a different branch
+- `commit_messages`: (optional) commit messages for the reviewed changes (subject + body, truncated to 8KB)
 - `chunks`: (optional) array of chunk objects when the diff was split
 - `chunk_metadata`: (optional) object with `chunked`, `reason`, `chunk_count`
 - `debug_session_dir`: (optional) path to debug session directory when debug mode is enabled
@@ -197,6 +198,10 @@ $pr_body
 **Local changes** (unstaged/staged)
 
 {For all modes:}
+{If commit_messages is not empty:}
+**Commit Messages:**
+$commit_messages
+
 **File Metadata:**
 $file_metadata
 
@@ -291,6 +296,10 @@ Reviewing branch: $branch vs $base_branch
 Reviewing range: $range
 
 {For all modes:}
+{If commit_messages is not empty:}
+**Commit Messages:**
+$commit_messages
+
 **Code Changes:**
 $diff
 

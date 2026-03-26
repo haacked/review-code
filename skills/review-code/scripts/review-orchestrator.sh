@@ -300,6 +300,49 @@ build_review_data() {
         | . + {has_high_churn_files: ([.modified_files[] | select(.git_history.high_churn == true)] | length > 0)}
     ')
 
+    # Gather commit messages for context (mode-dependent)
+    # Parse mode-specific jq args to extract values we need
+    local mode_args_json
+    mode_args_json=$(jq -n "$@" '$ARGS.named' 2> /dev/null || echo '{}')
+    local commit_messages=""
+    if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+        case "${mode}" in
+            "branch")
+                local cm_branch cm_base
+                cm_branch=$(echo "${mode_args_json}" | jq -r '.mode_branch // ""')
+                cm_base=$(echo "${mode_args_json}" | jq -r '.mode_base_branch // ""')
+                if [[ -n "${cm_branch}" && -n "${cm_base}" ]]; then
+                    commit_messages=$(git log --format="%h %s%n%w(0,4,4)%b" "${cm_base}..${cm_branch}" 2> /dev/null | head -c 8192 || true)
+                fi
+                ;;
+            "pr")
+                local cm_branch
+                cm_branch=$(echo "${mode_args_json}" | jq -r '.mode_branch // ""')
+                if [[ -n "${cm_branch}" && -n "${pr_context}" ]]; then
+                    local cm_base
+                    cm_base=$(echo "${pr_context}" | jq -r '.base_ref // ""')
+                    if [[ -n "${cm_base}" ]]; then
+                        commit_messages=$(git log --format="%h %s%n%w(0,4,4)%b" "${cm_base}..${cm_branch}" 2> /dev/null | head -c 8192 || true)
+                    fi
+                fi
+                ;;
+            "commit")
+                local cm_commit
+                cm_commit=$(echo "${mode_args_json}" | jq -r '.mode_commit // ""')
+                if [[ -n "${cm_commit}" ]]; then
+                    commit_messages=$(git log --format="%h %s%n%w(0,4,4)%b" -1 "${cm_commit}" 2> /dev/null || true)
+                fi
+                ;;
+            "range")
+                local cm_range
+                cm_range=$(echo "${mode_args_json}" | jq -r '.mode_range // ""')
+                if [[ -n "${cm_range}" ]]; then
+                    commit_messages=$(git log --format="%h %s%n%w(0,4,4)%b" "${cm_range}" 2> /dev/null | head -c 8192 || true)
+                fi
+                ;;
+        esac
+    fi
+
     # Extract org/repo from git_context
     local org repo
     org=$(echo "${git_context}" | jq -r '.org')
@@ -446,6 +489,7 @@ build_review_data() {
     jq_args+=(--arg append_mode "${append_mode}")
     jq_args+=(--arg debug_session_dir "${DEBUG_SESSION_DIR:-}")
     jq_args+=(--argjson diff_tokens "${diff_tokens}")
+    jq_args+=(--arg commit_messages "${commit_messages}")
 
     # Single jq invocation with conditional pr field and chunk data
     final_output=$(jq "${jq_args[@]}" \
@@ -471,6 +515,7 @@ build_review_data() {
         + (if $pr[0] != null then {pr: $pr[0], reviewer_username: $reviewer_username, is_own_pr: ($is_own_pr == "true")} else {} end)
         + (if $chunks[0] != null then {chunks: $chunks[0], chunk_metadata: $chunk_metadata} else {} end)
         + (if $debug_session_dir != "" then {debug_session_dir: $debug_session_dir} else {} end)
+        + (if $commit_messages != "" then {commit_messages: $commit_messages} else {} end)
         + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")) | with_entries(select(.value != "")))')
     debug_save_json "07-final-output" "output.json" <<< "${final_output}"
     debug_time "07-final-output" "end"
