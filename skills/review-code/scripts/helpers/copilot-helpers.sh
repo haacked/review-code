@@ -41,7 +41,6 @@ copilot_run_with_timeout() {
 
     local tmpfile
     tmpfile=$(mktemp)
-    trap 'rm -f "${tmpfile}"' RETURN
 
     local exit_code=0
     if command -v gtimeout > /dev/null 2>&1; then
@@ -58,6 +57,7 @@ copilot_run_with_timeout() {
     _duration_ref=$((end_ms - start_ms))
 
     _output_ref=$(cat "${tmpfile}")
+    rm -f "${tmpfile}"
 
     # exit code 124 = timeout (GNU coreutils), 137 = killed
     if [[ "${exit_code}" -eq 124 ]] || [[ "${exit_code}" -eq 137 ]]; then
@@ -82,15 +82,18 @@ copilot_parse_final_message() {
 
     # Extract content from the last matching JSON object, trying structured types first,
     # then falling back to any object with a "content" field
-    result=$(printf '%s\n' "${raw_jsonl}" | jq -r '
-		if (.type == "result" or .type == "assistant.message" or .type == "message") then
-			(.data.content // .content // .message // .text // empty)
-		elif .content != null then
-			.content
-		else
-			empty
-		end
-	' 2> /dev/null | tail -1)
+    result=$(printf '%s\n' "${raw_jsonl}" | jq -s -r '
+		[ .[] |
+			if (.type == "result" or .type == "assistant.message" or .type == "message") then
+				(.data.content // .content // .message // .text // empty)
+			elif .content != null then
+				.content
+			else
+				empty
+			end
+			| select(. != null and . != "")
+		] | .[-1] // empty
+	' 2> /dev/null)
 
     # Pattern 3: If still nothing, the output might be plain text (not JSONL)
     if [[ -z "${result}" ]]; then
