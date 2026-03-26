@@ -318,7 +318,7 @@ build_review_data() {
                 cm_branch=$(echo "${mode_args_json}" | jq -r '.mode_branch // ""')
                 cm_base=$(echo "${mode_args_json}" | jq -r '.mode_base_branch // ""')
                 if [[ -n "${cm_branch}" && -n "${cm_base}" ]]; then
-                    commit_messages=$(git log --format="%h %s%n%w(0,4,4)%b" "${cm_base}..${cm_branch}" 2> /dev/null | head -c 8192 || true)
+                    commit_messages=$(git --no-pager log --no-color --format="%h %s%n%w(0,4,4)%b" "${cm_base}..${cm_branch}" 2> /dev/null | head -c 8192 || true)
                 fi
                 ;;
             "pr")
@@ -330,7 +330,7 @@ build_review_data() {
                     local cm_base
                     cm_base=$(echo "${pr_context}" | jq -r '.base_ref // ""')
                     if [[ -n "${cm_base}" ]]; then
-                        commit_messages=$(git log --format="%h %s%n%w(0,4,4)%b" "${cm_base}..${cm_head_ref}" 2> /dev/null | head -c 8192 || true)
+                        commit_messages=$(git --no-pager log --no-color --format="%h %s%n%w(0,4,4)%b" "${cm_base}..${cm_head_ref}" 2> /dev/null | head -c 8192 || true)
                     fi
                 fi
                 ;;
@@ -338,14 +338,14 @@ build_review_data() {
                 local cm_commit
                 cm_commit=$(echo "${mode_args_json}" | jq -r '.mode_commit // ""')
                 if [[ -n "${cm_commit}" ]]; then
-                    commit_messages=$(git log --format="%h %s%n%w(0,4,4)%b" -1 "${cm_commit}" 2> /dev/null | head -c 8192 || true)
+                    commit_messages=$(git --no-pager log --no-color --format="%h %s%n%w(0,4,4)%b" -1 "${cm_commit}" 2> /dev/null | head -c 8192 || true)
                 fi
                 ;;
             "range")
                 local cm_range
                 cm_range=$(echo "${mode_args_json}" | jq -r '.mode_range // ""')
                 if [[ -n "${cm_range}" ]]; then
-                    commit_messages=$(git log --format="%h %s%n%w(0,4,4)%b" "${cm_range}" 2> /dev/null | head -c 8192 || true)
+                    commit_messages=$(git --no-pager log --no-color --format="%h %s%n%w(0,4,4)%b" "${cm_range}" 2> /dev/null | head -c 8192 || true)
                 fi
                 ;;
         esac
