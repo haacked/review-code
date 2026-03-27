@@ -19,19 +19,20 @@ set -euo pipefail
 session_file="${1:?Usage: classify-review-scope.sh <session_file>}"
 
 if [[ ! -f "${session_file}" ]]; then
-    echo '{"error": "Session file not found"}' >&2
+    error_json='{"error": "Session file not found"}'
+    echo "${error_json}"
+    echo "${error_json}" >&2
     exit 1
 fi
 
 # Extract classification inputs from session JSON (single jq invocation, no eval)
-read -r diff_tokens file_count has_frontend source_count test_count config_count migration_count < <(
+read -r diff_tokens file_count has_frontend test_count config_count migration_count < <(
     jq -r '
         (.file_metadata.modified_files // []) as $files |
         [
             (.diff_tokens // 0 | floor),
             (.file_metadata.file_count // 0),
             (.languages.has_frontend // false),
-            ([$files[] | select(.type == "source")] | length),
             ([$files[] | select((.type == "test") or (.is_test == true))] | length),
             ([$files[] | select(.type == "config")] | length),
             ([$files[] | select(.type == "migration")] | length)

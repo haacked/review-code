@@ -729,18 +729,18 @@ Review saved to: $review_file
 
 You can open it directly: file://$review_file
 
-Token usage: ~$total_tokens tokens across $agent_count steps ($exploration_depth exploration)
+Token usage: ~$total_tokens tokens across $step_count steps ($exploration_depth exploration)
 ```
 
-Where `$total_tokens` is the sum of all `total_tokens` from `$token_usage` and `$agent_count` is the number of entries (includes agents, context explorer, validators, and other steps).
+Where `$total_tokens` is the sum of all `total_tokens` from `$token_usage` and `$step_count` is the number of entries (includes agents, context explorer, validators, and other steps).
 
 **Write token usage debug artifacts (when `$debug_session_dir` is set):** Build a JSON object from `$token_usage` and save via the debug bridge:
 
 ```bash
 jq -n --argjson agents '<JSON object with per-agent {total_tokens, tool_uses, duration_ms}>' \
-  --arg total '<total_tokens sum>' --arg count '<agent_count>' \
+  --arg total '<total_tokens sum>' --arg count '<step_count>' \
   --arg dir "$debug_session_dir" \
-  '{"action":"stats","debug_dir":$dir,"stage":"12-token-usage","data":{"agents":$agents,"total_tokens":($total|tonumber),"agent_count":($count|tonumber)}}' \
+  '{"action":"stats","debug_dir":$dir,"stage":"12-token-usage","data":{"agents":$agents,"total_tokens":($total|tonumber),"step_count":($count|tonumber)}}' \
   | ~/.claude/skills/review-code/scripts/debug-artifact-writer.sh
 ```
 
