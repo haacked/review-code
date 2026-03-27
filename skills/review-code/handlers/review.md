@@ -92,8 +92,8 @@ Parse the JSON output and store:
 - `$classification_reasoning`: human-readable explanation
 
 **Override rules:**
-- If the user specified an `area` (e.g., `/review-code pr 123 security`), ignore the classifier output and use only that area's agent. Set `$exploration_depth` to "standard" for area-specific reviews.
-- If the classifier errors, fall back to all 7 agents and "thorough" exploration.
+- If the user specified an `area` (e.g., `/review-code pr 123 security`), ignore the classifier output and use only that area's agent. Set `$selected_agents` to `["$area"]`, `$skipped_agents` to all other agents, `$classification_reasoning` to `"Area override: user requested area '$area'"`, and `$exploration_depth` to "standard" for area-specific reviews.
+- If the classifier errors, fall back to all 7 core agents (+ frontend if applicable) and "thorough" exploration.
 
 If agents are being skipped, briefly note this to the user:
 
@@ -681,6 +681,7 @@ Save each result as `$copilot_validate_N`. Record in `$token_usage` as `copilot-
 - Testing Review (if "testing" in `$selected_agents`)
 - Compatibility Review (if "compatibility" in `$selected_agents`)
 - Architecture Review (if "architecture" in `$selected_agents`)
+- Frontend Review (if "frontend" in `$selected_agents`)
 
 **For area-specific reviews**, include only that area's findings.
 

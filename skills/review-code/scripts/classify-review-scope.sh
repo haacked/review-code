@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # classify-review-scope.sh - Determine exploration depth and agent selection
 # based on diff size and file characteristics.
+# Requires: bash 4+ (uses declare -A associative arrays)
 #
 # Usage:
 #   classify-review-scope.sh <session_file>
@@ -68,11 +69,11 @@ elif [[ "${source_count}" -eq 0 ]] && [[ "${test_count}" -eq 0 ]] && [[ "${migra
     # changes that contain config files and no source, test, or migration files)
     agents=("correctness" "compatibility")
     reasoning="Config-only change (${diff_tokens} diff tokens, ${config_count} config, ${file_count} total files): correctness + compatibility"
-elif [[ "${source_count}" -eq 0 ]] && [[ "${test_count}" -gt 0 ]]; then
+elif [[ "${source_count}" -eq 0 ]] && [[ "${test_count}" -gt 0 ]] && [[ "${config_count}" -eq 0 ]] && [[ "${migration_count}" -eq 0 ]]; then
     # Test-only changes
     agents=("testing" "correctness" "maintainability")
     reasoning="Test-only change (${diff_tokens} diff tokens, ${test_count} test files): testing + correctness + maintainability"
-elif [[ "${migration_count}" -gt 0 ]] && [[ "${source_count}" -eq 0 ]]; then
+elif [[ "${migration_count}" -gt 0 ]] && [[ "${source_count}" -eq 0 ]] && [[ "${test_count}" -eq 0 ]] && [[ "${config_count}" -eq 0 ]]; then
     # Migration-only
     agents=("correctness" "compatibility" "security")
     reasoning="Migration-only change (${diff_tokens} diff tokens, ${migration_count} migration files): correctness + compatibility + security"
