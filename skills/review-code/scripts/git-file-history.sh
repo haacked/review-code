@@ -61,7 +61,7 @@ main() {
         if [[ -n "${log_output}" ]]; then
             recent_commits=$(echo "${log_output}" | wc -l | tr -d ' ')
             recent_authors=$(echo "${log_output}" | cut -f1 | sort -u | wc -l | tr -d ' ')
-            last_modified=$(echo "${log_output}" | head -1 | cut -f2)
+            last_modified=$(cut -f2 <<< "${log_output%%$'\n'*}")
         fi
 
         # For files dormant >30 days, fetch absolute last_modified
