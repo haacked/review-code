@@ -15,13 +15,15 @@
 #         "type": "source",
 #         "language": "python",
 #         "is_test": false,
+#         "is_infra_config": false,
 #         "likely_test_path": "backend/api/test_auth.py"
 #       }
 #     ],
 #     "file_count": 5,
 #     "has_tests": true,
 #     "has_migrations": false,
-#     "has_config": false
+#     "has_config": false,
+#     "has_infra_config": false
 #   }
 
 set -euo pipefail
@@ -88,9 +90,32 @@ file_metadata_ndjson=$(while IFS= read -r file; do
     fi
 
     # Check for config files
+    is_infra_config=false
     if [[ "${basename}" =~ \.(json|yaml|yml|toml|ini|env|config)$ ]] \
         || [[ "${basename}" =~ ^(package\.json|tsconfig|Cargo\.toml|pyproject\.toml|setup\.py|Gemfile|composer\.json)$ ]]; then
         file_type="config"
+    fi
+
+    # Files that are always both config and infra-config
+    if [[ "${basename}" =~ \.tf$ ]] \
+        || [[ "${basename}" =~ ^(Dockerfile|Jenkinsfile)$ ]] \
+        || [[ "${basename}" =~ ^(docker-compose)\.ya?ml$ ]] \
+        || [[ "${basename}" =~ ^\.gitlab-ci\.yml$ ]]; then
+        file_type="config"
+        is_infra_config=true
+    fi
+
+    # Check remaining infra-config patterns for files already classified as config
+    if [[ "${file_type}" = "config" ]] && [[ "${is_infra_config}" = false ]]; then
+        # Detect by directory path patterns
+        if [[ "${dirname}" =~ (^|/)(argocd|helm|charts|k8s|kubernetes|terraform|infra|deploy|kustomize)(/|$) ]] \
+            || [[ "${dirname}" =~ (^|/)\.github/workflows(/|$) ]]; then
+            is_infra_config=true
+        fi
+        # Detect by filename patterns (Helm/K8s specific)
+        if [[ "${basename}" =~ ^(Chart|values|helmfile|kustomization)\.ya?ml$ ]]; then
+            is_infra_config=true
+        fi
     fi
 
     # Generate likely test path if this is a source file
@@ -137,8 +162,8 @@ file_metadata_ndjson=$(while IFS= read -r file; do
     safe_path=$(printf '%s' "${file}" | sed 's/\\/\\\\/g; s/"/\\"/g')
     safe_test_path=$(printf '%s' "${likely_test_path}" | sed 's/\\/\\\\/g; s/"/\\"/g')
 
-    printf '{"path":"%s","type":"%s","language":"%s","is_test":%s,"likely_test_path":"%s"}\n' \
-        "${safe_path}" "${file_type}" "${language}" "${is_test}" "${safe_test_path}"
+    printf '{"path":"%s","type":"%s","language":"%s","is_test":%s,"is_infra_config":%s,"likely_test_path":"%s"}\n' \
+        "${safe_path}" "${file_type}" "${language}" "${is_test}" "${is_infra_config}" "${safe_test_path}"
 
 done <<< "${file_paths}")
 
@@ -149,5 +174,6 @@ echo "${file_metadata_ndjson}" | jq -s '{
     file_count: length,
     has_tests: (map(select(.is_test == true)) | length > 0),
     has_migrations: (map(select(.type == "migration")) | length > 0),
-    has_config: (map(select(.type == "config")) | length > 0)
+    has_config: (map(select(.type == "config")) | length > 0),
+    has_infra_config: (map(select(.is_infra_config == true)) | length > 0)
 }'

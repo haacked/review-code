@@ -26,7 +26,7 @@ if [[ ! -f "${session_file}" ]]; then
 fi
 
 # Extract classification inputs from session JSON (single jq invocation, no eval)
-read -r diff_tokens file_count has_frontend test_count config_count migration_count < <(
+read -r diff_tokens file_count has_frontend test_count config_count migration_count infra_config_count < <(
     jq -r '
         (.file_metadata.modified_files // []) as $files |
         [
@@ -35,12 +35,13 @@ read -r diff_tokens file_count has_frontend test_count config_count migration_co
             (.languages.has_frontend // false),
             ([$files[] | select((.type == "test") or (.is_test == true))] | length),
             ([$files[] | select(.type == "config")] | length),
-            ([$files[] | select(.type == "migration")] | length)
+            ([$files[] | select(.type == "migration")] | length),
+            ([$files[] | select(.is_infra_config == true)] | length)
         ] | @tsv
     ' "${session_file}"
 )
 
-# All 7 core agents
+# All 7 core agents (infra-config and frontend are conditional, not core)
 all_agents=("security" "performance" "correctness" "maintainability" "testing" "compatibility" "architecture")
 
 # Determine exploration depth
@@ -65,6 +66,11 @@ elif [[ "${file_count}" -eq 0 ]] && [[ "${diff_tokens}" -gt 0 ]]; then
     agents=("${all_agents[@]}")
     reasoning="No file metadata (${diff_tokens} diff tokens, possible deletions-only change): running all agents"
 # For tiny/small diffs, select agents based on file composition
+elif [[ "${infra_config_count}" -gt 0 ]] && [[ "${infra_config_count}" -eq "${file_count}" ]]; then
+    # Infra-config only (Helm, Terraform, ArgoCD, K8s, CI/CD)
+    agents=("infra-config")
+    exploration_depth="minimal"
+    reasoning="Infra-config-only change (${diff_tokens} diff tokens, ${infra_config_count} infra config files): infra-config agent"
 elif [[ "${config_count}" -gt 0 ]] && [[ "${config_count}" -eq "${file_count}" ]]; then
     # Config-only (note: .md/docs files are classified as source, so this branch only matches
     # changes where all modified files are config files)
@@ -92,6 +98,11 @@ else
     reasoning="Small source change (${diff_tokens} diff tokens, ${file_count} files): focused agents"
 fi
 
+# Add infra-config agent for mixed changes (infra + non-infra files)
+if [[ "${infra_config_count}" -gt 0 ]] && [[ "${infra_config_count}" -lt "${file_count}" ]]; then
+    agents+=("infra-config")
+fi
+
 # Add frontend agent if applicable and not already gated out by tiny diff
 if [[ "${has_frontend}" == "true" ]]; then
     if [[ "${diff_tokens}" -ge 500 ]]; then
@@ -116,6 +127,10 @@ for agent in "${all_agents[@]}"; do
 done
 if [[ "${frontend_skipped:-false}" == "true" ]]; then
     skipped_agents+=("frontend")
+fi
+# Report infra-config as skipped only when infra files were present but agent wasn't selected
+if [[ "${infra_config_count}" -gt 0 ]] && [[ -z "${selected_set["infra-config"]+x}" ]]; then
+    skipped_agents+=("infra-config")
 fi
 
 # Build JSON output

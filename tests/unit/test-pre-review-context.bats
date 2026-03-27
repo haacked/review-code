@@ -177,3 +177,154 @@ EOF
     echo "$result" | jq -e '.modified_files[0].likely_test_path != ""'
     echo "$result" | jq -r '.modified_files[0].likely_test_path' | grep -q "Component.test.tsx"
 }
+
+# Infra-config detection tests
+
+@test "detects YAML files in argocd/ as infra-config" {
+    diff=$(cat <<'EOF'
+diff --git a/argocd/contour-ingress/values/values.prod-us.yaml b/argocd/contour-ingress/values/values.prod-us.yaml
++++ b/argocd/contour-ingress/values/values.prod-us.yaml
+@@ -1,0 +1,2 @@
++route:
++  path: /flags/definitions
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.modified_files[0].is_infra_config == true'
+    echo "$result" | jq -e '.modified_files[0].type == "config"'
+    echo "$result" | jq -e '.has_infra_config == true'
+}
+
+@test "detects YAML files in helm/ as infra-config" {
+    diff=$(cat <<'EOF'
+diff --git a/helm/my-service/values.yaml b/helm/my-service/values.yaml
++++ b/helm/my-service/values.yaml
+@@ -1,0 +1,2 @@
++replicaCount: 3
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.modified_files[0].is_infra_config == true'
+    echo "$result" | jq -e '.has_infra_config == true'
+}
+
+@test "detects values.yaml by filename as infra-config" {
+    diff=$(cat <<'EOF'
+diff --git a/some/path/values.yaml b/some/path/values.yaml
++++ b/some/path/values.yaml
+@@ -1,0 +1,1 @@
++key: value
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.modified_files[0].is_infra_config == true'
+}
+
+@test "detects Chart.yaml as infra-config" {
+    diff=$(cat <<'EOF'
+diff --git a/charts/my-app/Chart.yaml b/charts/my-app/Chart.yaml
++++ b/charts/my-app/Chart.yaml
+@@ -1,0 +1,2 @@
++apiVersion: v2
++name: my-app
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.modified_files[0].is_infra_config == true'
+}
+
+@test "detects .tf files as infra-config" {
+    diff=$(cat <<'EOF'
+diff --git a/terraform/main.tf b/terraform/main.tf
++++ b/terraform/main.tf
+@@ -1,0 +1,3 @@
++resource "aws_instance" "web" {
++  ami = "abc-123"
++}
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.modified_files[0].is_infra_config == true'
+    echo "$result" | jq -e '.modified_files[0].type == "config"'
+}
+
+@test "detects GitHub Actions workflow files as infra-config" {
+    diff=$(cat <<'EOF'
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -1,0 +1,3 @@
++name: CI
++on: push
++jobs: {}
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.modified_files[0].is_infra_config == true'
+    echo "$result" | jq -e '.has_infra_config == true'
+}
+
+@test "regular config files are NOT infra-config" {
+    diff=$(cat <<'EOF'
+diff --git a/package.json b/package.json
++++ b/package.json
+@@ -1,0 +1,1 @@
++{"name": "test"}
+diff --git a/tsconfig.json b/tsconfig.json
++++ b/tsconfig.json
+@@ -1,0 +1,1 @@
++{"strict": true}
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.has_config == true'
+    echo "$result" | jq -e '.has_infra_config == false'
+    echo "$result" | jq -e '[.modified_files[].is_infra_config] | all(. == false)'
+}
+
+@test "has_infra_config is false when no infra files" {
+    diff=$(cat <<'EOF'
+diff --git a/backend/api.py b/backend/api.py
++++ b/backend/api.py
+@@ -1,0 +1,1 @@
++print("hello")
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.has_infra_config == false'
+}
+
+@test "detects Dockerfile as infra-config" {
+    diff=$(cat <<'EOF'
+diff --git a/deploy/Dockerfile b/deploy/Dockerfile
++++ b/deploy/Dockerfile
+@@ -1,0 +1,1 @@
++FROM python:3.11
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.modified_files[0].is_infra_config == true'
+    echo "$result" | jq -e '.modified_files[0].type == "config"'
+}
+
+@test "detects kustomization.yaml as infra-config" {
+    diff=$(cat <<'EOF'
+diff --git a/k8s/kustomization.yaml b/k8s/kustomization.yaml
++++ b/k8s/kustomization.yaml
+@@ -1,0 +1,2 @@
++resources:
++  - deployment.yaml
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.modified_files[0].is_infra_config == true'
+}
