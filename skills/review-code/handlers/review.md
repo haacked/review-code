@@ -729,10 +729,10 @@ Review saved to: $review_file
 
 You can open it directly: file://$review_file
 
-Token usage: ~$total_tokens tokens across $agent_count agents ($exploration_depth exploration)
+Token usage: ~$total_tokens tokens across $agent_count steps ($exploration_depth exploration)
 ```
 
-Where `$total_tokens` is the sum of all `total_tokens` from `$token_usage` and `$agent_count` is the number of entries.
+Where `$total_tokens` is the sum of all `total_tokens` from `$token_usage` and `$agent_count` is the number of entries (includes agents, context explorer, validators, and other steps).
 
 **Write token usage debug artifacts (when `$debug_session_dir` is set):** Build a JSON object from `$token_usage` and save via the debug bridge:
 

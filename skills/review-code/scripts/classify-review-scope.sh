@@ -64,16 +64,16 @@ elif [[ "${file_count}" -eq 0 ]] && [[ "${diff_tokens}" -gt 0 ]]; then
     agents=("${all_agents[@]}")
     reasoning="No file metadata (${diff_tokens} diff tokens, possible deletions-only change): running all agents"
 # For tiny/small diffs, select agents based on file composition
-elif [[ "${source_count}" -eq 0 ]] && [[ "${test_count}" -eq 0 ]] && [[ "${migration_count}" -eq 0 ]] && [[ "${file_count}" -gt 0 ]]; then
+elif [[ "${config_count}" -gt 0 ]] && [[ "${config_count}" -eq "${file_count}" ]]; then
     # Config-only (note: .md/docs files are classified as source, so this branch only matches
-    # changes that contain config files and no source, test, or migration files)
+    # changes where all modified files are config files)
     agents=("correctness" "compatibility")
     reasoning="Config-only change (${diff_tokens} diff tokens, ${config_count} config, ${file_count} total files): correctness + compatibility"
-elif [[ "${source_count}" -eq 0 ]] && [[ "${test_count}" -gt 0 ]] && [[ "${config_count}" -eq 0 ]] && [[ "${migration_count}" -eq 0 ]]; then
+elif [[ "${test_count}" -gt 0 ]] && [[ "${test_count}" -eq "${file_count}" ]]; then
     # Test-only changes
     agents=("testing" "correctness" "maintainability")
     reasoning="Test-only change (${diff_tokens} diff tokens, ${test_count} test files): testing + correctness + maintainability"
-elif [[ "${migration_count}" -gt 0 ]] && [[ "${source_count}" -eq 0 ]] && [[ "${test_count}" -eq 0 ]] && [[ "${config_count}" -eq 0 ]]; then
+elif [[ "${migration_count}" -gt 0 ]] && [[ "${migration_count}" -eq "${file_count}" ]]; then
     # Migration-only
     agents=("correctness" "compatibility" "security")
     reasoning="Migration-only change (${diff_tokens} diff tokens, ${migration_count} migration files): correctness + compatibility + security"
