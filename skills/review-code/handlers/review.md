@@ -714,7 +714,7 @@ diff_tokens: <diff_tokens from session data>
 -->
 ```
 
-The `token_usage` block records per-agent token consumption and the aggregate total. For chunked reviews, sum tokens by agent type across chunks (e.g., all `chunk-*-code-reviewer-security` entries become a single `code-reviewer-security` total). Always include the `total` field as the sum of all agents.
+The `token_usage` block records per-step token consumption (agents, context explorer, validators, and other steps) and the aggregate total. For chunked reviews, sum tokens by agent type across chunks (e.g., all `chunk-*-code-reviewer-security` entries become a single `code-reviewer-security` total). Always include the `total` field as the sum of all steps in `$token_usage`.
 
 This metadata is used by the learning system to determine when the review was created. The `review_commit` field records the PR's HEAD SHA at review time, enabling drift detection when creating draft reviews later. The `diff_tokens` field is an estimated token count of the diff (~4 chars per token).
 Save the complete review to `$review_file` and inform the user with a clickable file link:
@@ -740,7 +740,7 @@ Where `$total_tokens` is the sum of all `total_tokens` from `$token_usage` and `
 jq -n --argjson agents '<JSON object with per-agent {total_tokens, tool_uses, duration_ms}>' \
   --arg total '<total_tokens sum>' --arg count '<step_count>' \
   --arg dir "$debug_session_dir" \
-  '{"action":"stats","debug_dir":$dir,"stage":"12-token-usage","data":{"agents":$agents,"total_tokens":($total|tonumber),"step_count":($count|tonumber)}}' \
+  '{"action":"stats","debug_dir":$dir,"stage":"12-token-usage","data":{"agents":$agents,"total_tokens":($total|tonumber),"step_count":($count|tonumber),"agent_count":($count|tonumber)}}' \
   | ~/.claude/skills/review-code/scripts/debug-artifact-writer.sh
 ```
 
