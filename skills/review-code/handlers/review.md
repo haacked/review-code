@@ -77,6 +77,31 @@ From the session file JSON, extract these fields for building agent context:
 - `debug_session_dir`: (optional) path to debug session directory when debug mode is enabled
 - `copilot_available`: (optional) boolean, true if Copilot CLI is installed
 
+### Classify Review Scope
+
+Run the scope classifier to determine exploration depth and agent selection based on diff size and file characteristics:
+
+```bash
+~/.claude/skills/review-code/scripts/classify-review-scope.sh "$SESSION_FILE"
+```
+
+Parse the JSON output and store:
+- `$exploration_depth`: "minimal", "standard", or "thorough"
+- `$selected_agents`: array of agent area names to invoke (e.g., ["correctness", "security", "testing"])
+- `$skipped_agents`: array of agents that will not run
+- `$classification_reasoning`: human-readable explanation
+
+**Override rules:**
+- If the user specified an `area` (e.g., `/review-code pr 123 security`), ignore the classifier output and use only that area's agent. Set `$selected_agents` to `["$area"]`, `$skipped_agents` to all other agents, `$classification_reasoning` to `"Area override: user requested area '$area'"`, and `$exploration_depth` to "standard" for area-specific reviews.
+- If the classifier errors, fall back to all 7 core agents (+ frontend if applicable) and "thorough" exploration.
+
+If agents are being skipped, briefly note this to the user:
+
+```
+Scope: $classification_reasoning
+Skipping: $skipped_agents (join with ", ")
+```
+
 ### Debug Mode Setup
 
 Extract `debug_session_dir` from the session JSON. If it is a non-empty string, debug mode is active for this review. Store it as `$debug_session_dir`.
@@ -109,6 +134,7 @@ jq -n --arg dir "$debug_session_dir" --arg content "$variable_with_content" \
 
 **Stages to instrument (when `$debug_session_dir` is set):**
 
+- **07-scope-classification**: Save the classifier output as `classification.json` (the full JSON from `classify-review-scope.sh`).
 - **08-context-explorer**: Record timing (start/end). Save the explorer prompt as `prompt.md` and the result (`$architectural_context`) as `result.md`.
 - **09-per-chunk-analysis** (chunked reviews only): Record timing (start/end). For each chunk, save the prompt as `chunk-{id}-prompt.md` and result as `chunk-{id}-result.md`.
 - **10-agent-dispatch**: Record timing (start/end). For each agent (or chunk x agent combination), save the prompt as `{agent}-prompt.md` (or `chunk-{id}-{agent}-prompt.md`) and result as `{agent}-result.md` (or `chunk-{id}-{agent}-result.md`). Save stats with agent count.
@@ -213,6 +239,20 @@ $diff
 
 $file_access_instructions
 
+{If exploration_depth == "minimal":}
+Time-box yourself to 30 seconds. Focus on understanding what changed:
+- Read only the modified files to understand their purpose and the change
+- Skip caller search, pattern search, git history, and reference implementations
+
+{If exploration_depth == "standard":}
+Time-box yourself to 1-2 minutes. Explore:
+- Full context of modified files
+- Related code and dependencies
+- Callers of modified functions (who calls the changed code and might be affected?)
+  (grep for function/method names, report top 3-5 callers per significantly modified function)
+- Skip pattern search, reference implementations, and git history
+
+{If exploration_depth == "thorough":}
 Explore the codebase to understand:
 - Full context of modified files
 - Related code and dependencies
@@ -231,7 +271,7 @@ Save the explorer's output as `$architectural_context`. Extract usage metadata f
 
 ### Invoke Specialized Review Agents
 
-Invoke the appropriate agent(s) based on mode and area. If an area is specified, invoke only that agent. Otherwise, invoke all 7 core agents in parallel (plus the frontend agent if `languages.has_frontend` is true).
+Invoke the agents determined by the scope classification. If an area was specified, invoke only that agent. Otherwise, invoke all agents in `$selected_agents` in parallel (plus the frontend agent if `languages.has_frontend` is true and "frontend" is in `$selected_agents`).
 
 **Agent selection:**
 
@@ -633,14 +673,15 @@ Save each result as `$copilot_validate_N`. Record in `$token_usage` as `copilot-
 | Range | `Range Review: $range` |
 | Local | `Code Review: (org/repo) - (branch) (uncommitted)` |
 
-**For comprehensive reviews**, include a section for each area:
-- Security Review
-- Performance Review
-- Correctness Review
-- Maintainability Review
-- Testing Review
-- Compatibility Review
-- Architecture Review
+**For comprehensive reviews**, include a section for each agent that ran (from `$selected_agents`):
+- Security Review (if "security" in `$selected_agents`)
+- Performance Review (if "performance" in `$selected_agents`)
+- Correctness Review (if "correctness" in `$selected_agents`)
+- Maintainability Review (if "maintainability" in `$selected_agents`)
+- Testing Review (if "testing" in `$selected_agents`)
+- Compatibility Review (if "compatibility" in `$selected_agents`)
+- Architecture Review (if "architecture" in `$selected_agents`)
+- Frontend Review (if "frontend" in `$selected_agents`)
 
 **For area-specific reviews**, include only that area's findings.
 
@@ -660,6 +701,11 @@ pr_number: <pr_number if applicable>
 org: <org>
 repo: <repo>
 review_commit: <pr.head_sha if PR mode, omit otherwise>
+scope:
+  exploration_depth: <exploration_depth>
+  agents_run: <$selected_agents as comma-separated list>
+  agents_skipped: <$skipped_agents as comma-separated list, or "none">
+  reasoning: <$classification_reasoning>
 token_usage:
   <agent_name>: <total_tokens>
   ...
@@ -668,7 +714,7 @@ diff_tokens: <diff_tokens from session data>
 -->
 ```
 
-The `token_usage` block records per-agent token consumption and the aggregate total. For chunked reviews, sum tokens by agent type across chunks (e.g., all `chunk-*-code-reviewer-security` entries become a single `code-reviewer-security` total). Always include the `total` field as the sum of all agents.
+The `token_usage` block records per-step token consumption (agents, context explorer, validators, and other steps) and the aggregate total. For chunked reviews, sum tokens by agent type across chunks (e.g., all `chunk-*-code-reviewer-security` entries become a single `code-reviewer-security` total). Always include the `total` field as the sum of all steps in `$token_usage`.
 
 This metadata is used by the learning system to determine when the review was created. The `review_commit` field records the PR's HEAD SHA at review time, enabling drift detection when creating draft reviews later. The `diff_tokens` field is an estimated token count of the diff (~4 chars per token).
 Save the complete review to `$review_file` and inform the user with a clickable file link:
@@ -683,18 +729,18 @@ Review saved to: $review_file
 
 You can open it directly: file://$review_file
 
-Token usage: ~$total_tokens tokens across $agent_count agents
+Token usage: ~$total_tokens tokens across $step_count steps ($exploration_depth exploration)
 ```
 
-Where `$total_tokens` is the sum of all `total_tokens` from `$token_usage` and `$agent_count` is the number of entries.
+Where `$total_tokens` is the sum of all `total_tokens` from `$token_usage` and `$step_count` is the number of entries (includes agents, context explorer, validators, and other steps).
 
 **Write token usage debug artifacts (when `$debug_session_dir` is set):** Build a JSON object from `$token_usage` and save via the debug bridge:
 
 ```bash
 jq -n --argjson agents '<JSON object with per-agent {total_tokens, tool_uses, duration_ms}>' \
-  --arg total '<total_tokens sum>' --arg count '<agent_count>' \
+  --arg total '<total_tokens sum>' --arg count '<step_count>' \
   --arg dir "$debug_session_dir" \
-  '{"action":"stats","debug_dir":$dir,"stage":"12-token-usage","data":{"agents":$agents,"total_tokens":($total|tonumber),"agent_count":($count|tonumber)}}' \
+  '{"action":"stats","debug_dir":$dir,"stage":"12-token-usage","data":{"agents":$agents,"total_tokens":($total|tonumber),"step_count":($count|tonumber),"agent_count":($count|tonumber)}}' \
   | ~/.claude/skills/review-code/scripts/debug-artifact-writer.sh
 ```
 
@@ -715,7 +761,7 @@ token_usage_log="$(dirname "$(dirname "$(dirname "$review_file")")")/token-usage
 Each line is a JSON object:
 
 ```json
-{"reviewed_at": "<ISO 8601 timestamp>", "org": "<org>", "repo": "<repo>", "mode": "<mode>", "identifier": "<pr_number or branch name>", "diff_tokens": <diff_tokens>, "files_changed": <number>, "lines_added": <number>, "lines_removed": <number>}
+{"reviewed_at": "<ISO 8601 timestamp>", "org": "<org>", "repo": "<repo>", "mode": "<mode>", "identifier": "<pr_number or branch name>", "diff_tokens": <diff_tokens>, "files_changed": <number>, "lines_added": <number>, "lines_removed": <number>, "exploration_depth": "<exploration_depth>", "agents_run": <number of agents run>, "agents_skipped": <number of agents skipped>}
 ```
 
 Extract these values from the session data:
@@ -739,6 +785,9 @@ jq -nc \
   --argjson files_changed <files_changed> \
   --argjson lines_added <lines_added> \
   --argjson lines_removed <lines_removed> \
+  --arg exploration_depth "<exploration_depth>" \
+  --argjson agents_run <number of agents run> \
+  --argjson agents_skipped <number of agents skipped> \
   '$ARGS.named' >> "$token_usage_log"
 ```
 
