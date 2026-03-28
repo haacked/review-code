@@ -56,9 +56,16 @@ fi
 agents=()
 reasoning=""
 
+# Infra-config-only changes always use the infra-config agent regardless of diff size.
+# This branch must come before the diff_tokens >= 2000 check to avoid being shadowed.
+if [[ "${infra_config_count}" -gt 0 ]] && [[ "${infra_config_count}" -eq "${file_count}" ]]; then
+    # Infra-config only (Helm, Terraform, ArgoCD, K8s, CI/CD)
+    agents=("infra-config")
+    exploration_depth="minimal"
+    reasoning="Infra-config-only change (${diff_tokens} diff tokens, ${infra_config_count} infra config files): infra-config agent"
 # For medium+ diffs, or when file metadata is absent (e.g., deletions-only PRs where
 # pre-review-context.sh only parses added files), always run all agents
-if [[ "${diff_tokens}" -ge 2000 ]]; then
+elif [[ "${diff_tokens}" -ge 2000 ]]; then
     agents=("${all_agents[@]}")
     reasoning="Medium or large diff (${diff_tokens} diff tokens, ${file_count} files): running all agents"
 elif [[ "${file_count}" -eq 0 ]] && [[ "${diff_tokens}" -gt 0 ]]; then
@@ -66,11 +73,6 @@ elif [[ "${file_count}" -eq 0 ]] && [[ "${diff_tokens}" -gt 0 ]]; then
     agents=("${all_agents[@]}")
     reasoning="No file metadata (${diff_tokens} diff tokens, possible deletions-only change): running all agents"
 # For tiny/small diffs, select agents based on file composition
-elif [[ "${infra_config_count}" -gt 0 ]] && [[ "${infra_config_count}" -eq "${file_count}" ]]; then
-    # Infra-config only (Helm, Terraform, ArgoCD, K8s, CI/CD)
-    agents=("infra-config")
-    exploration_depth="minimal"
-    reasoning="Infra-config-only change (${diff_tokens} diff tokens, ${infra_config_count} infra config files): infra-config agent"
 elif [[ "${config_count}" -gt 0 ]] && [[ "${config_count}" -eq "${file_count}" ]]; then
     # Config-only (note: .md/docs files are classified as source, so this branch only matches
     # changes where all modified files are config files)

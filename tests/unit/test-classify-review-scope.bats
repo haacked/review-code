@@ -85,7 +85,7 @@ ENDJSON
     echo "$result" | jq -e '.exploration_depth == "thorough"'
 }
 
-@test "infra-config-only forces minimal exploration even for larger diffs" {
+@test "infra-config-only forces minimal exploration even for larger diffs (standard range)" {
     session=$(create_session 1500 '[
         {"path":"terraform/main.tf","type":"config","is_infra_config":true,"is_test":false},
         {"path":"terraform/variables.tf","type":"config","is_infra_config":true,"is_test":false},
@@ -95,6 +95,18 @@ ENDJSON
     result=$("$SCRIPT" "$session")
     echo "$result" | jq -e '.exploration_depth == "minimal"'
     echo "$result" | jq -e '.agents == ["infra-config"]'
+}
+
+@test "infra-config-only still selects infra-config agent for large diffs (>= 2000 tokens)" {
+    session=$(create_session 3000 '[
+        {"path":"argocd/contour-ingress/values/values.prod-us.yaml","type":"config","is_infra_config":true,"is_test":false},
+        {"path":"argocd/contour-ingress/values/values.prod-eu.yaml","type":"config","is_infra_config":true,"is_test":false},
+        {"path":"argocd/contour-ingress/values/values.dev.yaml","type":"config","is_infra_config":true,"is_test":false}
+    ]')
+
+    result=$("$SCRIPT" "$session")
+    echo "$result" | jq -e '.agents == ["infra-config"]'
+    echo "$result" | jq -e '.agents | contains(["security"]) | not'
 }
 
 @test "infra-config not in skipped_agents when no infra files present" {
