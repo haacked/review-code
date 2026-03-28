@@ -315,6 +315,22 @@ EOF
     echo "$result" | jq -e '.modified_files[0].type == "config"'
 }
 
+@test "detects .tfvars files as infra-config" {
+    diff=$(cat <<'EOF'
+diff --git a/terraform/variables.tfvars b/terraform/variables.tfvars
++++ b/terraform/variables.tfvars
+@@ -1,0 +1,2 @@
++region = "us-east-1"
++instance_type = "t3.medium"
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.modified_files[0].is_infra_config == true'
+    echo "$result" | jq -e '.modified_files[0].type == "config"'
+    echo "$result" | jq -e '.has_infra_config == true'
+}
+
 @test "detects kustomization.yaml as infra-config" {
     diff=$(cat <<'EOF'
 diff --git a/k8s/kustomization.yaml b/k8s/kustomization.yaml

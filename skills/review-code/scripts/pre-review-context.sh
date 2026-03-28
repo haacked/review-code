@@ -97,7 +97,7 @@ file_metadata_ndjson=$(while IFS= read -r file; do
     fi
 
     # Files that are always both config and infra-config
-    if [[ "${basename}" =~ \.tf$ ]] \
+    if [[ "${basename}" =~ \.tf(vars)?$ ]] \
         || [[ "${basename}" =~ ^(Dockerfile|Jenkinsfile)$ ]] \
         || [[ "${basename}" =~ ^(docker-compose)\.ya?ml$ ]] \
         || [[ "${basename}" =~ ^\.gitlab-ci\.yml$ ]]; then
