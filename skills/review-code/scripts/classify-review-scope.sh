@@ -31,7 +31,7 @@ read -r diff_tokens file_count has_frontend test_count config_count migration_co
         (.file_metadata.modified_files // []) as $files |
         [
             (.diff_tokens // 0 | floor),
-            (.file_metadata.file_count // 0),
+            ((.file_metadata.file_count // null) // ($files | length)),
             (.languages.has_frontend // false),
             ([$files[] | select((.type == "test") or (.is_test == true))] | length),
             ([$files[] | select(.type == "config")] | length),
