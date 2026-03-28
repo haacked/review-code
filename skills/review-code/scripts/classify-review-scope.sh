@@ -26,7 +26,7 @@ if [[ ! -f "${session_file}" ]]; then
 fi
 
 # Extract classification inputs from session JSON (single jq invocation, no eval)
-read -r diff_tokens file_count has_frontend test_count config_count migration_count infra_config_count < <(
+read -r diff_tokens file_count has_frontend test_count config_count migration_count infra_config_count deleted_count < <(
     jq -r '
         (.file_metadata.modified_files // []) as $files |
         [
@@ -36,7 +36,8 @@ read -r diff_tokens file_count has_frontend test_count config_count migration_co
             ([$files[] | select((.type == "test") or (.is_test == true))] | length),
             ([$files[] | select(.type == "config")] | length),
             ([$files[] | select(.type == "migration")] | length),
-            ([$files[] | select(.is_infra_config == true)] | length)
+            ([$files[] | select(.is_infra_config == true)] | length),
+            (.file_metadata.deleted_file_count // 0)
         ] | @tsv
     ' "${session_file}"
 )
@@ -58,7 +59,10 @@ reasoning=""
 
 # Infra-config-only changes always use the infra-config agent regardless of diff size.
 # This branch must come before the diff_tokens >= 2000 check to avoid being shadowed.
-if [[ "${infra_config_count}" -gt 0 ]] && [[ "${infra_config_count}" -eq "${file_count}" ]]; then
+# Guard against deleted_count > 0: pre-review-context.sh only parses added/modified files,
+# so deleted source files won't appear in modified_files. If deletions are present alongside
+# infra-config modifications, fall through to normal agent selection to ensure deletions get reviewed.
+if [[ "${infra_config_count}" -gt 0 ]] && [[ "${infra_config_count}" -eq "${file_count}" ]] && [[ "${deleted_count}" -eq 0 ]]; then
     # Infra-config only (Helm, Terraform, ArgoCD, K8s, CI/CD)
     agents=("infra-config")
     exploration_depth="minimal"

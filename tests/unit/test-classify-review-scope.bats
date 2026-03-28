@@ -128,3 +128,32 @@ ENDJSON
     # Should not crash and should not select infra-config
     echo "$result" | jq -e '.agents | contains(["infra-config"]) | not'
 }
+
+@test "infra-config + deleted source file does not use infra-config-only shortcut" {
+    # Simulates: 2 infra-config files modified + 1 source file deleted.
+    # pre-review-context.sh only captures modified files, so deleted_file_count must be
+    # set explicitly here to reflect what the script would produce from the diff.
+    session_file="$TMPDIR/session.json"
+    cat > "$session_file" <<ENDJSON
+{
+    "diff_tokens": 400,
+    "file_metadata": {
+        "modified_files": [
+            {"path":"argocd/contour-ingress/values/values.prod-us.yaml","type":"config","is_infra_config":true,"is_test":false},
+            {"path":"argocd/contour-ingress/values/values.prod-eu.yaml","type":"config","is_infra_config":true,"is_test":false}
+        ],
+        "file_count": 2,
+        "deleted_file_count": 1
+    },
+    "languages": {
+        "has_frontend": false
+    }
+}
+ENDJSON
+
+    result=$("$SCRIPT" "$session_file")
+    # Should NOT select infra-config-only (deletions must be reviewed by core agents)
+    echo "$result" | jq -e '.agents == ["infra-config"] | not'
+    # Should include correctness to catch the source deletion
+    echo "$result" | jq -e '.agents | contains(["correctness"])'
+}

@@ -20,6 +20,7 @@
 #       }
 #     ],
 #     "file_count": 5,
+#     "deleted_file_count": 0,
 #     "has_tests": true,
 #     "has_migrations": false,
 #     "has_config": false,
@@ -34,6 +35,9 @@ diff_content=$(cat)
 # Extract file paths from diff
 # Format: +++ b/path/to/file.ext
 file_paths=$(echo "${diff_content}" | { grep -E "^\+\+\+ b/" || test $? = 1; } | sed 's/^+++ b\///')
+
+# Count deleted files (diff entries where the target is /dev/null)
+deleted_file_count=$(echo "${diff_content}" | { grep -cE "^\+\+\+ /dev/null" || test $? = 1; })
 
 # Detect file type and generate metadata
 # Output newline-delimited JSON, capture for single jq processing
@@ -169,9 +173,10 @@ done <<< "${file_paths}")
 
 # Build final JSON output with single jq call
 # Convert newline-delimited JSON to array and calculate metadata
-echo "${file_metadata_ndjson}" | jq -s '{
+echo "${file_metadata_ndjson}" | jq -s --argjson deleted_count "${deleted_file_count}" '{
     modified_files: .,
     file_count: length,
+    deleted_file_count: $deleted_count,
     has_tests: (map(select(.is_test == true)) | length > 0),
     has_migrations: (map(select(.type == "migration")) | length > 0),
     has_config: (map(select(.type == "config")) | length > 0),
