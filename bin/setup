@@ -97,7 +97,7 @@ check_prerequisites() {
 }
 
 verify_repo_structure() {
-    local required_dirs=("skills/review-code" "skills/review-code/context" "skills/review-code/handlers" "agents")
+    local required_dirs=("skills/review-code" "skills/review-code/context" "skills/review-code/handlers" "skills/ci-monitor" "agents")
     local missing=()
 
     for dir in "${required_dirs[@]}"; do
@@ -191,6 +191,54 @@ install_skill() {
     fi
 
     info "Installed skill: review-code (${script_count} scripts)"
+}
+
+install_ci_monitor_skill() {
+    local src_dir="${SCRIPT_DIR}/skills/ci-monitor"
+    local dst_dir="${CLAUDE_DIR}/skills/ci-monitor"
+
+    # Create skill directory structure
+    mkdir -p "${dst_dir}/scripts/helpers"
+    mkdir -p "${dst_dir}/handlers"
+
+    # Copy SKILL.md
+    cp "${src_dir}/SKILL.md" "${dst_dir}/SKILL.md"
+
+    # Copy scripts
+    local script_count=0
+    for src in "${src_dir}/scripts/"*.sh; do
+        [[ -e "${src}" ]] || continue
+        local filename
+        filename=$(basename "${src}")
+        local dst="${dst_dir}/scripts/${filename}"
+
+        cp "${src}" "${dst}"
+        chmod +x "${dst}"
+        script_count=$((script_count + 1))
+    done
+
+    # Copy helper scripts
+    if [[ -d "${src_dir}/scripts/helpers" ]]; then
+        for src in "${src_dir}/scripts/helpers/"*.sh; do
+            [[ -e "${src}" ]] || continue
+            local filename
+            filename=$(basename "${src}")
+            local dst="${dst_dir}/scripts/helpers/${filename}"
+
+            cp "${src}" "${dst}"
+            chmod +x "${dst}"
+        done
+    fi
+
+    # Copy handlers
+    for src in "${src_dir}/handlers/"*.md; do
+        [[ -e "${src}" ]] || continue
+        local filename
+        filename=$(basename "${src}")
+        cp "${src}" "${dst_dir}/handlers/${filename}"
+    done
+
+    info "Installed skill: ci-monitor (${script_count} scripts)"
 }
 
 install_agents() {
@@ -561,6 +609,7 @@ main() {
     echo ""
     info "Installing review-code components…"
     install_skill
+    install_ci_monitor_skill
     install_agents
     install_context
 
@@ -576,10 +625,11 @@ main() {
     echo ""
     info "Installation complete!"
     echo ""
-    echo "Review-code is now ready to use:"
+    echo "Skills are now ready to use:"
     echo "  - Run: /review-code"
     echo "  - Review PR: /review-code <pr-number>"
     echo "  - Specific review: /review-code security"
+    echo "  - Monitor CI: /ci-monitor"
     echo ""
     echo "Installation locations:"
     echo "  - Skill: ${SKILL_DIR}/"

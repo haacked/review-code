@@ -70,6 +70,13 @@ remove_skill() {
     fi
 }
 
+remove_ci_monitor_skill() {
+    if [[ -d "${CLAUDE_DIR}/skills/ci-monitor" ]]; then
+        rm -rf "${CLAUDE_DIR}/skills/ci-monitor"
+        info "Removed ci-monitor skill"
+    fi
+}
+
 remove_agents() {
     local agents=(
         "code-review-context-explorer"
@@ -166,8 +173,9 @@ main() {
     preserve_reviews
 
     # Remove components
-    info "Removing review-code components…"
+    info "Removing components…"
     remove_skill
+    remove_ci_monitor_skill
     remove_agents
 
     # Clean up any old config files
