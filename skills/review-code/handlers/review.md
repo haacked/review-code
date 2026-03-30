@@ -239,7 +239,15 @@ $diff
 
 $file_access_instructions
 
-{If exploration_depth == "minimal":}
+{If exploration_depth == "minimal" and "infra-config" is the only agent in $selected_agents:}
+Time-box yourself to 30 seconds. This is an infrastructure config review (Helm values, K8s manifests, Terraform, ArgoCD, CI/CD).
+Focus on:
+- Read the modified files to understand what each configures (service, route, resource)
+- Find cross-environment counterparts (dev/staging/prod variants of the same file)
+- Note service and resource names referenced in the config
+Do NOT search for code callers, function patterns, or application architecture.
+
+{If exploration_depth == "minimal" (non-infra):}
 Time-box yourself to 30 seconds. Focus on understanding what changed:
 - Read only the modified files to understand their purpose and the change
 - Skip caller search, pattern search, git history, and reference implementations
@@ -284,6 +292,7 @@ Invoke the agents determined by the scope classification. If an area was specifi
 | testing | code-reviewer-testing | Test coverage, quality, edge cases |
 | compatibility | code-reviewer-compatibility | Backwards compatibility with shipped code |
 | architecture | code-reviewer-architecture | Necessity, patterns, code reuse, simplicity, solution proportionality |
+| infra-config | code-reviewer-infra-config | Cross-env consistency, route/service correctness, operational safety, config validation |
 | *(frontend detected)* | code-reviewer-frontend | React/TS patterns, components, state, a11y |
 
 **Build the context to pass to each agent:**
@@ -681,6 +690,7 @@ Save each result as `$copilot_validate_N`. Record in `$token_usage` as `copilot-
 - Testing Review (if "testing" in `$selected_agents`)
 - Compatibility Review (if "compatibility" in `$selected_agents`)
 - Architecture Review (if "architecture" in `$selected_agents`)
+- Infra-Config Review (if "infra-config" in `$selected_agents`)
 - Frontend Review (if "frontend" in `$selected_agents`)
 
 **For area-specific reviews**, include only that area's findings.

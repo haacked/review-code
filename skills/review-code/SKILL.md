@@ -36,7 +36,8 @@ Run specialized code review agent(s) with comprehensive context on local changes
 - `testing` - Test coverage, quality, and patterns only (local changes)
 - `compatibility` - Backwards compatibility with shipped code only (local changes)
 - `architecture` - High-level design, patterns, and necessity only (local changes)
-- (no argument) - Run ALL 7 specialized agents in parallel on local changes (default)
+- `infra-config` - Infrastructure config review: Helm, Terraform, K8s, ArgoCD, CI/CD (local changes)
+- (no argument) - Run the 7 core agents in parallel on local changes; also runs `infra-config` and `frontend` when the diff contains those file types (default)
 
 **Optional Flags:**
 

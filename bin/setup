@@ -204,6 +204,7 @@ install_agents() {
         "code-reviewer-compatibility"
         "code-reviewer-architecture"
         "code-reviewer-frontend"
+        "code-reviewer-infra-config"
     )
 
     # Create agents directory

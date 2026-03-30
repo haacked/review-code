@@ -26,21 +26,23 @@ if [[ ! -f "${session_file}" ]]; then
 fi
 
 # Extract classification inputs from session JSON (single jq invocation, no eval)
-read -r diff_tokens file_count has_frontend test_count config_count migration_count < <(
+read -r diff_tokens file_count has_frontend test_count config_count migration_count infra_config_count deleted_count < <(
     jq -r '
         (.file_metadata.modified_files // []) as $files |
         [
             (.diff_tokens // 0 | floor),
-            (.file_metadata.file_count // 0),
+            ((.file_metadata.file_count // null) // ($files | length)),
             (.languages.has_frontend // false),
             ([$files[] | select((.type == "test") or (.is_test == true))] | length),
             ([$files[] | select(.type == "config")] | length),
-            ([$files[] | select(.type == "migration")] | length)
+            ([$files[] | select(.type == "migration")] | length),
+            ([$files[] | select(.is_infra_config == true)] | length),
+            (.file_metadata.deleted_file_count // 0)
         ] | @tsv
     ' "${session_file}"
 )
 
-# All 7 core agents
+# All 7 core agents (infra-config and frontend are conditional, not core)
 all_agents=("security" "performance" "correctness" "maintainability" "testing" "compatibility" "architecture")
 
 # Determine exploration depth
@@ -55,9 +57,19 @@ fi
 agents=()
 reasoning=""
 
+# Infra-config-only changes always use the infra-config agent regardless of diff size.
+# This branch must come before the diff_tokens >= 2000 check to avoid being shadowed.
+# Guard against deleted_count > 0: pre-review-context.sh only parses added/modified files,
+# so deleted source files won't appear in modified_files. If deletions are present alongside
+# infra-config modifications, fall through to normal agent selection to ensure deletions get reviewed.
+if [[ "${infra_config_count}" -gt 0 ]] && [[ "${infra_config_count}" -eq "${file_count}" ]] && [[ "${deleted_count}" -eq 0 ]]; then
+    # Infra-config only (Helm, Terraform, ArgoCD, K8s, CI/CD)
+    agents=("infra-config")
+    exploration_depth="minimal"
+    reasoning="Infra-config-only change (${diff_tokens} diff tokens, ${infra_config_count} infra config files): infra-config agent"
 # For medium+ diffs, or when file metadata is absent (e.g., deletions-only PRs where
 # pre-review-context.sh only parses added files), always run all agents
-if [[ "${diff_tokens}" -ge 2000 ]]; then
+elif [[ "${diff_tokens}" -ge 2000 ]]; then
     agents=("${all_agents[@]}")
     reasoning="Medium or large diff (${diff_tokens} diff tokens, ${file_count} files): running all agents"
 elif [[ "${file_count}" -eq 0 ]] && [[ "${diff_tokens}" -gt 0 ]]; then
@@ -92,6 +104,13 @@ else
     reasoning="Small source change (${diff_tokens} diff tokens, ${file_count} files): focused agents"
 fi
 
+# Add infra-config agent when infra files are present but the infra-config-only shortcut wasn't
+# taken. That covers two cases: mixed infra + non-infra modified files, and infra-only modified
+# files that have accompanying deletions (deleted_count > 0 caused the shortcut to be skipped).
+if [[ "${infra_config_count}" -gt 0 ]] && { [[ "${infra_config_count}" -lt "${file_count}" ]] || [[ "${deleted_count}" -gt 0 ]]; }; then
+    agents+=("infra-config")
+fi
+
 # Add frontend agent if applicable and not already gated out by tiny diff
 if [[ "${has_frontend}" == "true" ]]; then
     if [[ "${diff_tokens}" -ge 500 ]]; then
@@ -116,6 +135,10 @@ for agent in "${all_agents[@]}"; do
 done
 if [[ "${frontend_skipped:-false}" == "true" ]]; then
     skipped_agents+=("frontend")
+fi
+# Report infra-config as skipped only when infra files were present but agent wasn't selected
+if [[ "${infra_config_count}" -gt 0 ]] && [[ -z "${selected_set["infra-config"]+x}" ]]; then
+    skipped_agents+=("infra-config")
 fi
 
 # Build JSON output
