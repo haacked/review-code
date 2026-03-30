@@ -34,7 +34,7 @@ diff_content=$(cat)
 
 # Extract file paths from diff
 # Format: +++ b/path/to/file.ext
-file_paths=$(echo "${diff_content}" | { grep -E "^\+\+\+ b/" || test $? = 1; } | sed 's/^+++ b\///')
+file_paths=$(echo "${diff_content}" | { grep -E "^\+\+\+ b/" || test $? = 1; } | sed 's/^+++ b\///; s/[[:space:]]*$//')
 
 # Count deleted files (diff entries where the target is /dev/null)
 deleted_file_count=$(echo "${diff_content}" | { grep -cE "^\+\+\+ /dev/null" || test $? = 1; })

@@ -6,9 +6,9 @@
 COPILOT_REVIEW_TIMEOUT="${COPILOT_REVIEW_TIMEOUT:-180}"
 COPILOT_VALIDATE_TIMEOUT="${COPILOT_VALIDATE_TIMEOUT:-90}"
 
-# Max diff size (bytes) to send to Copilot. Diffs larger than this exceed
-# both Copilot's context window and OS argument length limits (ARG_MAX).
-COPILOT_MAX_DIFF_BYTES="${COPILOT_MAX_DIFF_BYTES:-262144}"
+# Max diff size (bytes) to send to Copilot. Larger diffs cause timeouts
+# (176KB timed out at 180s). 100KB gives headroom for prompt wrapping.
+COPILOT_MAX_DIFF_BYTES="${COPILOT_MAX_DIFF_BYTES:-102400}"
 
 # Check if Copilot CLI is installed
 # Returns: 0 if available, 1 if not

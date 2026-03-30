@@ -446,7 +446,11 @@ IMPORTANT: Build upon the previous review. Do not duplicate findings. You may:
 
 ### Copilot Cross-Model Review (Parallel)
 
-If `copilot_available` is true in the session data, dispatch a Copilot review **in parallel** with the Claude agent Task tool calls above. The diff is passed directly in the prompt (not via `--add-dir`) to stay within Copilot's context window. Add this as an additional Bash tool call alongside the agent dispatches:
+If `copilot_available` is true in the session data, dispatch a Copilot review **in parallel** with the Claude agent Task tool calls above. The diff is passed directly in the prompt (not via `--add-dir`) to stay within Copilot's context window.
+
+**Skip conditions:** If `copilot_available` is false or absent, skip this step entirely.
+
+**Non-chunked reviews:** Add this as an additional Bash tool call alongside the agent dispatches:
 
 ```bash
 jq -n --arg diff "$diff" --argjson timeout_seconds 180 '$ARGS.named' \
@@ -455,13 +459,24 @@ jq -n --arg diff "$diff" --argjson timeout_seconds 180 '$ARGS.named' \
 
 Where `$diff` is the diff from the session data. Use `jq` to safely encode the diff as JSON (handles newlines, quotes, and special characters).
 
-Save the JSON output as `$copilot_review`. This runs concurrently with all Claude agents and should not block or delay them.
+Save the JSON output as `$copilot_review`.
 
-**Skip conditions:** If `copilot_available` is false or absent, skip this step entirely.
+**Chunked reviews:** When `is_chunked` is true, dispatch one Copilot review **per chunk** in parallel (alongside the Claude agent dispatches), up to a maximum of 5 concurrent Copilot invocations. If there are more than 5 chunks, batch the remaining chunks and dispatch them as earlier batches complete. For each chunk in the `chunks` array:
 
-**Error handling:** If the script returns `available: false`, `timed_out: true`, or contains an `error` field, ignore the Copilot result and continue with Claude-only review. Never fail or stop the review because of a Copilot error.
+```bash
+jq -n --arg diff "$chunk_diff" --argjson timeout_seconds 180 '$ARGS.named' \
+  | ~/.claude/skills/review-code/scripts/copilot-review.sh
+```
 
-If `$copilot_review` succeeds, record `copilot_review` in `$token_usage` with `{ total_tokens: 0, tool_uses: 0, duration_ms }` using the `duration_ms` value from the output.
+Where `$chunk_diff` is the chunk's `diff` field. Save each result as `$copilot_chunk_reviews[$chunk.id]`.
+
+After all complete, merge the successful results: concatenate all non-empty `raw_output` values (prefixed with `## Chunk $chunk.id: $chunk.label\n`) into a single `$copilot_review` object with `available: true`, `timed_out: false`, the merged `raw_output`, and `duration_ms` set to the maximum across all chunks. If **all** chunks failed (timed out, errored, or were skipped), treat it as if Copilot returned no results.
+
+Record token usage per chunk as `copilot-review-chunk-{id}` in `$token_usage` with `{ total_tokens: 0, tool_uses: 0, duration_ms }`.
+
+**Error handling:** If the script returns `available: false`, `timed_out: true`, or contains an `error` field, ignore that Copilot result and continue with Claude-only review. Never fail or stop the review because of a Copilot error. Individual chunk failures do not affect other chunks.
+
+If `$copilot_review` succeeds (non-chunked), record `copilot_review` in `$token_usage` with `{ total_tokens: 0, tool_uses: 0, duration_ms }` using the `duration_ms` value from the output.
 
 ### Collect and Synthesize Results
 
@@ -548,7 +563,7 @@ This filter reduces noise before the expensive extended-thinking synthesis step.
 
 If `$copilot_review` exists and has `available: true`, `timed_out: false`, no `error` field, and a non-empty `raw_output`:
 
-1. **Parse Copilot's review.** Use extended thinking to extract findings from Copilot's free-form `raw_output` text. For each finding, identify: file path, line number (if present), type (blocking/suggestion/nit/question based on the severity language used), description, and a confidence estimate (your best judgment of how confident Copilot seemed).
+1. **Parse Copilot's review.** Use extended thinking to extract findings from Copilot's free-form `raw_output` text. For chunked reviews, the output contains `## Chunk N: label` headers separating each chunk's review; ignore these headers during finding extraction. For each finding, identify: file path, line number (if present), type (blocking/suggestion/nit/question based on the severity language used), description, and a confidence estimate (your best judgment of how confident Copilot seemed).
 
 2. **Apply the same scope filter** to Copilot findings: drop any that reference files not in `IN_SCOPE_PATHS`.
 
