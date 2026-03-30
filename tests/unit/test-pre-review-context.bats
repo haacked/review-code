@@ -345,6 +345,15 @@ EOF
     echo "$result" | jq -e '.modified_files[0].is_infra_config == true'
 }
 
+@test "strips trailing whitespace from file paths in diff headers" {
+    # Diff headers can have trailing tabs/spaces (e.g. from git on some platforms)
+    diff=$(printf 'diff --git a/backend/api.py b/backend/api.py\n+++ b/backend/api.py\t\n@@ -1,0 +1,1 @@\n+print("hello")\n')
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.file_count == 1'
+    echo "$result" | jq -e '.modified_files[0].path == "backend/api.py"'
+}
+
 @test "deleted file increments deleted_file_count and is excluded from modified_files" {
     diff=$(cat <<'EOF'
 diff --git a/backend/old_module.py b/backend/old_module.py

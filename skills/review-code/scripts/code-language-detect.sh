@@ -32,7 +32,7 @@ debug_save "03-language-detection" "diff-input.txt" "${diff_content}"
 # Extract file paths from diff
 # Format: +++ b/path/to/file.ext or --- a/path/to/file.ext
 # grep returns 1 if no matches (which is fine), but we want to catch real errors
-file_paths=$(echo "${diff_content}" | { grep -E "^(\+\+\+|---) [ab]/" || test $? = 1; } | sed 's/^... [ab]\///')
+file_paths=$(echo "${diff_content}" | { grep -E "^(\+\+\+|---) [ab]/" || test $? = 1; } | sed 's/^... [ab]\///; s/[[:space:]]*$//')
 
 # Detect languages from file extensions using associative arrays for O(1) lookups
 declare -A seen_languages
