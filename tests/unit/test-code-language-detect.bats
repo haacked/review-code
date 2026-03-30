@@ -378,11 +378,13 @@ EOF
 
 @test "strips trailing whitespace from file paths in diff headers" {
     # Diff headers can have trailing tabs/spaces (e.g. from git on some platforms)
-    diff=$(printf 'diff --git a/test.py b/test.py\n+++ b/test.py\t\n--- a/test.py\t\n@@ -1,0 +1,1 @@\n+x = 1\n')
+    diff=$(printf 'diff --git a/test.py b/test.py\n--- a/test.py\t\n+++ b/test.py\t\n@@ -1,0 +1,1 @@\n+x = 1\n')
 
     result=$(echo "$diff" | "$SCRIPT")
     echo "$result" | jq -e '.languages | contains(["python"])'
     echo "$result" | jq -e '.file_extensions | contains([".py"])'
+    # Verify extensions have no trailing whitespace (the actual regression guard)
+    echo "$result" | jq -e '.file_extensions[] | test("\\s$") | not'
 }
 
 @test "performance: single-pass framework detection" {

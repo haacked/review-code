@@ -461,7 +461,7 @@ Where `$diff` is the diff from the session data. Use `jq` to safely encode the d
 
 Save the JSON output as `$copilot_review`.
 
-**Chunked reviews:** When `is_chunked` is true, dispatch one Copilot review **per chunk** in parallel (alongside the Claude agent dispatches), up to a maximum of 5 concurrent Copilot invocations. If there are more than 5 chunks, batch the remaining chunks and dispatch them as earlier batches complete. For each chunk in the `chunks` array:
+**Chunked reviews:** When `is_chunked` is true, dispatch one Copilot review **per chunk** in parallel (alongside the Claude agent dispatches), up to a maximum of 5 concurrent Copilot invocations. If there are more than 5 chunks, use a sliding window: dispatch the next chunk as each earlier one completes, keeping up to 5 in flight at all times. For each chunk in the `chunks` array:
 
 ```bash
 jq -n --arg diff "$chunk_diff" --argjson timeout_seconds 180 '$ARGS.named' \
@@ -472,9 +472,15 @@ Where `$chunk_diff` is the chunk's `diff` field. Save each result as `$copilot_c
 
 In **debug mode**, also persist each chunk's raw response to disk as `chunk-$chunk.id-response.json` (raw JSON from `copilot-review.sh`) and `chunk-$chunk.id-result.md` (rendered result), so per-chunk failures and timeouts remain diagnosable.
 
-Before dispatching any chunked Copilot reviews, record a `$start_time_ms` (e.g., using `date +%s%3N`). After all chunks (including all batches) have completed, record an `$end_time_ms`. Then merge the successful results **in deterministic order**: iterate over the `chunks` in ascending `chunk.id` order (or the original `chunks` array order), and concatenate all non-empty `raw_output` values (prefixed with `## Chunk $chunk.id: $chunk.label\n`) into a single `$copilot_review` object with `available: true`, `timed_out: false`, the merged `raw_output`, and `duration_ms` set to `$end_time_ms - $start_time_ms` so it reflects total wall-clock time for the chunked Copilot review. If **all** chunks failed (timed out, errored, or were skipped), treat it as if Copilot returned no results.
+**Merge chunked results** after all chunks complete:
 
-Record token usage per chunk as `copilot-review-chunk-{id}` in `$token_usage` with `{ total_tokens: 0, tool_uses: 0, duration_ms }`.
+1. Before dispatching, record `$start_time_ms` (e.g., `date +%s%3N`).
+2. After all chunks complete, record `$end_time_ms`.
+3. Iterate over chunks in ascending `chunk.id` order. For each chunk with a non-empty `raw_output`, prepend `## Chunk $chunk.id: $chunk.label\n` and concatenate into a single string.
+4. Build a merged `$copilot_review` object: `{ available: true, timed_out: false, raw_output: <merged>, duration_ms: $end_time_ms - $start_time_ms }`.
+5. If **all** chunks failed (timed out, errored, or were skipped), treat it as if Copilot returned no results.
+
+Record token usage per chunk as `copilot-review-chunk-{id}` in `$token_usage` with `{ total_tokens: 0, tool_uses: 0, duration_ms }`. Also record an aggregate `copilot_review` entry with the merged `duration_ms`.
 
 **Error handling:** If the script returns `available: false`, `timed_out: true`, or contains an `error` field, ignore that Copilot result and continue with Claude-only review. Never fail or stop the review because of a Copilot error. Individual chunk failures do not affect other chunks.
 
