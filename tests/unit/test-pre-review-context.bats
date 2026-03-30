@@ -344,3 +344,28 @@ EOF
     result=$(echo "$diff" | "$SCRIPT")
     echo "$result" | jq -e '.modified_files[0].is_infra_config == true'
 }
+
+@test "deleted file increments deleted_file_count and is excluded from modified_files" {
+    diff=$(cat <<'EOF'
+diff --git a/backend/old_module.py b/backend/old_module.py
+deleted file mode 100644
+--- a/backend/old_module.py
++++ /dev/null
+@@ -1,3 +0,0 @@
+-def old_func():
+-    pass
+diff --git a/backend/api.py b/backend/api.py
++++ b/backend/api.py
+@@ -1,0 +1,1 @@
++print("hello")
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    # Deleted file counted
+    echo "$result" | jq -e '.deleted_file_count == 1'
+    # Modified files contains only the added/modified file, not the deleted one
+    echo "$result" | jq -e '.file_count == 1'
+    echo "$result" | jq -e '.modified_files | length == 1'
+    echo "$result" | jq -e '.modified_files[0].path == "backend/api.py"'
+}
