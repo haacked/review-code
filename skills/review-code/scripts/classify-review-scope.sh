@@ -104,8 +104,10 @@ else
     reasoning="Small source change (${diff_tokens} diff tokens, ${file_count} files): focused agents"
 fi
 
-# Add infra-config agent for mixed changes (infra + non-infra files)
-if [[ "${infra_config_count}" -gt 0 ]] && [[ "${infra_config_count}" -lt "${file_count}" ]]; then
+# Add infra-config agent when infra files are present but the infra-config-only shortcut wasn't
+# taken. That covers two cases: mixed infra + non-infra modified files, and infra-only modified
+# files that have accompanying deletions (deleted_count > 0 caused the shortcut to be skipped).
+if [[ "${infra_config_count}" -gt 0 ]] && { [[ "${infra_config_count}" -lt "${file_count}" ]] || [[ "${deleted_count}" -gt 0 ]]; }; then
     agents+=("infra-config")
 fi
 

@@ -156,4 +156,6 @@ ENDJSON
     echo "$result" | jq -e '.agents == ["infra-config"] | not'
     # Should include correctness to catch the source deletion
     echo "$result" | jq -e '.agents | contains(["correctness"])'
+    # infra-config agent must still be included so the infra changes are reviewed
+    echo "$result" | jq -e '.agents | contains(["infra-config"])'
 }
