@@ -470,7 +470,9 @@ jq -n --arg diff "$chunk_diff" --argjson timeout_seconds 180 '$ARGS.named' \
 
 Where `$chunk_diff` is the chunk's `diff` field. Save each result as `$copilot_chunk_reviews[$chunk.id]`.
 
-After all complete, merge the successful results: concatenate all non-empty `raw_output` values (prefixed with `## Chunk $chunk.id: $chunk.label\n`) into a single `$copilot_review` object with `available: true`, `timed_out: false`, the merged `raw_output`, and `duration_ms` set to the maximum across all chunks. If **all** chunks failed (timed out, errored, or were skipped), treat it as if Copilot returned no results.
+In **debug mode**, also persist each chunk's raw response to disk as `chunk-$chunk_id-response.json` (raw JSON from `copilot-review.sh`) and `chunk-$chunk_id-result.md` (rendered result), so per-chunk failures and timeouts remain diagnosable.
+
+After all complete, merge the successful results **in deterministic order**: iterate over the `chunks` in ascending `chunk.id` order (or the original `chunks` array order), and concatenate all non-empty `raw_output` values (prefixed with `## Chunk $chunk.id: $chunk.label\n`) into a single `$copilot_review` object with `available: true`, `timed_out: false`, the merged `raw_output`, and `duration_ms` set to the maximum across all chunks. If **all** chunks failed (timed out, errored, or were skipped), treat it as if Copilot returned no results.
 
 Record token usage per chunk as `copilot-review-chunk-{id}` in `$token_usage` with `{ total_tokens: 0, tool_uses: 0, duration_ms }`.
 
