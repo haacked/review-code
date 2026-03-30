@@ -71,8 +71,10 @@ fi
 # We need run IDs to fetch failure logs. gh pr checks doesn't provide them,
 # so we cross-reference with gh run list.
 
-# Get the head branch for run listing
-head_branch=$(gh pr view "${pr_number}" "${repo_flag[@]}" --json headRefName -q '.headRefName' 2> /dev/null || echo "")
+# Get the head branch and SHA for run listing
+pr_view_json=$(gh pr view "${pr_number}" "${repo_flag[@]}" --json headRefName,headRefOid 2> /dev/null || echo "{}")
+head_branch=$(echo "${pr_view_json}" | jq -r '.headRefName // ""')
+head_sha=$(echo "${pr_view_json}" | jq -r '.headRefOid // ""')
 
 runs_json="[]"
 if [[ -n "${head_branch}" ]] && [[ "${failed}" -gt 0 ]]; then
@@ -86,8 +88,9 @@ fi
 
 # ── Build output ─────────────────────────────────────────────────────────────
 
-# Enrich failed checks with run IDs by matching workflow names
-enriched_checks=$(echo "${checks_json}" | jq --argjson runs "${runs_json}" '
+# Enrich failed checks with run IDs by matching workflow name and head SHA
+# to avoid picking up stale runs from earlier commits on the same branch
+enriched_checks=$(echo "${checks_json}" | jq --argjson runs "${runs_json}" --arg head_sha "${head_sha}" '
   [.[] | . as $check |
     {
       name: .name,
@@ -99,7 +102,8 @@ enriched_checks=$(echo "${checks_json}" | jq --argjson runs "${runs_json}" '
         if .bucket == "fail" then
           ($runs | map(select(
             (.conclusion == "failure") and
-            (.workflowName == $check.workflow.name)
+            (.workflowName == $check.workflow.name) and
+            (.headSha == $head_sha)
           )) | first | .databaseId // null)
         else null end
       )

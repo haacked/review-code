@@ -19,27 +19,32 @@ _REVIEW_HELPERS="${HOME}/.claude/skills/review-code/scripts/helpers"
 if [[ -f "${_REVIEW_HELPERS}/git-helpers.sh" ]]; then
     # shellcheck source=/dev/null
     source "${_REVIEW_HELPERS}/git-helpers.sh"
-elif [[ -f "${_CI_HELPER_DIR}/../../../../review-code/scripts/helpers/git-helpers.sh" ]]; then
+elif [[ -f "${_CI_HELPER_DIR}/../../../review-code/scripts/helpers/git-helpers.sh" ]]; then
     # Fallback for development (running from repo)
     # shellcheck source=/dev/null
-    source "${_CI_HELPER_DIR}/../../review-code/scripts/helpers/git-helpers.sh"
+    source "${_CI_HELPER_DIR}/../../../review-code/scripts/helpers/git-helpers.sh"
 fi
 
 if [[ -f "${_REVIEW_HELPERS}/gh-wrapper.sh" ]]; then
     # shellcheck source=/dev/null
     source "${_REVIEW_HELPERS}/gh-wrapper.sh"
-elif [[ -f "${_CI_HELPER_DIR}/../../../../review-code/scripts/helpers/gh-wrapper.sh" ]]; then
+elif [[ -f "${_CI_HELPER_DIR}/../../../review-code/scripts/helpers/gh-wrapper.sh" ]]; then
     # shellcheck source=/dev/null
-    source "${_CI_HELPER_DIR}/../../review-code/scripts/helpers/gh-wrapper.sh"
+    source "${_CI_HELPER_DIR}/../../../review-code/scripts/helpers/gh-wrapper.sh"
 fi
 
 # ── Utility Functions ────────────────────────────────────────────────────────
 
 # Get the list of files changed in a PR
-# Usage: ci_get_pr_changed_files <pr_number>
+# Usage: ci_get_pr_changed_files <pr_number> [<org/repo>]
 ci_get_pr_changed_files() {
     local pr_number="$1"
-    gh pr diff "${pr_number}" --name-only 2> /dev/null || echo ""
+    local repo="${2:-}"
+    local repo_flag=()
+    if [[ -n "${repo}" ]]; then
+        repo_flag=(--repo "${repo}")
+    fi
+    gh pr diff "${pr_number}" "${repo_flag[@]}" --name-only 2> /dev/null || echo ""
 }
 
 # JSON output helper

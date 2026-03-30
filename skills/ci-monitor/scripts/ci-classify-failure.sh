@@ -57,7 +57,7 @@ references_changed_files="false"
 changed_file_matches=""
 
 # Get PR changed files
-changed_files=$(ci_get_pr_changed_files "${pr_number}")
+changed_files=$(ci_get_pr_changed_files "${pr_number}" "${repo_arg}")
 
 if [[ -n "${changed_files}" ]] && [[ -n "${log_excerpt}" ]]; then
     matched_files=()
@@ -70,8 +70,15 @@ if [[ -n "${changed_files}" ]] && [[ -n "${log_excerpt}" ]]; then
         # Also check just the filename (tests often reference basenames)
         basename_file=$(basename "${file}")
         if echo "${log_excerpt}" | grep -qF "${basename_file}"; then
-            # Avoid duplicates
-            if [[ ! " ${matched_files[*]:-} " =~ ${file} ]]; then
+            # Avoid duplicates using exact match (file paths contain regex metacharacters)
+            already_present="false"
+            for existing in "${matched_files[@]+"${matched_files[@]}"}"; do
+                if [[ "${existing}" == "${file}" ]]; then
+                    already_present="true"
+                    break
+                fi
+            done
+            if [[ "${already_present}" == "false" ]]; then
                 matched_files+=("${file}")
             fi
         fi

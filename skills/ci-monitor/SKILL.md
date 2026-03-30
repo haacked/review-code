@@ -1,7 +1,7 @@
 ---
 description: Monitor CI checks after pushing, detect flaky vs legit failures, and auto-fix
 argument-hint: "[<pr-number>|<pr-url>|--no-fix|--timeout <min>]"
-allowed-tools: Bash(~/.claude/skills/ci-monitor/scripts/*:*), Read(~/.claude/**)
+allowed-tools: Bash(*), Read(~/.claude/**)
 ---
 
 Monitor GitHub CI checks for the current PR, wait for completion, classify failures as flaky or legit, and guide fixes for legit failures.

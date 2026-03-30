@@ -6,7 +6,8 @@ Fix legit CI failures based on error logs, commit, and push.
 
 Before this handler runs, the following variables should be available from SKILL.md:
 - `PR_NUMBER` - The PR number
-- `ORG/REPO` - The repository
+- `ORG` - The repository owner or organization
+- `REPO` - The repository name
 - `RETRY_COUNT` - Current fix attempt number
 - `failed_checks` - Array of legit/uncertain failures with their log data and classifications
 

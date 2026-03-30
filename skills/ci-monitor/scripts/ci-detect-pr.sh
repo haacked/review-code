@@ -68,7 +68,10 @@ if [[ -n "${arg}" ]]; then
     fi
 else
     # No argument - detect from current branch
-    validate_git_repo
+    if ! git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+        ci_json_error "Not in a git repository. Run from within a git checkout."
+        exit 0
+    fi
 
     org_repo=$(get_git_org_repo 2> /dev/null || echo "unknown|unknown")
     org="${org_repo%|*}"
