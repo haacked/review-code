@@ -33,7 +33,7 @@ current_time_ms() {
 # Clean up Copilot log files older than 7 days
 copilot_cleanup_old_logs() {
     [[ -d "${COPILOT_LOG_DIR}" ]] || return 0
-    find "${COPILOT_LOG_DIR}" -name '*.log' -mtime +7 -delete 2> /dev/null || true
+    find "${COPILOT_LOG_DIR}" -type f -name '*.log' -mtime +7 -delete 2> /dev/null || true
 }
 
 # Run copilot with a timeout, capturing output, timing, and stderr
@@ -58,7 +58,7 @@ copilot_run_with_timeout() {
         echo "=== Copilot invocation ==="
         echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo "Timeout: ${timeout_secs}s"
-        echo "Args: $*"
+        echo "Args: [${#} arguments, prompt omitted]"
         echo "=== stderr ==="
     } > "${_log_file_ref}"
 

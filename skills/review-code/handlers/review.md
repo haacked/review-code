@@ -484,7 +484,7 @@ Record token usage per chunk as `copilot-review-chunk-{id}` in `$token_usage` wi
 
 **Error handling:** If the script returns `available: false`, `timed_out: true`, or contains an `error` field, ignore that Copilot result and continue with Claude-only review. Never fail or stop the review because of a Copilot error. Individual chunk failures do not affect other chunks.
 
-**Copilot error logging:** When `$copilot_review` contains `timed_out: true` or an `error` field, the JSON output includes `copilot_log` (path to the full stderr log file) and `copilot_stderr` (last 20 lines of stderr). In **debug mode**, save these as debug artifacts under stage `10b-copilot-review`: save `copilot_stderr` as `stderr.log` and save the `copilot_log` path as `log-path.txt`. These logs persist in `~/.cache/review-code/copilot-logs/` regardless of debug mode, so they can be examined after the fact.
+**Copilot error logging:** The JSON output always includes `copilot_log` (path to the full stderr log file). When `$copilot_review` contains `timed_out: true` or an `error` field, the output also includes `copilot_stderr` (last 20 lines of stderr). In **debug mode**, save these as debug artifacts under stage `10b-copilot-review`: save `copilot_stderr` as `stderr.log` and save the `copilot_log` path as `log-path.txt`. These logs persist in `~/.cache/review-code/copilot-logs/` regardless of debug mode, so they can be examined after the fact.
 
 If `$copilot_review` succeeds (non-chunked), record `copilot_review` in `$token_usage` with `{ total_tokens: 0, tool_uses: 0, duration_ms }` using the `duration_ms` value from the output.
 
