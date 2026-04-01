@@ -72,12 +72,16 @@ main() {
     prompt=$(build_review_prompt "${diff}")
 
     # Run copilot with timeout, passing diff in the prompt (no --add-dir)
-    local raw_output="" duration_ms=0
+    local raw_output="" duration_ms=0 log_file=""
     local run_result=0
-    copilot_run_with_timeout "${timeout_secs}" raw_output duration_ms \
+    copilot_run_with_timeout "${timeout_secs}" raw_output duration_ms log_file \
         -p "${prompt}" \
         --output-format json \
         --silent || run_result=$?
+
+    # Read stderr on failure for inclusion in JSON output
+    local stderr_tail=""
+    [[ "${run_result}" -ne 0 ]] && stderr_tail=$(copilot_read_stderr "${log_file}")
 
     case "${run_result}" in
         0)
@@ -86,12 +90,15 @@ main() {
             parsed_output=$(copilot_parse_final_message <<< "${raw_output}")
             copilot_json_output true false \
                 raw_output "${parsed_output}" \
+                copilot_log "${log_file}" \
                 duration_ms "${duration_ms}"
             ;;
         1)
             # Timeout
             copilot_json_output true true \
                 raw_output "" \
+                copilot_log "${log_file}" \
+                copilot_stderr "${stderr_tail}" \
                 duration_ms "${duration_ms}"
             ;;
         *)
@@ -99,6 +106,8 @@ main() {
             copilot_json_output true false \
                 raw_output "" \
                 error "copilot exited with error" \
+                copilot_log "${log_file}" \
+                copilot_stderr "${stderr_tail}" \
                 duration_ms "${duration_ms}"
             ;;
     esac

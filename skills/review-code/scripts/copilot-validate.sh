@@ -119,12 +119,16 @@ main() {
     prompt=$(build_validation_prompt "${finding_description}" "${file}" "${line}" "${proposed_fix}" "${diff_context}")
 
     # Run copilot with timeout, passing diff context in the prompt (no --add-dir)
-    local raw_output="" duration_ms=0
+    local raw_output="" duration_ms=0 log_file=""
     local run_result=0
-    copilot_run_with_timeout "${timeout_secs}" raw_output duration_ms \
+    copilot_run_with_timeout "${timeout_secs}" raw_output duration_ms log_file \
         -p "${prompt}" \
         --output-format json \
         --silent || run_result=$?
+
+    # Read stderr on failure for inclusion in output
+    local stderr_tail=""
+    [[ "${run_result}" -ne 0 ]] && stderr_tail=$(copilot_read_stderr "${log_file}")
 
     case "${run_result}" in
         0)
@@ -140,11 +144,11 @@ main() {
             ;;
         1)
             # Timeout
-            validate_json_output true "INCONCLUSIVE" "copilot timed out after ${timeout_secs}s" "${duration_ms}"
+            validate_json_output true "INCONCLUSIVE" "copilot timed out after ${timeout_secs}s (log: ${log_file})${stderr_tail:+ stderr: ${stderr_tail}}" "${duration_ms}"
             ;;
         *)
             # Other error
-            validate_json_output true "INCONCLUSIVE" "copilot exited with error" "${duration_ms}"
+            validate_json_output true "INCONCLUSIVE" "copilot exited with error (log: ${log_file})${stderr_tail:+ stderr: ${stderr_tail}}" "${duration_ms}"
             ;;
     esac
 }

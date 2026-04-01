@@ -138,9 +138,9 @@ jq -n --arg dir "$debug_session_dir" --arg content "$variable_with_content" \
 - **08-context-explorer**: Record timing (start/end). Save the explorer prompt as `prompt.md` and the result (`$architectural_context`) as `result.md`.
 - **09-per-chunk-analysis** (chunked reviews only): Record timing (start/end). For each chunk, save the prompt as `chunk-{id}-prompt.md` and result as `chunk-{id}-result.md`.
 - **10-agent-dispatch**: Record timing (start/end). For each agent (or chunk x agent combination), save the prompt as `{agent}-prompt.md` (or `chunk-{id}-{agent}-prompt.md`) and result as `{agent}-result.md` (or `chunk-{id}-{agent}-result.md`). Save stats with agent count.
-- **10b-copilot-review** (when Copilot available): Record timing (start/end). Save the raw Copilot output as `result.md` and the parsed JSON response as `response.json`.
+- **10b-copilot-review** (when Copilot available): Record timing (start/end). Save the raw Copilot output as `result.md` and the parsed JSON response as `response.json`. On timeout or error, also save `stderr.log` (from `copilot_stderr` field) and `log-path.txt` (from `copilot_log` field).
 - **11-synthesis**: Record timing (start/end). Save the merged findings as `merged-findings.md` and corroboration results as `corroboration.md`.
-- **11b-copilot-validate** (when Copilot available): For each blocking finding validated by Copilot, save the result as `validate-{N}-result.json`.
+- **11b-copilot-validate** (when Copilot available): For each blocking finding validated by Copilot, save the result as `validate-{N}-result.json`. On timeout or error, the `reasoning` field in the result includes the log path and stderr tail.
 - **12-token-usage**: After the review is complete, save stats with per-agent token usage and aggregate totals (see "Track Token Usage" below).
 
 ### Track Token Usage
@@ -453,7 +453,7 @@ If `copilot_available` is true in the session data, dispatch a Copilot review **
 **Non-chunked reviews:** Add this as an additional Bash tool call alongside the agent dispatches:
 
 ```bash
-jq -n --arg diff "$diff" --argjson timeout_seconds 180 '$ARGS.named' \
+jq -n --arg diff "$diff" --argjson timeout_seconds 300 '$ARGS.named' \
   | ~/.claude/skills/review-code/scripts/copilot-review.sh
 ```
 
@@ -464,7 +464,7 @@ Save the JSON output as `$copilot_review`.
 **Chunked reviews:** When `is_chunked` is true, dispatch one Copilot review **per chunk** in parallel (alongside the Claude agent dispatches), up to a maximum of 5 concurrent Copilot invocations. If there are more than 5 chunks, use a sliding window: dispatch the next chunk as each earlier one completes, keeping up to 5 in flight at all times. For each chunk in the `chunks` array:
 
 ```bash
-jq -n --arg diff "$chunk_diff" --argjson timeout_seconds 180 '$ARGS.named' \
+jq -n --arg diff "$chunk_diff" --argjson timeout_seconds 300 '$ARGS.named' \
   | ~/.claude/skills/review-code/scripts/copilot-review.sh
 ```
 
@@ -483,6 +483,8 @@ In **debug mode**, also persist each chunk's raw response to disk as `chunk-$chu
 Record token usage per chunk as `copilot-review-chunk-{id}` in `$token_usage` with `{ total_tokens: 0, tool_uses: 0, duration_ms }`. Also record an aggregate `copilot_review` entry with the merged `duration_ms`.
 
 **Error handling:** If the script returns `available: false`, `timed_out: true`, or contains an `error` field, ignore that Copilot result and continue with Claude-only review. Never fail or stop the review because of a Copilot error. Individual chunk failures do not affect other chunks.
+
+**Copilot error logging:** When `$copilot_review` contains `timed_out: true` or an `error` field, the JSON output includes `copilot_log` (path to the full stderr log file) and `copilot_stderr` (last 20 lines of stderr). In **debug mode**, save these as debug artifacts under stage `10b-copilot-review`: save `copilot_stderr` as `stderr.log` and save the `copilot_log` path as `log-path.txt`. These logs persist in `~/.cache/review-code/copilot-logs/` regardless of debug mode, so they can be examined after the fact.
 
 If `$copilot_review` succeeds (non-chunked), record `copilot_review` in `$token_usage` with `{ total_tokens: 0, tool_uses: 0, duration_ms }` using the `duration_ms` value from the output.
 
@@ -673,7 +675,7 @@ jq -n \
   --argjson line <line> \
   --arg proposed_fix "<proposed fix>" \
   --arg diff_context "<relevant diff snippet for this file>" \
-  --argjson timeout_seconds 90 \
+  --argjson timeout_seconds 150 \
   '$ARGS.named' | ~/.claude/skills/review-code/scripts/copilot-validate.sh
 ```
 
