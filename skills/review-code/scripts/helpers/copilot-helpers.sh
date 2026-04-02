@@ -35,7 +35,7 @@ copilot_cleanup_old_logs() {
     [[ -d "${COPILOT_LOG_DIR}" ]] || return 0
     # Safety: skip cleanup for root or shallow directories (require 3+ path segments)
     [[ "${COPILOT_LOG_DIR%/}" == */*/* ]] || return 0
-    find "${COPILOT_LOG_DIR}" -maxdepth 1 -type f -name '*.log' -mtime +7 -delete 2> /dev/null || true
+    find "${COPILOT_LOG_DIR}" -maxdepth 1 -type f -name 'copilot-*.log' -mtime +7 -delete 2> /dev/null || true
 }
 
 # Run copilot with a timeout, capturing output, timing, and stderr
@@ -52,7 +52,7 @@ copilot_run_with_timeout() {
     mkdir -p "${COPILOT_LOG_DIR}"
     copilot_cleanup_old_logs
     local log_timestamp
-    log_timestamp=$(date +%Y%m%d-%H%M%S)
+    log_timestamp=$(date -u +%Y%m%d-%H%M%SZ)
     _log_file_ref="${COPILOT_LOG_DIR}/copilot-${log_timestamp}-$$.log"
 
     # Write log header
