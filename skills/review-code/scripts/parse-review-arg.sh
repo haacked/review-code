@@ -83,7 +83,8 @@ ref_exists() {
 }
 
 # Helper: Get base branch with smart fallback
-# Tries to use local branch first, falls back to remote tracking branch if needed
+# Prefers origin/ refs (updated by fetch) over potentially-stale local branches.
+# When origin/HEAD is unavailable, picks the closest candidate by commit distance.
 get_base_branch() {
     # Get the default branch name from remote origin/HEAD
     local default_branch_name
@@ -91,41 +92,37 @@ get_base_branch() {
 
     # If we got a default branch name, try to use it
     if [[ -n "${default_branch_name}" ]]; then
-        # First try: local branch
-        if ref_exists "${default_branch_name}"; then
-            echo "${default_branch_name}"
-            return 0
-        fi
-
-        # Second try: remote tracking branch
+        # Prefer remote tracking branch (most up-to-date via fetch)
         if ref_exists "origin/${default_branch_name}"; then
             echo "origin/${default_branch_name}"
             return 0
         fi
+
+        # Fall back to local branch
+        if ref_exists "${default_branch_name}"; then
+            echo "${default_branch_name}"
+            return 0
+        fi
     fi
 
-    # Fallback chain: try common branch names
-    # Try local "main"
-    if ref_exists "main"; then
-        echo "main"
-        return 0
-    fi
+    # origin/HEAD unavailable — pick the candidate with fewest commits to HEAD
+    # (the real base branch will have the shortest distance)
+    local candidates=("origin/main" "origin/master" "main" "master")
+    local best_base="" best_count=""
 
-    # Try remote "origin/main"
-    if ref_exists "origin/main"; then
-        echo "origin/main"
-        return 0
-    fi
+    for candidate in "${candidates[@]}"; do
+        if ref_exists "${candidate}"; then
+            local count
+            count=$(git rev-list --count "${candidate}..HEAD" 2> /dev/null) || continue
+            if [[ -z "${best_count}" ]] || [[ "${count}" -lt "${best_count}" ]]; then
+                best_count="${count}"
+                best_base="${candidate}"
+            fi
+        fi
+    done
 
-    # Try local "master"
-    if ref_exists "master"; then
-        echo "master"
-        return 0
-    fi
-
-    # Try remote "origin/master"
-    if ref_exists "origin/master"; then
-        echo "origin/master"
+    if [[ -n "${best_base}" ]]; then
+        echo "${best_base}"
         return 0
     fi
 

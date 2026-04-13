@@ -751,3 +751,85 @@ reset_globals() {
     [ "$APPEND_MODE" = "true" ]
     [ "$arg" = "123" ]
 }
+
+# =============================================================================
+# get_base_branch tests
+# =============================================================================
+
+@test "get_base_branch: prefers origin/ ref when origin/HEAD is set" {
+    setup_test_git_repo
+
+    # Set origin/HEAD to point to main
+    git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main 2>/dev/null || true
+    # Create origin/main ref (fake remote tracking branch)
+    git update-ref refs/remotes/origin/main HEAD
+
+    run get_base_branch
+    [ "$status" -eq 0 ]
+    [ "$output" = "origin/main" ]
+}
+
+@test "get_base_branch: uses closest-candidate fallback when origin/HEAD branch missing" {
+    setup_test_git_repo
+
+    # origin/HEAD points to a branch that doesn't exist as a remote ref
+    git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/nonexistent 2>/dev/null || true
+    git update-ref -d refs/remotes/origin/main 2>/dev/null || true
+
+    # Falls through to closest-candidate logic; "main" is the only local candidate
+    run get_base_branch
+    [ "$status" -eq 0 ]
+    [ "$output" = "main" ]
+}
+
+@test "get_base_branch: picks closest candidate when origin/HEAD not set" {
+    setup_test_git_repo
+
+    # Remove origin/HEAD
+    git symbolic-ref --delete refs/remotes/origin/HEAD 2>/dev/null || true
+
+    # Create a feature branch with one commit ahead of main
+    git checkout -q -b feature
+    echo "feature" > feature.txt
+    git add feature.txt
+    git commit -q -m "Feature commit"
+
+    # Create a "master" branch that's far behind
+    git branch master HEAD~1 2>/dev/null || true
+
+    # Both main and master are 1 commit away; "main" wins by iteration order
+    run get_base_branch
+    [ "$status" -eq 0 ]
+    [ "$output" = "main" ]
+}
+
+@test "get_base_branch: prefers closer base over farther one" {
+    setup_test_git_repo
+
+    # Remove origin/HEAD so fallback logic kicks in
+    git symbolic-ref --delete refs/remotes/origin/HEAD 2>/dev/null || true
+
+    # Make several commits on main
+    for i in 1 2 3 4 5; do
+        echo "commit $i" > "file$i.txt"
+        git add "file$i.txt"
+        git commit -q -m "Main commit $i"
+    done
+
+    # Create master pointing at current HEAD (latest)
+    git branch master HEAD
+
+    # Create feature branch with one more commit
+    git checkout -q -b feature
+    echo "feature" > feature.txt
+    git add feature.txt
+    git commit -q -m "Feature commit"
+
+    # Reset main to root commit so it's far (6 commits away); master stays at HEAD~1 (1 away)
+    local initial_commit
+    initial_commit=$(git rev-list --max-parents=0 HEAD)
+    git branch -f main "$initial_commit"
+    run get_base_branch
+    [ "$status" -eq 0 ]
+    [ "$output" = "master" ]
+}

@@ -78,7 +78,7 @@ if [[ "${BASH_SOURCE[0]:-}" = "${0}" ]]; then
         "branch")
             branch="$1"
             base_branch="$2"
-            run_git_diff diff "${base_branch}..${branch}" "branch (${base_branch}..${branch})" "${pattern_arg}"
+            run_git_diff diff "${base_branch}...${branch}" "branch (${base_branch}...${branch})" "${pattern_arg}"
             ;;
 
         "range")
@@ -120,7 +120,7 @@ if [[ "${BASH_SOURCE[0]:-}" = "${0}" ]]; then
             base_branch="$2"
 
             # Get branch diff using helper
-            run_git_diff diff "${base_branch}..${branch}" "branch + uncommitted (${base_branch}..${branch} + local)" "${pattern_arg}"
+            run_git_diff diff "${base_branch}...${branch}" "branch + uncommitted (${base_branch}...${branch} + local)" "${pattern_arg}"
             branch_diff="${diff_content}"
 
             # Get uncommitted diff (reuse local mode logic)
