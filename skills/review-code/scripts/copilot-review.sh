@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # copilot-review.sh - Run Copilot CLI code review on a diff and return results as JSON
 #
+# NOTE: No longer called from the review flow. Replaced by copilot-meta-review.sh
+# which validates Claude's findings instead of running a full independent review.
+# Kept for potential standalone use.
+#
 # Usage:
 #   echo '{"diff": "<diff text>", "timeout_seconds": 180}' | copilot-review.sh
 #

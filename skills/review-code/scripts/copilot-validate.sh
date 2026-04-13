@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # copilot-validate.sh - Use Copilot CLI to adversarially validate a blocking finding
 #
+# NOTE: No longer called from the review flow. Per-finding validation is now handled
+# by copilot-meta-review.sh which validates all findings in a single call.
+# Kept for potential standalone use.
+#
 # Usage:
 #   echo '{"finding_description": "...", "file": "src/auth.ts", "line": 42,
 #          "proposed_fix": "...", "diff_context": "<relevant diff snippet>",
