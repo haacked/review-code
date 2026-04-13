@@ -83,49 +83,48 @@ ref_exists() {
 }
 
 # Helper: Get base branch with smart fallback
-# Tries to use local branch first, falls back to remote tracking branch if needed
+# Prefers origin/ refs (updated by fetch) over potentially-stale local branches.
+# When origin/HEAD is unavailable, picks the closest candidate by commit distance.
+# Args: $1 (optional) = target ref for distance calculation (default: HEAD)
 get_base_branch() {
+    local target_ref="${1:-HEAD}"
     # Get the default branch name from remote origin/HEAD
     local default_branch_name
     default_branch_name=$(git symbolic-ref refs/remotes/origin/HEAD 2> /dev/null | sed 's@^refs/remotes/origin/@@')
 
     # If we got a default branch name, try to use it
     if [[ -n "${default_branch_name}" ]]; then
-        # First try: local branch
-        if ref_exists "${default_branch_name}"; then
-            echo "${default_branch_name}"
-            return 0
-        fi
-
-        # Second try: remote tracking branch
+        # Prefer remote tracking branch (most up-to-date via fetch)
         if ref_exists "origin/${default_branch_name}"; then
             echo "origin/${default_branch_name}"
             return 0
         fi
+
+        # Fall back to local branch
+        if ref_exists "${default_branch_name}"; then
+            echo "${default_branch_name}"
+            return 0
+        fi
     fi
 
-    # Fallback chain: try common branch names
-    # Try local "main"
-    if ref_exists "main"; then
-        echo "main"
-        return 0
-    fi
+    # origin/HEAD unavailable — pick the candidate with fewest commits to target_ref
+    # (which defaults to HEAD; the real base branch will have the shortest distance)
+    local candidates=("origin/main" "origin/master" "main" "master")
+    local best_base="" best_count=""
 
-    # Try remote "origin/main"
-    if ref_exists "origin/main"; then
-        echo "origin/main"
-        return 0
-    fi
+    for candidate in "${candidates[@]}"; do
+        if ref_exists "${candidate}"; then
+            local count
+            count=$(git rev-list --count "${candidate}..${target_ref}" 2> /dev/null) || continue
+            if [[ -z "${best_count}" ]] || [[ "${count}" -lt "${best_count}" ]]; then
+                best_count="${count}"
+                best_base="${candidate}"
+            fi
+        fi
+    done
 
-    # Try local "master"
-    if ref_exists "master"; then
-        echo "master"
-        return 0
-    fi
-
-    # Try remote "origin/master"
-    if ref_exists "origin/master"; then
-        echo "origin/master"
+    if [[ -n "${best_base}" ]]; then
+        echo "${best_base}"
         return 0
     fi
 
@@ -362,7 +361,7 @@ detect_git_ref() {
     fi
 
     local base_branch
-    base_branch=$(get_base_branch)
+    base_branch=$(get_base_branch "${arg}")
 
     # Handle non-ambiguous cases first
     if [[ "${is_branch}" == "true" ]] && [[ "${is_current}" == "false" ]]; then
@@ -407,9 +406,11 @@ detect_no_arg() {
         has_uncommitted=true
     fi
 
-    # Check if on a non-base branch
+    # Check if on a non-base branch (strip origin/ prefix for comparison since
+    # get_base_branch may return origin/master while current_branch is master)
     local is_feature_branch=false
-    if [[ "${current_branch}" != "${base_branch}" ]]; then
+    local base_branch_name="${base_branch#origin/}"
+    if [[ "${current_branch}" != "${base_branch_name}" ]]; then
         is_feature_branch=true
     fi
 

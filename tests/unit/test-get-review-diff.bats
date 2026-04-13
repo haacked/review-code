@@ -227,7 +227,7 @@ teardown_test_repo() {
     run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" branch feature main
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"DIFF_TYPE: branch (main..feature)"* ]]
+    [[ "$output" == *"DIFF_TYPE: branch (main...feature)"* ]]
     [[ "$output" == *"feature.txt"* ]]
     [[ "$output" == *"feature content"* ]]
 
@@ -354,7 +354,7 @@ teardown_test_repo() {
     run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" branch-plus-uncommitted feature main
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"DIFF_TYPE: branch + uncommitted (main..feature + local)"* ]]
+    [[ "$output" == *"DIFF_TYPE: branch + uncommitted (main...feature + local)"* ]]
     [[ "$output" == *"file2.txt"* ]]  # Branch changes
     [[ "$output" == *"file3.txt"* ]]  # Uncommitted changes
     [[ "$output" == *"Uncommitted Changes"* ]]

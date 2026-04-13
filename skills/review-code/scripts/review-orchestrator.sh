@@ -320,7 +320,14 @@ build_review_data() {
                 cm_branch=$(echo "${mode_args_json}" | jq -r '.mode_branch // ""')
                 cm_base=$(echo "${mode_args_json}" | jq -r '.mode_base_branch // ""')
                 if [[ -n "${cm_branch}" && -n "${cm_base}" ]]; then
-                    commit_messages=$(git --no-pager log --no-color --format="%h %s%n%w(0,4,4)%b" "${cm_base}..${cm_branch}" 2> /dev/null | head -c 8192 | iconv -f UTF-8 -t UTF-8 -c || true)
+                    local cm_merge_base
+                    cm_merge_base=$(git merge-base "${cm_base}" "${cm_branch}" 2> /dev/null || echo "")
+                    local cm_range="${cm_merge_base:-${cm_base}}..${cm_branch}"
+                    commit_messages=$(git --no-pager log --no-color --format="%h %s%n%w(0,4,4)%b" "${cm_range}" 2> /dev/null | head -c 8192 | iconv -f UTF-8 -t UTF-8 -c || true)
+                    # Store merge-base so build_summary can reuse it
+                    if [[ -n "${cm_merge_base}" ]]; then
+                        mode_args_json=$(echo "${mode_args_json}" | jq --arg mb "${cm_merge_base}" '. + {mode_merge_base: $mb}')
+                    fi
                 fi
                 ;;
             "pr")
@@ -766,9 +773,15 @@ build_summary() {
             target_branch=$(echo "${parsed_args}" | jq -r '.mode_branch // "unknown"')
             base_branch=$(echo "${parsed_args}" | jq -r '.mode_base_branch // "unknown"')
 
-            # Count commits in branch
+            # Count commits in branch (use pre-computed merge-base for accuracy)
             local commit_count
-            commit_count=$(git rev-list --count "${base_branch}..${target_branch}" 2> /dev/null || echo "unknown")
+            local merge_base
+            merge_base=$(echo "${parsed_args}" | jq -r '.mode_merge_base // ""')
+            if [[ -n "${merge_base}" ]]; then
+                commit_count=$(git rev-list --count "${merge_base}..${target_branch}" 2> /dev/null || echo "unknown")
+            else
+                commit_count=$(git rev-list --count "${base_branch}..${target_branch}" 2> /dev/null || echo "unknown")
+            fi
 
             # Extract PR fields if context available
             local pr_number="" pr_title="" pr_url="" pr_author="" pr_state=""
@@ -810,7 +823,7 @@ build_summary() {
                     base_branch: $base_branch,
                     commit: $commit,
                     working_directory: $working_dir,
-                    comparison: "\($base_branch)..\($branch)",
+                    comparison: "\($base_branch)...\($branch)",
                     stats: {
                         commits: $commits,
                         files_changed: $files,
