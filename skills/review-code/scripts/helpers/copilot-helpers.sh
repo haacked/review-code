@@ -3,12 +3,15 @@
 # Provides availability detection, timeout execution, and JSONL parsing
 
 # Timeouts (seconds)
-COPILOT_REVIEW_TIMEOUT="${COPILOT_REVIEW_TIMEOUT:-180}"
-COPILOT_VALIDATE_TIMEOUT="${COPILOT_VALIDATE_TIMEOUT:-90}"
+COPILOT_REVIEW_TIMEOUT="${COPILOT_REVIEW_TIMEOUT:-300}"
+COPILOT_VALIDATE_TIMEOUT="${COPILOT_VALIDATE_TIMEOUT:-150}"
 
 # Max diff size (bytes) to send to Copilot. Larger diffs cause timeouts
 # (176KB timed out at 180s). 100KB gives headroom for prompt wrapping.
 COPILOT_MAX_DIFF_BYTES="${COPILOT_MAX_DIFF_BYTES:-102400}"
+
+# Directory for Copilot stderr logs (persisted for post-mortem debugging)
+COPILOT_LOG_DIR="${COPILOT_LOG_DIR:-${HOME}/.cache/review-code/copilot-logs}"
 
 # Check if Copilot CLI is installed
 # Returns: 0 if available, 1 if not
@@ -27,14 +30,39 @@ current_time_ms() {
     fi
 }
 
-# Run copilot with a timeout, capturing output and timing
-# Usage: copilot_run_with_timeout <timeout_seconds> <output_var> <duration_var> <copilot_args...>
+# Clean up Copilot log files older than 7 days
+copilot_cleanup_old_logs() {
+    [[ -d "${COPILOT_LOG_DIR}" ]] || return 0
+    # Safety: skip cleanup for root or shallow directories (require 3+ path segments)
+    [[ "${COPILOT_LOG_DIR%/}" == */*/* ]] || return 0
+    find "${COPILOT_LOG_DIR}" -maxdepth 1 -type f -name 'copilot-*.log' -mtime +7 -delete 2> /dev/null || true
+}
+
+# Run copilot with a timeout, capturing output, timing, and stderr
+# Usage: copilot_run_with_timeout <timeout_seconds> <output_var> <duration_var> <log_file_var> <copilot_args...>
 # Sets the named variables via nameref. Returns 0 on success, 1 on timeout, 2 on error.
 copilot_run_with_timeout() {
     local timeout_secs="$1"
     local -n _output_ref="$2"
     local -n _duration_ref="$3"
-    shift 3
+    local -n _log_file_ref="$4"
+    shift 4
+
+    # Set up log directory and file
+    mkdir -p "${COPILOT_LOG_DIR}"
+    copilot_cleanup_old_logs
+    local log_timestamp
+    log_timestamp=$(date -u +%Y%m%d-%H%M%SZ)
+    _log_file_ref="${COPILOT_LOG_DIR}/copilot-${log_timestamp}-$$.log"
+
+    # Write log header
+    {
+        echo "=== Copilot invocation ==="
+        echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo "Timeout: ${timeout_secs}s"
+        echo "Args: [${#} arguments, prompt omitted]"
+        echo "=== stderr ==="
+    } > "${_log_file_ref}"
 
     local start_ms
     start_ms=$(current_time_ms)
@@ -44,17 +72,24 @@ copilot_run_with_timeout() {
 
     local exit_code=0
     if command -v gtimeout > /dev/null 2>&1; then
-        gtimeout "${timeout_secs}" copilot "$@" > "${tmpfile}" 2> /dev/null || exit_code=$?
+        gtimeout "${timeout_secs}" copilot "$@" > "${tmpfile}" 2>> "${_log_file_ref}" || exit_code=$?
     elif command -v timeout > /dev/null 2>&1; then
-        timeout "${timeout_secs}" copilot "$@" > "${tmpfile}" 2> /dev/null || exit_code=$?
+        timeout "${timeout_secs}" copilot "$@" > "${tmpfile}" 2>> "${_log_file_ref}" || exit_code=$?
     else
         # No timeout command available, run directly
-        copilot "$@" > "${tmpfile}" 2> /dev/null || exit_code=$?
+        copilot "$@" > "${tmpfile}" 2>> "${_log_file_ref}" || exit_code=$?
     fi
 
     local end_ms
     end_ms=$(current_time_ms)
     _duration_ref=$((end_ms - start_ms))
+
+    # Append exit code and duration to log
+    {
+        echo "=== result ==="
+        echo "Exit code: ${exit_code}"
+        echo "Duration: ${_duration_ref}ms"
+    } >> "${_log_file_ref}"
 
     _output_ref=$(cat "${tmpfile}")
     rm -f "${tmpfile}"
@@ -66,6 +101,16 @@ copilot_run_with_timeout() {
         return 2
     fi
     return 0
+}
+
+# Read the last N lines of stderr from a copilot log file (skipping the header)
+# Usage: copilot_read_stderr <log_file> [max_lines]
+copilot_read_stderr() {
+    local log_file="$1"
+    local max_lines="${2:-20}"
+    [[ -f "${log_file}" ]] || return 0
+    # Extract lines between "=== stderr ===" and "=== result ===" headers
+    sed -n '/^=== stderr ===/,/^=== result ===/p' "${log_file}" | sed '1d;$d' | tail -n "${max_lines}"
 }
 
 # Extract the final assistant message text from Copilot JSONL output
