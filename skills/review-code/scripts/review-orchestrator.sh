@@ -823,7 +823,7 @@ build_summary() {
                     base_branch: $base_branch,
                     commit: $commit,
                     working_directory: $working_dir,
-                    comparison: "\($base_branch)..\($branch)",
+                    comparison: "\($base_branch)...\($branch)",
                     stats: {
                         commits: $commits,
                         files_changed: $files,

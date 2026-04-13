@@ -107,8 +107,8 @@ get_base_branch() {
         fi
     fi
 
-    # origin/HEAD unavailable — pick the candidate with fewest commits to HEAD
-    # (the real base branch will have the shortest distance)
+    # origin/HEAD unavailable — pick the candidate with fewest commits to target_ref
+    # (which defaults to HEAD; the real base branch will have the shortest distance)
     local candidates=("origin/main" "origin/master" "main" "master")
     local best_base="" best_count=""
 

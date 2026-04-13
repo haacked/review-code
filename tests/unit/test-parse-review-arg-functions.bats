@@ -794,7 +794,7 @@ reset_globals() {
     git add feature.txt
     git commit -q -m "Feature commit"
 
-    # Create a "master" branch that's far behind
+    # Create a "master" branch that's one commit behind
     git branch master HEAD~1 2>/dev/null || true
 
     # Both main and master are 1 commit away; "main" wins by iteration order
