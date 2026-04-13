@@ -85,7 +85,9 @@ ref_exists() {
 # Helper: Get base branch with smart fallback
 # Prefers origin/ refs (updated by fetch) over potentially-stale local branches.
 # When origin/HEAD is unavailable, picks the closest candidate by commit distance.
+# Args: $1 (optional) = target ref for distance calculation (default: HEAD)
 get_base_branch() {
+    local target_ref="${1:-HEAD}"
     # Get the default branch name from remote origin/HEAD
     local default_branch_name
     default_branch_name=$(git symbolic-ref refs/remotes/origin/HEAD 2> /dev/null | sed 's@^refs/remotes/origin/@@')
@@ -113,7 +115,7 @@ get_base_branch() {
     for candidate in "${candidates[@]}"; do
         if ref_exists "${candidate}"; then
             local count
-            count=$(git rev-list --count "${candidate}..HEAD" 2> /dev/null) || continue
+            count=$(git rev-list --count "${candidate}..${target_ref}" 2> /dev/null) || continue
             if [[ -z "${best_count}" ]] || [[ "${count}" -lt "${best_count}" ]]; then
                 best_count="${count}"
                 best_base="${candidate}"
@@ -359,7 +361,7 @@ detect_git_ref() {
     fi
 
     local base_branch
-    base_branch=$(get_base_branch)
+    base_branch=$(get_base_branch "${arg}")
 
     # Handle non-ambiguous cases first
     if [[ "${is_branch}" == "true" ]] && [[ "${is_current}" == "false" ]]; then
@@ -404,9 +406,11 @@ detect_no_arg() {
         has_uncommitted=true
     fi
 
-    # Check if on a non-base branch
+    # Check if on a non-base branch (strip origin/ prefix for comparison since
+    # get_base_branch may return origin/master while current_branch is master)
     local is_feature_branch=false
-    if [[ "${current_branch}" != "${base_branch}" ]]; then
+    local base_branch_name="${base_branch#origin/}"
+    if [[ "${current_branch}" != "${base_branch_name}" ]]; then
         is_feature_branch=true
     fi
 
