@@ -89,7 +89,6 @@ parse_structured_response() {
     fi
 
     # If wrapped in markdown fences, strip them and try again
-    local json_text
     json_text=$(printf '%s' "${text}" | sed -n '/^```/,/^```/p' | sed '1d;$d')
     if [[ -n "${json_text}" ]] && printf '%s' "${json_text}" | jq -e '.validations and .missed_issues' > /dev/null 2>&1; then
         printf '%s' "${json_text}"
@@ -108,8 +107,8 @@ parse_freeform_fallback() {
 
     for fid in ${finding_ids}; do
         local verdict_line
-        # Match patterns: "#1: CONFIRMED", "Finding 1: DISMISSED", "1. CONFIRMED"
-        verdict_line=$(printf '%s' "${text}" | grep -iE "(#${fid}|finding ${fid}|^${fid}[.):])" | grep -iwE "CONFIRMED|DISMISSED|ADJUSTED" | head -1)
+        # Require non-digit boundary after ID so #1 does not match #10
+        verdict_line=$(printf '%s' "${text}" | grep -iE "(#${fid}([^0-9]|$)|finding[[:space:]]+${fid}([^0-9]|$)|^${fid}[.):])" | grep -iwE "CONFIRMED|DISMISSED|ADJUSTED" | head -1)
 
         if [[ -n "${verdict_line}" ]]; then
             local verdict
@@ -230,6 +229,7 @@ main() {
             ;;
         1)
             meta_review_json_output true true \
+                raw_output "" \
                 copilot_log "${log_file}" \
                 copilot_stderr "${stderr_tail}" \
                 duration_ms "${duration_ms}"
@@ -237,6 +237,7 @@ main() {
         *)
             meta_review_json_output true false \
                 error "copilot exited with error" \
+                raw_output "" \
                 copilot_log "${log_file}" \
                 copilot_stderr "${stderr_tail}" \
                 duration_ms "${duration_ms}"

@@ -526,7 +526,7 @@ This filter reduces noise before the expensive extended-thinking synthesis step.
 
 Synthesize the remaining findings using extended thinking into a coherent, deduplicated review document. Apply confidence-based filtering and cross-agent corroboration before producing the final output.
 
-**Cross-agent corroboration:** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function.
+**Cross-agent corroboration:** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function. Cross-model corroboration (a Copilot meta-review `CONFIRMED` verdict) also counts as corroboration even if only one Claude agent flagged the issue.
 
 **Filtering rules:**
 - **Corroborated (2+ agents or chunks):** Keep even if individual confidence is below 40%. Note as corroborated in the review.
