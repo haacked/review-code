@@ -5,6 +5,7 @@
 # Timeouts (seconds)
 COPILOT_REVIEW_TIMEOUT="${COPILOT_REVIEW_TIMEOUT:-300}"
 COPILOT_VALIDATE_TIMEOUT="${COPILOT_VALIDATE_TIMEOUT:-150}"
+COPILOT_META_REVIEW_TIMEOUT="${COPILOT_META_REVIEW_TIMEOUT:-120}"
 
 # Max diff size (bytes) to send to Copilot. Larger diffs cause timeouts
 # (176KB timed out at 180s). 100KB gives headroom for prompt wrapping.

@@ -138,9 +138,8 @@ jq -n --arg dir "$debug_session_dir" --arg content "$variable_with_content" \
 - **08-context-explorer**: Record timing (start/end). Save the explorer prompt as `prompt.md` and the result (`$architectural_context`) as `result.md`.
 - **09-per-chunk-analysis** (chunked reviews only): Record timing (start/end). For each chunk, save the prompt as `chunk-{id}-prompt.md` and result as `chunk-{id}-result.md`.
 - **10-agent-dispatch**: Record timing (start/end). For each agent (or chunk x agent combination), save the prompt as `{agent}-prompt.md` (or `chunk-{id}-{agent}-prompt.md`) and result as `{agent}-result.md` (or `chunk-{id}-{agent}-result.md`). Save stats with agent count.
-- **10b-copilot-review** (when Copilot available): Record timing (start/end). Save the raw Copilot output as `result.md` and the parsed JSON response as `response.json`. On timeout or error, also save `stderr.log` (from `copilot_stderr` field) and `log-path.txt` (from `copilot_log` field).
 - **11-synthesis**: Record timing (start/end). Save the merged findings as `merged-findings.md` and corroboration results as `corroboration.md`.
-- **11b-copilot-validate** (when Copilot available): For each blocking finding validated by Copilot, save the result as `validate-{N}-result.json`. On timeout or error, the `reasoning` field in the result includes the log path and stderr tail.
+- **11b-copilot-meta-review** (when Copilot available): Record timing (start/end). Save the input payload as `input.json`, the raw Copilot output as `raw-output.md`, and the parsed JSON response as `response.json`. On timeout or error, also save `stderr.log` (from `copilot_stderr` field) and `log-path.txt` (from `copilot_log` field).
 - **12-token-usage**: After the review is complete, save stats with per-agent token usage and aggregate totals (see "Track Token Usage" below).
 
 ### Track Token Usage
@@ -444,50 +443,6 @@ IMPORTANT: Build upon the previous review. Do not duplicate findings. You may:
 - Update status if code changed
 - Mark findings as resolved if fixed
 
-### Copilot Cross-Model Review (Parallel)
-
-If `copilot_available` is true in the session data, dispatch a Copilot review **in parallel** with the Claude agent Task tool calls above. The diff is passed directly in the prompt (not via `--add-dir`) to stay within Copilot's context window.
-
-**Skip conditions:** If `copilot_available` is false or absent, skip this step entirely.
-
-**Non-chunked reviews:** Add this as an additional Bash tool call alongside the agent dispatches:
-
-```bash
-jq -n --arg diff "$diff" --argjson timeout_seconds 300 '$ARGS.named' \
-  | ~/.claude/skills/review-code/scripts/copilot-review.sh
-```
-
-Where `$diff` is the diff from the session data. Use `jq` to safely encode the diff as JSON (handles newlines, quotes, and special characters).
-
-Save the JSON output as `$copilot_review`.
-
-**Chunked reviews:** When `is_chunked` is true, dispatch one Copilot review **per chunk** in parallel (alongside the Claude agent dispatches), up to a maximum of 5 concurrent Copilot invocations. If there are more than 5 chunks, use a sliding window: dispatch the next chunk as each earlier one completes, keeping up to 5 in flight at all times. For each chunk in the `chunks` array:
-
-```bash
-jq -n --arg diff "$chunk_diff" --argjson timeout_seconds 300 '$ARGS.named' \
-  | ~/.claude/skills/review-code/scripts/copilot-review.sh
-```
-
-Where `$chunk_diff` is the chunk's `diff` field. Save each result as `$copilot_chunk_reviews[$chunk.id]`.
-
-In **debug mode**, also persist each chunk's raw response to disk as `chunk-$chunk.id-response.json` (raw JSON from `copilot-review.sh`) and `chunk-$chunk.id-result.md` (rendered result), so per-chunk failures and timeouts remain diagnosable.
-
-**Merge chunked results** after all chunks complete:
-
-1. Before dispatching, record `$start_time_ms` (e.g., `date +%s%3N`).
-2. After all chunks complete, record `$end_time_ms`.
-3. Iterate over chunks in ascending `chunk.id` order. For each chunk with a non-empty `raw_output`, prepend `## Chunk $chunk.id: $chunk.label\n` and concatenate into a single string.
-4. Build a merged `$copilot_review` object: `{ available: true, timed_out: false, raw_output: <merged>, duration_ms: $end_time_ms - $start_time_ms }`.
-5. If **all** chunks failed (timed out, errored, or were skipped), treat it as if Copilot returned no results.
-
-Record token usage per chunk as `copilot-review-chunk-{id}` in `$token_usage` with `{ total_tokens: 0, tool_uses: 0, duration_ms }`. Also record an aggregate `copilot_review` entry with the merged `duration_ms`.
-
-**Error handling:** If the script returns `available: false`, `timed_out: true`, or contains an `error` field, ignore that Copilot result and continue with Claude-only review. Never fail or stop the review because of a Copilot error. Individual chunk failures do not affect other chunks.
-
-**Copilot error logging:** The JSON output always includes `copilot_log` (path to the full stderr log file). When `$copilot_review` contains `timed_out: true` or an `error` field, the output also includes `copilot_stderr` (last 20 lines of stderr). In **debug mode**, save these as debug artifacts under stage `10b-copilot-review`: save `copilot_stderr` as `stderr.log` and save the `copilot_log` path as `log-path.txt`. These logs persist in `~/.cache/review-code/copilot-logs/` regardless of debug mode, so they can be examined after the fact.
-
-If `$copilot_review` succeeds (non-chunked), record `copilot_review` in `$token_usage` with `{ total_tokens: 0, tool_uses: 0, duration_ms }` using the `duration_ms` value from the output.
-
 ### Collect and Synthesize Results
 
 After all review agents complete, extract usage metadata from each agent's response and record in `$token_usage` keyed by agent type (e.g., `$token_usage["code-reviewer-security"]`). For chunked reviews, key by `chunk-{id}-{agent-type}`.
@@ -569,28 +524,9 @@ After all agent results are collected (including all chunks in chunked mode), ap
 
 This filter reduces noise before the expensive extended-thinking synthesis step. Line-level precision is handled later by the "Validate Findings Against the Diff" step.
 
-**Merge Copilot Findings**
-
-If `$copilot_review` exists and has `available: true`, `timed_out: false`, no `error` field, and a non-empty `raw_output`:
-
-1. **Parse Copilot's review.** Use extended thinking to extract findings from Copilot's free-form `raw_output` text. For chunked reviews, the output contains `## Chunk N: label` headers separating each chunk's review; ignore these headers during finding extraction. For each finding, identify: file path, line number (if present), type (blocking/suggestion/nit/question based on the severity language used), description, and a confidence estimate (your best judgment of how confident Copilot seemed).
-
-2. **Apply the same scope filter** to Copilot findings: drop any that reference files not in `IN_SCOPE_PATHS`.
-
-3. **Match against Claude findings.** For each surviving Copilot finding, check if a Claude finding references the same file within 10 lines and addresses the same logical concern. If matched:
-   - Mark the Claude finding as **cross-model corroborated**.
-   - Boost its confidence by 15 percentage points (capped at 95%).
-   - Append note: "*(corroborated by Copilot)*"
-
-4. **Add unmatched Copilot findings.** For Copilot findings that don't match any Claude finding, add them to the finding pool with `agent: "copilot"` and a note: "*(flagged by external model)*". These are subject to the same filtering thresholds as Claude findings.
-
-5. **Corroboration rule update:** Cross-model corroboration (any Claude agent + Copilot) counts as corroboration even if only one Claude agent flagged the issue. Different-model agreement is at least as strong as same-model multi-agent agreement.
-
-If `$copilot_review` is absent, unavailable, timed out, or errored, skip this section and proceed with Claude-only findings.
-
 Synthesize the remaining findings using extended thinking into a coherent, deduplicated review document. Apply confidence-based filtering and cross-agent corroboration before producing the final output.
 
-**Cross-agent corroboration:** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function. Cross-model corroboration (Claude + Copilot) also counts as corroboration.
+**Cross-agent corroboration:** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function. Cross-model corroboration (a Copilot meta-review `CONFIRMED` verdict) also counts as corroboration even if only one Claude agent flagged the issue.
 
 **Filtering rules:**
 - **Corroborated (2+ agents or chunks):** Keep even if individual confidence is below 40%. Note as corroborated in the review.
@@ -664,36 +600,50 @@ Where `targets` contains `{"path": "<file>", "line": <number>}` objects, and `di
 
 - **Otherwise** (non-blocking findings): Use the Read tool to verify the claim is accurate before including it.
 
-### Copilot Cross-Model Validation (Parallel)
+### Copilot Meta-Review
 
-If `copilot_available` is true in the session data, also validate each blocking finding with Copilot **in parallel with** the Claude finding-validator dispatches above. For each blocking finding, extract the relevant diff snippet for the finding's file (the hunk(s) containing the finding's line) and dispatch a Bash tool call:
+If `copilot_available` is true in the session data, run a Copilot meta-review after Claude findings have been synthesized and validated. This gives Copilot a focused task: validate Claude's findings and scan the diff for anything glaringly obvious that was missed.
+
+**Skip conditions:** If `copilot_available` is false or absent, skip this step entirely.
+
+**Build the findings payload.** Collect all findings that survived synthesis and validation into a JSON array. For each finding, include: a sequential `id` (starting at 1), `agent` (source agent name), `type` (blocking/suggestion/nit/question), `file`, `line`, `description`, `proposed_fix` (if any), and `confidence`.
+
+**Dispatch the meta-review:**
 
 ```bash
 jq -n \
-  --arg finding_description "<finding description>" \
-  --arg file "<file>" \
-  --argjson line <line> \
-  --arg proposed_fix "<proposed fix>" \
-  --arg diff_context "<relevant diff snippet for this file>" \
-  --argjson timeout_seconds 150 \
-  '$ARGS.named' | ~/.claude/skills/review-code/scripts/copilot-validate.sh
+  --argjson findings '<findings JSON array>' \
+  --arg diff "$diff" \
+  --argjson timeout_seconds 120 \
+  '$ARGS.named' | ~/.claude/skills/review-code/scripts/copilot-meta-review.sh
 ```
 
-Where `diff_context` is the portion of the diff relevant to this finding's file and surrounding hunks. This keeps the prompt small and focused for Copilot's context window.
+Where `$diff` is the full diff from session data and `<findings JSON array>` is the JSON array of surviving findings. Use `jq` to safely encode both as JSON.
 
-Save each result as `$copilot_validate_N`. Record in `$token_usage` as `copilot-validate-{N}` with `{ total_tokens: 0, tool_uses: 0, duration_ms }`.
+Save the JSON output as `$copilot_meta_review`.
 
-**Combine Claude validator and Copilot validator verdicts:**
+In **debug mode**, save debug artifacts under stage `11b-copilot-meta-review`: save the input payload as `input.json`, the raw Copilot output as `raw-output.md`, and the parsed response as `response.json`. On timeout or error, also save `stderr.log` and `log-path.txt`.
 
-| Claude Validator | Copilot Validator | Action |
-|---|---|---|
-| CONFIRMED | CONFIRMED | Keep as `blocking:`. Append: "*(confirmed by adversarial review and cross-model validation)*" |
-| CONFIRMED | DISMISSED | Keep as `blocking:`. Append Copilot's counter-argument as context: "*(Note: alternative model disagreed: [copilot reasoning])*" |
-| DISMISSED | CONFIRMED | Keep as `suggestion:` (downgraded from blocking). Append: "*(Downgraded from blocking, but alternative model flagged as real: [copilot reasoning])*" |
-| DISMISSED | DISMISSED | Downgrade to `suggestion:` with strong confidence that this is not blocking. |
-| Any | INCONCLUSIVE | Ignore Copilot result. Use Claude validator verdict only. |
+**Integrate meta-review results:**
 
-**Skip conditions:** If `copilot_available` is false or absent, skip Copilot validation entirely and use Claude validator results only.
+If `$copilot_meta_review` has `available: true`, `timed_out: false`, and no `error` field:
+
+1. **Process validations.** For each entry in `validations`:
+   - **CONFIRMED**: Mark the matching finding as cross-model corroborated. Boost confidence by 15 percentage points (capped at 95%). Append note: "*(corroborated by Copilot)*"
+   - **DISMISSED**: If the finding is `blocking:`, downgrade to `suggestion:`. Append Copilot's reasoning: "*(Copilot disagreed: [reasoning])*". Do NOT remove the finding entirely; Claude's analysis takes precedence, but the dissent is noted.
+   - **ADJUSTED**: Keep the finding but incorporate Copilot's reasoning as additional context. Append: "*(Copilot note: [reasoning])*"
+   - If a `finding_id` does not match any surviving finding, ignore it silently.
+
+2. **Process missed issues.** For each entry in `missed_issues`:
+   - Apply the same scope filter: drop any that reference files not in `IN_SCOPE_PATHS`.
+   - For surviving missed issues, add them to the finding pool with `agent: "copilot"`, the type from the meta-review output, and a note: "*(flagged by Copilot during meta-review)*".
+   - These are subject to the same filtering thresholds as Claude findings. Since they come from a single source (Copilot), they are solo findings and need confidence >= 40% to be included (unless they are questions/nits). Assign a default confidence of 50% to Copilot missed issues.
+
+3. **Corroboration rule.** Cross-model corroboration (Claude + Copilot CONFIRMED) counts as corroboration even if only one Claude agent flagged the issue.
+
+**Error handling:** If the script returns `available: false`, `timed_out: true`, or contains an `error` field, ignore the meta-review result and continue with Claude-only findings. Never fail or stop the review because of a Copilot error.
+
+Record `copilot_meta_review` in `$token_usage` with `{ total_tokens: 0, tool_uses: 0, duration_ms }` using the `duration_ms` value from the output.
 
 ### Compose the Review Document
 
