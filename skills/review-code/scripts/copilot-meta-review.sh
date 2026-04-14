@@ -83,9 +83,9 @@ parse_structured_response() {
     local json_text
 
     # Try raw JSON, then markdown-fenced JSON, then the full text
-    json_text=$(printf '%s' "${text}" | sed -n '/^[[:space:]]*{/,/^[[:space:]]*}[[:space:]]*$/p' | head -100)
+    json_text=$(printf '%s' "${text}" | sed -n '/^[[:space:]]*{/,/^[[:space:]]*}[[:space:]]*$/p')
     if [[ -z "${json_text}" ]]; then
-        json_text=$(printf '%s' "${text}" | sed -n '/^```/,/^```/p' | sed '1d;$d' | head -100)
+        json_text=$(printf '%s' "${text}" | sed -n '/^```/,/^```/p' | sed '1d;$d')
     fi
     if [[ -z "${json_text}" ]]; then
         json_text="${text}"
@@ -108,11 +108,11 @@ parse_freeform_fallback() {
     for fid in ${finding_ids}; do
         local verdict_line
         # Match patterns: "#1: CONFIRMED", "Finding 1: DISMISSED", "1. CONFIRMED"
-        verdict_line=$(printf '%s' "${text}" | grep -iE "(#${fid}|finding ${fid}|^${fid}[.):]).*\b(CONFIRMED|DISMISSED|ADJUSTED)\b" | head -1)
+        verdict_line=$(printf '%s' "${text}" | grep -iE "(#${fid}|finding ${fid}|^${fid}[.):])" | grep -iwE "CONFIRMED|DISMISSED|ADJUSTED" | head -1)
 
         if [[ -n "${verdict_line}" ]]; then
             local verdict
-            verdict=$(printf '%s' "${verdict_line}" | grep -ioE '\b(CONFIRMED|DISMISSED|ADJUSTED)\b' | head -1 | tr '[:lower:]' '[:upper:]')
+            verdict=$(printf '%s' "${verdict_line}" | grep -iowE 'CONFIRMED|DISMISSED|ADJUSTED' | head -1 | tr '[:lower:]' '[:upper:]')
             local reasoning
             reasoning=$(printf '%s' "${verdict_line}" | sed "s/.*${verdict}[[:space:]]*//" | sed 's/^[[:space:]-]*//')
 
@@ -181,9 +181,13 @@ main() {
         return 0
     fi
 
-    # Clear diff if it exceeds Copilot's practical limits
-    if [[ -n "${diff}" ]] && [[ "${#diff}" -gt ${COPILOT_MAX_DIFF_BYTES} ]]; then
-        diff=""
+    # Clear diff if it exceeds Copilot's practical limits (byte count, not char count)
+    if [[ -n "${diff}" ]]; then
+        local diff_bytes
+        diff_bytes=$(printf '%s' "${diff}" | LC_ALL=C wc -c | tr -d '[:space:]')
+        if [[ "${diff_bytes}" -gt ${COPILOT_MAX_DIFF_BYTES} ]]; then
+            diff=""
+        fi
     fi
 
     local findings_text
@@ -219,6 +223,7 @@ main() {
             meta_review_json_output true false \
                 validations "${validations}" \
                 missed_issues "${missed_issues}" \
+                raw_output "${parsed_text}" \
                 copilot_log "${log_file}" \
                 duration_ms "${duration_ms}"
             ;;
