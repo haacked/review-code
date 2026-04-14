@@ -82,19 +82,20 @@ parse_structured_response() {
     local text="$1"
     local json_text
 
-    # Try raw JSON, then markdown-fenced JSON, then the full text
-    json_text=$(printf '%s' "${text}" | sed -n '/^[[:space:]]*{/,/^[[:space:]]*}[[:space:]]*$/p')
-    if [[ -z "${json_text}" ]]; then
-        json_text=$(printf '%s' "${text}" | sed -n '/^```/,/^```/p' | sed '1d;$d')
-    fi
-    if [[ -z "${json_text}" ]]; then
-        json_text="${text}"
+    # Try full text first so nested pretty-printed JSON is preserved
+    if printf '%s' "${text}" | jq -e '.validations and .missed_issues' > /dev/null 2>&1; then
+        printf '%s' "${text}"
+        return 0
     fi
 
-    if printf '%s' "${json_text}" | jq -e '.validations and .missed_issues' > /dev/null 2>&1; then
+    # If wrapped in markdown fences, strip them and try again
+    local json_text
+    json_text=$(printf '%s' "${text}" | sed -n '/^```/,/^```/p' | sed '1d;$d')
+    if [[ -n "${json_text}" ]] && printf '%s' "${json_text}" | jq -e '.validations and .missed_issues' > /dev/null 2>&1; then
         printf '%s' "${json_text}"
         return 0
     fi
+
     return 1
 }
 

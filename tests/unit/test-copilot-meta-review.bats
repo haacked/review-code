@@ -185,6 +185,34 @@ sample_diff() {
     [ "$missed_file" = "src/new.ts" ]
 }
 
+@test "copilot-meta-review: parses pretty-printed multi-line JSON response" {
+    # Build a mock that returns pretty-printed JSON (nested braces on their own lines)
+    cat > "$MOCK_DIR/copilot" << 'MOCKEOF'
+#!/bin/bash
+jq -n --arg content '{
+  "validations": [
+    {
+      "finding_id": 1,
+      "verdict": "CONFIRMED",
+      "reasoning": "Real SQL injection"
+    }
+  ],
+  "missed_issues": []
+}' '{type: "result", content: $content}'
+MOCKEOF
+    chmod +x "$MOCK_DIR/copilot"
+    run_with_sample_input
+    [ "$status" -eq 0 ]
+
+    local available timed_out verdict
+    available=$(echo "$output" | jq -r '.available')
+    timed_out=$(echo "$output" | jq -r '.timed_out')
+    verdict=$(echo "$output" | jq -r '.validations[0].verdict')
+    [ "$available" = "true" ]
+    [ "$timed_out" = "false" ]
+    [ "$verdict" = "CONFIRMED" ]
+}
+
 # =============================================================================
 # Timeout tests
 # =============================================================================
