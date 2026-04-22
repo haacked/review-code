@@ -6,7 +6,7 @@
 # Kept for potential standalone use.
 #
 # Usage:
-#   echo '{"diff": "<diff text>", "timeout_seconds": 180}' | copilot-review.sh
+#   echo '{"diff": "<diff text>", "timeout_seconds": 300}' | copilot-review.sh
 #
 # Input (stdin): JSON with diff (required) and optional timeout_seconds
 # Output (stdout): JSON with available, timed_out, raw_output, duration_ms
