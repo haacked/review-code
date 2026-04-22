@@ -2,7 +2,7 @@
 # copilot-meta-review.sh - Use Copilot CLI to validate review findings and do a cursory code scan
 #
 # Usage:
-#   echo '{"findings": [...], "diff": "<diff text>", "timeout_seconds": 120}' | copilot-meta-review.sh
+#   echo '{"findings": [...], "diff": "<diff text>", "timeout_seconds": 300}' | copilot-meta-review.sh
 #
 # Input (stdin): JSON with findings array (required), diff (optional), and optional timeout_seconds
 # Output (stdout): JSON with available, timed_out, validations, missed_issues, duration_ms

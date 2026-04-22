@@ -8,7 +8,7 @@
 # Usage:
 #   echo '{"finding_description": "...", "file": "src/auth.ts", "line": 42,
 #          "proposed_fix": "...", "diff_context": "<relevant diff snippet>",
-#          "timeout_seconds": 90}' \
+#          "timeout_seconds": 300}' \
 #     | copilot-validate.sh
 #
 # Input (stdin): JSON with finding details and diff context

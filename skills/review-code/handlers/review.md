@@ -614,7 +614,7 @@ If `copilot_available` is true in the session data, run a Copilot meta-review af
 jq -n \
   --argjson findings '<findings JSON array>' \
   --arg diff "$diff" \
-  --argjson timeout_seconds 120 \
+  --argjson timeout_seconds 300 \
   '$ARGS.named' | ~/.claude/skills/review-code/scripts/copilot-meta-review.sh
 ```
 
