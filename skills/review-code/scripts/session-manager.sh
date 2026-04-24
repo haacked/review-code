@@ -204,32 +204,46 @@ session_cleanup() {
     command_name=$(sanitize_identifier "${command_name}") || return 1
 
     local command_dir="${SESSION_DIR}/${command_name}"
+    local session_file="${command_dir}/${session_id}.json"
+
+    # Give the command a chance to run per-session teardown (e.g. remove a
+    # provisioned worktree). Hooks are optional and keyed by command name; a
+    # missing or non-executable hook is silently skipped. The hook must not
+    # fail the cleanup, so all errors are swallowed.
+    local hook="$(dirname "${BASH_SOURCE[0]}")/session-hooks/${command_name}-cleanup.sh"
+    if [[ -f "${session_file}" && -x "${hook}" ]]; then
+        "${hook}" "${session_file}" > /dev/null 2>&1 || true
+    fi
 
     # Remove session file and metadata
-    rm -f "${command_dir}/${session_id}.json"
+    rm -f "${session_file}"
     rm -f "${command_dir}/${session_id}.meta.json"
 }
 
 # Cleanup old sessions (older than 1 hour)
 # Args: $1 = command name (optional, if not provided cleans all commands)
+# Routes each stale session through session_cleanup so per-session teardown
+# (e.g. worktree removal) runs. Meta files have no per-session teardown so
+# they're swept separately with find -delete.
 session_cleanup_old() {
     local command_name="${1:-}"
 
+    local search_dir
     if [[ -z "${command_name}" ]]; then
-        # Cleanup all commands
-        find "${SESSION_DIR}" -name "*.json" -type f -mmin +60 -delete 2> /dev/null || true
-        find "${SESSION_DIR}" -name "*.meta.json" -type f -mmin +60 -delete 2> /dev/null || true
+        search_dir="${SESSION_DIR}"
     else
-        # Sanitize command name
         command_name=$(sanitize_identifier "${command_name}") || return 1
-
-        # Cleanup specific command
-        local command_dir="${SESSION_DIR}/${command_name}"
-        if [[ -d "${command_dir}" ]]; then
-            find "${command_dir}" -name "*.json" -type f -mmin +60 -delete 2> /dev/null || true
-            find "${command_dir}" -name "*.meta.json" -type f -mmin +60 -delete 2> /dev/null || true
-        fi
+        search_dir="${SESSION_DIR}/${command_name}"
+        [[ -d "${search_dir}" ]] || return 0
     fi
+
+    local stale_file session_id
+    while IFS= read -r -d '' stale_file; do
+        session_id=$(basename "${stale_file}" .json)
+        session_cleanup "${session_id}" 2> /dev/null || true
+    done < <(find "${search_dir}" -name "*.json" -not -name "*.meta.json" -type f -mmin +60 -print0 2> /dev/null)
+
+    find "${search_dir}" -name "*.meta.json" -type f -mmin +60 -delete 2> /dev/null || true
 }
 
 # List active sessions for a command
