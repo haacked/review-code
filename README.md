@@ -186,6 +186,20 @@ Review any GitHub pull request by URL - works from anywhere (inside or outside a
 
 This means you can review PRs for any repository without needing to clone it locally.
 
+#### Speeding up cross-repo PR reviews with `repos.conf`
+
+When reviewing a PR from outside its repository, the skill can provision a short-lived worktree off a local clone you already have, giving agents native `Read`/`Grep`/`Glob` access to the PR source instead of falling back to a diff-only review. Opt in by creating `~/.claude/skills/review-code/repos.conf`:
+
+```
+# Format: <org>/<repo>  <absolute-or-tilde-path>
+posthog/posthog     ~/dev/posthog/posthog
+someorg/somerepo    ~/dev/someorg/somerepo
+```
+
+`$REVIEW_CODE_CONFIG_DIR/repos.conf` overrides the default location (used by tests and advanced setups).
+
+Without a mapping for the PR's repo, the review falls back to diff-only (with a warning).
+
 ### Review Git History
 
 ```bash

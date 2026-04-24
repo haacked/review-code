@@ -70,7 +70,7 @@ From the session file JSON, extract these fields for building agent context:
 - `git`: git repository context
 - `languages`: detected languages
 - `file_info.file_path`: where to save the review
-- `file_ref`: (optional) git ref for reading PR files when on a different branch
+- `file_ref`: (optional) git ref for reading PR files when on a different branch or via a provisioned worktree
 - `commit_messages`: (optional) commit messages for the reviewed changes (subject + body, truncated to 8KB)
 - `chunks`: (optional) array of chunk objects when the diff was split
 - `chunk_metadata`: (optional) object with `chunked`, `reason`, `chunk_count`
@@ -161,30 +161,38 @@ If `chunk_metadata` exists and `chunk_metadata.chunked` is `true`, set `is_chunk
 "This is a large PR ({chunk_metadata.reason}). Splitting into {chunk_count} chunks for focused review."
 
 Mode-specific fields:
-- **PR mode:** `pr`: PR details (number, title, author, body, comments, etc.); `file_ref`: git ref for file access (present when reviewing from a different branch)
+- **PR mode:** `pr`: PR details (number, title, author, body, comments, etc.); `file_ref`: git ref for file access (present when reviewing from a different branch or via a provisioned worktree). When the review runs outside the PR's repo and a local clone is mapped in `repos.conf`, `git.working_dir` points at a detached worktree checked out to the PR. Otherwise — no mapping, provisioning failed, or the PR ref could not be fetched into an in-repo clone — `working_dir` is null and only the diff is available.
 - **Branch/commit/range modes:** `branch`, `base_branch`, `commit`, `range`
 - **Area-specific reviews:** `area`
 
 ### Prepare File Access Instructions
 
-Build `$file_access_instructions` based on the session data. This block is included in both the context explorer and agent prompts.
+Build `$file_access_instructions` based on the session data. This block is included in both the context explorer and agent prompts. Substitute the actual `git.working_dir` path into the instructions when `working_dir` is set — do not emit `$git.working_dir` or similar placeholders verbatim.
 
-**If `file_ref` is set:**
+`git.local_clone` is set only for cross-repo reviews where a detached worktree was provisioned from a configured clone; when it is set and `working_dir` is set, `working_dir` is that worktree and Read/Grep/Glob read the PR's files directly. In the same-repo cross-branch case, `local_clone` is null and `working_dir` is the user's current checkout — which may be on a different branch — so Read on `working_dir` would read the wrong content for PR files.
+
+**If `working_dir` is set and `file_ref` is set and `local_clone` is set:**
 ```
 **File Access:**
-You are reviewing from a different branch in the same repo. To read files as they appear in the PR, use `git show "$file_ref:<path>"` via the Bash tool (always quote the argument to handle paths with spaces or special characters). Do NOT use `git checkout` or `git switch`: this would modify the user's working tree. The Read, Grep, and Glob tools operate on the current working tree (which may differ from the PR branch), so use them for finding patterns and conventions but not for reading the PR's file contents. `git show` works for any file that exists at the ref, including files newly added in the PR. If `git show` fails (e.g., the file was deleted or renamed, the path is wrong, or the ref was not fetched), fall back to the diff content.
+A detached worktree checked out to this PR is available at the path given by `git.working_dir` in the session data. Use Read, Grep, and Glob normally; they operate on that directory. Do not run `git checkout` or `git switch` anywhere, and do not run other write operations in the worktree — the orchestrator owns its lifetime.
 ```
 
-**If `file_ref` is NOT set and `working_dir` is not null:**
+**If `working_dir` is set and `file_ref` is set and `local_clone` is null:**
 ```
 **File Access:**
-You are on the PR's branch. Use the Read tool to read files normally.
+You are reviewing from a different branch in the same repo. The user's working tree at `git.working_dir` is on a different branch than the PR, so Read/Grep/Glob there see the wrong file contents for the PR. To read files as they appear in the PR, use `git show "$file_ref:<path>"` via the Bash tool (substitute the actual ref from the session data and always quote the argument to handle paths with spaces or special characters). Do NOT use `git checkout` or `git switch`: this would modify the user's working tree. Read, Grep, and Glob are still useful for finding patterns and conventions in the user's working tree — just not for reading the PR's file contents. `git show` works for any file that exists at the ref, including files newly added in the PR. If `git show` fails (e.g., the file was deleted or renamed, the path is wrong, or the ref was not fetched), fall back to the diff content.
+```
+
+**If `working_dir` is set and `file_ref` is NOT set:**
+```
+**File Access:**
+You are on the PR's branch in the user's working directory. Use the Read tool to read files normally. Do not run `git checkout` or `git switch`: it would disturb the user's working tree.
 ```
 
 **If `working_dir` is null:**
 ```
 **File Access:**
-No local checkout available. Work from the diff content only.
+No safe local checkout is available for reading PR files. This can happen because no local clone is configured for the repo in `repos.conf`, because worktree provisioning failed, or because the PR ref could not be fetched into the user's clone. Work from the diff content only.
 ```
 
 ### Gather Architectural Context

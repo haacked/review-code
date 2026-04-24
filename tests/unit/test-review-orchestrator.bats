@@ -57,6 +57,82 @@ teardown() {
     echo "$output" | jq -e '.status == "ready"'
 }
 
+# Shape-only tests for the jq expression that handle_pr_review uses to build
+# the cross-repo git_context. These invoke the jq expression directly rather
+# than handle_pr_review itself (which needs a gh stub), so they catch typos
+# in the expression but will not catch refactors that replace the expression
+# with different source logic. A true integration test would stub
+# pr-context.sh + pr-worktree.sh and drive handle_pr_review end-to-end.
+
+@test "build_git_context jq expression: emits nulls when no worktree and no clone" {
+    run jq -n \
+        --arg org "otherorg" \
+        --arg repo "otherrepo" \
+        --arg branch "feature" \
+        --arg working_dir "" \
+        --arg clone "" \
+        '{
+            org: $org,
+            repo: $repo,
+            branch: $branch,
+            commit: null,
+            working_dir: (if $working_dir == "" then null else $working_dir end),
+            has_changes: false,
+            local_clone: (if $working_dir == "" or $clone == "" then null else $clone end)
+        }'
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.working_dir == null' > /dev/null
+    echo "$output" | jq -e '.local_clone == null' > /dev/null
+    echo "$output" | jq -e '.has_changes == false' > /dev/null
+    echo "$output" | jq -e '.commit == null' > /dev/null
+    echo "$output" | jq -e '.org == "otherorg"' > /dev/null
+}
+
+@test "build_git_context jq expression: populates working_dir and local_clone when worktree is provisioned" {
+    run jq -n \
+        --arg org "otherorg" \
+        --arg repo "otherrepo" \
+        --arg branch "feature" \
+        --arg working_dir "/tmp/worktrees/otherorg/otherrepo/pr-42" \
+        --arg clone "/home/user/dev/otherorg/otherrepo" \
+        '{
+            org: $org,
+            repo: $repo,
+            branch: $branch,
+            commit: null,
+            working_dir: (if $working_dir == "" then null else $working_dir end),
+            has_changes: false,
+            local_clone: (if $working_dir == "" or $clone == "" then null else $clone end)
+        }'
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.working_dir == "/tmp/worktrees/otherorg/otherrepo/pr-42"' > /dev/null
+    echo "$output" | jq -e '.local_clone == "/home/user/dev/otherorg/otherrepo"' > /dev/null
+}
+
+@test "build_git_context jq expression: nulls local_clone when clone is resolved but provisioning failed" {
+    # Pins the contract that local_clone signals a successfully provisioned
+    # worktree, not merely a configured clone. Aligns with handler docs in
+    # review.md which treat local_clone as a success signal.
+    run jq -n \
+        --arg org "otherorg" \
+        --arg repo "otherrepo" \
+        --arg branch "feature" \
+        --arg working_dir "" \
+        --arg clone "/home/user/dev/otherorg/otherrepo" \
+        '{
+            org: $org,
+            repo: $repo,
+            branch: $branch,
+            commit: null,
+            working_dir: (if $working_dir == "" then null else $working_dir end),
+            has_changes: false,
+            local_clone: (if $working_dir == "" or $clone == "" then null else $clone end)
+        }'
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.working_dir == null' > /dev/null
+    echo "$output" | jq -e '.local_clone == null' > /dev/null
+}
+
 @test "review-orchestrator.sh: local mode includes git context" {
     echo "change" > file.txt
     run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"

@@ -295,6 +295,159 @@ teardown() {
     [ -f "$path2" ]
 }
 
+# Set up a temp script dir containing copies of session-manager.sh, the real
+# review-code cleanup hook, the worktree-layout helper, and a stub
+# pr-worktree.sh that records its args and the REVIEW_CODE_WORKTREE_DIR env
+# var on each invocation. The hook is copied verbatim so the jq-based session
+# parsing and the <org>/<repo>/pr-<N> suffix validation are exercised. The
+# stub pr-worktree.sh replaces the real teardown logic so tests don't need a
+# live git clone. Exports STUB_SCRIPT_DIR and STUB_LOG so subsequent
+# `bash -c` blocks can source the copied session-manager.sh and inspect the
+# log via `cat "$STUB_LOG"`.
+_with_pr_worktree_stub() {
+    local script_tmp="$BATS_TEST_TMPDIR/scripts"
+    local stub_log="$BATS_TEST_TMPDIR/pr-worktree.log"
+    mkdir -p "$script_tmp/session-hooks" "$script_tmp/helpers"
+    cp "$PROJECT_ROOT/skills/review-code/scripts/session-manager.sh" "$script_tmp/"
+    cp "$PROJECT_ROOT/skills/review-code/scripts/session-hooks/review-code-cleanup.sh" \
+        "$script_tmp/session-hooks/"
+    cp "$PROJECT_ROOT/skills/review-code/scripts/helpers/worktree-layout.sh" \
+        "$script_tmp/helpers/"
+
+    cat > "$script_tmp/pr-worktree.sh" << EOF
+#!/usr/bin/env bash
+echo "args: \$*" >> "$stub_log"
+echo "env: REVIEW_CODE_WORKTREE_DIR=\${REVIEW_CODE_WORKTREE_DIR:-}" >> "$stub_log"
+EOF
+    chmod +x "$script_tmp/pr-worktree.sh"
+
+    export STUB_SCRIPT_DIR="$script_tmp"
+    export STUB_LOG="$stub_log"
+}
+
+@test "session_cleanup: invokes pr-worktree teardown with worktree root derived from wt_path" {
+    _with_pr_worktree_stub
+
+    SESSION_DIR="$BATS_TEST_TMPDIR/test-sessions-stub" \
+    CLAUDE_SESSION_DIR="$BATS_TEST_TMPDIR/test-sessions-stub" \
+    bash -c '
+        source "'"$STUB_SCRIPT_DIR"'/session-manager.sh"
+        sid=$(session_init "review-code" "{
+            \"git\":{\"org\":\"o\",\"repo\":\"r\",\"local_clone\":\"/tmp/c\",\"working_dir\":\"/tmp/wtroot/o/r/pr-42\"},
+            \"pr\":{\"number\":\"42\"}
+        }")
+        session_cleanup "$sid"
+    '
+    [ -f "$STUB_LOG" ]
+    grep -q "^args: teardown o r 42 /tmp/c$" "$STUB_LOG"
+    # Worktree root must match the three-dirnames-up ancestor of wt_path so
+    # teardown operates on the same layout pr-worktree.sh used at provision.
+    grep -q "^env: REVIEW_CODE_WORKTREE_DIR=/tmp/wtroot$" "$STUB_LOG"
+}
+
+@test "session_cleanup: skips teardown when wt_path does not end with <org>/<repo>/pr-<N>" {
+    # Pins the leaf-validation guard: a corrupted session file cannot redirect
+    # teardown (which trusts REVIEW_CODE_WORKTREE_DIR) to an unrelated root.
+    _with_pr_worktree_stub
+
+    SESSION_DIR="$BATS_TEST_TMPDIR/test-sessions-mismatch" \
+    CLAUDE_SESSION_DIR="$BATS_TEST_TMPDIR/test-sessions-mismatch" \
+    bash -c '
+        source "'"$STUB_SCRIPT_DIR"'/session-manager.sh"
+        sid=$(session_init "review-code" "{
+            \"git\":{\"org\":\"o\",\"repo\":\"r\",\"local_clone\":\"/tmp/c\",\"working_dir\":\"/tmp/attacker/a/b/pr-42\"},
+            \"pr\":{\"number\":\"42\"}
+        }")
+        session_cleanup "$sid"
+    '
+    [ ! -f "$STUB_LOG" ]
+}
+
+@test "session_cleanup: skips teardown when wt_path is relative" {
+    _with_pr_worktree_stub
+
+    SESSION_DIR="$BATS_TEST_TMPDIR/test-sessions-rel" \
+    CLAUDE_SESSION_DIR="$BATS_TEST_TMPDIR/test-sessions-rel" \
+    bash -c '
+        source "'"$STUB_SCRIPT_DIR"'/session-manager.sh"
+        sid=$(session_init "review-code" "{
+            \"git\":{\"org\":\"o\",\"repo\":\"r\",\"local_clone\":\"/tmp/c\",\"working_dir\":\"rel/o/r/pr-42\"},
+            \"pr\":{\"number\":\"42\"}
+        }")
+        session_cleanup "$sid"
+    '
+    [ ! -f "$STUB_LOG" ]
+}
+
+@test "session_cleanup: deletes session file even when session JSON is malformed" {
+    # Regression guard: a jq failure inside the cleanup hook must not abort
+    # session_cleanup before the session file is removed. The read <<< variant
+    # in review-code-cleanup.sh isolates the hook from the parent set -e.
+    _with_pr_worktree_stub
+
+    SESSION_DIR="$BATS_TEST_TMPDIR/test-sessions-corrupt" \
+    CLAUDE_SESSION_DIR="$BATS_TEST_TMPDIR/test-sessions-corrupt" \
+    bash -c '
+        source "'"$STUB_SCRIPT_DIR"'/session-manager.sh"
+        mkdir -p "$SESSION_DIR/review-code"
+        sid="review-code-$$-$(date +%s)"
+        printf "not-valid-json" > "$SESSION_DIR/review-code/$sid.json"
+        session_cleanup "$sid"
+        [ ! -f "$SESSION_DIR/review-code/$sid.json" ]
+    '
+    [ ! -f "$STUB_LOG" ]
+}
+
+@test "session_cleanup: skips teardown when worktree fields are absent" {
+    _with_pr_worktree_stub
+
+    SESSION_DIR="$BATS_TEST_TMPDIR/test-sessions-stub2" \
+    CLAUDE_SESSION_DIR="$BATS_TEST_TMPDIR/test-sessions-stub2" \
+    bash -c '
+        source "'"$STUB_SCRIPT_DIR"'/session-manager.sh"
+        sid=$(session_init "review-code" "{\"git\":{\"org\":\"o\"}}")
+        session_cleanup "$sid"
+    '
+    [ ! -f "$STUB_LOG" ]
+}
+
+@test "session_cleanup: skips teardown for non-review-code sessions" {
+    _with_pr_worktree_stub
+
+    SESSION_DIR="$BATS_TEST_TMPDIR/test-sessions-stub3" \
+    CLAUDE_SESSION_DIR="$BATS_TEST_TMPDIR/test-sessions-stub3" \
+    bash -c '
+        source "'"$STUB_SCRIPT_DIR"'/session-manager.sh"
+        sid=$(session_init "other-cmd" "{
+            \"git\":{\"org\":\"o\",\"repo\":\"r\",\"local_clone\":\"/tmp/c\",\"working_dir\":\"/tmp/w\"},
+            \"pr\":{\"number\":\"42\"}
+        }")
+        session_cleanup "$sid"
+    '
+    [ ! -f "$STUB_LOG" ]
+}
+
+@test "session_cleanup_old: routes stale review-code sessions through session_cleanup" {
+    _with_pr_worktree_stub
+
+    SESSION_DIR="$BATS_TEST_TMPDIR/test-sessions-stub4" \
+    CLAUDE_SESSION_DIR="$BATS_TEST_TMPDIR/test-sessions-stub4" \
+    bash -c '
+        source "'"$STUB_SCRIPT_DIR"'/session-manager.sh"
+        mkdir -p "$SESSION_DIR/review-code"
+        sid="review-code-1-1000000000"
+        echo "{\"git\":{\"org\":\"o\",\"repo\":\"r\",\"local_clone\":\"/tmp/c\",\"working_dir\":\"/tmp/wtroot/o/r/pr-42\"},\"pr\":{\"number\":\"42\"}}" \
+            > "$SESSION_DIR/review-code/$sid.json"
+        touch -t $(date -v-2H +%Y%m%d%H%M 2>/dev/null) "$SESSION_DIR/review-code/$sid.json" 2>/dev/null \
+            || touch -d "2 hours ago" "$SESSION_DIR/review-code/$sid.json" 2>/dev/null \
+            || exit 2
+        session_cleanup_old
+        [ ! -f "$SESSION_DIR/review-code/$sid.json" ]
+    ' || skip "Cannot set file timestamp"
+    [ -f "$STUB_LOG" ]
+    grep -q "^args: teardown o r 42 /tmp/c$" "$STUB_LOG"
+}
+
 # =============================================================================
 # session_cleanup_old tests
 # =============================================================================

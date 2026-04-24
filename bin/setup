@@ -487,6 +487,50 @@ cleanup_old_config() {
     done
 }
 
+# Report PR review worktrees present under the skill's worktree root.
+# Includes both active (in-flight reviews) and orphan (crashed reviews) entries
+# — distinguishing them reliably would require cross-referencing live sessions.
+# Doesn't auto-delete; the user decides whether to run `git worktree prune`
+# in the owning clone.
+check_orphan_worktrees() {
+    # Source the layout helper for the one-place-only definition of the
+    # worktree root and directory depth.
+    # shellcheck source=../skills/review-code/scripts/helpers/worktree-layout.sh
+    source "${SCRIPT_DIR}/skills/review-code/scripts/helpers/worktree-layout.sh"
+
+    local worktree_root_dir
+    worktree_root_dir="$(worktree_root)"
+    [[ -d "${worktree_root_dir}" ]] || return 0
+
+    local depth
+    depth="$(worktree_layout_depth)"
+
+    local -a worktrees=()
+    while IFS= read -r wt; do
+        worktrees+=("${wt}")
+    done < <(find "${worktree_root_dir}" -mindepth "${depth}" -maxdepth "${depth}" -type d -name 'pr-*' 2> /dev/null || true)
+
+    local count="${#worktrees[@]}"
+    if [[ "${count}" -gt 0 ]]; then
+        echo ""
+        warn "Found ${count} review worktree(s) under ${worktree_root_dir}."
+        echo "  These are reused on subsequent reviews of the same PR; crashed reviews may leave behind entries."
+        local wt gitdir_line clone
+        for wt in "${worktrees[@]}"; do
+            clone="unknown"
+            if [[ -f "${wt}/.git" ]]; then
+                # The .git file contains: gitdir: <clone>/.git/worktrees/<name>
+                gitdir_line=$(cat "${wt}/.git" 2> /dev/null || echo "")
+                gitdir_line="${gitdir_line#gitdir: }"
+                clone="${gitdir_line%/.git/worktrees/*}"
+            fi
+            echo "    ${wt}  (clone: ${clone})"
+        done
+        echo "  To inspect:  git -C <clone> worktree list"
+        echo "  To clean up: git -C <clone> worktree prune"
+    fi
+}
+
 check_old_installation() {
     local old_dir="${HOME}/.review-code"
 
@@ -558,12 +602,22 @@ main() {
     # Clean up deprecated config files
     cleanup_old_config
 
+    # Clean up legacy bare-cache directory from the pre-worktree approach.
+    local legacy_cache="${SKILL_DIR}/cache"
+    if [[ -d "${legacy_cache}" ]]; then
+        info "Removing legacy bare-clone cache at ${legacy_cache}…"
+        rm -rf "${legacy_cache}"
+    fi
+
     # Install components
     echo ""
     info "Installing review-code components…"
     install_skill
     install_agents
     install_context
+
+    # Check for orphaned review worktrees (from crashed reviews).
+    check_orphan_worktrees
 
     # Cleanup old installation if requested
     if [[ "${remove_old}" -eq 0 ]]; then

@@ -1136,20 +1136,59 @@ handle_pr_review() {
         fi
     fi
 
-    # If not in the same repo, construct a synthetic git_context with PR's org/repo.
-    # working_dir is null since there's no meaningful local directory.
+    # Not in the same repo. If repos.conf maps this repo to a local clone,
+    # provision a detached worktree off that clone so agents can use Read/Grep/
+    # Glob natively. Otherwise fall back to diff-only.
+    local local_clone="" worktree_path=""
     if [[ -z "${git_context}" ]]; then
+        # shellcheck source=helpers/repos-config.sh
+        source "${SCRIPT_DIR}/helpers/repos-config.sh"
+
+        local_clone=$(resolve_local_clone "${org}" "${repo}")
+
+        if [[ -n "${local_clone}" ]]; then
+            local wt_stderr wt_stdout
+            wt_stdout=$(mktemp)
+            # Redirect ordering matters: `2>&1 > file` first aliases stderr to
+            # the current stdout (the $(…) capture), then retargets stdout to
+            # file. Net: stderr is captured in $wt_stderr, JSON in $wt_stdout.
+            if wt_stderr=$("${SCRIPT_DIR}/pr-worktree.sh" provision \
+                "${org}" "${repo}" "${pr_number}" "${local_clone}" \
+                2>&1 > "${wt_stdout}"); then
+                # Read both fields in one jq pass via here-string so a
+                # malformed/empty stdout can't abort under `set -e`; the
+                # follow-up empty-check converts it to a diff-only fallback.
+                local wt_fields=""
+                wt_fields=$(jq -r '[.worktree_path // "", .ref // ""] | @tsv' \
+                    < "${wt_stdout}" 2> /dev/null) || wt_fields=""
+                IFS=$'\t' read -r worktree_path file_ref <<< "${wt_fields}"
+                if [[ -z "${worktree_path}" || -z "${file_ref}" ]]; then
+                    warning "Worktree provisioning returned invalid or incomplete metadata for ${org}/${repo}#${pr_number}; falling back to diff-only"
+                    worktree_path=""
+                    file_ref=""
+                fi
+            else
+                warning "Worktree provisioning failed for ${org}/${repo}#${pr_number}: ${wt_stderr}; falling back to diff-only"
+            fi
+            rm -f "${wt_stdout}"
+        else
+            warning "No local clone configured in repos.conf for ${org}/${repo}; diff-only review"
+        fi
+
         git_context=$(jq -n \
             --arg org "${org}" \
             --arg repo "${repo}" \
             --arg branch "${head_ref}" \
+            --arg working_dir "${worktree_path}" \
+            --arg clone "${local_clone}" \
             '{
                 org: $org,
                 repo: $repo,
                 branch: $branch,
                 commit: null,
-                working_dir: null,
-                has_changes: false
+                working_dir: (if $working_dir == "" then null else $working_dir end),
+                has_changes: false,
+                local_clone: (if $working_dir == "" or $clone == "" then null else $clone end)
             }')
     fi
 
