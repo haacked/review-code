@@ -57,10 +57,14 @@ resolve_local_clone() {
 
     local config
     config=$(find_repos_config) || return 0
-    [[ -n "${config}" && -f "${config}" ]] || return 0
+    # Require readability too: an unreadable config (permissions, transient FS)
+    # would fail the awk below, and since we're sourced into a `set -e` parent,
+    # that non-zero exit would abort the review instead of falling back to
+    # diff-only. Treat unreadable the same as missing.
+    [[ -n "${config}" && -f "${config}" && -r "${config}" ]] || return 0
 
     local key="${org}/${repo}"
-    local raw_path
+    local raw_path=""
     raw_path=$(awk -v k="${key}" '
         /^[[:space:]]*#/ { next }
         /^[[:space:]]*$/ { next }
@@ -75,7 +79,7 @@ resolve_local_clone() {
                 exit
             }
         }
-    ' "${config}")
+    ' "${config}" 2> /dev/null) || raw_path=""
 
     [[ -n "${raw_path}" ]] || return 0
 
