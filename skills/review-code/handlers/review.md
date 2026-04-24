@@ -395,6 +395,8 @@ Write comments the way a senior engineer talks in a PR review: direct, specific,
 - Express uncertainty honestly: "Unless I'm missing something", "If I'm reading this right". Give the author the benefit of the doubt.
 - Never use em dashes. Use commas, parentheses, colons, or separate sentences instead.
 - Never restate what the code obviously does. The author wrote it; they know.
+- Describe failures as scenarios: what would break, what false-pass looks like, what a developer would observe. Never label the failure with testing-theory or formal-methods jargon ("weak positive assertion", "tautology", "invariant violation", "negative space check"). These phrases force the author to decode the category before understanding the problem.
+- When the underlying issue is genuinely complicated, favor comprehensibility over conciseness. Don't compress a subtle point into a dense one-liner; spend the extra sentence to make it clear.
 
 Good:
 ```
@@ -407,12 +409,21 @@ More broadly, consider using the existing `determine_parsed_date_for_property_ma
 `suggestion`: Unless I'm missing something, this change means `process_batch` will now retry on *all* errors, not just transient ones. That could mask permanent failures and delay error reporting to the caller.
 ```
 
+```
+`suggestion`: The count bump from 21 to 22 catches "a UI app was added" but not "*this* UI app was added." If someone later removes this app and adds a different one, the count stays at 22 and the test still passes. The `registeredNames` block a few lines below already spot-checks specific names (`'PostHog Feature Flag'`, `'PostHog Experiment Results'`, …), worth adding `expect(registeredNames).toContain('PostHog Feature Flag Testing')` there. Optional: also pin the URL with `expect(URI_MAP['feature-flag-testing']).toBe('ui://posthog/feature-flag-testing.html')` to catch typos.
+```
+
 Bad:
 ```
 **Issue**: The `except` clause doesn't catch `OverflowError`.
 **Impact**: This causes a 500 Internal Server Error for large numeric strings.
 **Recommendation**: Add `OverflowError` to the except tuple.
 ```
+
+```
+`suggestion`: bumping the count from 21 to 22 is a weak positive assertion. The `registeredNames` block a few lines below spot-checks individual entries (`'PostHog Feature Flag'`, `'PostHog Experiment Results'`, …) and wasn't extended, so a different UI app could replace this one and the test would still pass.
+```
+(Leads with jargon, forcing the author to decode "weak positive assertion" before understanding the actual problem.)
 
 **Handling Existing PR Comments:**
 
