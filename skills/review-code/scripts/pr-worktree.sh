@@ -153,7 +153,9 @@ provision() {
             fi
         fi
     elif [[ -e "${path}" ]]; then
-        error "Path exists but is not a registered worktree: ${path}. Remove it manually or run \`git -C ${local_clone} worktree prune\` and retry."
+        local quoted_clone
+        printf -v quoted_clone '%q' "${local_clone}"
+        error "Path exists but is not a registered worktree: ${path}. Remove it manually or run \`git -C ${quoted_clone} worktree prune\` and retry."
         return 1
     else
         log "Creating worktree at ${path}…"
