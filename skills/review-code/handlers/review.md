@@ -405,6 +405,11 @@ Write comments the way a senior engineer talks in a PR review: direct, specific,
 - Never restate what the code obviously does. The author wrote it; they know.
 - Describe failures as scenarios: what would break, what false-pass looks like, what a developer would observe. Never label the failure with testing-theory or formal-methods jargon ("weak positive assertion", "tautology", "invariant violation", "negative space check"). These phrases force the author to decode the category before understanding the problem.
 - When the underlying issue is genuinely complicated, favor comprehensibility over conciseness. Don't compress a subtle point into a dense one-liner; spend the extra sentence to make it clear.
+- Skip sycophantic openers ("Great work", "Nice approach", "Solid PR"). Get straight to the finding.
+- No marketing patterns like "It's not just X, it's Y". They read as LLM tells.
+- No significance inflation ("This is critical", "This is essential"). Say what specifically breaks instead.
+- No generic hedging openers ("This is subjective, but…", "Just a thought, but…"). The prefix already signals priority.
+- No closers like "Hope that helps!" or "Let me know if you'd like me to dig further." End on the finding.
 
 Good:
 ```
