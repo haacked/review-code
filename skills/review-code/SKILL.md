@@ -46,6 +46,7 @@ Run specialized code review agent(s) with comprehensive context on local changes
 - `--self` - Allow creating draft review on your own PR (for testing)
 - `--overwrite` - Replace existing review file without prompting
 - `--append` - Append to existing review file without prompting
+- `--parent <ref>` - Override the base branch used for branch / current-branch reviews. By default, branches with a recorded stack parent (Graphite or `branch.<name>.parent` in git config) review against that parent; use `--parent` to force a different base, e.g. `--parent main`.
 
 **Optional File Pattern:**
 

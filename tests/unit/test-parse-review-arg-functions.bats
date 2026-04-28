@@ -833,3 +833,197 @@ reset_globals() {
     [ "$status" -eq 0 ]
     [ "$output" = "master" ]
 }
+
+# =============================================================================
+# get_stack_parent tests
+# =============================================================================
+
+@test "get_stack_parent: returns nothing when no parent recorded" {
+    setup_test_git_repo
+
+    git checkout -q -b feature-a
+    echo "a" > a.txt && git add a.txt && git commit -q -m "A"
+
+    run get_stack_parent feature-a
+    [ "$status" -eq 0 ]
+    [ "$output" = "" ]
+}
+
+@test "get_stack_parent: reads branch.<name>.parent and prefers origin/ ref" {
+    setup_test_git_repo
+
+    git checkout -q -b parent-branch
+    echo "p" > p.txt && git add p.txt && git commit -q -m "P"
+    git update-ref refs/remotes/origin/parent-branch HEAD
+
+    git checkout -q -b child-branch
+    echo "c" > c.txt && git add c.txt && git commit -q -m "C"
+    git config branch.child-branch.parent parent-branch
+
+    # Run from main to ensure we're not querying gt about the current branch.
+    git checkout -q main
+    run get_stack_parent child-branch
+    [ "$status" -eq 0 ]
+    [ "$output" = "origin/parent-branch" ]
+}
+
+@test "get_stack_parent: falls back to local ref when origin/<parent> missing" {
+    setup_test_git_repo
+
+    git checkout -q -b parent-only-local
+    echo "p" > p.txt && git add p.txt && git commit -q -m "P"
+
+    git checkout -q -b child
+    git config branch.child.parent parent-only-local
+
+    git checkout -q main
+    run get_stack_parent child
+    [ "$status" -eq 0 ]
+    [ "$output" = "parent-only-local" ]
+}
+
+@test "get_stack_parent: ignores parent when it equals the trunk" {
+    setup_test_git_repo
+
+    git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main 2>/dev/null || true
+    git update-ref refs/remotes/origin/main HEAD
+
+    git checkout -q -b feature
+    git config branch.feature.parent main
+
+    run get_stack_parent feature
+    [ "$status" -eq 0 ]
+    [ "$output" = "" ]
+}
+
+@test "get_stack_parent: ignores self-referential parent" {
+    setup_test_git_repo
+
+    git checkout -q -b loopy
+    git config branch.loopy.parent loopy
+
+    run get_stack_parent loopy
+    [ "$status" -eq 0 ]
+    [ "$output" = "" ]
+}
+
+# =============================================================================
+# get_base_branch + stack parent integration
+# =============================================================================
+
+@test "get_base_branch: returns stack parent when target branch has one" {
+    setup_test_git_repo
+
+    git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main 2>/dev/null || true
+    git update-ref refs/remotes/origin/main HEAD
+
+    git checkout -q -b parent-branch
+    echo "p" > p.txt && git add p.txt && git commit -q -m "P"
+    git update-ref refs/remotes/origin/parent-branch HEAD
+
+    git checkout -q -b child-branch
+    echo "c" > c.txt && git add c.txt && git commit -q -m "C"
+    git config branch.child-branch.parent parent-branch
+
+    git checkout -q main
+    run get_base_branch child-branch
+    [ "$status" -eq 0 ]
+    [ "$output" = "origin/parent-branch" ]
+}
+
+@test "get_base_branch: falls through to trunk when parent equals default branch" {
+    setup_test_git_repo
+
+    git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main 2>/dev/null || true
+    git update-ref refs/remotes/origin/main HEAD
+
+    git checkout -q -b feature
+    git config branch.feature.parent main
+
+    run get_base_branch feature
+    [ "$status" -eq 0 ]
+    [ "$output" = "origin/main" ]
+}
+
+# =============================================================================
+# resolve_base_branch / --parent override
+# =============================================================================
+
+@test "resolve_base_branch: PARENT_OVERRIDE wins over computed base" {
+    setup_test_git_repo
+
+    git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main 2>/dev/null || true
+    git update-ref refs/remotes/origin/main HEAD
+
+    git checkout -q -b feature
+    git config branch.feature.parent main
+
+    PARENT_OVERRIDE="origin/some-other-branch"
+    run resolve_base_branch feature
+    [ "$status" -eq 0 ]
+    [ "$output" = "origin/some-other-branch" ]
+}
+
+@test "resolve_base_branch: empty PARENT_OVERRIDE delegates to get_base_branch" {
+    setup_test_git_repo
+
+    git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main 2>/dev/null || true
+    git update-ref refs/remotes/origin/main HEAD
+
+    PARENT_OVERRIDE=""
+    run resolve_base_branch
+    [ "$status" -eq 0 ]
+    [ "$output" = "origin/main" ]
+}
+
+# =============================================================================
+# --parent flag parsing
+# =============================================================================
+
+@test "--parent: PARENT_OVERRIDE empty by default" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh"
+    [ "$PARENT_OVERRIDE" = "" ]
+}
+
+@test "--parent: separate-token form sets PARENT_OVERRIDE" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "--parent" "main" "feature"
+    [ "$PARENT_OVERRIDE" = "main" ]
+    [ "$arg" = "feature" ]
+}
+
+@test "--parent: equals form sets PARENT_OVERRIDE" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "--parent=origin/feat-x" "feature"
+    [ "$PARENT_OVERRIDE" = "origin/feat-x" ]
+    [ "$arg" = "feature" ]
+}
+
+@test "--parent: combines with --force" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "--force" "--parent" "main" "feature"
+    [ "$FORCE_MODE" = "true" ]
+    [ "$PARENT_OVERRIDE" = "main" ]
+    [ "$arg" = "feature" ]
+}
+
+@test "--parent: rejects flag-looking value via main script" {
+    run bash -c "bash '$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh' --parent --force feature 2>&1"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"--parent requires a value"* ]]
+}
+
+@test "--parent: rejects missing trailing value via main script" {
+    run bash -c "bash '$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh' --parent 2>&1"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"--parent requires a value"* ]]
+}
+
+@test "--parent: rejects empty value via equals form" {
+    run bash -c "bash '$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh' --parent= feature 2>&1"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"--parent requires a value"* ]]
+}
+
+@test "--parent: rejects empty quoted value via separate-token form" {
+    run bash -c "bash '$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh' --parent '' feature 2>&1"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"--parent requires a value"* ]]
+}

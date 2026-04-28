@@ -19,9 +19,20 @@ APPLY_MODE="false"
 LEARN_MODE="false"
 OVERWRITE_MODE="false"
 APPEND_MODE="false"
+PARENT_OVERRIDE=""
+PARENT_FLAG_SEEN="false"
 remaining_args=()
+expect_value=""
 
 for arg_item in "$@"; do
+    if [[ -n "${expect_value}" ]]; then
+        case "${expect_value}" in
+            parent) PARENT_OVERRIDE="${arg_item}" ;;
+        esac
+        expect_value=""
+        continue
+    fi
+
     if [[ "${arg_item}" == "--force" ]] || [[ "${arg_item}" == "-f" ]]; then
         FORCE_MODE="true"
     elif [[ "${arg_item}" == "--draft" ]] || [[ "${arg_item}" == "-d" ]]; then
@@ -34,6 +45,12 @@ for arg_item in "$@"; do
         OVERWRITE_MODE="true"
     elif [[ "${arg_item}" == "--append" ]]; then
         APPEND_MODE="true"
+    elif [[ "${arg_item}" == "--parent" ]]; then
+        PARENT_FLAG_SEEN="true"
+        expect_value="parent"
+    elif [[ "${arg_item}" == --parent=* ]]; then
+        PARENT_FLAG_SEEN="true"
+        PARENT_OVERRIDE="${arg_item#--parent=}"
     else
         remaining_args+=("${arg_item}")
     fi
@@ -82,27 +99,71 @@ ref_exists() {
     git rev-parse --verify --quiet "${ref}" > /dev/null 2>&1
 }
 
-# Helper: Get base branch with smart fallback
-# Prefers origin/ refs (updated by fetch) over potentially-stale local branches.
-# When origin/HEAD is unavailable, picks the closest candidate by commit distance.
+# Helper: Echo origin/<ref> if it exists, else local <ref>, else nothing.
+prefer_remote_ref() {
+    local ref=$1
+    if ref_exists "origin/${ref}"; then
+        echo "origin/${ref}"
+    elif ref_exists "${ref}"; then
+        echo "${ref}"
+    fi
+}
+
+# Helper: Detect a stacked-branch parent for the given branch.
+# Echoes a usable ref (preferring origin/) or nothing when no stack parent is
+# recorded. Tries `gt parent` (current checkout only), then `git config
+# branch.<name>.parent`, which gt writes for tracked branches.
+# Args: $1 = branch name (or "HEAD" to mean the current branch)
+get_stack_parent() {
+    local branch="${1:-HEAD}"
+    local current
+    current=$(git symbolic-ref --quiet --short HEAD 2> /dev/null) || current=""
+    [[ "${branch}" == "HEAD" ]] && branch="${current}"
+    [[ -z "${branch}" ]] && return 0
+
+    local parent=""
+    if [[ "${current}" == "${branch}" ]] && command -v gt > /dev/null 2>&1; then
+        parent=$(gt parent 2> /dev/null | tr -d '[:space:]') || parent=""
+    fi
+    if [[ -z "${parent}" ]]; then
+        parent=$(git config --get "branch.${branch}.parent" 2> /dev/null) || parent=""
+    fi
+
+    [[ -z "${parent}" || "${parent}" == "${branch}" ]] && return 0
+
+    # Trunk should resolve through the default-branch logic, not through here.
+    local default_branch_name
+    default_branch_name=$(git symbolic-ref refs/remotes/origin/HEAD 2> /dev/null | sed 's@^refs/remotes/origin/@@')
+    [[ -n "${default_branch_name}" && "${parent}" == "${default_branch_name}" ]] && return 0
+
+    prefer_remote_ref "${parent}"
+}
+
+# Helper: Get base branch with smart fallback.
+# When the target branch sits on a stack, prefers its recorded parent so the
+# review diff matches the eventual PR. Otherwise prefers origin/ refs (updated
+# by fetch) over potentially-stale local branches, and when origin/HEAD is
+# unavailable picks the closest trunk candidate by commit distance.
 # Args: $1 (optional) = target ref for distance calculation (default: HEAD)
 get_base_branch() {
     local target_ref="${1:-HEAD}"
-    # Get the default branch name from remote origin/HEAD
+
+    # Stack-aware: prefer a recorded parent over trunk.
+    local stack_parent
+    stack_parent=$(get_stack_parent "${target_ref}")
+    if [[ -n "${stack_parent}" ]]; then
+        echo "${stack_parent}"
+        return 0
+    fi
+
     local default_branch_name
     default_branch_name=$(git symbolic-ref refs/remotes/origin/HEAD 2> /dev/null | sed 's@^refs/remotes/origin/@@')
 
-    # If we got a default branch name, try to use it
     if [[ -n "${default_branch_name}" ]]; then
-        # Prefer remote tracking branch (most up-to-date via fetch)
-        if ref_exists "origin/${default_branch_name}"; then
-            echo "origin/${default_branch_name}"
-            return 0
-        fi
-
-        # Fall back to local branch
-        if ref_exists "${default_branch_name}"; then
-            echo "${default_branch_name}"
+        local resolved
+        resolved=$(prefer_remote_ref "${default_branch_name}")
+        if [[ -n "${resolved}" ]]; then
+            echo "${resolved}"
             return 0
         fi
     fi
@@ -130,6 +191,16 @@ get_base_branch() {
 
     # Last resort: just return "main" and let caller handle the error
     echo "main"
+}
+
+# Helper: Resolve the base branch, honoring an explicit --parent override.
+# Args: $1 (optional) = target ref forwarded to get_base_branch
+resolve_base_branch() {
+    if [[ -n "${PARENT_OVERRIDE:-}" ]]; then
+        echo "${PARENT_OVERRIDE}"
+        return 0
+    fi
+    get_base_branch "$@"
 }
 
 # Helper: Build JSON output with optional file_pattern and find_mode
@@ -231,6 +302,23 @@ validate_apply_mode() {
 validate_overwrite_append_mode() {
     if [[ "${OVERWRITE_MODE}" == "true" ]] && [[ "${APPEND_MODE}" == "true" ]]; then
         build_json_error "--overwrite and --append are mutually exclusive. Use one or the other."
+        exit 1
+    fi
+}
+
+# Helper: Validate --parent received a real value, not a missing arg, empty
+# string, or another flag.
+validate_parent_override() {
+    if [[ -n "${expect_value}" ]]; then
+        build_json_error "--parent requires a value (e.g. --parent main)"
+        exit 1
+    fi
+    if [[ "${PARENT_FLAG_SEEN}" == "true" && -z "${PARENT_OVERRIDE}" ]]; then
+        build_json_error "--parent requires a value (e.g. --parent main)"
+        exit 1
+    fi
+    if [[ -n "${PARENT_OVERRIDE}" && "${PARENT_OVERRIDE}" == --* ]]; then
+        build_json_error "--parent requires a value (got '${PARENT_OVERRIDE}')"
         exit 1
     fi
 }
@@ -361,7 +449,7 @@ detect_git_ref() {
     fi
 
     local base_branch
-    base_branch=$(get_base_branch "${arg}")
+    base_branch=$(resolve_base_branch "${arg}")
 
     # Handle non-ambiguous cases first
     if [[ "${is_branch}" == "true" ]] && [[ "${is_current}" == "false" ]]; then
@@ -397,7 +485,7 @@ detect_no_arg() {
         current_branch=$(git rev-parse --short HEAD 2> /dev/null || echo "unknown")
     fi
     local base_branch
-    base_branch=$(get_base_branch)
+    base_branch=$(resolve_base_branch)
 
     # Check for uncommitted changes
     local has_uncommitted=false
@@ -514,6 +602,9 @@ detect_no_arg() {
 
 # Main execution (only run if script is executed directly, not sourced)
 if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
+    # Validate --parent received a real value
+    validate_parent_override
+
     # Validate --apply flag is only used with learn mode (early check)
     validate_apply_mode
 
