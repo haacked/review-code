@@ -20,6 +20,7 @@ LEARN_MODE="false"
 OVERWRITE_MODE="false"
 APPEND_MODE="false"
 PARENT_OVERRIDE=""
+PARENT_FLAG_SEEN="false"
 remaining_args=()
 expect_value=""
 
@@ -45,8 +46,10 @@ for arg_item in "$@"; do
     elif [[ "${arg_item}" == "--append" ]]; then
         APPEND_MODE="true"
     elif [[ "${arg_item}" == "--parent" ]]; then
+        PARENT_FLAG_SEEN="true"
         expect_value="parent"
     elif [[ "${arg_item}" == --parent=* ]]; then
+        PARENT_FLAG_SEEN="true"
         PARENT_OVERRIDE="${arg_item#--parent=}"
     else
         remaining_args+=("${arg_item}")
@@ -303,9 +306,14 @@ validate_overwrite_append_mode() {
     fi
 }
 
-# Helper: Validate --parent received a real value, not a missing arg or another flag
+# Helper: Validate --parent received a real value, not a missing arg, empty
+# string, or another flag.
 validate_parent_override() {
     if [[ -n "${expect_value}" ]]; then
+        build_json_error "--parent requires a value (e.g. --parent main)"
+        exit 1
+    fi
+    if [[ "${PARENT_FLAG_SEEN}" == "true" && -z "${PARENT_OVERRIDE}" ]]; then
         build_json_error "--parent requires a value (e.g. --parent main)"
         exit 1
     fi

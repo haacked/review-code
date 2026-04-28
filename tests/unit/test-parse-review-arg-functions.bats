@@ -1015,3 +1015,15 @@ reset_globals() {
     [ "$status" -ne 0 ]
     [[ "$output" == *"--parent requires a value"* ]]
 }
+
+@test "--parent: rejects empty value via equals form" {
+    run bash -c "bash '$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh' --parent= feature 2>&1"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"--parent requires a value"* ]]
+}
+
+@test "--parent: rejects empty quoted value via separate-token form" {
+    run bash -c "bash '$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh' --parent '' feature 2>&1"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"--parent requires a value"* ]]
+}
