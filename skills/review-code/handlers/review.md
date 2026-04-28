@@ -394,22 +394,19 @@ If a comment has no prefix, treat it as a suggestion.
 
 **Inline Comment Voice:**
 
-Write comments the way a senior engineer talks in a PR review: direct, specific, and conversational. No filler, no formality, no structured headers.
+Write comments the way a senior engineer talks in a PR review: direct, specific, and conversational. No headers, no formality, no filler.
 
 - No `**Issue**:` / `**Impact**:` / `**Recommendation**:` headers. Start with the prefix, then flow into natural prose.
 - Be specific: name the function, quote the value, cite the line.
 - For `blocking:` and `suggestion:` findings, always include a concrete code fix (see Accuracy Requirements above). For `question:` and `nit:`, offer code when it helps. Use GitHub's `suggestion` syntax for single-line fixes.
 - Defer to the author on judgment calls: "your call", "worth considering", "that said".
 - Express uncertainty honestly: "Unless I'm missing something", "If I'm reading this right". Give the author the benefit of the doubt.
-- Never use em dashes. Use commas, parentheses, colons, or separate sentences instead.
 - Never restate what the code obviously does. The author wrote it; they know.
-- Describe failures as scenarios: what would break, what false-pass looks like, what a developer would observe. Never label the failure with testing-theory or formal-methods jargon ("weak positive assertion", "tautology", "invariant violation", "negative space check"). These phrases force the author to decode the category before understanding the problem.
-- When the underlying issue is genuinely complicated, favor comprehensibility over conciseness. Don't compress a subtle point into a dense one-liner; spend the extra sentence to make it clear.
-- Skip sycophantic openers ("Great work", "Nice approach", "Solid PR"). Get straight to the finding.
-- No marketing patterns like "It's not just X, it's Y". They read as LLM tells.
-- No significance inflation ("This is critical", "This is essential"). Say what specifically breaks instead.
-- No generic hedging openers ("This is subjective, but…", "Just a thought, but…"). The prefix already signals priority.
-- No closers like "Hope that helps!" or "Let me know if you'd like me to dig further." End on the finding.
+- Describe failures as scenarios: what breaks, what a false pass looks like, what a developer would observe. Never use testing-theory or formal-methods jargon ("weak positive assertion", "tautology", "invariant violation"). Those phrases force the author to decode the category before understanding the problem.
+- Write short sentences with one idea each. Use everyday words: "doesn't catch" over "fails to handle", "stays at 22" over "remains at its prior value", "runs once" over "is invoked a single time". When the issue is genuinely complicated, add another short sentence; don't stuff more clauses into the existing one.
+- Stop when the point lands. One finding per comment. No caveats or "by the way" additions unless they're load-bearing.
+- Never use em dashes. Use commas, parentheses, colons, semicolons, or separate sentences instead.
+- Skip filler: no sycophantic openers ("Great work", "Nice approach"), no significance inflation (say what breaks instead of "this is critical"), no generic hedging like "Just a thought, but…" (the prefix already signals priority), no closers ("Hope that helps!"), no marketing patterns ("It's not just X, it's Y").
 
 Good:
 ```
@@ -419,24 +416,14 @@ More broadly, consider using the existing `determine_parsed_date_for_property_ma
 ```
 
 ```
-`suggestion`: Unless I'm missing something, this change means `process_batch` will now retry on *all* errors, not just transient ones. That could mask permanent failures and delay error reporting to the caller.
-```
-
-```
-`suggestion`: The count bump from 21 to 22 catches "a UI app was added" but not "*this* UI app was added." If someone later removes this app and adds a different one, the count stays at 22 and the test still passes. The `registeredNames` block a few lines below already spot-checks specific names (`'PostHog Feature Flag'`, `'PostHog Experiment Results'`, …), worth adding `expect(registeredNames).toContain('PostHog Feature Flag Testing')` there. Optional: also pin the URL with `expect(URI_MAP['feature-flag-testing']).toBe('ui://posthog/feature-flag-testing.html')` to catch typos.
+`suggestion`: The count bump from 21 to 22 catches "a UI app was added" but not "*this* UI app was added." If someone later removes this app and adds a different one, the count stays at 22 and the test still passes. The `registeredNames` block a few lines below already spot-checks specific names, so worth adding `expect(registeredNames).toContain('PostHog Feature Flag Testing')` there.
 ```
 
 Bad:
 ```
-**Issue**: The `except` clause doesn't catch `OverflowError`.
-**Impact**: This causes a 500 Internal Server Error for large numeric strings.
-**Recommendation**: Add `OverflowError` to the except tuple.
+`suggestion`: Given that `dateutil.parser.parse()` raises `OverflowError` for sufficiently large numeric inputs (e.g. `"9999999999"`) and the surrounding `except` clause does not currently include `OverflowError` in its handled exception tuple, the result is that requests carrying such inputs will surface as a 500 Internal Server Error rather than the cleaner 400 response the validation layer is intended to produce, which you may want to address by extending the exception tuple.
 ```
-
-```
-`suggestion`: bumping the count from 21 to 22 is a weak positive assertion. The `registeredNames` block a few lines below spot-checks individual entries (`'PostHog Feature Flag'`, `'PostHog Experiment Results'`, …) and wasn't extended, so a different UI app could replace this one and the test would still pass.
-```
-(Leads with jargon, forcing the author to decode "weak positive assertion" before understanding the actual problem.)
+(Same finding as the first good example, but stuffed into one sentence with stacked clauses. Hard to scan.)
 
 **Handling Existing PR Comments:**
 
