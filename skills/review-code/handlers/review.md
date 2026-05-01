@@ -400,8 +400,10 @@ Write comments the way a senior engineer talks in a PR review: direct, specific,
 - Be specific: name the function, quote the value, cite the line.
 - For `blocking:` and `suggestion:` findings, always include a concrete code fix (see Accuracy Requirements above). For `question:` and `nit:`, offer code when it helps. Use GitHub's `suggestion` syntax for single-line fixes.
 - Defer to the author on judgment calls: "your call", "worth considering", "that said".
-- Express uncertainty honestly: "Unless I'm missing something", "If I'm reading this right". Give the author the benefit of the doubt.
+- Write about the code, not the author. Direct constructions like "this would…", "renaming to X makes…", or "adding a row pins…" keep the focus on the change. Avoid "you should…", which personalizes the finding when the issue lives in the code.
+- Match certainty to label. If a finding depends on context outside the diff (callers, runtime config, deploy state, prior conventions), prefer `question:` over `blocking:` or `suggestion:`, asking what's there rather than asserting it. If the issue is plain in the diff, state it directly. Within an assertion, express remaining uncertainty plainly: "Unless I'm missing something", "If I'm reading this right". Give the author the benefit of the doubt.
 - Never restate what the code obviously does. The author wrote it; they know.
+- Open with what's wrong, not how wrong it is. The first sentence should describe the mechanism (what the code does, what breaks); save consequences and severity for later sentences. "On self-hosted, this rename has a stale-cache problem after deploy" beats "This is the spot that produces a real upgrade-window risk." Avoid framings like "X is broad enough that…" or "X specifically does Y, but…" that pre-justify the finding before stating it.
 - Describe failures as scenarios: what breaks, what a false pass looks like, what a developer would observe. Never use testing-theory or formal-methods jargon ("weak positive assertion", "tautology", "invariant violation"). Those phrases force the author to decode the category before understanding the problem.
 - Write short sentences with one idea each. Use everyday words: "doesn't catch" over "fails to handle", "stays at 22" over "remains at its prior value", "runs once" over "is invoked a single time". When the issue is genuinely complicated, add another short sentence; don't stuff more clauses into the existing one.
 - Stop when the point lands. One finding per comment. No caveats or "by the way" additions unless they're load-bearing.
@@ -424,6 +426,17 @@ Bad:
 `suggestion`: Given that `dateutil.parser.parse()` raises `OverflowError` for sufficiently large numeric inputs (e.g. `"9999999999"`) and the surrounding `except` clause does not currently include `OverflowError` in its handled exception tuple, the result is that requests carrying such inputs will surface as a 500 Internal Server Error rather than the cleaner 400 response the validation layer is intended to produce, which you may want to address by extending the exception tuple.
 ```
 (Same finding as the first good example, but stuffed into one sentence with stacked clauses. Hard to scan.)
+
+Good:
+```
+`blocking`: On self-hosted, this rename has a stale-cache problem after deploy. `License.update_available_product_features()` only re-syncs on org create, license save, or the hourly Celery beat at `:30`. Existing Enterprise orgs keep the old key and don't pick up the new one for up to an hour, and every gate that switched silently turns off in that window.
+```
+
+Bad:
+```
+`blocking`: This is the spot that produces a real upgrade-window risk on self-hosted. `License.update_available_product_features()` only re-syncs on org create, license save, or the hourly Celery beat at `:30`. On a code-only deploy, an existing Enterprise org's `available_product_features` still holds the old key until the next tick, ~up to 60 minutes.
+```
+(Same finding. The bad version opens with a verdict ("real upgrade-window risk") instead of the mechanism, so the author has to read past the framing to find the actual problem.)
 
 **Handling Existing PR Comments:**
 
