@@ -161,26 +161,26 @@ If `chunk_metadata` exists and `chunk_metadata.chunked` is `true`, set `is_chunk
 "This is a large PR ({chunk_metadata.reason}). Splitting into {chunk_count} chunks for focused review."
 
 Mode-specific fields:
-- **PR mode:** `pr`: PR details (number, title, author, body, comments, etc.); `file_ref`: git ref for file access (present when reviewing from a different branch or via a provisioned worktree). When the review runs outside the PR's repo and a local clone is mapped in `repos.conf`, `git.working_dir` points at a detached worktree checked out to the PR. Otherwise — no mapping, provisioning failed, or the PR ref could not be fetched into an in-repo clone — `working_dir` is null and only the diff is available.
+- **PR mode:** `pr`: PR details (number, title, author, body, comments, etc.); `file_ref`: git ref for file access (present when reviewing from a different branch or via a provisioned worktree). When the review runs outside the PR's repo and a local clone is mapped in `repos.conf`, `git.working_dir` points at a detached worktree checked out to the PR. Otherwise (no mapping, provisioning failed, or the PR ref could not be fetched into an in-repo clone), `working_dir` is null and only the diff is available.
 - **Branch/commit/range modes:** `branch`, `base_branch`, `commit`, `range`
 - **Area-specific reviews:** `area`
 
 ### Prepare File Access Instructions
 
-Build `$file_access_instructions` based on the session data. This block is included in both the context explorer and agent prompts. Substitute the actual `git.working_dir` path into the instructions when `working_dir` is set — do not emit `$git.working_dir` or similar placeholders verbatim.
+Build `$file_access_instructions` based on the session data. This block is included in both the context explorer and agent prompts. Substitute the actual `git.working_dir` path into the instructions when `working_dir` is set. Do not emit `$git.working_dir` or similar placeholders verbatim.
 
-`git.local_clone` is set only for cross-repo reviews where a detached worktree was provisioned from a configured clone; when it is set and `working_dir` is set, `working_dir` is that worktree and Read/Grep/Glob read the PR's files directly. In the same-repo cross-branch case, `local_clone` is null and `working_dir` is the user's current checkout — which may be on a different branch — so Read on `working_dir` would read the wrong content for PR files.
+`git.local_clone` is set only for cross-repo reviews where a detached worktree was provisioned from a configured clone; when it is set and `working_dir` is set, `working_dir` is that worktree and Read/Grep/Glob read the PR's files directly. In the same-repo cross-branch case, `local_clone` is null and `working_dir` is the user's current checkout (which may be on a different branch), so Read on `working_dir` would read the wrong content for PR files.
 
 **If `working_dir` is set and `file_ref` is set and `local_clone` is set:**
 ```
 **File Access:**
-A detached worktree checked out to this PR is available at the path given by `git.working_dir` in the session data. Use Read, Grep, and Glob normally; they operate on that directory. Do not run `git checkout` or `git switch` anywhere, and do not run other write operations in the worktree — the orchestrator owns its lifetime.
+A detached worktree checked out to this PR is available at the path given by `git.working_dir` in the session data. Use Read, Grep, and Glob normally; they operate on that directory. Do not run `git checkout` or `git switch` anywhere, and do not run other write operations in the worktree; the orchestrator owns its lifetime.
 ```
 
 **If `working_dir` is set and `file_ref` is set and `local_clone` is null:**
 ```
 **File Access:**
-You are reviewing from a different branch in the same repo. The user's working tree at `git.working_dir` is on a different branch than the PR, so Read/Grep/Glob there see the wrong file contents for the PR. To read files as they appear in the PR, use `git show "$file_ref:<path>"` via the Bash tool (substitute the actual ref from the session data and always quote the argument to handle paths with spaces or special characters). Do NOT use `git checkout` or `git switch`: this would modify the user's working tree. Read, Grep, and Glob are still useful for finding patterns and conventions in the user's working tree — just not for reading the PR's file contents. `git show` works for any file that exists at the ref, including files newly added in the PR. If `git show` fails (e.g., the file was deleted or renamed, the path is wrong, or the ref was not fetched), fall back to the diff content.
+You are reviewing from a different branch in the same repo. The user's working tree at `git.working_dir` is on a different branch than the PR, so Read/Grep/Glob there see the wrong file contents for the PR. To read files as they appear in the PR, use `git show "$file_ref:<path>"` via the Bash tool (substitute the actual ref from the session data and always quote the argument to handle paths with spaces or special characters). Do NOT use `git checkout` or `git switch`: this would modify the user's working tree. Read, Grep, and Glob are still useful for finding patterns and conventions in the user's working tree, just not for reading the PR's file contents. `git show` works for any file that exists at the ref, including files newly added in the PR. If `git show` fails (e.g., the file was deleted or renamed, the path is wrong, or the ref was not fetched), fall back to the diff content.
 ```
 
 **If `working_dir` is set and `file_ref` is NOT set:**
@@ -399,16 +399,21 @@ Write comments the way a senior engineer talks in a PR review: direct, specific,
 - No `**Issue**:` / `**Impact**:` / `**Recommendation**:` headers. Start with the prefix, then flow into natural prose.
 - Be specific: name the function, quote the value, cite the line.
 - For `blocking:` and `suggestion:` findings, always include a concrete code fix (see Accuracy Requirements above). For `question:` and `nit:`, offer code when it helps. Use GitHub's `suggestion` syntax for single-line fixes.
-- Defer to the author on judgment calls: "your call", "worth considering", "that said".
-- Write about the code, not the author. Direct constructions like "this would…", "renaming to X makes…", or "adding a row pins…" keep the focus on the change. Avoid "you should…", which personalizes the finding when the issue lives in the code.
-- Match certainty to label. If a finding depends on context outside the diff (callers, runtime config, deploy state, prior conventions), prefer `question:` over `blocking:` or `suggestion:`, asking what's there rather than asserting it. If the issue is plain in the diff, state it directly. Within an assertion, express remaining uncertainty plainly: "Unless I'm missing something", "If I'm reading this right". Give the author the benefit of the doubt.
+- Defer on judgment calls. Use "your call", "worth considering", or "that said" to signal the author should decide.
+- Write about the code, not the author. "This exception propagates as a 500" beats "you should catch this exception." Avoid "you should…": the issue lives in the code, not the person.
+- Match certainty to label. If the issue is plain in the diff, state it directly. If it depends on context outside the diff (callers, runtime config, prior conventions), use `question:` and ask rather than assert. Express remaining uncertainty plainly: "Unless I'm missing something" or "If I'm reading this right".
 - Never restate what the code obviously does. The author wrote it; they know.
-- Open with what's wrong, not how wrong it is. The first sentence should describe the mechanism (what the code does, what breaks); save consequences and severity for later sentences. "On self-hosted, this rename has a stale-cache problem after deploy" beats "This is the spot that produces a real upgrade-window risk." Avoid framings like "X is broad enough that…" or "X specifically does Y, but…" that pre-justify the finding before stating it.
-- Describe failures as scenarios: what breaks, what a false pass looks like, what a developer would observe. Never use testing-theory or formal-methods jargon ("weak positive assertion", "tautology", "invariant violation"). Those phrases force the author to decode the category before understanding the problem.
-- Write short sentences with one idea each. Use everyday words: "doesn't catch" over "fails to handle", "stays at 22" over "remains at its prior value", "runs once" over "is invoked a single time". When the issue is genuinely complicated, add another short sentence; don't stuff more clauses into the existing one.
-- Stop when the point lands. One finding per comment. No caveats or "by the way" additions unless they're load-bearing.
+- Open with what the code does or breaks, not how bad it is. The first sentence names the behavior; consequences and severity follow. "On self-hosted, this rename has a stale-cache problem after deploy" beats "This is the spot that produces a real upgrade-window risk." Avoid openers like "X is broad enough that…" or "X specifically does Y, but…" that pre-justify the finding instead of stating it.
+- Describe failures as scenarios: what breaks, what a false pass looks like, what a developer would observe. Skip testing-theory and formal-methods jargon ("weak positive assertion", "tautology", "invariant violation"); those force the author to decode a category before understanding the problem.
+- Write short sentences with one idea each. Use everyday words: "doesn't catch" over "fails to handle", "stays at 22" over "remains at its prior value", "runs once" over "is invoked a single time". When the issue is genuinely complicated, add another sentence; don't stuff more clauses into the existing one.
+- One finding per comment. Stop when the point lands. Skip "by the way" additions unless they're load-bearing.
 - Never use em dashes. Use commas, parentheses, colons, semicolons, or separate sentences instead.
-- Skip filler: no sycophantic openers ("Great work", "Nice approach"), no significance inflation (say what breaks instead of "this is critical"), no generic hedging like "Just a thought, but…" (the prefix already signals priority), no closers ("Hope that helps!"), no marketing patterns ("It's not just X, it's Y").
+- Skip filler:
+  - No sycophantic openers: "Great work", "Nice approach"
+  - No significance inflation: say what breaks instead of "this is critical"
+  - No generic hedging: "Just a thought, but…" (the prefix already signals priority)
+  - No closers: "Hope that helps!"
+  - No marketing patterns: "It's not just X, it's Y"
 
 Good:
 ```
@@ -436,7 +441,7 @@ Bad:
 ```
 `blocking`: This is the spot that produces a real upgrade-window risk on self-hosted. `License.update_available_product_features()` only re-syncs on org create, license save, or the hourly Celery beat at `:30`. On a code-only deploy, an existing Enterprise org's `available_product_features` still holds the old key until the next tick, ~up to 60 minutes.
 ```
-(Same finding. The bad version opens with a verdict ("real upgrade-window risk") instead of the mechanism, so the author has to read past the framing to find the actual problem.)
+(Same finding. The bad version buries the actual problem behind a verdict ("real upgrade-window risk"). The author has to clear the framing before reaching what the code is doing.)
 
 **Handling Existing PR Comments:**
 
