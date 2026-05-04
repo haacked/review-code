@@ -48,6 +48,8 @@ if command_exists shfmt; then
         "evals/scripts/helpers/"*.sh
         "skills/review-code/scripts/"*.sh
         "skills/review-code/scripts/helpers/"*.sh
+        "skills/ci-monitor/scripts/"*.sh
+        "skills/ci-monitor/scripts/helpers/"*.sh
         "*.sh"
     )
 

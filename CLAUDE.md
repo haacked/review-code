@@ -2,13 +2,16 @@
 
 ## File Locations
 
-This repo contains the source files for the `/review-code` skill:
+This repo contains the source files for the `/review-code` and `/ci-monitor` skills:
 
 - `skills/review-code/SKILL.md` - Skill definition (routing + small handlers)
 - `skills/review-code/handlers/` - Large handlers loaded on demand (find, review, learn)
 - `skills/review-code/scripts/` - Bash scripts that implement the skill
 - `skills/review-code/context/` - Base context files (languages, frameworks, orgs)
 - `skills/review-code/learnings/` - Learning system documentation
+- `skills/ci-monitor/SKILL.md` - CI monitoring skill definition
+- `skills/ci-monitor/handlers/` - Fix handler loaded on demand
+- `skills/ci-monitor/scripts/` - CI polling, log fetching, failure classification scripts
 - `agents/` - Agent definitions
 - `bin/` - Development utilities (fmt, lint, test, setup)
 
@@ -29,6 +32,11 @@ skills/review-code/
         frameworks/
         orgs/
     learnings/                        # Learning system docs
+skills/ci-monitor/
+    SKILL.md                          # CI monitoring skill definition
+    handlers/
+        fix.md                        # Fix cycle handler
+    scripts/                          # CI scripts (detect, poll, logs, classify)
 agents/                               # Review agent definitions
 ```
 
