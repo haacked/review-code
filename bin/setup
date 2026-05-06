@@ -205,6 +205,8 @@ install_agents() {
         "code-reviewer-architecture"
         "code-reviewer-frontend"
         "code-reviewer-infra-config"
+        "code-reviewer-voice"
+        "finding-validator"
     )
 
     # Create agents directory
@@ -228,7 +230,7 @@ install_agents() {
         cp "${src}" "${dst}"
     done
 
-    info "Installed ${#agents[@]} agents (8 reviewers + 1 context explorer)"
+    info "Installed ${#agents[@]} agents (9 reviewers + 1 context explorer + 1 voice rewriter + 1 finding validator)"
 }
 
 cleanup_old_command() {
