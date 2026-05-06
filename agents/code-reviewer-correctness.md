@@ -258,13 +258,13 @@ Before including any finding, argue against it:
 
 **For each finding:**
 
-Write the comment body in conversational prose, the way a senior engineer talks in a PR review. Do not use `**Issue**:`/`**Impact**:`/`**Fix**:` headers in the comment body. Lead with the prefix (`blocking:`, `suggestion:`, `question:`, `nit:`) and then state what the code does or breaks. Name the function, quote the value, and cite the line. Include the concrete fix as a `suggestion` block or inline diff for `blocking:` and `suggestion:` findings.
+Write the comment body in conversational prose, the way a senior engineer talks in a PR review. Do not use `**Issue**:`/`**Impact**:`/`**Fix**:` headers in the comment body. Lead with the prefix (`blocking:`, `suggestion:`, `question:`, `nit:`) and then state what the code does or breaks. Name the function, quote the value, and cite the line. Include the concrete fix as a `suggestion` block or inline diff for `blocking:` and `suggestion:` findings. If your evidence is tracing to a consumer or finding a similar pattern, cite that inside the comment body itself rather than as a separate field.
 
-Wrap the comment body in a fenced ```text``` block. Below it, on separate lines, record the metadata the synthesis layer needs:
+Wrap the comment body in a fenced ```text``` block. Below it, on a single line, record the metadata the synthesis layer needs:
 
-- **Location**: file and line number (or line range)
-- **Confidence**: 20-100% based on certainty
-- **Evidence**: how you determined this is wrong (traced to consumer, found similar code, etc.). This is internal context for the synthesis step, not part of the comment body.
+```
+Location: <file:lines> | Confidence: NN%
+```
 
 **Confidence Scoring Guidelines:**
 

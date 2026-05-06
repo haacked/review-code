@@ -127,13 +127,13 @@ Wrap the comment body in a fenced ```text``` block. Record metadata on separate 
 
 **Example finding:**
 
-```text
+````text
 `blocking`: `auth.py:45` builds the lookup query by string-concatenating the `username` form field directly into SQL. A request with `username=admin'--` skips the password check; standard SQL injection (CWE-89). Use a parameterized query so user input never becomes SQL syntax.
 
 ```suggestion
 cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
 ```
-```
+````
 
 Location: `auth.py:45` | Confidence: 95%
 

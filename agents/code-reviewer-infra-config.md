@@ -175,9 +175,13 @@ Before including any finding, argue against it:
 
 **For each finding:**
 
-Write the comment body in conversational prose. Lead with the prefix and state what breaks at deploy time, then show the corrected YAML/HCL as a `suggestion` block or fenced code block. Cite the cross-environment counterpart or the service definition that proves the inconsistency. Do not use `**Issue**:`/`**Impact**:`/`**Fix**:` headers in the comment body.
+Write the comment body in conversational prose. Lead with the prefix and state what breaks at deploy time, then show the corrected YAML/HCL as a `suggestion` block or fenced code block. Cite the cross-environment counterpart or the service definition that proves the inconsistency inside the comment body. Do not use `**Issue**:`/`**Impact**:`/`**Fix**:` headers in the comment body.
 
-Wrap the comment body in a fenced ```text``` block. Record metadata on separate lines below: file and line, and confidence (20-100%). Evidence (which counterpart files you compared, what grep confirmed) is internal context for the synthesis step, not part of the comment body.
+Wrap the comment body in a fenced ```text``` block. Below it, on a single line, record:
+
+```
+Location: <file:lines> | Confidence: NN%
+```
 
 **Confidence Scoring Guidelines:**
 

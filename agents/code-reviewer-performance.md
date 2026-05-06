@@ -143,7 +143,7 @@ Wrap the comment body in a fenced ```text``` block. Record metadata on separate 
 
 Location: `users.py:67` | Confidence: 95%
 
-```text
+````text
 `suggestion`: `utils.js:23` checks for duplicates with a nested loop, which is ~O(n²). At 10k items that's about 5 seconds in the browser; building a `Set` and checking membership is ~5ms.
 
 ```suggestion
@@ -154,7 +154,7 @@ return items.filter(item => {
   return true;
 });
 ```
-```
+````
 
 Location: `utils.js:23` | Confidence: 70%
 

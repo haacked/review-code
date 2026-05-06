@@ -140,6 +140,7 @@ jq -n --arg dir "$debug_session_dir" --arg content "$variable_with_content" \
 - **10-agent-dispatch**: Record timing (start/end). For each agent (or chunk x agent combination), save the prompt as `{agent}-prompt.md` (or `chunk-{id}-{agent}-prompt.md`) and result as `{agent}-result.md` (or `chunk-{id}-{agent}-result.md`). Save stats with agent count.
 - **11-synthesis**: Record timing (start/end). Save the merged findings as `merged-findings.md` and corroboration results as `corroboration.md`.
 - **11b-copilot-meta-review** (when Copilot available): Record timing (start/end). Save the input payload as `input.json`, the raw Copilot output as `raw-output.md`, and the parsed JSON response as `response.json`. On timeout or error, also save `stderr.log` (from `copilot_stderr` field) and `log-path.txt` (from `copilot_log` field).
+- **11c-voice-rewrite**: Record timing (start/end). Save the input findings as `input.json`, the agent's raw response as `raw-output.md`, the parsed rewrites as `output.json`, a side-by-side comparison of original vs. rewritten descriptions as `comparison.md`, and the per-finding accept/reject decisions as `validation.json`.
 - **12-token-usage**: After the review is complete, save stats with per-agent token usage and aggregate totals (see "Track Token Usage" below).
 
 ### Track Token Usage
@@ -396,14 +397,16 @@ If a comment has no prefix, treat it as a suggestion.
 
 Before writing a `question:` comment, try to answer the question yourself from the source. The author has access to the same files; if the answer is one read away, asking instead of looking is just noise.
 
-When the question is about file content (does X exist, what does Y do, where is Z defined):
+When the question is about file content (does X exist, what does Y do, where is Z defined), try these in cheapest-first order and stop as soon as one works:
 
-- If `working_dir` is set, use Read/Grep on the PR's files at `git.working_dir`.
-- If `file_ref` is set but `working_dir` is not, fetch via `git show "$file_ref:<path>"`.
-- If `pr.head_sha` is in the session data, fetch via `gh api repos/<org>/<repo>/contents/<path>?ref=<sha>` and decode the base64 `content` field.
-- If none of those are available, fall back to grepping the diff itself.
+1. Grep the diff itself. The change context is already in the session data; many questions are answered there with no extra tool calls.
+2. If `working_dir` is set, use Read/Grep on the PR's files at `git.working_dir`.
+3. If `file_ref` is set, fetch via `git show "$file_ref:<path>"`.
+4. If `pr.head_sha` is available, fetch via `gh api repos/<org>/<repo>/contents/<path>?ref=<sha>` and decode the base64 `content` field.
 
 Only ask the author when the answer genuinely depends on context outside the code: their intent, a future plan, an incident the code is responding to, an external system's behavior. "What do you mean?" / "Does X exist?" / "Where is Y handled?" almost always have an answer in the repo, and asking the author for them wastes their time.
+
+If you exhausted the steps above and still cannot verify a specific fact (the file is outside the diff and not fetchable, the symbol is in a system you don't have access to), you may write a `question:` comment, but cite what you checked. "I couldn't find `foo()` in the diff or in `bar.py` at this ref. Is it defined elsewhere, or should this call use `baz()` instead?" beats a bare "Where is `foo` defined?"
 
 **Inline Comment Voice:**
 
@@ -686,6 +689,55 @@ If `$copilot_meta_review` has `available: true`, `timed_out: false`, and no `err
 **Error handling:** If the script returns `available: false`, `timed_out: true`, or contains an `error` field, ignore the meta-review result and continue with Claude-only findings. Never fail or stop the review because of a Copilot error.
 
 Record `copilot_meta_review` in `$token_usage` with `{ total_tokens: 0, tool_uses: 0, duration_ms }` using the `duration_ms` value from the output.
+
+### Voice Pass (Final Rewrite)
+
+Before composing the review document, run a single voice-pass agent over the surviving findings to rewrite their `description` and `proposed_fix` text in a clean, conversational voice. The voice agent never changes severity, citations, line numbers, identifiers, numbers, or code blocks; it only changes phrasing.
+
+**Skip conditions:** If `$selected_agents` is empty (no findings will be produced) or the surviving finding pool is empty, skip this step entirely.
+
+**Build the input.** Collect all findings that survived synthesis, validation, and Copilot meta-review (the same pool the document composer will use). For each, include an integer `id` (sequential, starting at 1), `severity` (`blocking`/`suggestion`/`question`/`nit`), `location` (file:line or file path), `description` (the comment body, including any embedded code blocks), and `proposed_fix` (string or null). Build a JSON array.
+
+**Dispatch the rewrite.** Invoke the Task tool with subagent_type `code-reviewer-voice` and a prompt that:
+
+1. Tells the agent to rewrite the `description` and `proposed_fix` fields in conversational voice while preserving every citation, file path, line number, identifier, number, and code block exactly.
+2. Embeds the JSON array of findings inside a **four-backtick** fence tagged `json` (because finding bodies typically contain triple-backtick code blocks; a three-backtick wrapper would close prematurely).
+3. Reminds the agent to wrap its response in a four-backtick `json` fence in the same order as the input, with `id`, `description`, `proposed_fix`, and `unchanged` on each object.
+
+Save the agent's response. Extract usage metadata and record in `$token_usage["code-reviewer-voice"]`.
+
+**Parse the output.** Extract the JSON array from the response. For each rewritten finding, match it to the input by `id`.
+
+- If `unchanged: true` on a rewritten finding, skip validation and keep the original `description` and `proposed_fix` for that finding (the agent is signaling no improvement was needed).
+- If an input `id` has no matching rewrite, keep the original.
+- If a rewritten entry has an `id` that doesn't appear in the input, ignore that entry and count it as a parse anomaly toward the validation-failure budget below.
+- If the returned array length differs from the input array length by more than 1, treat the entire response as malformed and apply the agent-error fallback (continue with original findings).
+
+**Validate preservation.** For each rewritten finding where `unchanged` is `false`, before accepting the change:
+
+1. Confirm the severity prefix matches: extract the prefix token from each (`` `blocking`: ``, `` `suggestion`: ``, `**blocking**:`, bare `blocking:`, etc.) and check string equality. If the prefix differs in any way, fail the check.
+2. Confirm the rewritten body contains every backtick-quoted token from the original whose text matches a file-path pattern (e.g., `auth.py:45`, `src/foo.ts`, `path/to/file.py`) or a numeric line reference (e.g., `:67`, `line 67`). Identifiers and exception names that happen to be backtick-quoted (`OverflowError`, `dateutil.parser.parse()`) are not subject to this check. If the original contains no path-shaped or line-number tokens, skip this check.
+3. Confirm the rewritten body length is not greater than the original by more than 5% (allowing slack for punctuation tweaks).
+
+If any check fails, discard the rewrite and keep the original finding. Track the failure count in `$token_usage["code-reviewer-voice"].validation_failures`.
+
+**Failure modes (all fail open, never blocking the review):**
+
+- **Agent times out or errors:** Continue with original findings.
+- **JSON parse fails or array length differs by more than 1:** Continue with original findings.
+- **More than 50% of findings fail validation:** Discard all rewrites. The voice agent is misbehaving; better to ship verbose comments than wrong ones.
+
+The Voice Pass step runs in all review modes (quick and comprehensive) when findings exist. There is no mode-based guard.
+
+**Debug instrumentation:** When `$debug_session_dir` is set, save artifacts under stage `11c-voice-rewrite`:
+
+- `input.json`: the JSON array sent to the agent
+- `raw-output.md`: the agent's raw response
+- `output.json`: the parsed JSON array
+- `comparison.md`: a side-by-side of original vs. rewritten descriptions for each finding (markdown table or sequential blocks). This is the artifact you inspect to evaluate whether the voice pass is helping.
+- `validation.json`: per-finding `{accepted: true|false, reason: "..."}` showing which rewrites passed preservation checks.
+
+Use the same `debug-artifact-writer.sh` bridge pattern as the `11b-copilot-meta-review` stage.
 
 ### Compose the Review Document
 
