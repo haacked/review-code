@@ -55,15 +55,13 @@ When a config change appears in one environment file (e.g., `values.prod-us.yaml
 
 If the PR description explains that a difference is intentional (e.g., "deploying to prod-us first"), note it but don't flag it.
 
-**Example:**
+**Example finding:**
+
 ```text
-❌ Missing cross-environment change [90% confidence]
-Location: argocd/contour-ingress/values/values.prod-eu.yaml
-- Route for `/flags/definitions` updated in values.prod-us.yaml and values.dev.yaml
-- But values.prod-eu.yaml still points to the old service
-- PR description says "all 3 envs" but only 2 are updated
-- Fix: Add the same route change to values.prod-eu.yaml
+`blocking`: The `/flags/definitions` route was updated in `values.prod-us.yaml` and `values.dev.yaml`, but `values.prod-eu.yaml` still points at the old service. The PR description says "all 3 envs", so prod-eu was probably forgotten. Apply the same route change there.
 ```
+
+Location: `argocd/contour-ingress/values/values.prod-eu.yaml` | Confidence: 90%
 
 ### 2. Route and Service Correctness (Critical)
 
@@ -81,15 +79,13 @@ For Contour/Envoy HTTPProxy routes, Kubernetes Service references, and similar:
 - Route path conflicts (two routes matching the same prefix)
 - Missing trailing slash consistency
 
-**Example:**
+**Example finding:**
+
 ```text
-⚠️ Service name may be incorrect [70% confidence]
-Location: argocd/contour-ingress/values/values.prod-us.yaml:45
-- Route points to service `posthog-feature-flags-definition`
-- But other configs reference `posthog-feature-flags-definitions` (plural)
-- No service definition found matching the singular form
-- Fix: Use `posthog-feature-flags-definitions`
+`question`: The route at `values.prod-us.yaml:45` points to `posthog-feature-flags-definition` (singular), but every other config in the repo references `posthog-feature-flags-definitions` (plural), and no service definition matches the singular form. Likely a typo; if so, the route 503s on deploy. Should this be `posthog-feature-flags-definitions`?
 ```
+
+Location: `argocd/contour-ingress/values/values.prod-us.yaml:45` | Confidence: 70%
 
 ### 3. Operational Safety (Critical)
 
@@ -109,15 +105,13 @@ Location: argocd/contour-ingress/values/values.prod-us.yaml:45
 - Health check changes won't cause false failures
 - Rollout strategy changes preserve availability
 
-**Example:**
+**Example finding:**
+
 ```text
-⚠️ Traffic routing change [85% confidence]
-Location: argocd/contour-ingress/values/values.prod-us.yaml:23
-- Route for `/flags/definitions` moved from `posthog-feature-flags` to `posthog-feature-flags-definitions`
-- This redirects all definition traffic to the new fleet
-- Question: Is the `posthog-feature-flags-definitions` fleet deployed and healthy before this route change takes effect?
-- If the fleet isn't ready, this causes 503s for all `/flags/definitions` requests
+`question`: `values.prod-us.yaml:23` moves `/flags/definitions` traffic from `posthog-feature-flags` to `posthog-feature-flags-definitions`. If the new fleet isn't deployed and healthy by the time this rolls out, every request to `/flags/definitions` 503s. Is the new fleet up first, or does this need to land in a deploy after that one?
 ```
+
+Location: `argocd/contour-ingress/values/values.prod-us.yaml:23` | Confidence: 85%
 
 ### 4. Config Structure and Value Correctness (Important)
 
@@ -179,14 +173,11 @@ Before including any finding, argue against it:
 5. **Nits**: Minor config style or convention issues
 6. **What's Working**: Acknowledge correctly implemented changes
 
-**For Each Issue:**
+**For each finding:**
 
-- **Location**: File and line number (or line range)
-- **Confidence Level**: 20-100% based on certainty
-- **What's Wrong**: Specific description of the config issue
-- **Evidence**: How you determined this is wrong (found counterpart files, grepped for service name, etc.)
-- **Impact**: What will happen at deploy time if not fixed
-- **Fix**: Concrete YAML/HCL snippet showing the correction
+Write the comment body in conversational prose. Lead with the prefix and state what breaks at deploy time, then show the corrected YAML/HCL as a `suggestion` block or fenced code block. Cite the cross-environment counterpart or the service definition that proves the inconsistency. Do not use `**Issue**:`/`**Impact**:`/`**Fix**:` headers in the comment body.
+
+Wrap the comment body in a fenced ```text``` block. Record metadata on separate lines below: file and line, and confidence (20-100%). Evidence (which counterpart files you compared, what grep confirmed) is internal context for the synthesis step, not part of the comment body.
 
 **Confidence Scoring Guidelines:**
 

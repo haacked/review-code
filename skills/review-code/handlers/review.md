@@ -392,6 +392,19 @@ Prefix every finding so the author knows what action is expected. The prefix mus
 
 If a comment has no prefix, treat it as a suggestion.
 
+**Verify before asking.**
+
+Before writing a `question:` comment, try to answer the question yourself from the source. The author has access to the same files; if the answer is one read away, asking instead of looking is just noise.
+
+When the question is about file content (does X exist, what does Y do, where is Z defined):
+
+- If `working_dir` is set, use Read/Grep on the PR's files at `git.working_dir`.
+- If `file_ref` is set but `working_dir` is not, fetch via `git show "$file_ref:<path>"`.
+- If `pr.head_sha` is in the session data, fetch via `gh api repos/<org>/<repo>/contents/<path>?ref=<sha>` and decode the base64 `content` field.
+- If none of those are available, fall back to grepping the diff itself.
+
+Only ask the author when the answer genuinely depends on context outside the code: their intent, a future plan, an incident the code is responding to, an external system's behavior. "What do you mean?" / "Does X exist?" / "Where is Y handled?" almost always have an answer in the repo, and asking the author for them wastes their time.
+
 **Inline Comment Voice:**
 
 Write comments the way a senior engineer talks in a PR review: direct, specific, and conversational. No headers, no formality, no filler.
