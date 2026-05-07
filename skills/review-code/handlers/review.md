@@ -574,11 +574,23 @@ Synthesize the remaining findings using extended thinking into a coherent, dedup
 **Cross-agent corroboration:** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function. Cross-model corroboration (a Copilot meta-review `CONFIRMED` verdict) also counts as corroboration even if only one Claude agent flagged the issue.
 
 **Filtering rules:**
-- **Corroborated (2+ agents or chunks):** Keep even if individual confidence is below 40%. Note as corroborated in the review.
+- **Corroborated (2+ agents or chunks):** Keep even if individual confidence is below 40%.
 - **Solo finding, confidence >= 40%:** Include as-is.
 - **Solo finding, confidence < 40%:** Drop silently.
 - **Questions and nits:** Exempt from filtering. Include regardless of confidence.
-- When consolidating corroborated findings, merge into a single entry crediting all contributing agents, using the highest confidence value.
+- When consolidating corroborated findings, merge into a single entry using the highest confidence value. Corroboration is synthesis-time metadata used for prioritization; never embed it in the comment body (see "Comment Body Hygiene" below).
+
+**Comment Body Hygiene:**
+
+The `description` and `proposed_fix` text becomes the literal body of the PR review comment. Keep it free of process and provenance metadata. Do not append, prepend, or embed:
+
+- Agent or model attribution: "*(corroborated by Copilot)*", "*(Copilot confirmed)*", "*(Copilot disagreed: …)*", "*(Copilot note: …)*", "*(flagged by Copilot during meta-review)*", "*(corroborated by correctness and architecture)*", "*(found by code-reviewer-security)*", or any similar tag naming a reviewer agent, model, or pipeline stage.
+- Validation provenance: "*Downgraded from blocking: [validator reasoning]*" or any other note that exists to record the synthesis pipeline's verdict.
+- Confidence percentages, agent IDs, or any other internal scoring.
+
+Exception: if a model name like "Copilot" appears in a parenthetical that is substantive content about the code under review (e.g., "*(the Copilot SDK rejects this header)*"), keep it. The rule targets pipeline bookkeeping, not technical claims that happen to mention a product.
+
+Corroboration, dismissal reasoning, and confidence are signals the synthesis stage uses for filtering and ordering. Track them in your working state (the in-memory finding objects during consolidation), not in the `description` or `proposed_fix` fields. If you need to record provenance for debugging, use `$debug_session_dir` artifacts (e.g., `11b-copilot-meta-review/response.json`), never the comment body.
 
 **Priority ordering in the final review:**
 1. Corroborated blocking findings
@@ -639,7 +651,7 @@ Where `targets` contains `{"path": "<file>", "line": <number>}` objects, and `di
   ````
 
   Dispatch all blocking finding validations **in parallel**. Extract usage metadata from each validator's response and record in `$token_usage` as `validator-{N}` (numbered sequentially). For each result:
-  - **DISMISSED**: downgrade to `suggestion:` and append the validator's reasoning (e.g., "*Downgraded from blocking: [validator reasoning]*").
+  - **DISMISSED**: downgrade to `suggestion:`. If the validator's reasoning sharpens the technical content (a missing condition, a corrected line number), fold that into the body as if it were original analysis. Do not embed validator attribution like "*Downgraded from blocking: …*"; the body must stay free of pipeline metadata (see "Comment Body Hygiene").
   - **CONFIRMED**: keep as `blocking:`.
   - **Unreachable or errors**: keep the finding as-is.
 
@@ -673,15 +685,17 @@ In **debug mode**, save debug artifacts under stage `11b-copilot-meta-review`: s
 
 If `$copilot_meta_review` has `available: true`, `timed_out: false`, and no `error` field:
 
+All updates below are to synthesis-time metadata (corroboration flag, confidence, severity). Do NOT modify the finding's `description` or `proposed_fix` text to record any of this. See "Comment Body Hygiene" above.
+
 1. **Process validations.** For each entry in `validations`:
-   - **CONFIRMED**: Mark the matching finding as cross-model corroborated. Boost confidence by 15 percentage points (capped at 95%). Append note: "*(corroborated by Copilot)*"
-   - **DISMISSED**: If the finding is `blocking:`, downgrade to `suggestion:`. Append Copilot's reasoning: "*(Copilot disagreed: [reasoning])*". Do NOT remove the finding entirely; Claude's analysis takes precedence, but the dissent is noted.
-   - **ADJUSTED**: Keep the finding but incorporate Copilot's reasoning as additional context. Append: "*(Copilot note: [reasoning])*"
+   - **CONFIRMED**: Mark the matching finding as cross-model corroborated (metadata only). Boost confidence by 15 percentage points (capped at 95%).
+   - **DISMISSED**: If the finding is `blocking:`, downgrade to `suggestion:`. Do NOT remove the finding entirely; Claude's analysis takes precedence. Copilot's dissenting reasoning is debug data only: log it under the `11b-copilot-meta-review` debug stage if `$debug_session_dir` is set, but do not embed it in the comment body.
+   - **ADJUSTED**: If Copilot's reasoning, read in isolation, would cause a competent reviewer to change what they write in the comment (a different line number, an additional condition, a revised failure description), incorporate it into the body as if it were your own analysis and do not annotate the change with Copilot attribution. If the reasoning only evaluates the finding's validity or tone without adding technical content, ignore it. When you do adjust the body, save the original `description`, the new `description`, and Copilot's reasoning under the `11b-copilot-meta-review` debug stage as `adjusted-{finding_id}.json` (when `$debug_session_dir` is set) so the change is auditable.
    - If a `finding_id` does not match any surviving finding, ignore it silently.
 
 2. **Process missed issues.** For each entry in `missed_issues`:
    - Apply the same scope filter: drop any that reference files not in `IN_SCOPE_PATHS`.
-   - For surviving missed issues, add them to the finding pool with `agent: "copilot"`, the type from the meta-review output, and a note: "*(flagged by Copilot during meta-review)*".
+   - For surviving missed issues, add them to the finding pool with `agent: "copilot"` (metadata) and the type from the meta-review output. The `description` reads as a normal review finding; do not tag it with "(flagged by Copilot)" or any similar attribution.
    - These are subject to the same filtering thresholds as Claude findings. Since they come from a single source (Copilot), they are solo findings and need confidence >= 40% to be included (unless they are questions/nits). Assign a default confidence of 50% to Copilot missed issues.
 
 3. **Corroboration rule.** Cross-model corroboration (Claude + Copilot CONFIRMED) counts as corroboration even if only one Claude agent flagged the issue.
