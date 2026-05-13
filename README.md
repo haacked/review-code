@@ -12,9 +12,9 @@ This system was built with three core objectives:
 
 ### 1. Comprehensive Code Reviews
 
-Eight specialized agents each focus on a distinct aspect of code quality, ensuring nothing falls through the cracks:
+Specialized agents each focus on a distinct aspect of code quality, ensuring nothing falls through the cracks:
 
-**Core Agents (Always Run):**
+**Core Review Agents (Always Run):**
 - **Security**: Vulnerabilities, OWASP Top 10, secret management
 - **Performance**: Database optimization, N+1 queries, algorithmic complexity
 - **Correctness**: Intent verification, integration boundaries, functional correctness
@@ -24,9 +24,15 @@ Eight specialized agents each focus on a distinct aspect of code quality, ensuri
 - **Architecture**: System design, patterns, necessity
 
 **Domain-Specific Agents (Conditional):**
-- **Frontend**: React, Kea state management, accessibility, hooks (runs only for .tsx/.jsx files)
+- **Frontend**: React, Kea state management, accessibility, hooks (runs only when `.tsx`/`.jsx` files are detected)
+- **Infra-Config**: Helm values, Kubernetes manifests, Terraform, ArgoCD, CI/CD pipelines (runs only when matching files are detected)
 
-Each agent runs independently and in parallel, providing deep expertise in its domain rather than a superficial scan across all concerns.
+**Supporting Agents:**
+- **Context Explorer**: Pre-review pass that gathers architectural context for the specialized reviewers
+- **Finding Validator**: Adversarial pass that attempts to disprove blocking findings before they ship
+- **Voice**: Final pass that rewrites comment bodies in a plain, conversational voice while preserving citations and code
+
+Each review agent runs independently and in parallel, providing deep expertise in its domain rather than a superficial scan across all concerns.
 
 #### Why Multiple Specialized Agents?
 
@@ -39,7 +45,7 @@ This architecture solves real problems encountered with single-agent reviews:
 - Superficial coverage across all concerns since one agent can't be expert in everything
 
 **Benefits of Multiple Specialized Agents:**
-- **Parallel Execution**: 7 agents × 2-3s = 3-4s total (4-6x faster than sequential)
+- **Parallel Execution**: Core agents run concurrently (4-6x faster than sequential)
 - **Fresh Context Windows**: Each agent gets full context budget, maintaining quality across all areas
 - **Deep Expertise**: Security agent knows OWASP Top 10, performance agent knows N+1 patterns
 - **Token Efficiency**: Each agent loads only relevant context (security doesn't need performance guidelines)
@@ -73,14 +79,18 @@ This creates a virtuous cycle where reviews get better as you identify new patte
 
 ## Features
 
-- **8 Specialized Review Agents**: Each agent focuses on a specific aspect of code quality
+- **Specialized Review Agents**: Each agent focuses on a specific aspect of code quality
   - **Core Agents (7)**: Security, Performance, Correctness, Maintainability, Testing, Compatibility, Architecture
-  - **Domain-Specific (1)**: Frontend (conditional - runs only for React/TypeScript files)
+  - **Conditional Agents (2)**: Frontend (React/TypeScript files), Infra-Config (Helm/Terraform/K8s/CI-CD files)
+  - **Supporting Agents**: Context Explorer (pre-review), Finding Validator (adversarial pass), Voice (final rewrite)
 - **Hierarchical Context Loading**: Automatically loads language, framework, org, and repo-specific guidelines
-- **PR and Local Review Modes**: Review pull requests or uncommitted changes
+- **PR and Local Review Modes**: Review pull requests, branches, commits, ranges, or uncommitted changes
+- **Stack-Aware Branch Reviews**: Detects Graphite parents (or `branch.<name>.parent` in git config) so stacked branches review against the right base
+- **Draft GitHub Reviews**: `--draft` posts inline comments as a pending review, with automatic comment-drift detection when new commits land between generation and submission
+- **Copilot Integration**: Cross-checks findings against GitHub Copilot's review for corroboration
+- **Learning Loop**: `learn` subcommand analyzes PR outcomes and folds patterns back into context files
 - **Token Optimizations**: Diff filtering (excludes lock files, snapshots, generated code), context caching (40-60% savings)
 - **Confidence Scoring**: Every finding includes confidence level (20-100%) to help prioritize
-- **Context Explorer**: Pre-review agent gathers architectural context before specialized reviews
 
 ## Quick Start
 
@@ -152,8 +162,10 @@ bin/setup
 
 Both methods will:
 
-- Copy files to `~/.claude/commands/`, `~/.claude/agents/`, and `~/.claude/bin/`
-- Copy context files to your review directory (user-editable)
+- Copy skill files to `~/.claude/skills/review-code/` (SKILL.md, handlers, scripts, context)
+- Copy agent definitions to `~/.claude/agents/`
+- Install the uninstaller at `~/.claude/bin/uninstall-review-code.sh`
+- Smart-merge context files so user learnings are preserved across updates
 - Prompt you to choose where to save code reviews (default: `~/dev/ai/reviews`)
 - Show permissions guide for Claude Code
 
@@ -214,12 +226,41 @@ Without a mapping for the PR's repo, the review falls back to diff-only (with a 
 ```bash
 /review-code security        # Security review only
 /review-code performance     # Performance review only
+/review-code correctness     # Correctness review only
 /review-code maintainability # Maintainability review only
 /review-code testing         # Testing review only
 /review-code compatibility   # Compatibility review only
 /review-code architecture    # Architecture review only
 /review-code frontend        # Frontend review only (React/TypeScript)
+/review-code infra-config    # Infrastructure config review only (Helm/Terraform/K8s/CI-CD)
 ```
+
+### Find Existing Reviews
+
+```bash
+/review-code find                    # Find review for current branch/PR
+/review-code find 123                # Find review for PR #123
+/review-code find feature-branch     # Find review for a specific branch
+```
+
+### Learn from Past Reviews
+
+The `learn` subcommand analyzes outcomes of past PR reviews (what was acted on, what was dismissed) and folds insights back into the context files.
+
+```bash
+/review-code learn 123       # Analyze outcomes of a specific PR
+/review-code learn           # Batch-analyze all unanalyzed PRs with existing reviews
+/review-code learn --apply   # Apply accumulated learnings to context files
+```
+
+### Flags
+
+- `--draft` / `-d` — Post a pending GitHub review with inline comments (PR mode only). Auto-detects and adjusts for comment drift when new commits land between review generation and submission.
+- `--self` — Allow draft reviews on your own PR (for testing).
+- `--parent <ref>` — Override the base branch for branch/current-branch reviews. By default, branches with a recorded stack parent (Graphite or `branch.<name>.parent`) review against that parent.
+- `--force` / `-f` — Skip the pre-flight context clear prompt.
+- `--overwrite` — Replace an existing review file without prompting.
+- `--append` — Append to an existing review file without prompting.
 
 ### Filter by File Pattern
 
@@ -277,9 +318,11 @@ This eliminates confusion about what's being reviewed and lets you cancel if the
 
 ## Review Agents
 
-The system includes 7 specialized agents organized into core (always run) and domain-specific (conditional) categories.
+The system includes seven core agents (always run), two conditional agents (run when matching files are detected), and three supporting agents (context exploration, finding validation, and voice).
 
-### Security (`code-reviewer-security`)
+### Core Agents
+
+#### Security (`code-reviewer-security`)
 
 Focuses on:
 
@@ -290,7 +333,7 @@ Focuses on:
 - API security
 - OWASP Top 10 compliance
 
-### Performance (`code-reviewer-performance`)
+#### Performance (`code-reviewer-performance`)
 
 Focuses on:
 
@@ -301,7 +344,16 @@ Focuses on:
 - Memory leaks
 - Resource usage
 
-### Maintainability (`code-reviewer-maintainability`)
+#### Correctness (`code-reviewer-correctness`)
+
+Focuses on:
+
+- Functional correctness against the PR's stated intent
+- Integration boundaries (cache, queue, API, database)
+- Preservation of existing behavior
+- Edge cases and failure modes
+
+#### Maintainability (`code-reviewer-maintainability`)
 
 Focuses on:
 
@@ -312,7 +364,7 @@ Focuses on:
 - Technical debt
 - Simplicity (YAGNI, KISS)
 
-### Testing (`code-reviewer-testing`)
+#### Testing (`code-reviewer-testing`)
 
 Focuses on:
 
@@ -323,7 +375,7 @@ Focuses on:
 - Flaky tests
 - Test naming
 
-### Compatibility (`code-reviewer-compatibility`)
+#### Compatibility (`code-reviewer-compatibility`)
 
 Focuses on:
 
@@ -333,7 +385,7 @@ Focuses on:
 - Versioning concerns
 - Deprecation handling
 
-### Architecture (`code-reviewer-architecture`)
+#### Architecture (`code-reviewer-architecture`)
 
 Focuses on:
 
@@ -346,7 +398,9 @@ Focuses on:
 - Necessity (YAGNI)
 - Code reuse opportunities
 
-### Frontend (`code-reviewer-frontend`) **[Conditional]**
+### Conditional Agents
+
+#### Frontend (`code-reviewer-frontend`)
 
 **Runs only when:** `.tsx`, `.jsx`, or frontend-related files are detected in the diff
 
@@ -361,6 +415,32 @@ Focuses on:
 - Component lifecycle and side effects
 
 **Why conditional?** Frontend expertise is only needed for React/TypeScript changes. Running it unconditionally wastes tokens on backend-only changes.
+
+#### Infra-Config (`code-reviewer-infra-config`)
+
+**Runs only when:** Infrastructure config files are detected in the diff (Helm `values.yaml`, `Chart.yaml`, `.tf`/`.tfvars`, Kubernetes manifests, ArgoCD configs, `Dockerfile`, GitHub Actions workflows, `kustomization.yaml`, etc.)
+
+Focuses on:
+
+- Cross-environment consistency (dev/staging/prod)
+- Route, service, and ingress correctness
+- Operational safety (resource limits, probes, rollout strategy)
+- Config validation and drift
+- Secret handling and reference correctness
+
+### Supporting Agents
+
+#### Context Explorer (`code-review-context-explorer`)
+
+Runs before the specialized reviewers to gather architectural context — established patterns, related modules, and call sites — so each agent can review the diff against the surrounding codebase rather than in isolation.
+
+#### Finding Validator (`finding-validator`)
+
+Adversarial pass that takes blocking findings and attempts to disprove them, surfacing the strongest counter-argument so theoretical or false-positive findings are filtered out before they reach the author.
+
+#### Voice (`code-reviewer-voice`)
+
+Final pass that rewrites comment bodies in a plain, conversational voice. Preserves every citation, file path, line number, identifier, number, and code block exactly — only the phrasing changes.
 
 ## Context System
 
@@ -427,11 +507,7 @@ bin/test
 bats tests/unit/test-pre-review-context.bats
 ```
 
-**Current test coverage:**
-
-- ✅ `pre-review-context.sh` - 12 tests (file metadata extraction)
-- ✅ `code-language-detect.sh` - 18 tests (language/framework detection)
-- ⏳ Additional scripts - TODO (see `tests/README.md`)
+**Current test coverage:** Over 40 unit test files plus an end-to-end integration suite cover the shell scripts that power the skill — diff generation and filtering, language/framework detection, PR context fetching, worktree provisioning, draft-review submission, comment-drift detection, the learning loop, and more.
 
 See [`tests/README.md`](tests/README.md) for detailed testing documentation.
 
