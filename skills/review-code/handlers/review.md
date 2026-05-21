@@ -1050,6 +1050,8 @@ EOF
 
 **Writing the summary:** The `summary` field is the casual top-level comment on a GitHub review. Keep it to 1-2 short sentences. The author knows what their PR does, so never restate or narrate the approach back to them.
 
+Don't catalog or preview the inline comments either. The author scrolls down and sees them. Mention something in the summary only if it doesn't have a natural inline target (cross-cutting concerns, missing tests for a behavior that spans files, false-positive callouts on prior reviews).
+
 Default to short. Most PRs deserve a simple "LGTM!", "Nice fix!", or "Looks good!" with a note about inline comments if any. Only elaborate when something genuinely surprised you.
 
 Good examples:
@@ -1062,6 +1064,7 @@ Bad examples (robotic, narrating the approach, or over-explaining):
 - "Code review with 3 inline suggestions. See review file for full details."
 - "Nice fix for a real validation gap. The two-phase approach (relative date regex first, then dateutil) is clean." (narrates the approach)
 - "I really liked how you extracted the retry logic into its own module, much cleaner." (restates what the PR does)
+- "One performance suggestion in the hot path, a rename worth doing now, a few clarity nits, and some test coverage gaps." (catalogs the inline comments; the author can see them)
 
 **Code Suggestions:**
 
