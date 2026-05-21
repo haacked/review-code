@@ -23,6 +23,20 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLEAR_MARKER_SH="${SCRIPT_DIR}/clear-marker.sh"
 PENDING_RESUME_SH="${SCRIPT_DIR}/pending-resume.sh"
+LOG_FILE="${REVIEW_CODE_HOOK_LOG:-${HOME}/.claude/skills/review-code/sessions/.session-clear-hook.log}"
+
+# Append one line per invocation so we can confirm the hook actually fires
+# on /clear and inspect what it emitted. Bounded to ~50 entries.
+log_line() {
+    local msg="$1"
+    mkdir -p "$(dirname "${LOG_FILE}")"
+    printf '%s | %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${msg}" >> "${LOG_FILE}"
+    if [[ -f "${LOG_FILE}" ]]; then
+        tail -50 "${LOG_FILE}" > "${LOG_FILE}.tmp" 2> /dev/null && mv "${LOG_FILE}.tmp" "${LOG_FILE}" || true
+    fi
+}
+
+log_line "fired (cwd=$(pwd))"
 
 # 1. Always set the skip-prompt marker. If it fails, swallow the error —
 #    we don't want hook failures to block /clear.
@@ -33,27 +47,24 @@ PENDING_RESUME_SH="${SCRIPT_DIR}/pending-resume.sh"
 #    only when there was a fresh pending entry, even if its args were empty
 #    (a no-args /review-code invocation is still worth auto-resuming).
 if ARGS=$("${PENDING_RESUME_SH}" consume 2> /dev/null); then
+    log_line "consumed pending-resume (args='${ARGS}') — emitting additionalContext"
     jq -n --arg args "${ARGS}" '
     {
       hookSpecificOutput: {
         hookEventName: "SessionStart",
         additionalContext: (
-          if $args == "" then
-            "The user just cleared conversation context to resume a /review-code invocation with no arguments (the default review of local/branch changes). "
-            + "Their next message — whatever its literal content — means \"resume that command now.\" "
-            + "Invoke the /review-code skill immediately with no arguments. "
-            + "Do not address the literal content of their message and do not ask for confirmation; "
-            + "treat any input as a signal to proceed with the review."
-          else
-            "The user just cleared conversation context to resume a /review-code invocation. "
-            + "They previously invoked `/review-code " + $args + "`. "
-            + "Their next message — whatever its literal content — means \"resume that command now.\" "
-            + "Invoke the /review-code skill with arguments `" + $args + "` immediately. "
-            + "Do not address the literal content of their message and do not ask for confirmation; "
-            + "treat any input as a signal to proceed with the review."
-          end
+          ("/review-code" + (if $args == "" then "" else " " + $args end)) as $cmd |
+          "RESUME REQUEST — non-negotiable: the user just ran /clear immediately after picking \"clear and resume\" in the /review-code pre-flight prompt. "
+          + "Their previous invocation was `" + $cmd + "`"
+          + (if $args == "" then " (no arguments — the default review of local/branch changes). " else ". " end)
+          + "Their next message — whatever its literal text — is the agreed-upon trigger to proceed; treat it as if they had typed `" + $cmd + "` again. "
+          + "Your first action on the next turn MUST be to invoke the review-code skill via the Skill tool, passing args=\"" + $args + "\". "
+          + "Do not respond to the literal content of their next message, do not ask for confirmation, and do not offer alternatives. "
+          + "If for any reason you cannot invoke the skill, say so explicitly and quote this resume request — do not silently default to a normal response."
         )
       }
     }
     '
+else
+    log_line "no pending-resume found — skip-prompt marker set, no additionalContext"
 fi
