@@ -130,14 +130,18 @@ If the output is `skip`, proceed directly to Step 3 — the user already cleared
 **Otherwise**, use AskUserQuestion:
 - Question: "Code reviews work best with a fresh context. Clear conversation history before starting?"
 - Options:
-  1. "Yes, clear and review (Recommended)" - Clear context, then start the review
+  1. "Stop here so I can /clear, then resume (Recommended)" - Stops the skill so the user can run /clear; the SessionStart hook will auto-resume the review with the same args on their next message
      Description: "Ensures clean review without prior conversation influencing results"
   2. "No, continue anyway" - Keep current context and proceed
      Description: "Use only if you need to reference earlier conversation"
 
-If user selects "Yes, clear and review":
-- Tell the user: "Please run `/clear` and then run the review command again."
-- Stop here. (The SessionStart hook will mark the clear, so the next invocation skips this prompt.)
+If user selects the "Stop here" option:
+- Record the original arguments so the SessionStart hook can resume them after `/clear`:
+  ```bash
+  ~/.claude/skills/review-code/scripts/pending-resume.sh set-string "$ARGUMENTS"
+  ```
+- Tell the user: "Run `/clear`, then send any message (e.g. `go`) and I'll resume `/review-code $ARGUMENTS` with fresh context."
+- Stop here. The SessionStart hook on `/clear` writes the skip-prompt marker and injects an instruction so the next message auto-runs the review.
 
 If user selects "No, continue anyway", proceed to Step 3.
 

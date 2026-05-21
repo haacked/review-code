@@ -10,7 +10,7 @@ setup() {
 
     TMPDIR_TEST=$(mktemp -d)
     export CLAUDE_SETTINGS_FILE="$TMPDIR_TEST/settings.json"
-    export REVIEW_CODE_HOOK_COMMAND="/test/path/clear-marker.sh set"
+    export REVIEW_CODE_HOOK_COMMAND="/test/path/session-clear-hook.sh"
 }
 
 teardown() {
@@ -53,7 +53,7 @@ teardown() {
     "$SCRIPT" install
     local cmd
     cmd=$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$CLAUDE_SETTINGS_FILE")
-    [ "$cmd" = "/test/path/clear-marker.sh set" ]
+    [ "$cmd" = "/test/path/session-clear-hook.sh" ]
 }
 
 # =============================================================================
@@ -124,7 +124,7 @@ JSON
     "$SCRIPT" uninstall
 
     local has_ours
-    has_ours=$(jq '[.hooks.SessionStart // [] | .[] | .hooks[]? | select(.command=="/test/path/clear-marker.sh set")] | length' "$CLAUDE_SETTINGS_FILE")
+    has_ours=$(jq '[.hooks.SessionStart // [] | .[] | .hooks[]? | select(.command=="/test/path/session-clear-hook.sh")] | length' "$CLAUDE_SETTINGS_FILE")
     [ "$has_ours" = "0" ]
 }
 
@@ -164,6 +164,35 @@ JSON
     [ "$(jq -r '.theme' "$CLAUDE_SETTINGS_FILE")" = "dark" ]
 }
 
+@test "install: replaces a legacy review-code entry (different script name in same dir)" {
+    # Simulate a previous install that registered the old clear-marker.sh path.
+    cat > "$CLAUDE_SETTINGS_FILE" <<'JSON'
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "clear",
+        "hooks": [
+          {"type": "command", "command": "/legacy/skills/review-code/scripts/clear-marker.sh set"}
+        ]
+      }
+    ]
+  }
+}
+JSON
+    # Match by substring "/skills/review-code/scripts/" so the legacy entry is recognized.
+    REVIEW_CODE_HOOK_PATH_MARKER="/skills/review-code/scripts/" "$SCRIPT" install
+
+    # Legacy entry should be gone; new entry (the test command) should be present.
+    local legacy current total
+    legacy=$(jq '[.hooks.SessionStart[]?.hooks[]? | select(.command == "/legacy/skills/review-code/scripts/clear-marker.sh set")] | length' "$CLAUDE_SETTINGS_FILE")
+    current=$(jq -r '.hooks.SessionStart[].hooks[].command' "$CLAUDE_SETTINGS_FILE")
+    total=$(jq '[.hooks.SessionStart[]?.hooks[]?] | length' "$CLAUDE_SETTINGS_FILE")
+    [ "$legacy" = "0" ]
+    [ "$current" = "/test/path/session-clear-hook.sh" ]
+    [ "$total" = "1" ]
+}
+
 @test "uninstall: only removes our command, not the whole block, when block has other hooks" {
     cat > "$CLAUDE_SETTINGS_FILE" <<JSON
 {
@@ -173,7 +202,7 @@ JSON
         "matcher": "clear",
         "hooks": [
           {"type": "command", "command": "their-script"},
-          {"type": "command", "command": "/test/path/clear-marker.sh set"}
+          {"type": "command", "command": "/test/path/session-clear-hook.sh"}
         ]
       }
     ]

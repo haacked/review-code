@@ -21,7 +21,12 @@
 set -euo pipefail
 
 SETTINGS_FILE="${CLAUDE_SETTINGS_FILE:-${HOME}/.claude/settings.json}"
-HOOK_COMMAND="${REVIEW_CODE_HOOK_COMMAND:-${HOME}/.claude/skills/review-code/scripts/clear-marker.sh set}"
+HOOK_COMMAND="${REVIEW_CODE_HOOK_COMMAND:-${HOME}/.claude/skills/review-code/scripts/session-clear-hook.sh}"
+# Substring used to identify hook entries we own. Any command whose path
+# contains this marker is considered ours and is stripped on install /
+# uninstall. This handles migration when the hook script gets renamed (e.g.
+# the legacy clear-marker.sh entry from an earlier install).
+HOOK_PATH_MARKER="${REVIEW_CODE_HOOK_PATH_MARKER:-/skills/review-code/scripts/}"
 
 read_settings() {
     if [[ -f "${SETTINGS_FILE}" ]]; then
@@ -39,15 +44,23 @@ write_settings() {
     mv "${tmp}" "${SETTINGS_FILE}"
 }
 
-# Strip our hook entry from .hooks.SessionStart, dropping any blocks whose
+# Strip our hook entries from .hooks.SessionStart, dropping any blocks whose
 # `hooks` array becomes empty as a result. Returns full settings JSON.
+#
+# "Ours" means any command whose path contains HOOK_PATH_MARKER, OR matches
+# HOOK_COMMAND exactly. The substring side catches migrations (e.g. legacy
+# entries from older script names); the exact-match side lets tests override
+# HOOK_COMMAND to an arbitrary path that doesn't include the marker.
 strip_our_hook() {
-    jq --arg cmd "${HOOK_COMMAND}" '
+    jq --arg cmd "${HOOK_COMMAND}" --arg marker "${HOOK_PATH_MARKER}" '
         if (.hooks // {}).SessionStart then
             .hooks.SessionStart |= (
                 map(
                     if has("hooks") then
-                        .hooks |= map(select((.command // "") != $cmd))
+                        .hooks |= map(select(
+                            (.command // "") as $c
+                            | ($c != $cmd) and (($c | contains($marker)) | not)
+                        ))
                     else . end
                 )
                 | map(select((.hooks // []) | length > 0))
