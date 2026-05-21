@@ -140,7 +140,7 @@ If user selects the "Stop here" option:
   ```bash
   ~/.claude/skills/review-code/scripts/pending-resume.sh set-string "$ARGUMENTS"
   ```
-- Tell the user: "Run `/clear`, then send any message (e.g. `go`) and I'll resume `/review-code $ARGUMENTS` with fresh context."
+- Tell the user to run `/clear`, then send any message (e.g. `go`) so the SessionStart hook can resume the review with fresh context. When `$ARGUMENTS` is non-empty, mention the args explicitly (e.g. "I'll resume `/review-code 55298 --draft`"); when empty, say "I'll resume `/review-code` (default review)".
 - Stop here. The SessionStart hook on `/clear` writes the skip-prompt marker and injects an instruction so the next message auto-runs the review.
 
 If user selects "No, continue anyway", proceed to Step 3.

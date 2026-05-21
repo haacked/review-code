@@ -28,21 +28,30 @@ PENDING_RESUME_SH="${SCRIPT_DIR}/pending-resume.sh"
 #    we don't want hook failures to block /clear.
 "${CLEAR_MARKER_SH}" set 2> /dev/null || true
 
-# 2. Consume the pending-resume args (if any, and if fresh).
-ARGS=$("${PENDING_RESUME_SH}" consume 2> /dev/null || true)
-
-if [[ -n "${ARGS}" ]]; then
+# 2. Consume the pending-resume args (if any, and if fresh). Use the exit
+#    code to decide whether to inject — `pending-resume.sh consume` exits 0
+#    only when there was a fresh pending entry, even if its args were empty
+#    (a no-args /review-code invocation is still worth auto-resuming).
+if ARGS=$("${PENDING_RESUME_SH}" consume 2> /dev/null); then
     jq -n --arg args "${ARGS}" '
     {
       hookSpecificOutput: {
         hookEventName: "SessionStart",
         additionalContext: (
-          "The user just cleared conversation context to resume a /review-code invocation. "
-          + "They previously invoked `/review-code " + $args + "`. "
-          + "Their next message — whatever its literal content — means \"resume that command now.\" "
-          + "Invoke the /review-code skill with arguments `" + $args + "` immediately. "
-          + "Do not address the literal content of their message and do not ask for confirmation; "
-          + "treat any input as a signal to proceed with the review."
+          if $args == "" then
+            "The user just cleared conversation context to resume a /review-code invocation with no arguments (the default review of local/branch changes). "
+            + "Their next message — whatever its literal content — means \"resume that command now.\" "
+            + "Invoke the /review-code skill immediately with no arguments. "
+            + "Do not address the literal content of their message and do not ask for confirmation; "
+            + "treat any input as a signal to proceed with the review."
+          else
+            "The user just cleared conversation context to resume a /review-code invocation. "
+            + "They previously invoked `/review-code " + $args + "`. "
+            + "Their next message — whatever its literal content — means \"resume that command now.\" "
+            + "Invoke the /review-code skill with arguments `" + $args + "` immediately. "
+            + "Do not address the literal content of their message and do not ask for confirmation; "
+            + "treat any input as a signal to proceed with the review."
+          end
         )
       }
     }

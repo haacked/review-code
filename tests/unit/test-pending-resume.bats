@@ -68,16 +68,29 @@ set_mtime() {
 @test "consume: prints args and deletes the file" {
     "$SCRIPT" set-string "abc"
     run "$SCRIPT" consume
+    [ "$status" -eq 0 ]
     [ "$output" = "abc" ]
     [ ! -f "$FILE" ]
 }
 
-@test "consume: second call is a no-op" {
-    "$SCRIPT" set-string "abc"
-    "$SCRIPT" consume
+@test "consume: exit 0 with empty output when args were empty" {
+    "$SCRIPT" set-string ""
     run "$SCRIPT" consume
     [ "$status" -eq 0 ]
     [ -z "$output" ]
+    [ ! -f "$FILE" ]
+}
+
+@test "consume: exit 1 when nothing was pending" {
+    run "$SCRIPT" consume
+    [ "$status" -eq 1 ]
+}
+
+@test "consume: exit 1 when only an expired file remains" {
+    "$SCRIPT" set-string "abc"
+    set_mtime "$FILE" "$(($(date +%s) - 700))"
+    run "$SCRIPT" consume
+    [ "$status" -eq 1 ]
 }
 
 @test "clear: deletes the file" {

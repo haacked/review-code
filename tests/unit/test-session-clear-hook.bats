@@ -72,6 +72,18 @@ teardown() {
     [ ! -f "$MARKER_DIR/.pending-resume" ]
 }
 
+@test "with pending resume: empty args still trigger auto-resume" {
+    "$PR" set-string ""
+    run "$HOOK"
+    [ "$status" -eq 0 ]
+    # Should output JSON instructing Claude to resume the default review
+    echo "$output" | jq -e '.' > /dev/null
+    local ctx
+    ctx=$(echo "$output" | jq -r '.hookSpecificOutput.additionalContext')
+    [[ "$ctx" == *"no arguments"* ]]
+    [[ "$ctx" == *"/review-code"* ]]
+}
+
 @test "with pending resume: file paths in args round-trip" {
     "$PR" set-string '55298 "src/**/*.ts"'
     run "$HOOK"

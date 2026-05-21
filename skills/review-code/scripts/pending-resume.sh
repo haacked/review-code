@@ -65,11 +65,16 @@ cmd_get() {
     fi
 }
 
+# Print args (possibly empty) and delete the file; exit 0 if there was a
+# fresh pending resume, exit 1 otherwise. The exit code is the source of
+# truth — empty contents (no-args invocation) still count as "yes, resume".
 cmd_consume() {
     if fresh_or_die; then
         cat "${PENDING_RESUME_FILE}"
         rm -f "${PENDING_RESUME_FILE}"
+        return 0
     fi
+    return 1
 }
 
 cmd_clear() {
