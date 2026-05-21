@@ -119,6 +119,14 @@ Code reviews are context-heavy and work best with a fresh context.
 
 **If `--force` was specified:** Skip this step entirely and proceed to Step 3.
 
+**Check the pending-clear marker first.** A global `SessionStart` hook with `matcher: "clear"` (installed by `bin/setup`) writes this marker whenever the user runs `/clear`. If the user just cleared and re-invoked `/review-code`, the marker tells us to skip the prompt so we don't loop.
+
+```bash
+~/.claude/skills/review-code/scripts/clear-marker.sh check
+```
+
+If the output is `skip`, proceed directly to Step 3 — the user already cleared.
+
 **Otherwise**, use AskUserQuestion:
 - Question: "Code reviews work best with a fresh context. Clear conversation history before starting?"
 - Options:
@@ -129,7 +137,7 @@ Code reviews are context-heavy and work best with a fresh context.
 
 If user selects "Yes, clear and review":
 - Tell the user: "Please run `/clear` and then run the review command again."
-- Stop here.
+- Stop here. (The SessionStart hook will mark the clear, so the next invocation skips this prompt.)
 
 If user selects "No, continue anyway", proceed to Step 3.
 
