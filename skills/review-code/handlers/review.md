@@ -762,7 +762,7 @@ The goal: act like a principal engineer doing a careful local cleanup pass. Fix 
 **Preconditions:**
 
 1. The surviving finding pool is non-empty. If it's empty, skip the fix step and note "No findings to fix" in the Fix Summary section of the review document.
-2. A writeable working tree contains the reviewed code. Decide using this table:
+2. A writable working tree contains the reviewed code. Decide using this table:
 
    | `mode`                               | `file_ref` set? | `git.local_clone` set? | Apply fixes? | Target / reason it's skipped |
    |--------------------------------------|-----------------|------------------------|--------------|------------------------------|

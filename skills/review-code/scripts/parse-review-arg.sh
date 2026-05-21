@@ -206,7 +206,9 @@ resolve_base_branch() {
     get_base_branch "$@"
 }
 
-# Helper: Build JSON output with optional file_pattern and find_mode
+# Helper: Build JSON output for a parsed invocation. Always emits `mode` plus
+# any supplied key/value pairs, and conditionally appends `file_pattern` and
+# every `<flag>_mode` field whose corresponding `<FLAG>_MODE` global is "true".
 # Usage: build_json_output mode key1 val1 [key2 val2 ...]
 build_json_output() {
     local mode=$1
