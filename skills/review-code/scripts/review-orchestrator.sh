@@ -55,6 +55,8 @@ main() {
     overwrite_mode=$(echo "${parse_result}" | jq -r '.overwrite_mode // "false"')
     local append_mode
     append_mode=$(echo "${parse_result}" | jq -r '.append_mode // "false"')
+    local fix_mode
+    fix_mode=$(echo "${parse_result}" | jq -r '.fix_mode // "false"')
 
     # Extract org/repo early for git-based modes
     # Cache git org/repo to avoid redundant operations
@@ -497,12 +499,12 @@ build_review_data() {
     # Add mode-specific arguments
     jq_args+=("$@")
 
-    # Add force_mode, draft_mode, self_mode, overwrite_mode, append_mode, and debug_session_dir to jq args
     jq_args+=(--arg force_mode "${force_mode}")
     jq_args+=(--arg draft_mode "${draft_mode}")
     jq_args+=(--arg self_mode "${self_mode}")
     jq_args+=(--arg overwrite_mode "${overwrite_mode}")
     jq_args+=(--arg append_mode "${append_mode}")
+    jq_args+=(--arg fix_mode "${fix_mode}")
     jq_args+=(--arg debug_session_dir "${DEBUG_SESSION_DIR:-}")
     jq_args+=(--argjson diff_tokens "${diff_tokens}")
     jq_args+=(--arg commit_messages "${commit_messages}")
@@ -535,6 +537,7 @@ build_review_data() {
         + (if $self_mode == "true" then {self: true} else {} end)
         + (if $overwrite_mode == "true" then {overwrite: true} else {} end)
         + (if $append_mode == "true" then {append: true} else {} end)
+        + (if $fix_mode == "true" then {fix: true} else {} end)
         + (if $pr[0] != null then {pr: $pr[0], reviewer_username: $reviewer_username, is_own_pr: ($is_own_pr == "true")} else {} end)
         + (if $chunks[0] != null then {chunks: $chunks[0], chunk_metadata: $chunk_metadata} else {} end)
         + (if $debug_session_dir != "" then {debug_session_dir: $debug_session_dir} else {} end)

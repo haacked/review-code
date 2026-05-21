@@ -753,6 +753,110 @@ reset_globals() {
 }
 
 # =============================================================================
+# Fix mode tests
+# =============================================================================
+
+@test "fix mode: FIX_MODE is false by default" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh"
+    [ "$FIX_MODE" = "false" ]
+}
+
+@test "fix mode: --fix sets FIX_MODE" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "--fix" "123"
+    [ "$FIX_MODE" = "true" ]
+    [ "$arg" = "123" ]
+}
+
+@test "fix mode: --fix as second argument" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "123" "--fix"
+    [ "$FIX_MODE" = "true" ]
+    [ "$arg" = "123" ]
+}
+
+@test "fix mode: build_json_output includes fix_mode when set" {
+    file_pattern=""
+    FIX_MODE="true"
+    run build_json_output "test" "key" "val"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"fix_mode":"true"'* ]]
+}
+
+@test "fix mode: build_json_output excludes fix_mode when false" {
+    file_pattern=""
+    FIX_MODE="false"
+    run build_json_output "test" "key" "val"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *'"fix_mode"'* ]]
+}
+
+@test "fix mode: combines with --force and --draft" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "--force" "--fix" "--draft" "123"
+    [ "$FORCE_MODE" = "true" ]
+    [ "$FIX_MODE" = "true" ]
+    [ "$DRAFT_MODE" = "true" ]
+    [ "$arg" = "123" ]
+}
+
+@test "fix mode: validate_fix_mode passes when --fix is unset" {
+    FIX_MODE="false"
+    LEARN_MODE="true"
+    run validate_fix_mode
+    [ "$status" -eq 0 ]
+}
+
+@test "fix mode: validate_fix_mode rejects --fix with learn" {
+    FIX_MODE="true"
+    LEARN_MODE="true"
+    FIND_MODE="false"
+    run validate_fix_mode
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"not compatible with learn"* ]]
+}
+
+@test "fix mode: validate_fix_mode rejects --fix with find" {
+    FIX_MODE="true"
+    LEARN_MODE="false"
+    FIND_MODE="true"
+    run validate_fix_mode
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"not compatible with find"* ]]
+}
+
+@test "fix mode: validate_fix_mode passes for normal review" {
+    FIX_MODE="true"
+    LEARN_MODE="false"
+    FIND_MODE="false"
+    run validate_fix_mode
+    [ "$status" -eq 0 ]
+}
+
+@test "fix mode: combines with --overwrite" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "--fix" "--overwrite" "123"
+    [ "$FIX_MODE" = "true" ]
+    [ "$OVERWRITE_MODE" = "true" ]
+    [ "$arg" = "123" ]
+}
+
+@test "fix mode: combines with --append" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "--fix" "--append" "123"
+    [ "$FIX_MODE" = "true" ]
+    [ "$APPEND_MODE" = "true" ]
+    [ "$arg" = "123" ]
+}
+
+@test "fix mode: --fix learn rejected via main script" {
+    run bash -c "bash '$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh' --fix learn 2>&1"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not compatible with learn"* ]]
+}
+
+@test "fix mode: --fix find rejected via main script" {
+    run bash -c "bash '$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh' --fix find 123 2>&1"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not compatible with find"* ]]
+}
+
+# =============================================================================
 # get_base_branch tests
 # =============================================================================
 

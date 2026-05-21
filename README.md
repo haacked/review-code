@@ -261,6 +261,7 @@ The `learn` subcommand analyzes outcomes of past PR reviews (what was acted on, 
 - `--force` / `-f` — Skip the pre-flight context clear prompt.
 - `--overwrite` — Replace an existing review file without prompting.
 - `--append` — Append to an existing review file without prompting.
+- `--fix` — After the review, apply fixes for findings the agent can resolve cleanly. Edits the working tree directly; the Fix Summary section in the saved review lists anything skipped and any judgment calls made. Not compatible with `learn` or `find`.
 
 ### Filter by File Pattern
 

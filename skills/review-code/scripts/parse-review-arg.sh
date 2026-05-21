@@ -19,6 +19,7 @@ APPLY_MODE="false"
 LEARN_MODE="false"
 OVERWRITE_MODE="false"
 APPEND_MODE="false"
+FIX_MODE="false"
 PARENT_OVERRIDE=""
 PARENT_FLAG_SEEN="false"
 remaining_args=()
@@ -45,6 +46,8 @@ for arg_item in "$@"; do
         OVERWRITE_MODE="true"
     elif [[ "${arg_item}" == "--append" ]]; then
         APPEND_MODE="true"
+    elif [[ "${arg_item}" == "--fix" ]]; then
+        FIX_MODE="true"
     elif [[ "${arg_item}" == "--parent" ]]; then
         PARENT_FLAG_SEEN="true"
         expect_value="parent"
@@ -203,7 +206,9 @@ resolve_base_branch() {
     get_base_branch "$@"
 }
 
-# Helper: Build JSON output with optional file_pattern and find_mode
+# Helper: Build JSON output for a parsed invocation. Always emits `mode` plus
+# any supplied key/value pairs, and conditionally appends `file_pattern` and
+# every `<flag>_mode` field whose corresponding `<FLAG>_MODE` global is "true".
 # Usage: build_json_output mode key1 val1 [key2 val2 ...]
 build_json_output() {
     local mode=$1
@@ -269,6 +274,11 @@ build_json_output() {
         jq_args+=("--arg" "append_mode" "true")
     fi
 
+    # Add fix_mode if enabled
+    if [[ "${FIX_MODE}" == "true" ]]; then
+        jq_args+=("--arg" "fix_mode" "true")
+    fi
+
     jq -nc "${jq_args[@]}" "${jq_filter}"
 }
 
@@ -302,6 +312,20 @@ validate_apply_mode() {
 validate_overwrite_append_mode() {
     if [[ "${OVERWRITE_MODE}" == "true" ]] && [[ "${APPEND_MODE}" == "true" ]]; then
         build_json_error "--overwrite and --append are mutually exclusive. Use one or the other."
+        exit 1
+    fi
+}
+
+# Helper: Validate --fix is not used with incompatible subcommands.
+# `learn` and `find` do not produce findings to act on, so --fix is meaningless.
+validate_fix_mode() {
+    [[ "${FIX_MODE}" != "true" ]] && return 0
+    if [[ "${LEARN_MODE}" == "true" ]]; then
+        build_json_error "--fix is not compatible with learn mode."
+        exit 1
+    fi
+    if [[ "${FIND_MODE}" == "true" ]]; then
+        build_json_error "--fix is not compatible with find mode."
         exit 1
     fi
 }
@@ -610,6 +634,9 @@ if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
 
     # Validate --overwrite and --append are mutually exclusive
     validate_overwrite_append_mode
+
+    # Validate --fix is not used with incompatible subcommands
+    validate_fix_mode
 
     # 0. Learn Mode (Highest Priority - before review modes)
     if detect_learn_mode; then
