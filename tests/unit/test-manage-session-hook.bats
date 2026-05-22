@@ -42,11 +42,11 @@ teardown() {
     [ -f "$CLAUDE_SETTINGS_FILE" ]
 }
 
-@test "install: writes SessionStart hook with matcher 'clear'" {
+@test "install: writes SessionStart hook with matcher 'startup|clear'" {
     "$SCRIPT" install
     local matcher
     matcher=$(jq -r '.hooks.SessionStart[0].matcher' "$CLAUDE_SETTINGS_FILE")
-    [ "$matcher" = "clear" ]
+    [ "$matcher" = "startup|clear" ]
 }
 
 @test "install: writes our command into the hook entry" {

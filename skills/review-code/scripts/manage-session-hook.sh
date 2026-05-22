@@ -70,12 +70,16 @@ strip_our_hook() {
 }
 
 cmd_install() {
+    # Match both `startup` (fresh `claude` launch) and `clear` (/clear) so the
+    # marker is set in any "context is fresh" scenario. The skill's pre-flight
+    # check consumes the marker one-shot, so subsequent invocations in the
+    # same session still prompt — by then the user has accumulated context.
     local updated
     updated=$(read_settings | strip_our_hook | jq --arg cmd "${HOOK_COMMAND}" '
         .hooks //= {} |
         .hooks.SessionStart //= [] |
         .hooks.SessionStart += [{
-            matcher: "clear",
+            matcher: "startup|clear",
             hooks: [{ type: "command", command: $cmd }]
         }]
     ')
