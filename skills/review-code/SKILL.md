@@ -119,17 +119,29 @@ Code reviews are context-heavy and work best with a fresh context.
 
 **If `--force` was specified:** Skip this step entirely and proceed to Step 3.
 
+**Check the pending-clear marker first.** A global `SessionStart` hook with `matcher: "startup|clear"` (installed by `bin/setup`) writes this marker on a fresh `claude` launch or whenever the user runs `/clear`. If the user just cleared and re-invoked `/review-code`, the marker tells us to skip the prompt so we don't loop.
+
+```bash
+~/.claude/skills/review-code/scripts/clear-marker.sh check
+```
+
+If the output is `skip`, proceed directly to Step 3 — the user already cleared.
+
 **Otherwise**, use AskUserQuestion:
 - Question: "Code reviews work best with a fresh context. Clear conversation history before starting?"
 - Options:
-  1. "Yes, clear and review (Recommended)" - Clear context, then start the review
+  1. "Stop here so I can /clear, then resume (Recommended)" - Stops the skill so the user can run /clear; the SessionStart hook will auto-resume the review with the same args on their next message
      Description: "Ensures clean review without prior conversation influencing results"
   2. "No, continue anyway" - Keep current context and proceed
      Description: "Use only if you need to reference earlier conversation"
 
-If user selects "Yes, clear and review":
-- Tell the user: "Please run `/clear` and then run the review command again."
-- Stop here.
+If user selects the "Stop here" option:
+- Record the original arguments so the SessionStart hook can resume them after `/clear`:
+  ```bash
+  ~/.claude/skills/review-code/scripts/pending-resume.sh set-string "$ARGUMENTS"
+  ```
+- Tell the user to run `/clear`, then send any message (e.g. `go`) so the SessionStart hook can resume the review with fresh context. When `$ARGUMENTS` is non-empty, mention the args explicitly (e.g. "I'll resume `/review-code 55298 --draft`"); when empty, say "I'll resume `/review-code` (default review)".
+- Stop here. The SessionStart hook on `/clear` writes the skip-prompt marker and injects an instruction so the next message auto-runs the review.
 
 If user selects "No, continue anyway", proceed to Step 3.
 

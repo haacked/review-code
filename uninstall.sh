@@ -35,6 +35,18 @@ error() {
     echo -e "${RED}✗${NC} $1"
 }
 
+remove_session_clear_hook() {
+    # Run BEFORE remove_skill so the manage-session-hook.sh script still exists.
+    local manager="${SKILL_DIR}/scripts/manage-session-hook.sh"
+    if [[ -x "${manager}" ]]; then
+        if "${manager}" uninstall; then
+            info "Removed SessionStart hook from ~/.claude/settings.json"
+        else
+            warn "Failed to remove SessionStart hook from ~/.claude/settings.json"
+        fi
+    fi
+}
+
 remove_skill() {
     local removed=0
 
@@ -167,6 +179,7 @@ main() {
 
     # Remove components
     info "Removing review-code components…"
+    remove_session_clear_hook
     remove_skill
     remove_agents
 

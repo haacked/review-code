@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Idempotently install/uninstall a global SessionStart hook in
+# ~/.claude/settings.json that fires on `/clear`. The hook writes a marker
+# so the /review-code skill can detect "user just cleared" on its next
+# invocation and skip the pre-flight prompt instead of looping.
+#
+# Why this is global and not in SKILL.md frontmatter: skill-frontmatter
+# hooks are scoped to skill lifetime, so they don't fire after /clear when
+# the skill isn't loaded. SessionStart needs to fire before the skill loads,
+# which means a global registration.
+#
+# Identity: we identify our hook entry by its exact `command` string. Install
+# strips any matching entry first then appends, so repeated installs converge
+# on a single entry. Uninstall removes the same entry. Both operations
+# preserve unrelated hooks the user or other tools may have configured.
+#
+# Usage:
+#   manage-session-hook.sh install
+#   manage-session-hook.sh uninstall
+
+set -euo pipefail
+
+SETTINGS_FILE="${CLAUDE_SETTINGS_FILE:-${HOME}/.claude/settings.json}"
+HOOK_COMMAND="${REVIEW_CODE_HOOK_COMMAND:-${HOME}/.claude/skills/review-code/scripts/session-clear-hook.sh}"
+# Substring used to identify hook entries we own. Any command whose path
+# contains this marker is considered ours and is stripped on install /
+# uninstall. This handles migration when the hook script gets renamed (e.g.
+# the legacy clear-marker.sh entry from an earlier install).
+HOOK_PATH_MARKER="${REVIEW_CODE_HOOK_PATH_MARKER:-/skills/review-code/scripts/}"
+
+read_settings() {
+    if [[ -f "${SETTINGS_FILE}" ]]; then
+        cat "${SETTINGS_FILE}"
+    else
+        echo "{}"
+    fi
+}
+
+write_settings() {
+    local new_content="$1"
+    mkdir -p "$(dirname "${SETTINGS_FILE}")"
+    local tmp="${SETTINGS_FILE}.tmp.$$"
+    printf '%s\n' "${new_content}" > "${tmp}"
+    mv "${tmp}" "${SETTINGS_FILE}"
+}
+
+# Strip our hook entries from .hooks.SessionStart, dropping any blocks whose
+# `hooks` array becomes empty as a result. Returns full settings JSON.
+#
+# "Ours" means any command whose path contains HOOK_PATH_MARKER, OR matches
+# HOOK_COMMAND exactly. The substring side catches migrations (e.g. legacy
+# entries from older script names); the exact-match side lets tests override
+# HOOK_COMMAND to an arbitrary path that doesn't include the marker.
+strip_our_hook() {
+    jq --arg cmd "${HOOK_COMMAND}" --arg marker "${HOOK_PATH_MARKER}" '
+        if (.hooks // {}).SessionStart then
+            .hooks.SessionStart |= (
+                map(
+                    if has("hooks") then
+                        .hooks |= map(select(
+                            (.command // "") as $c
+                            | ($c != $cmd) and (($c | contains($marker)) | not)
+                        ))
+                    else . end
+                )
+                | map(select((.hooks // []) | length > 0))
+            )
+        else . end
+    '
+}
+
+cmd_install() {
+    # Match both `startup` (fresh `claude` launch) and `clear` (/clear) so the
+    # marker is set in any "context is fresh" scenario. The skill's pre-flight
+    # check consumes the marker one-shot, so subsequent invocations in the
+    # same session still prompt — by then the user has accumulated context.
+    local updated
+    updated=$(read_settings | strip_our_hook | jq --arg cmd "${HOOK_COMMAND}" '
+        .hooks //= {} |
+        .hooks.SessionStart //= [] |
+        .hooks.SessionStart += [{
+            matcher: "startup|clear",
+            hooks: [{ type: "command", command: $cmd }]
+        }]
+    ')
+    write_settings "${updated}"
+}
+
+cmd_uninstall() {
+    local updated
+    updated=$(read_settings | strip_our_hook | jq '
+        if (.hooks // {}).SessionStart and ((.hooks.SessionStart | length) == 0) then
+            del(.hooks.SessionStart)
+        else . end
+        | if (.hooks // null) == {} then del(.hooks) else . end
+    ')
+    write_settings "${updated}"
+}
+
+main() {
+    local subcommand="${1:-}"
+    case "${subcommand}" in
+        install)
+            cmd_install
+            ;;
+        uninstall)
+            cmd_uninstall
+            ;;
+        *)
+            echo "ERROR: Unknown subcommand: '${subcommand}'. Usage: $0 {install|uninstall}" >&2
+            exit 1
+            ;;
+    esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

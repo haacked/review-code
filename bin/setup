@@ -193,6 +193,23 @@ install_skill() {
     info "Installed skill: review-code (${script_count} scripts)"
 }
 
+install_session_clear_hook() {
+    # Register a global SessionStart hook (matcher: clear) so /clear writes
+    # a marker the skill can read on its next invocation. This breaks the
+    # pre-flight prompt loop that otherwise asks the user to /clear forever.
+    local manager="${SKILL_DIR}/scripts/manage-session-hook.sh"
+    if [[ ! -x "${manager}" ]]; then
+        warn "Skipping SessionStart hook install: ${manager} not found"
+        return 0
+    fi
+
+    if "${manager}" install; then
+        info "Registered SessionStart hook in ~/.claude/settings.json"
+    else
+        warn "Failed to register SessionStart hook (the skill still works, but the pre-flight prompt may loop)"
+    fi
+}
+
 install_agents() {
     local agents=(
         "code-review-context-explorer"
@@ -615,6 +632,7 @@ main() {
     echo ""
     info "Installing review-code components…"
     install_skill
+    install_session_clear_hook
     install_agents
     install_context
 
