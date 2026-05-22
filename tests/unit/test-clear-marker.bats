@@ -71,7 +71,11 @@ set_mtime() {
     [ "$status" -eq 0 ]
 
     local mtime now
-    mtime=$(stat -f %m "$MARKER_FILE" 2> /dev/null || stat -c %Y "$MARKER_FILE")
+    if [[ "${OSTYPE}" == "darwin"* ]]; then
+        mtime=$(stat -f %m "$MARKER_FILE")
+    else
+        mtime=$(stat -c %Y "$MARKER_FILE")
+    fi
     now=$(date +%s)
     # New mtime should be close to "now", not the ancient one.
     [ $((now - mtime)) -lt 10 ]
