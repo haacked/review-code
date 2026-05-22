@@ -58,7 +58,7 @@ if ARGS=$("${PENDING_RESUME_SH}" consume 2> /dev/null); then
           + "Their previous invocation was `" + $cmd + "`"
           + (if $args == "" then " (no arguments — the default review of local/branch changes). " else ". " end)
           + "Their next message — whatever its literal text — is the agreed-upon trigger to proceed; treat it as if they had typed `" + $cmd + "` again. "
-          + "Your first action on the next turn MUST be to invoke the review-code skill via the Skill tool, passing args=\"" + $args + "\". "
+          + "Your first action on the next turn MUST be to invoke the review-code skill via the Skill tool, passing args=" + ($args | tojson) + ". "
           + "Do not respond to the literal content of their next message, do not ask for confirmation, and do not offer alternatives. "
           + "If for any reason you cannot invoke the skill, say so explicitly and quote this resume request — do not silently default to a normal response."
         )

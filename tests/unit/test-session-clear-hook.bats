@@ -87,9 +87,14 @@ teardown() {
 @test "with pending resume: file paths in args round-trip" {
     "$PR" set-string '55298 "src/**/*.ts"'
     run "$HOOK"
-    local args
-    args=$(echo "$output" | jq -r '.hookSpecificOutput.additionalContext')
-    [[ "$args" == *'src/**/*.ts'* ]]
+    local ctx
+    ctx=$(echo "$output" | jq -r '.hookSpecificOutput.additionalContext')
+    # Substring check confirms the path appears somewhere in the directive.
+    [[ "$ctx" == *'src/**/*.ts'* ]]
+    # Embedded double quotes must reach Claude in escaped form so the
+    # `args=...` framing carries the complete argument string. The jq
+    # template uses `tojson` to produce the JSON-encoded literal below.
+    [[ "$ctx" == *'args="55298 \"src/**/*.ts\""'* ]]
 }
 
 # =============================================================================
