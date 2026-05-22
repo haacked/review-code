@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# Pre-flight /clear marker — breaks the infinite-loop where the recommended
-# option in Step 2 of SKILL.md ("Yes, clear and review") sends the user to
-# /clear, but on re-invocation the skill has no way to know they just cleared
-# and asks again, looping forever.
+# Pre-flight /clear marker for /review-code.
 #
-# Flow:
-#   1. User runs /review-code; Step 2 asks "Clear conversation history?"
-#   2. User picks "Yes, clear and review" → `clear-marker.sh set`, skill tells
-#      user to /clear and re-invoke.
-#   3. After /clear, user re-runs /review-code; Step 2 calls
-#      `clear-marker.sh check`, finds a recent marker, consumes it, prints
-#      "skip", and the skill proceeds directly to Step 3.
+# Inputs/outputs:
+#   set    — touch ${MARKER_DIR}/.pending-clear (created on demand)
+#   check  — print "skip" and consume the marker if fresh (within TTL);
+#            silent otherwise
 #
-# The marker has a 10-minute TTL so abandoned markers expire and the prompt
-# returns to its normal behavior. Override the directory with
+# The SessionStart hook (session-clear-hook.sh) calls `set` on every /clear
+# or session-start, and Step 2 of SKILL.md calls `check` before deciding
+# whether to prompt the user about clearing context. The TTL bounds stale
+# markers from an abandoned flow. Override the directory with
 # REVIEW_CODE_MARKER_DIR for tests.
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=helpers/date-helpers.sh
+source "${SCRIPT_DIR}/helpers/date-helpers.sh"
 
 MARKER_DIR="${REVIEW_CODE_MARKER_DIR:-${HOME}/.claude/skills/review-code/sessions}"
 MARKER_FILE="${MARKER_DIR}/.pending-clear"
@@ -27,17 +27,12 @@ cmd_set() {
     : > "${MARKER_FILE}"
 }
 
-# stat flag differs between BSD (macOS) and GNU (Linux); try both.
-marker_mtime() {
-    stat -f %m "${MARKER_FILE}" 2> /dev/null \
-        || stat -c %Y "${MARKER_FILE}" 2> /dev/null
-}
-
 cmd_check() {
     [[ -f "${MARKER_FILE}" ]] || return 0
 
     local mtime
-    if ! mtime=$(marker_mtime); then
+    mtime=$(get_file_mtime "${MARKER_FILE}")
+    if [[ -z "${mtime}" ]]; then
         # Couldn't read mtime — fail safe by removing the marker and not skipping.
         rm -f "${MARKER_FILE}"
         return 0

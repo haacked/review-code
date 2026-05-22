@@ -119,7 +119,7 @@ Code reviews are context-heavy and work best with a fresh context.
 
 **If `--force` was specified:** Skip this step entirely and proceed to Step 3.
 
-**Check the pending-clear marker first.** A global `SessionStart` hook with `matcher: "clear"` (installed by `bin/setup`) writes this marker whenever the user runs `/clear`. If the user just cleared and re-invoked `/review-code`, the marker tells us to skip the prompt so we don't loop.
+**Check the pending-clear marker first.** A global `SessionStart` hook with `matcher: "startup|clear"` (installed by `bin/setup`) writes this marker on a fresh `claude` launch or whenever the user runs `/clear`. If the user just cleared and re-invoked `/review-code`, the marker tells us to skip the prompt so we don't loop.
 
 ```bash
 ~/.claude/skills/review-code/scripts/clear-marker.sh check

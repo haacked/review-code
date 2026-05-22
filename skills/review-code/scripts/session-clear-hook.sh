@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# SessionStart hook (matcher: "clear") for /review-code.
+# SessionStart hook (matcher: "startup|clear") for /review-code.
 #
-# Fires when the user runs /clear. Does two things:
+# Fires on a fresh `claude` launch or when the user runs /clear. Does two
+# things:
 #
 # 1. Always: writes the skip-prompt marker so /review-code's next
 #    pre-flight prompt is skipped instead of looping forever.

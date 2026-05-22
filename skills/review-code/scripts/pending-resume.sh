@@ -16,6 +16,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=helpers/date-helpers.sh
+source "${SCRIPT_DIR}/helpers/date-helpers.sh"
+
 MARKER_DIR="${REVIEW_CODE_MARKER_DIR:-${HOME}/.claude/skills/review-code/sessions}"
 PENDING_RESUME_FILE="${MARKER_DIR}/.pending-resume"
 
@@ -36,16 +40,11 @@ cmd_set_string() {
     printf '%s' "${1-}" > "${PENDING_RESUME_FILE}"
 }
 
-# Print mtime in epoch seconds; tries BSD then GNU stat.
-file_mtime() {
-    stat -f %m "${PENDING_RESUME_FILE}" 2> /dev/null \
-        || stat -c %Y "${PENDING_RESUME_FILE}" 2> /dev/null
-}
-
 fresh_or_die() {
     [[ -f "${PENDING_RESUME_FILE}" ]] || return 1
     local mtime
-    if ! mtime=$(file_mtime); then
+    mtime=$(get_file_mtime "${PENDING_RESUME_FILE}")
+    if [[ -z "${mtime}" ]]; then
         rm -f "${PENDING_RESUME_FILE}"
         return 1
     fi
