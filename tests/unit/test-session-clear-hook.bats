@@ -12,6 +12,7 @@ setup() {
 
     MARKER_DIR=$(mktemp -d)
     export REVIEW_CODE_MARKER_DIR="$MARKER_DIR"
+    export REVIEW_CODE_HOOK_LOG="$MARKER_DIR/.session-clear-hook.log"
 }
 
 teardown() {
