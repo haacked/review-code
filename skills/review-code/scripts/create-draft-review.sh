@@ -209,7 +209,7 @@ main() {
             .path != null and .line != null and .body != null and
             (.side == null or .side == "LEFT" or .side == "RIGHT");
         {
-            valid: [.[] | select(is_valid) | {path, line, side, body}],
+            valid: [.[] | select(is_valid) | {path, line, body} + (if .side then {side: .side} else {} end)],
             invalid: [.[] | select(is_valid | not)]
         }')
     comments=$(echo "${validation_result}" | jq -c '.valid')
