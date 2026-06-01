@@ -126,17 +126,20 @@ Name the missed regression: "this test passes when the LRU victim isn't evicted,
 
 Stay terse: one or two sentences covers it. The regression name is part of that sentence, not a separate paragraph. Generic phrases like "this creates false confidence" or "the test is brittle" without naming what specifically slips through are filler.
 
+Calibrate the regression clause to the stakes. For a `blocking:` finding, state the failure mode explicitly. For a trivial low-stakes `suggestion` — an untested one-line reducer or toggle — naming what's unwritten is enough; the regression can stay implicit as long as you've satisfied yourself it's real. Don't pad a one-line gap with a manufactured failure-mode sentence.
+
 If you can't name the regression in one or two sentences, the finding isn't ready. Trace the code, find the unasserted path, then write one sentence that says what goes undetected. Or downgrade to a `question:` and ask whether a known scenario is exercised somewhere else.
 
 Avoid closing on severity adjectives ("this is a critical gap", "this is a serious testing weakness"). The mechanism plus the missed regression already convey severity.
 
 ## Keep "Add a Test" Findings Short
 
-For a "this behavior is untested, add a test" finding, name the gap — don't write the test. The author knows how to write tests; your job is to name the scenario and point at a sibling.
+For a "this behavior is untested, add a test" finding, name the gap — don't write the test. The author knows how to write tests; your job is to point at what's unwritten. Scale the comment to how non-obvious the test is:
 
-- **Gap in one sentence + sibling pointer.** "Nothing tests that this strip-on-save clears super groups. There's a `test_saving_flag_strips_legacy_holdout_groups` right above for the holdout key; this needs the same."
+- **Trivial test → one sentence, no sibling, no recipe.** For a one-line reducer, a toggle, a getter, just name what's unwritten and that it's worth covering: "`setEarlyExit` is the only writer of `early_exit`, so it's worth a unit test." Don't tell the author how to test a one-liner, and don't reach for a sibling they don't need.
+- **Non-obvious test → add a sibling pointer.** When the setup is involved or the assertion boundary isn't obvious, point at an existing test to mirror: "Nothing tests that this strip-on-save clears super groups. There's a `test_saving_flag_strips_legacy_holdout_groups` right above for the holdout key; this needs the same." The sibling carries the structure — that's the whole point of citing it.
+- **Never narrate the recipe.** Whether or not you cite a sibling, don't spell out the steps ("dispatch X, assert Y, then dispatch Z and assert it flips back"). That's a test body in prose; it repeats what the sibling pointer or the scenario name already conveys. Only add a minimal code snippet if the assertion boundary is genuinely ambiguous (trimmed to the fields the assertion needs, not a full fixture).
 - **Secondary gaps get one parenthetical line**, not a paragraph.
-- **No test body.** A sibling pointer carries the structure. If no sibling exists, describe the scenario in prose; only add a minimal snippet if the assertion boundary is genuinely ambiguous (and then trim it to the fields the assertion actually needs, not a full fixture).
 
 This applies to *missing*-test findings. When the fix is to an *existing* test (incomplete negative assertion, stale assertion, wrong-mock helper swap), a small corrected-assertion snippet is still the clearest way to convey it — keep those.
 
@@ -192,6 +195,12 @@ Location: `path/to/file.ext:line-range` | Confidence: NN%
 ````
 
 Location: `src/authentication/login.rs:45-60` | Confidence: 95%
+
+````text
+`suggestion`: `setEarlyExit` is the only thing that writes `early_exit`, and nothing tests it, so a regression there silently drops the toggle. Worth a unit test.
+````
+
+Location: `frontend/src/scenes/feature-flags/featureFlagReleaseConditionsLogic.ts:256` | Confidence: 70%
 
 ````text
 `suggestion`: `tests/user_service_test.py:78-92` asserts on the number of SQL queries (`assert_num_queries(2)`) instead of on the data the function returns. Any future query optimization (a JOIN, a prefetch) makes this test fail even when behavior is unchanged.
