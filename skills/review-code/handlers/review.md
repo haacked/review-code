@@ -420,6 +420,7 @@ Write comments the way a senior engineer talks in a PR review: direct, specific,
 - Match certainty to label. If the issue is plain in the diff, state it directly. If it depends on context outside the diff (callers, runtime config, prior conventions), use `question:` and ask rather than assert. Express remaining uncertainty plainly: "Unless I'm missing something" or "If I'm reading this right".
 - Never restate what the code obviously does. The author wrote it; they know.
 - Open with what the code does or breaks, not how bad it is. The first sentence names the behavior; consequences and severity follow. "On self-hosted, this rename has a stale-cache problem after deploy" beats "This is the spot that produces a real upgrade-window risk." Avoid openers like "X is broad enough that…" or "X specifically does Y, but…" that pre-justify the finding instead of stating it.
+- Lead with the consequence, demote the mechanism. When a finding's logic chains two facts ("this stops writing rows to X" and "the picker still INNER JOINs X"), don't state both and trust the reader to infer why it matters. Open with the user-visible consequence ("after this lands, the per-event property picker stops listing `$feature/*` flags"), then give the reason in one clause that folds the mechanism in ("it only shows properties that have a row in `posthog_eventproperty`, and you've stopped writing those rows"). Never present a fact as if its significance is self-evident. Cut function-name detail the author doesn't need to decide (`with_event_property_filter`, `should_join_event_property`); keep only the specifics that make the finding actionable (the issue number, the flag that gates it).
 - Describe failures as scenarios: what breaks, what a false pass looks like, what a developer would observe. Skip testing-theory and formal-methods jargon ("weak positive assertion", "tautology", "invariant violation"); those force the author to decode a category before understanding the problem.
 - Write short sentences with one idea each. Use everyday words: "doesn't catch" over "fails to handle", "stays at 22" over "remains at its prior value", "runs once" over "is invoked a single time". When the issue is genuinely complicated, add another sentence; don't stuff more clauses into the existing one.
 - One finding per comment. Stop when the point lands. Skip "by the way" additions unless they're load-bearing.
@@ -458,6 +459,21 @@ Bad:
 `blocking`: This is the spot that produces a real upgrade-window risk on self-hosted. `License.update_available_product_features()` only re-syncs on org create, license save, or the hourly Celery beat at `:30`. On a code-only deploy, an existing Enterprise org's `available_product_features` still holds the old key until the next tick, ~up to 60 minutes.
 ```
 (Same finding. The bad version buries the actual problem behind a verdict ("real upgrade-window risk"). The author has to clear the framing before reaching what the code is doing.)
+
+Good:
+```
+`question`: After this lands, the per-event property picker stops listing `$feature/*` flags. Scope to an event like `$pageview`, open its property list, and they're gone, because that picker only shows properties that have a row in `posthog_eventproperty` (it INNER JOINs the table) and you've stopped writing those rows.
+
+#61259 handles this, but only for queries that explicitly ask for feature flags (`is_feature_flag=true`). A plain "properties on `$pageview`" query doesn't set that flag, so it still INNER JOINs and still drops `$feature/*`, even after #61259 lands.
+
+The safety note says #61259 covers the one read path that breaks. This general picker looks like a second one. Is dropping `$feature/*` from it intended?
+```
+
+Bad:
+```
+`question`: This drops `$feature/*` from `posthog_eventproperty`, and the general event-scoped property picker still INNER JOINs that table. In `property_definition_api.py`, `with_event_property_filter` sets the join to INNER JOIN whenever `filter_by_event_names` is true, and `with_feature_flags` only sets `should_join_event_property=False` on the `is_feature_flag=true` path. A plain "properties seen on `$pageview`" query keeps the INNER JOIN, so `$feature/*` properties stop showing up once these rows are gone.
+```
+(Same finding. The bad version opens with two bare facts and trusts the reader to infer the harm, then buries it under function-name detail. The good version leads with what a user sees break, folds the INNER JOIN into the reason, and keeps only the issue number and gating flag.)
 
 **Handling Existing PR Comments:**
 
