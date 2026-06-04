@@ -796,6 +796,39 @@ The Voice Pass step runs in all review modes (quick and comprehensive) when find
 
 Use the same `debug-artifact-writer.sh` bridge pattern as the `11b-copilot-meta-review` stage.
 
+### Link File References in Comment Bodies
+
+**PR reviews only.** Run this only when `mode` is `pr` and `owner`, `repo`, and `pr.head_sha` are all present in session data. Local, branch, commit, range, and area reviews have no GitHub blob URL to build, so skip this step and leave references as plain `path:line` text.
+
+Run it as the final body-formatting step, after the Voice Pass. The voice agent preserves `path:line` tokens exactly and its preservation check expects them in plain form, so linkify only once that check has run. Apply the rewrite in place to each surviving finding's `description` (and to any unmapped-comment text). The same linkified bodies feed both the review file's Suggested Comments and the `--draft` comments, so doing it once here covers both.
+
+When a comment body cites a file and line **other than the comment's own anchor location**, render the citation as a GitHub permalink. GitHub renders markdown in review comment bodies and in the review summary, so a permalink lets the reader jump straight to the cited line.
+
+Build the URL from session data:
+
+```
+https://github.com/<owner>/<repo>/blob/<pr.head_sha>/<repo_root_path>#L<line>
+```
+
+- For a line range, use `#L<start>-L<end>`.
+- `<repo_root_path>` is the path from the repository root, exactly as it appears in the diff. Never a relative or truncated path.
+- `<pr.head_sha>` is the full commit SHA the review ran against. Pinning to it keeps the anchor on the right line after later pushes.
+
+Prefer a descriptive anchor over a bare path. Turn:
+
+> … this cache is defined as `HyperCache(namespace="team_metadata")` (team_llm_gateway_policy_cache.py:91), so the gauges emit `namespace="team_metadata"`.
+
+into:
+
+> … this cache is defined as [`HyperCache(namespace="team_metadata")`](https://github.com/PostHog/posthog/blob/abc123def/products/llm_analytics/backend/team_llm_gateway_policy_cache.py#L91), so the gauges emit `namespace="team_metadata"`.
+
+When no natural phrase fits, link the citation text itself: `[team_llm_gateway_policy_cache.py:91](<url>)`.
+
+Do not link:
+- The comment's own anchor line. The comment already sits there, so a self-link is noise.
+- Backtick-quoted identifiers, type names, or values that don't point at a location (`OverflowError`, `distinct_id`).
+- Paths outside the repository (third-party packages, stdlib).
+
 ### Apply Fixes (--fix flag)
 
 If the session JSON has `fix: true`, apply fixes for the surviving findings before composing the review document. Skip this step entirely when `fix` is absent or false.
@@ -1056,6 +1089,8 @@ When combining agent findings into the review document, add a "Suggested Comment
 
 1. **Extract findings with locations**: From each agent's output, identify findings that have a specific file path and line number.
 
+   Comment bodies already have their in-prose file:line citations rendered as GitHub permalinks (see "Link File References in Comment Bodies" above). Keep those links intact when writing the bodies into the review file.
+
 2. **Check against existing comments**: For each finding, check if there are existing inline comments (from `$inline_comments`) that:
    - Are on the same file
    - Are within 5 lines of the finding
@@ -1161,6 +1196,8 @@ If any condition fails, skip draft review creation.
 **If conditions are met:**
 
 1. **Extract suggested comments from the review**: Parse the "Suggested Comments" section to get file path, line number, and comment body. Extract ONLY the text inside the ` ```text ``` ` code block. Do NOT include the `*From: <Agent Name> (<confidence>% confidence)*` line. Confidence percentages are internal metadata and must never appear in GitHub comments.
+
+   Keep any GitHub permalinks in the comment body intact (see "Link File References in Comment Bodies" above). They render as clickable links in the posted comment. The same applies to the `summary` field and `unmapped_comments` descriptions.
 
    Look for this pattern in the review file:
    ```
