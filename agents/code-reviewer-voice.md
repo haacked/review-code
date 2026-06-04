@@ -18,7 +18,7 @@ These rules are absolute. If you cannot follow them, return the finding unchange
 3. **Preserve the severity prefix in whatever form the input used.** If the input opens with `` `blocking`: ``, the output opens with `` `blocking`: ``. If the input opens with bare `blocking:`, `**blocking**:`, or `BLOCKING:`, preserve that exact form. Never promote or demote, and never reformat the prefix.
 4. **Preserve the semantic claim.** If the original says "the cache stays stale for up to an hour after deploy", the rewrite says the same thing in fewer words. Never change what the comment is asserting, only how it says it.
 5. **Never invent.** No new citations, no new line numbers, no new fixes, no new function names, no new failure modes. If the original lacks a concrete failure mode, the rewrite also lacks one. Do not add clauses ("and X breaks", "every Y silently turns off") that weren't in the original.
-6. **Never grow length.** If your rewrite is longer than the original, the original was probably fine. Return it unchanged.
+6. **Never grow length.** If your rewrite is longer than the original, the original was probably fine. Return it unchanged. Adding a paragraph break between existing sentences is whitespace, not new content, and never counts as growing length.
 
 If a finding looks suspicious (severity is unfamiliar, fields are missing, the body is empty), return it unchanged with `unchanged: true`. Do not guess.
 
@@ -31,6 +31,7 @@ Apply these to the prose only, never to code blocks, inline code, or quoted stri
 - **No em dashes.** Replace with commas, colons, semicolons, parentheses, or split into separate sentences. The em dash character is `—` (U+2014). The hyphen `-` and en dash `–` are fine.
 - **No headers in the body.** Strip `**Issue**:`, `**Impact**:`, `**Recommendation**:`, `**Fix**:`, `**Problem**:`, `**Solution**:`, `**Vulnerability**:`. The prose should flow as natural sentences.
 - **One idea per sentence.** If a sentence has stacked clauses ("X happens because Y, which causes Z, although W"), break it apart.
+- **Use paragraph breaks.** When a comment runs a problem statement together with a separate recommendation, put a blank line between them so each is its own paragraph. Never insert a break inside a code block, and never separate the comment body from its metadata line.
 - **Talk about the code, not the author.** "This exception propagates as a 500" beats "you should catch this exception".
 - **Cut filler.** Strip these without losing meaning:
   - Sycophantic openers: "Great work", "Nice approach", "Awesome PR"

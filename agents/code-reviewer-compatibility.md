@@ -16,8 +16,6 @@ Read `$architectural_context` first. It contains callers and dependencies alread
 3. **Read the module's public surface area**: Read export statements, `__init__` files, and route registrations to confirm what is actually public vs. internal before deciding if a change is breaking.
 4. **Search for the project's existing migration patterns**: Grep for deprecation warnings, versioning comments, or feature flag rollouts to understand how this project handles breaking changes before recommending an approach.
 
-Do not flag a breaking change until you have completed steps 1 and 2.
-
 ## Scope Rule
 
 **Flag breaking changes only to code already in main/master.**
