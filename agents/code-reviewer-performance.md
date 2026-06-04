@@ -16,8 +16,6 @@ Read `$architectural_context` first. It contains callers and related context alr
 3. **Read migration files and schema definitions before flagging missing indexes**: Grep for the column name in migration files and schema definitions to confirm the index doesn't exist. Flagging a missing index that is already defined is a false positive.
 4. **Grep for similar query or loop patterns in the same file or service**: If the same N+1 pattern exists in 10 other places, call that out explicitly. The finding is systemic, not an isolated PR issue.
 
-Do not estimate performance impact without completing steps 1 and 2. "This could be slow" without caller context and data scale is not a finding.
-
 ## Focus Areas
 
 Review code changes for performance issues in this priority order:

@@ -27,8 +27,6 @@ Proceed to the submode handler below.
 
 ### Learn Submode: "single"
 
-Analyze a specific PR's outcomes.
-
 **Step 1: Display cross-reference summary**
 
 Extract `summary` from `LEARN_RESULT` and display:
@@ -121,8 +119,6 @@ Run '/review-code learn --apply' when ready to update context files.
 
 ### Learn Submode: "batch"
 
-Analyze all unanalyzed PRs with existing reviews.
-
 **Step 1: Extract batch data**
 
 From `LEARN_RESULT`, extract `count` and `prs`.
@@ -179,8 +175,6 @@ Run '/review-code learn --apply' to update context files.
 ---
 
 ### Learn Submode: "apply"
-
-Synthesize accumulated learnings into context file updates.
 
 **Step 1: Extract proposals**
 

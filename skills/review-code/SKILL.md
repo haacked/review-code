@@ -22,22 +22,22 @@ Run specialized code review agent(s) with comprehensive context on local changes
   - `learn <pr-number>` - Analyze outcomes of a specific PR (e.g., `learn 123`)
   - `learn` - Batch analyze all unanalyzed PRs with existing reviews
   - `learn --apply` - Apply accumulated learnings to context files
-- `<pr-url>` - Review Pull Request by URL - works from anywhere (e.g., `https://github.com/org/repo/pull/123`)
-  - Uses `gh` CLI to fetch PR context from GitHub
-  - No git repository required - review any PR without cloning
-  - Automatically uses local git for speed when on PR's branch
+- `<pr-url>` - Review a PR by URL from anywhere, no local clone needed (e.g., `https://github.com/org/repo/pull/123`). Uses local git automatically when on the PR's branch.
 - `<commit>` - Review that specific commit's changes (e.g., `356ded2`)
 - `<branch>` - Review all changes in branch vs base (e.g., `feature-branch`)
 - `<range>` - Review specific git range (e.g., `abc123..HEAD`, `v1.0.0..v2.0.0`)
-- `security` - Deep security vulnerability analysis only (local changes)
-- `performance` - Performance bottlenecks and optimization only (local changes)
-- `correctness` - Functional correctness, intent verification, and integration boundaries only (local changes)
-- `maintainability` - Code clarity, simplicity, and maintainability only (local changes)
-- `testing` - Test coverage, quality, and patterns only (local changes)
-- `compatibility` - Backwards compatibility with shipped code only (local changes)
-- `architecture` - High-level design, patterns, and necessity only (local changes)
-- `infra-config` - Infrastructure config review: Helm, Terraform, K8s, ArgoCD, CI/CD (local changes)
 - (no argument) - Run the 7 core agents in parallel on local changes; also runs `infra-config` and `frontend` when the diff contains those file types (default)
+
+Single-agent arguments, each on local changes only:
+
+- `security` - Deep security vulnerability analysis
+- `performance` - Performance bottlenecks and optimization
+- `correctness` - Functional correctness, intent verification, and integration boundaries
+- `maintainability` - Code clarity, simplicity, and maintainability
+- `testing` - Test coverage, quality, and patterns
+- `compatibility` - Backwards compatibility with shipped code
+- `architecture` - High-level design, patterns, and necessity
+- `infra-config` - Infrastructure config review: Helm, Terraform, K8s, ArgoCD, CI/CD
 
 **Optional Flags:**
 

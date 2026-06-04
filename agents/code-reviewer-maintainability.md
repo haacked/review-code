@@ -24,8 +24,6 @@ Read `$architectural_context` first. It contains similar patterns and dependenci
 3. **Find 2-3 similar functions in the codebase to compare**: For any new function you consider flagging, search for functions with similar structure in the same module or service. If the pattern is widespread, the finding is a systemic observation, not a local violation.
 4. **Read the full files being changed, not just the diff hunks**: Read entire files to determine whether complexity is localized to the new code or reflects the broader module's existing style.
 
-Do not flag a naming or pattern violation without first confirming the deviation against actual code in the project.
-
 ## Focus Areas
 
 Review code changes for these maintainability concerns in priority order.
@@ -94,8 +92,6 @@ Review code changes for these maintainability concerns in priority order.
 - Excessive indirection layers (wrapper around wrapper)
 - Manual reimplementation of built-in or library functionality
 
-When flagging over-engineering, show a concrete refactored version: before (current code, brief) and after (simpler version with actual code). Don't just say "this is too complex"; show what the simpler version looks like.
-
 **SOLID Violations:**
 
 - Single Responsibility: Classes/functions doing multiple unrelated things
@@ -123,8 +119,6 @@ When flagging over-engineering, show a concrete refactored version: before (curr
 - Error handling patterns duplicated instead of abstracted
 - New functions nearly identical to existing ones (same structure, different string literals or one extra parameter); these should be consolidated
 
-When reviewing new functions, actively compare them to existing functions in the same file. Look for identical structure with different string literals, the same try/except pattern with different variable names, or functions that could be parameterized instead of duplicated.
-
 **When Duplication is Acceptable:**
 
 - Different domains that happen to look similar now
@@ -149,14 +143,6 @@ When reviewing new functions, actively compare them to existing functions in the
 - Comments explaining HOW instead of WHY
 - TODO comments without issue numbers or context
 - Commented-out code without explanation
-
-**Good Documentation:**
-
-- Comments explaining WHY decisions were made
-- Warnings about non-obvious pitfalls or edge cases
-- Links to relevant issues, RFCs, or documentation
-- Examples for complex APIs
-- Rationale for choosing one approach over alternatives
 
 ### 6. Error Handling & Robustness (Important)
 

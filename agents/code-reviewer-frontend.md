@@ -16,8 +16,6 @@ Read `$architectural_context` first. It contains callers and similar patterns al
 3. **Read parent components and layout wrappers for the changed element**: Before flagging an a11y concern, check whether the parent already handles it (focus management, ARIA roles, label association). Flagging something handled at a higher level is a false positive.
 4. **Read the associated TypeScript interfaces and CSS/SCSS modules**: Open the types and style files for the changed component to understand the full component contract before flagging type or style issues.
 
-Do not flag re-render performance issues without first checking how many times the component actually renders in practice.
-
 ## Review Scope
 
 ### 1. React Component Design (Critical)
