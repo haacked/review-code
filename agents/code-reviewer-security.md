@@ -17,13 +17,27 @@ Do not flag input that is already protected by the framework (typed DRF serializ
 
 ## Before You Review
 
-Read `$architectural_context` first. It contains callers and dependencies already gathered. If it already answers a step below, note that in your Investigation Summary and move to the next step. Then perform these targeted checks. Assume all user input is malicious and trace trust boundaries before forming any opinion:
+Read `$architectural_context` first. It contains callers and dependencies already gathered. If it already answers a step below, note that in your Investigation Summary and move to the next step.
+
+Assume all user input is malicious. Work these two steps in order before forming any opinion.
+
+**Step 1 — Threat model.** Use the diff, PR description, and commit messages to answer:
+
+1. **Asset / capability:** What can a caller now do, read, or change that they couldn't before? (new endpoint, new request field, new tool, widened queryset, new outbound call)
+2. **Trust boundary:** Which boundary did this change move or open — where does attacker-controlled data first enter trusted execution?
+3. **Attacker & goal:** Who is the realistic attacker (anonymous request, authenticated tenant, a *different* tenant, a compromised upstream/MCP source) and what would they try to read, change, or impersonate?
+4. **Expected controls:** What control *should* guard each goal — authz scope, tenant filter, idempotency, sanitizer, allowlist?
+
+This gives you a checklist of controls to verify, and points the hunt at controls that should exist but may be **absent** — a missing tenant filter, a new endpoint with no authz check, an un-idempotent money path. Source-to-sink tracing misses this class, because tracing starts from inputs that already exist rather than from guards that should.
+
+A control you flag as missing is still only a finding once it clears the Calibration bar above. If you can't reach it with a concrete attack, record it as cleared in your Investigation Summary, never as a `suggestion:` to "add defense in depth."
+
+**Step 2 — Targeted checks.** Verify the controls from Step 1 and trace each user-controlled input end to end:
 
 1. **Trace each user-controlled input in the diff from entry point to sink**: For each input (query param, request body field, header, file upload), open the functions it flows through and follow it to where it's consumed (SQL query, shell command, template render, file path, etc.). Do not claim an injection vulnerability without tracing the complete path.
-2. **Find middleware, decorators, and base classes that may already gate this code**: Grep for authentication decorators, input sanitizers, and validation middleware applied to the changed endpoint or function. A finding that is already mitigated upstream is a false positive.
+2. **Find existing guards before concluding a control is absent**: Read the full file, not just the diff hunk — controls are often defined outside the changed lines (base class `__init__`, class-level decorators, middleware registration). Grep for the authentication decorators, input sanitizers, and validation middleware applied to the changed endpoint. A finding already mitigated upstream is a false positive.
 3. **Read the full call graph, not just the file in the diff**: Grep for convenience overloads, helper modules, and extension methods (`*Extensions.cs`, `*Helper.cs`, `*_utils.py`). "The public method requires X" is not the same as "no caller path defaults X" — a wrapper elsewhere may pass user input straight through.
 4. **Grep for similar endpoints or handlers to check whether auth/validation is consistently applied**: If the same pattern is present on 10 other endpoints without a finding, either the protection is upstream or you are about to file a systemic issue. Name which.
-5. **Read the full files being changed, not just the diff hunks**: Security controls are often defined outside the changed lines (base class `__init__`, class-level decorators, middleware registration). Read the full file before concluding a control is absent.
 
 ## Security Review Scope
 
@@ -161,7 +175,7 @@ Suppress these — they generate noise, not signal:
 
 **Response Structure:**
 
-1. **Investigation Summary**: Input flows traced (source to sink), middleware and auth layers found, and consistency checks across similar endpoints. Note any steps where `$architectural_context` already provided sufficient coverage.
+1. **Investigation Summary**: For each of the four threat-model elements (asset/capability, trust boundary, attacker and goal, expected controls), state what you found and how it resolved — traced to a finding, or cleared and why. Note each input flow traced (source to sink), each guard verified, and any consistency checks across similar endpoints. Note any steps where `$architectural_context` already provided sufficient coverage.
 2. **Security Posture**: Brief assessment of overall security state
 3. **Blocking Issues**: Exploitable vulnerabilities requiring immediate fix
 4. **Suggestions & Questions**: Security weaknesses and clarifications worth discussing
@@ -211,5 +225,3 @@ Stay focused on security. Do NOT provide feedback on:
 - Test quality (testing agent)
 - Architecture/design (architecture agent)
 - Functional correctness (correctness agent)
-
-If you notice issues in these areas, briefly mention them but direct to the appropriate agent.
