@@ -425,6 +425,7 @@ Write comments the way a senior engineer talks in a PR review: direct, specific,
 - Anchor the finding in what the code does today, not a hypothetical future edit. If a gap only bites "once someone later changes X to Y", you're justifying it with a chain of hypotheticals, which is hard to follow and easy to wave off. Name what the present code already does: the documented branch that has no test, the input that already reaches the bug. "This branch has no coverage, and here's the case that exercises it" beats "if someone later swaps the guard for a plain comparison, the cache would silently flip." A regression that needs a future refactor to appear is low-probability; don't build the comment around it.
 - Don't coin compressed labels for concepts. Hyphenated noun-phrases like "migrated-forward home", "missing-timestamp side", or "pre-stamp write" pack an idea into a term the author has to unpack before the sentence makes sense. Spend the extra few words and say it plainly: "the case where one side has no timestamp", "an older SDK that wrote before this field existed". Quoting identifiers and terms already in the code is fine; the rule is against inventing new jargon.
 - Write short sentences with one idea each. Use everyday words: "doesn't catch" over "fails to handle", "stays at 22" over "remains at its prior value", "runs once" over "is invoked a single time". When the issue is genuinely complicated, add another sentence; don't stuff more clauses into the existing one.
+- Break the comment into paragraphs at natural seams. When it runs more than two or three sentences, put a blank line between the problem (what breaks and why) and the recommendation (what to do about it). Two short paragraphs scan better than one dense block.
 - One finding per comment. Stop when the point lands. Skip "by the way" additions unless they're load-bearing.
 - Never use em dashes. Use commas, parentheses, colons, semicolons, or separate sentences instead.
 - Skip filler:
@@ -487,6 +488,19 @@ Bad:
 `suggestion`: This it.each only feeds numeric timestamps, so the isNumber(groupLoadedAt) && isNumber(mainLoadedAt) guards in _groupEntryIsStale never run against a missing-timestamp side. Those guards are what keep the group entry winning as the migrated-forward home when one side has no $feature_flag_evaluated_at (an older-SDK or pre-stamp write). If someone later drops them for a plain mainTs > groupTs, a group entry with no timestamp would start losing to an undefined main timestamp and the cached flags would silently flip, with no test to catch it. Add a case where one side omits $feature_flag_evaluated_at and assert the group still wins.
 ```
 (Same finding. The bad version opens mid-mechanism ("this it.each only feeds numeric timestamps…"), so the author reads three clauses before learning anything is untested. It then justifies the gap through a future refactor that hasn't happened ("if someone later drops them…") and coins jargon the author has to decode ("migrated-forward home", "missing-timestamp side"). The good version leads with the problem (a documented case has no test), then gives just enough mechanism to see why that case never runs, and ends with the ask. It drops the speculative chain: documented-but-untested is reason enough.)
+
+Good:
+```
+`suggestion`: Calling this with `id_column` set to anything but `distinct_id` fails at query time. The inner subquery only selects a `distinct_id` column, so `SELECT {id_column} FROM (...)` points at a column that doesn't exist. Nothing breaks today since both callers use the default, but the parameter still looks adjustable when it isn't. `custom_match_field` has the opposite problem: it's ignored completely, so passing it does nothing.
+
+Worth dropping `custom_match_field`, and either dropping `id_column` or noting it has to stay `distinct_id` (`breakdown_props` depends on the `SELECT distinct_id` prefix for its `.replace(...)`).
+```
+
+Bad:
+```
+`suggestion`: Calling this with `id_column` set to anything but `distinct_id` fails at query time. The inner subquery only selects a `distinct_id` column, so `SELECT {id_column} FROM (...)` points at a column that doesn't exist. Nothing breaks today since both callers use the default, but the parameter still looks adjustable when it isn't. `custom_match_field` has the opposite problem: it's ignored completely, so passing it does nothing. Worth dropping `custom_match_field`, and either dropping `id_column` or noting it has to stay `distinct_id` (`breakdown_props` depends on the `SELECT distinct_id` prefix for its `.replace(...)`).
+```
+(Same words. The good version puts a blank line between the problem and the recommended cleanup, so each is a glanceable paragraph. The bad version runs them into one block the author has to read top to bottom to find the ask.)
 
 **Handling Existing PR Comments:**
 
