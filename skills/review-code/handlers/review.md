@@ -412,45 +412,36 @@ If you exhausted the steps above and still cannot verify a specific fact (the fi
 
 Write comments the way a senior engineer talks in a PR review: direct, specific, and conversational. No headers, no formality, no filler.
 
-- No `**Issue**:` / `**Impact**:` / `**Recommendation**:` headers. Start with the prefix, then flow into natural prose.
-- Be specific: name the function, quote the value, cite the line.
+- No `**Issue**:` / `**Impact**:` / `**Recommendation**:` headers. Start with the prefix, then flow into natural prose. Name the function, quote the value, cite the line.
 - For `blocking:` and `suggestion:` findings, always include a concrete code fix (see Accuracy Requirements above). For `question:` and `nit:`, offer code when it helps. Use GitHub's `suggestion` syntax for single-line fixes.
-- Defer on judgment calls. Use "your call", "worth considering", or "that said" to signal the author should decide.
-- Write about the code, not the author. "This exception propagates as a 500" beats "you should catch this exception." Avoid "you should…": the issue lives in the code, not the person.
-- Match certainty to label. If the issue is plain in the diff, state it directly. If it depends on context outside the diff (callers, runtime config, prior conventions), use `question:` and ask rather than assert. Express remaining uncertainty plainly: "Unless I'm missing something" or "If I'm reading this right".
-- Never restate what the code obviously does. The author wrote it; they know.
-- Lead with the problem, then the mechanism. The first sentence says what's wrong or at risk, in plain English. The sentences after it give just enough mechanism to show why. Comments get this backwards two ways: opening with a severity verdict ("this is a real upgrade-window risk") or opening mid-mechanism ("this `it.each` only feeds numeric timestamps, so the `isNumber` guards never run"). Both make the author dig through detail before they reach the actual issue. "On self-hosted, this rename leaves the cache stale for up to an hour after deploy" names the problem first; the mechanism (which sync paths exist) follows. The author should know what's at stake by the end of the first sentence. Avoid openers like "X is broad enough that…" or "X specifically does Y, but…" that pre-justify the finding instead of stating it.
-- Lead with the consequence, demote the mechanism. When a finding's logic chains two facts ("this stops writing rows to X" and "the picker still INNER JOINs X"), don't state both and trust the reader to infer why it matters. Open with the user-visible consequence ("after this lands, the per-event property picker stops listing `$feature/*` flags"), then give the reason in one clause that folds the mechanism in ("it only shows properties that have a row in `posthog_eventproperty`, and you've stopped writing those rows"). Never present a fact as if its significance is self-evident. Cut function-name detail the author doesn't need to decide (`with_event_property_filter`, `should_join_event_property`); keep only the specifics that make the finding actionable (the issue number, the flag that gates it).
-- Describe failures as scenarios: what breaks, what a false pass looks like, what a developer would observe. Skip testing-theory and formal-methods jargon ("weak positive assertion", "tautology", "invariant violation"); those force the author to decode a category before understanding the problem.
-- Anchor the finding in what the code does today, not a hypothetical future edit. If a gap only bites "once someone later changes X to Y", you're justifying it with a chain of hypotheticals, which is hard to follow and easy to wave off. Name what the present code already does: the documented branch that has no test, the input that already reaches the bug. "This branch has no coverage, and here's the case that exercises it" beats "if someone later swaps the guard for a plain comparison, the cache would silently flip." A regression that needs a future refactor to appear is low-probability; don't build the comment around it.
-- Don't coin compressed labels for concepts. Hyphenated noun-phrases like "migrated-forward home", "missing-timestamp side", or "pre-stamp write" pack an idea into a term the author has to unpack before the sentence makes sense. Spend the extra few words and say it plainly: "the case where one side has no timestamp", "an older SDK that wrote before this field existed". Quoting identifiers and terms already in the code is fine; the rule is against inventing new jargon.
-- Write short sentences with one idea each. Use everyday words: "doesn't catch" over "fails to handle", "stays at 22" over "remains at its prior value", "runs once" over "is invoked a single time". When the issue is genuinely complicated, add another sentence; don't stuff more clauses into the existing one.
-- Break the comment into paragraphs at natural seams. When it runs more than two or three sentences, put a blank line between the problem (what breaks and why) and the recommendation (what to do about it). Two short paragraphs scan better than one dense block.
-- One finding per comment. Stop when the point lands. Skip "by the way" additions unless they're load-bearing.
-- Never use em dashes. Use commas, parentheses, colons, semicolons, or separate sentences instead.
-- Skip filler:
-  - No sycophantic openers: "Great work", "Nice approach"
-  - No significance inflation: say what breaks instead of "this is critical"
-  - No generic hedging: "Just a thought, but…" (the prefix already signals priority)
-  - No closers: "Hope that helps!"
-  - No marketing patterns: "It's not just X, it's Y"
+- Write about the code, not the author. "This exception propagates as a 500" not "you should catch this exception."
+- Match certainty to label. State findings plain when they're clear in the diff; use `question:` when the answer depends on callers, runtime config, or prior conventions. Express uncertainty plainly: "Unless I'm missing something."
+- Defer on judgment calls: "your call", "worth considering", "that said."
+- Lead with the consequence. Sentence 1 names what breaks or what's at risk; the rest gives enough mechanism to show why. Two failure modes: opening with a verdict ("this is a real upgrade-window risk") or mid-mechanism ("this `it.each` only feeds numeric timestamps, so the guards never run"). Both make the author dig before reaching the point.
+- Anchor in what the code does today. "This branch has no coverage" beats "if someone later swaps the guard…."
+- One finding per comment. Length: `nit:` ≤ 2 sentences; others ≤ ~4 plus the fix. After drafting, cut anything the author already knows, any clause that restates the line above, any adjective doing no work.
 
-Good:
-```
-`suggestion`: The `except` clause doesn't catch `OverflowError`, which `dateutil.parser.parse()` raises for very large numeric strings like `"9999999999"`. This causes a 500 instead of a clean 400.
+Before posting, run the smell test:
 
-More broadly, consider using the existing `determine_parsed_date_for_property_matching` from `posthog/queries/base.py` instead of reimplementing the same two-step parsing here. It already catches broader exceptions and is the established pattern in the feature flag API.
-```
+1. Does sentence 1 name the consequence (not a verdict, not a mechanism)?
+2. Any phrase that *labels* instead of *names*? (see the table)
+3. Any "it"/"this"/"that" whose nearest preceding noun isn't what you mean?
+4. Anything the author already knows from having written the code? Cut it.
+5. Would you say this sentence to a colleague out loud?
 
-```
-`suggestion`: The count bump from 21 to 22 catches "a UI app was added" but not "*this* UI app was added." If someone later removes this app and adds a different one, the count stays at 22 and the test still passes. The `registeredNames` block a few lines below already spot-checks specific names, so worth adding `expect(registeredNames).toContain('PostHog Feature Flag Testing')` there.
-```
+Cut on sight (the label → say the thing instead):
 
-Bad:
-```
-`suggestion`: Given that `dateutil.parser.parse()` raises `OverflowError` for sufficiently large numeric inputs (e.g. `"9999999999"`) and the surrounding `except` clause does not currently include `OverflowError` in its handled exception tuple, the result is that requests carrying such inputs will surface as a 500 Internal Server Error rather than the cleaner 400 response the validation layer is intended to produce, which you may want to address by extending the exception tuple.
-```
-(Same finding as the first good example, but stuffed into one sentence with stacked clauses. Hard to scan.)
+| Don't write | Write |
+|---|---|
+| "the headline behavior", "the core path here", "the key thing" | name it: "counting events by the team's local day is the whole point here" |
+| "weak positive assertion", "tautology", "invariant violation" | the scenario: "the count stays 22 and the test still passes" |
+| coined hyphen-jargon: "migrated-forward home", "missing-timestamp side" | plain: "the case where one side has no timestamp" |
+| "fails to handle", "remains at its prior value", "is invoked a single time" | "doesn't catch", "stays at 22", "runs once" |
+| "this is critical", "real risk", "meaningful state change" | say what concretely breaks |
+| "It's not just X, it's Y", "Great work", "Just a thought, but…", "Hope that helps!" | cut it (the prefix already signals priority) |
+| em dash (—) | comma, colon, semicolon, parentheses, or two sentences |
+
+Two worked examples. First, lead with the consequence instead of a verdict:
 
 Good:
 ```
@@ -461,22 +452,9 @@ Bad:
 ```
 `blocking`: This is the spot that produces a real upgrade-window risk on self-hosted. `License.update_available_product_features()` only re-syncs on org create, license save, or the hourly Celery beat at `:30`. On a code-only deploy, an existing Enterprise org's `available_product_features` still holds the old key until the next tick, ~up to 60 minutes.
 ```
-(Same finding. The bad version buries the actual problem behind a verdict ("real upgrade-window risk"). The author has to clear the framing before reaching what the code is doing.)
+(The bad version opens with a verdict; the author has to clear the framing before reaching what the code is doing.)
 
-Good:
-```
-`question`: After this lands, the per-event property picker stops listing `$feature/*` flags. Scope to an event like `$pageview`, open its property list, and they're gone, because that picker only shows properties that have a row in `posthog_eventproperty` (it INNER JOINs the table) and you've stopped writing those rows.
-
-#61259 handles this, but only for queries that explicitly ask for feature flags (`is_feature_flag=true`). A plain "properties on `$pageview`" query doesn't set that flag, so it still INNER JOINs and still drops `$feature/*`, even after #61259 lands.
-
-The safety note says #61259 covers the one read path that breaks. This general picker looks like a second one. Is dropping `$feature/*` from it intended?
-```
-
-Bad:
-```
-`question`: This drops `$feature/*` from `posthog_eventproperty`, and the general event-scoped property picker still INNER JOINs that table. In `property_definition_api.py`, `with_event_property_filter` sets the join to INNER JOIN whenever `filter_by_event_names` is true, and `with_feature_flags` only sets `should_join_event_property=False` on the `is_feature_flag=true` path. A plain "properties seen on `$pageview`" query keeps the INNER JOIN, so `$feature/*` properties stop showing up once these rows are gone.
-```
-(Same finding. The bad version opens with two bare facts and trusts the reader to infer the harm, then buries it under function-name detail. The good version leads with what a user sees break, folds the INNER JOIN into the reason, and keeps only the issue number and gating flag.)
+Second, name the behavior instead of coining a label, and anchor in the present:
 
 Good:
 ```
@@ -487,20 +465,7 @@ Bad:
 ```
 `suggestion`: This it.each only feeds numeric timestamps, so the isNumber(groupLoadedAt) && isNumber(mainLoadedAt) guards in _groupEntryIsStale never run against a missing-timestamp side. Those guards are what keep the group entry winning as the migrated-forward home when one side has no $feature_flag_evaluated_at (an older-SDK or pre-stamp write). If someone later drops them for a plain mainTs > groupTs, a group entry with no timestamp would start losing to an undefined main timestamp and the cached flags would silently flip, with no test to catch it. Add a case where one side omits $feature_flag_evaluated_at and assert the group still wins.
 ```
-(Same finding. The bad version opens mid-mechanism ("this it.each only feeds numeric timestamps…"), so the author reads three clauses before learning anything is untested. It then justifies the gap through a future refactor that hasn't happened ("if someone later drops them…") and coins jargon the author has to decode ("migrated-forward home", "missing-timestamp side"). The good version leads with the problem (a documented case has no test), then gives just enough mechanism to see why that case never runs, and ends with the ask. It drops the speculative chain: documented-but-untested is reason enough.)
-
-Good:
-```
-`suggestion`: Calling this with `id_column` set to anything but `distinct_id` fails at query time. The inner subquery only selects a `distinct_id` column, so `SELECT {id_column} FROM (...)` points at a column that doesn't exist. Nothing breaks today since both callers use the default, but the parameter still looks adjustable when it isn't. `custom_match_field` has the opposite problem: it's ignored completely, so passing it does nothing.
-
-Worth dropping `custom_match_field`, and either dropping `id_column` or noting it has to stay `distinct_id` (`breakdown_props` depends on the `SELECT distinct_id` prefix for its `.replace(...)`).
-```
-
-Bad:
-```
-`suggestion`: Calling this with `id_column` set to anything but `distinct_id` fails at query time. The inner subquery only selects a `distinct_id` column, so `SELECT {id_column} FROM (...)` points at a column that doesn't exist. Nothing breaks today since both callers use the default, but the parameter still looks adjustable when it isn't. `custom_match_field` has the opposite problem: it's ignored completely, so passing it does nothing. Worth dropping `custom_match_field`, and either dropping `id_column` or noting it has to stay `distinct_id` (`breakdown_props` depends on the `SELECT distinct_id` prefix for its `.replace(...)`).
-```
-(Same words. The good version puts a blank line between the problem and the recommended cleanup, so each is a glanceable paragraph. The bad version runs them into one block the author has to read top to bottom to find the ask.)
+(The bad version opens mid-mechanism, coins jargon ("migrated-forward home", "missing-timestamp side"), and builds the case around a future refactor that hasn't happened. The good version leads with the gap, gives just enough mechanism to see why that case never runs, and ends with the ask.)
 
 **Handling Existing PR Comments:**
 
