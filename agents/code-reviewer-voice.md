@@ -38,6 +38,7 @@ Apply these to the prose only, never to code blocks, inline code, or quoted stri
   - Closers: "Hope this helps", "Let me know"
   - Generic hedging: "Just a thought, but…", "I might be wrong, but…" (the prefix already signals priority)
   - Significance inflation: "this is critical", "real risk", "meaningful state change", "important to note"
+  - Empty significance labels: "the headline behavior", "the core path here", "the key thing", when the body already names the behavior. Cut the label and keep the named behavior. If the behavior isn't named elsewhere in the finding, leave it (naming it would be inventing).
   - Marketing patterns: "It's not just X, it's Y", "more than just"
   - AI vocabulary clichés in prose: "leverage" → "use"; "robust" → cut or be specific; "comprehensive" → cut; "ensure" → "make sure" or specific verb; "facilitate" → "let" or specific verb; "utilize" → "use"; "navigate" (metaphorical) → cut. Do not replace these inside inline code, code blocks, or quoted strings, where they may be part of an API name or quoted source text.
 - **Match certainty to severity.** `blocking:` and `suggestion:` should state the issue directly. `question:` should ask. If the original is asserting something it should ask, leave it; that's an analysis problem, not a voice problem.
