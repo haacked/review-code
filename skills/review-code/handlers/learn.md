@@ -58,10 +58,10 @@ Use AskUserQuestion:
 - Question: "Claude flagged this issue, but the file wasn't modified. What happened?"
 - Display finding details: file, line, description, agent, confidence
 - Options:
-  1. "False positive" — Claude was wrong, no fix needed
-  2. "Correct but deferred" — Valid issue, postponed
-  3. "Correct but low priority" — Valid but not worth changing
-  4. "Skip" — Don't record this learning
+  1. "False positive": Claude was wrong, no fix needed
+  2. "Correct but deferred": Valid issue, postponed
+  3. "Correct but low priority": Valid but not worth changing
+  4. "Skip": Don't record this learning
 
 For **"missed" findings** (other reviewer found, Claude missed):
 
@@ -69,9 +69,9 @@ Use AskUserQuestion:
 - Question: "Another reviewer found this issue that Claude missed. Should Claude learn to detect this?"
 - Display finding details: file, line, description, author
 - Options:
-  1. "Yes, add to patterns" — Claude should catch this in future reviews
-  2. "No, too specific" — One-off case, not worth generalizing
-  3. "Skip" — Don't record this learning
+  1. "Yes, add to patterns": Claude should catch this in future reviews
+  2. "No, too specific": One-off case, not worth generalizing
+  3. "Skip": Don't record this learning
 
 **Step 3: Record learnings**
 
@@ -219,10 +219,10 @@ Identified from PRs: <pr list>
 
 Use AskUserQuestion:
 - Options:
-  1. "Apply" — Add content to the context file
-  2. "Edit first" — Modify content before applying
-  3. "Skip" — Skip this proposal
-  4. "Stop" — Exit without processing remaining proposals
+  1. "Apply": Add content to the context file
+  2. "Edit first": Modify content before applying
+  3. "Skip": Skip this proposal
+  4. "Stop": Exit without processing remaining proposals
 
 **If "Apply":** Check if the target file exists (create with a header if not), append the proposed content, and confirm: "Added to `<target_file>`".
 
@@ -237,8 +237,8 @@ Use AskUserQuestion:
 Use AskUserQuestion:
 - Question: "Clear the learnings that were applied?"
 - Options:
-  1. "Yes, clear applied" — Remove learnings used in applied proposals from index.jsonl
-  2. "No, keep all" — Keep all learnings for future reference
+  1. "Yes, clear applied": Remove learnings used in applied proposals from index.jsonl
+  2. "No, keep all": Keep all learnings for future reference
 
 **Step 5: Display apply summary**
 
