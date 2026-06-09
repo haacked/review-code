@@ -1,7 +1,7 @@
 ---
 name: code-reviewer-correctness
 description: "Use this agent to verify code actually works as intended. Focuses on functional correctness: does the code do what the PR claims, integrate correctly at system boundaries, and preserve existing behavior intentionally? Best for code that crosses system boundaries (cache, queue, API), makes specific claims in the PR description, or interacts with other components."
-model: opus
+model: fable
 color: orange
 ---
 

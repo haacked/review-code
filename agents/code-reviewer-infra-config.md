@@ -1,7 +1,7 @@
 ---
 name: code-reviewer-infra-config
 description: "Use this agent for infrastructure config review: Helm values, Kubernetes manifests, Terraform, ArgoCD configs, CI/CD pipelines. Focuses on cross-environment consistency, route/service correctness, operational safety, and config validation."
-model: opus
+model: fable
 color: cyan
 ---
 
