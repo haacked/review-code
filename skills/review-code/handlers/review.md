@@ -420,6 +420,7 @@ Write comments the way a senior engineer talks in a PR review: direct, specific,
 - Lead with the consequence. Sentence 1 names what breaks or what's at risk; the rest gives enough mechanism to show why. Two failure modes: opening with a verdict ("this is a real upgrade-window risk") or mid-mechanism ("this `it.each` only feeds numeric timestamps, so the guards never run"). Both make the author dig before reaching the point.
 - Anchor in what the code does today. "This branch has no coverage" beats "if someone later swaps the guard…."
 - One finding per comment. Length: `nit:` ≤ 2 sentences; others ≤ ~4 plus the fix. After drafting, cut anything the author already knows, any clause that restates the line above, any adjective doing no work.
+- Break at the seam. When a comment runs past two or three sentences, put a blank line between the problem (what breaks and why) and the recommendation (what to do). Two short paragraphs scan faster than one dense block. Never break inside a code block or between the body and its metadata line.
 
 Before posting, run the smell test:
 
@@ -428,6 +429,7 @@ Before posting, run the smell test:
 3. Any "it"/"this"/"that" whose nearest preceding noun isn't what you mean?
 4. Anything the author already knows from having written the code? Cut it.
 5. Would you say this sentence to a colleague out loud?
+6. More than two or three sentences with no blank line? Split the problem from the fix.
 
 Cut on sight (the label → say the thing instead):
 
@@ -458,14 +460,16 @@ Second, name the behavior instead of coining a label, and anchor in the present:
 
 Good:
 ```
-`suggestion`: Nothing tests what happens when one side has no `$feature_flag_evaluated_at`. That's the documented case where the group entry should win (a migration leftover, or an older SDK that wrote before this field existed), but all three `it.each` cases pass a numeric timestamp on both sides, so the `isNumber()` guards in `_groupEntryIsStale` always pass and that branch never runs. Add a case where one side omits the timestamp and assert the group still wins.
+`suggestion`: Nothing tests what happens when one side has no `$feature_flag_evaluated_at`. That's the documented case where the group entry should win (a migration leftover, or an older SDK that wrote before this field existed), but all three `it.each` cases pass a numeric timestamp on both sides, so the `isNumber()` guards in `_groupEntryIsStale` always pass and that branch never runs.
+
+Add a case where one side omits the timestamp and assert the group still wins.
 ```
 
 Bad:
 ```
 `suggestion`: This it.each only feeds numeric timestamps, so the isNumber(groupLoadedAt) && isNumber(mainLoadedAt) guards in _groupEntryIsStale never run against a missing-timestamp side. Those guards are what keep the group entry winning as the migrated-forward home when one side has no $feature_flag_evaluated_at (an older-SDK or pre-stamp write). If someone later drops them for a plain mainTs > groupTs, a group entry with no timestamp would start losing to an undefined main timestamp and the cached flags would silently flip, with no test to catch it. Add a case where one side omits $feature_flag_evaluated_at and assert the group still wins.
 ```
-(The bad version opens mid-mechanism, coins jargon ("migrated-forward home", "missing-timestamp side"), and builds the case around a future refactor that hasn't happened. The good version leads with the gap, gives just enough mechanism to see why that case never runs, and ends with the ask.)
+(The bad version opens mid-mechanism, coins jargon ("migrated-forward home", "missing-timestamp side"), and builds the case around a future refactor that hasn't happened. The good version leads with the gap, gives just enough mechanism to see why that case never runs, and puts a blank line before the ask so the recommendation stands on its own.)
 
 **Handling Existing PR Comments:**
 
