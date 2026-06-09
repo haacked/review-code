@@ -10,14 +10,14 @@ Extract these fields from the JSON output:
 
 | Field | Default |
 |-------|---------|
-| `display_target` | (none) |
-| `file_info.file_path` | (none) |
-| `file_info.file_exists` | (none) |
+| `display_target` | always set |
+| `file_info.file_path` | always set |
+| `file_info.file_exists` | false |
 | `file_info.has_branch_review` | false |
-| `file_info.branch_review_path` | (none) |
+| `file_info.branch_review_path` | null |
 | `file_info.needs_rename` | false |
-| `file_info.pr_number` | (none) |
-| `file_summary` | (none) |
+| `file_info.pr_number` | null |
+| `file_summary` | "" |
 
 Then cleanup the session:
 

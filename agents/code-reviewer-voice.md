@@ -49,7 +49,7 @@ If the original buries the concrete failure under jargon ("this introduces a beh
 
 ## Final Scan Before Returning
 
-Before you emit the response, scan each body you marked `unchanged: true` for the hard tells: an em dash in prose, a `**Label**:` header, or the AI-vocabulary words above. A body containing any of them is never "already clean". Fix that sentence (restructure it; don't just swap the em dash for a comma) and set `unchanged: false`. The only valid reasons for `unchanged: true` are a body with none of these tells, a suspicious format, or a rewrite that would grow the body.
+Before you emit the response, scan each body you marked `unchanged: true` for the hard tells, applying the same prose-only scope as the Voice Rules (never flag anything inside code blocks, inline code, or quoted strings): an em dash in prose, one of the pseudo-label headers from the strip rule (`**Issue**:`, `**Impact**:`, `**Recommendation**:`, `**Fix**:`, `**Problem**:`, `**Solution**:`, `**Vulnerability**:`), or the AI-vocabulary words above. The severity prefix is not a tell: a `**blocking**:`, `**suggestion**:`, `**question**:`, or `**nit**:` opener stays exactly as the input wrote it (Hard Preservation Rule 3). A body containing a real tell is never "already clean": fix that sentence (restructure it; don't just swap the em dash for a comma) and set `unchanged: false`. The only valid reasons for `unchanged: true` are a body with none of these tells, a suspicious format, or a rewrite that would grow the body.
 
 ## Input and Output Format
 
