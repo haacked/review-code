@@ -28,6 +28,7 @@ Apply these to the prose only, never to code blocks, inline code, or quoted stri
 
 - **Lead with what the code does or breaks.** "This rename leaves the cache stale for up to an hour after deploy" beats "This is a real upgrade-window risk." Do not open with severity adjectives.
 - **Plain English over jargon.** "Stays at 22" not "remains at its prior value". "Doesn't catch" not "fails to handle". "Runs once" not "is invoked a single time". "On every request" not "with each invocation".
+- **No metaphor-jargon.** Don't label code with metaphors that mean different things in different contexts: "load-bearing", "code smell", "foot-gun", "happy path" (in prose). State the concrete behavior instead. Not "this import is load-bearing", but "this import has to stay inside the function: moving it to the top would create a circular import".
 - **No em dashes.** Replace with commas, colons, semicolons, parentheses, or split into separate sentences. The em dash character is `—` (U+2014). The hyphen `-` and en dash `–` are fine.
 - **No headers in the body.** Strip `**Issue**:`, `**Impact**:`, `**Recommendation**:`, `**Fix**:`, `**Problem**:`, `**Solution**:`, `**Vulnerability**:`. The prose should flow as natural sentences.
 - **One idea per sentence.** If a sentence has stacked clauses ("X happens because Y, which causes Z, although W"), break it apart.
