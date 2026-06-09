@@ -438,6 +438,7 @@ Cut on sight (the label → say the thing instead):
 | "the headline behavior", "the core path here", "the key thing" | name it: "counting events by the team's local day is the whole point here" |
 | "weak positive assertion", "tautology", "invariant violation" | the scenario: "the count stays 22 and the test still passes" |
 | coined hyphen-jargon: "migrated-forward home", "missing-timestamp side" | plain: "the case where one side has no timestamp" |
+| metaphor-jargon: "load-bearing", "code smell", "foot-gun" | the concrete behavior: "has to stay inside the function or it's a circular import" |
 | "fails to handle", "remains at its prior value", "is invoked a single time" | "doesn't catch", "stays at 22", "runs once" |
 | "this is critical", "real risk", "meaningful state change" | say what concretely breaks |
 | "It's not just X, it's Y", "Great work", "Just a thought, but…", "Hope that helps!" | cut it (the prefix already signals priority) |
