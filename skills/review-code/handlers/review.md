@@ -826,19 +826,19 @@ If any precondition fails, skip applying fixes but still produce the Fix Summary
 
 For each finding that survived synthesis, validation, Copilot meta-review, and voice pass, classify it into one of three buckets. The finding has `severity` (blocking/suggestion/nit/question), `file`, `line`, `description`, `proposed_fix`, and `confidence`.
 
-- **`fix_high_confidence`** — apply without commentary in the summary. All of:
+- **`fix_high_confidence`**: apply without commentary in the summary. All of:
   - One of: `severity` is `blocking` or `suggestion` and `confidence >= 80%`; OR `severity` is `nit` and `proposed_fix` is a single-line or single-identifier change.
   - `proposed_fix` is concrete (a diff, replacement code, or precise textual change), self-contained in one file, and unambiguous.
   - The change does not alter a public API, exported type, function signature, or stable identifier that other callers depend on.
   - The change does not require touching files outside the diff's modified files.
 
-- **`fix_with_judgment`** — apply, then record the choice in the summary. Any of:
+- **`fix_with_judgment`**: apply, then record the choice in the summary. Any of:
   - `confidence` is 60–79%.
   - `proposed_fix` exists but needs adaptation (style, naming, placement) before it fits the surrounding code.
   - There are 2+ reasonable approaches and you chose one. Pick the one a principal engineer would defend: clearest read, fewest moving parts, lowest blast radius. Avoid clever or speculative refactors.
   - The fix touches a small amount of related code outside the immediate line (e.g., adding a helper, removing a now-unused import) where doing so leaves the codebase cleaner than the minimal patch.
 
-- **`skip`** — do not apply. Any of:
+- **`skip`**: do not apply. Any of:
   - `severity` is `question` (the author needs to decide) or the finding is `nit` without a trivial in-place fix.
   - `confidence < 60%`.
   - No concrete `proposed_fix` is available.
@@ -885,12 +885,12 @@ After the opening line, render the two subsections below. Omit each subsection e
 
 ### Judgment Calls
 
-- **`<file>:<line>`** (`<severity>`) — <one-sentence description of what changed>.
+- **`<file>:<line>`** (`<severity>`): <one-sentence description of what changed>.
   <One or two sentences naming the chosen approach and the alternatives considered, in plain English.>
 
 ### Skipped
 
-- **`<file>:<line>`** (`<severity>`) — <one-sentence description>.
+- **`<file>:<line>`** (`<severity>`): <one-sentence description>.
   Skipped: <reason in plain English>.
 ```
 
@@ -965,6 +965,17 @@ diff_tokens: <diff_tokens from session data>
 The `token_usage` block records per-step token consumption (agents, context explorer, validators, and other steps) and the aggregate total. For chunked reviews, sum tokens by agent type across chunks (e.g., all `chunk-*-code-reviewer-security` entries become a single `code-reviewer-security` total). Always include the `total` field as the sum of all steps in `$token_usage`.
 
 This metadata is used by the learning system to determine when the review was created. The `review_commit` field records the PR's HEAD SHA at review time, enabling drift detection when creating draft reviews later. The `diff_tokens` field is an estimated token count of the diff (~4 chars per token).
+
+**Narrative voice.** The Inline Comment Voice rules earlier in this handler govern the comment bodies; the narrative you compose here (Overview, findings prose, per-agent sections, the metadata `reasoning` field) needs the same register. Write it the way you'd write a Slack summary to a colleague who is about to review the code: plain verbs, short sentences, no ceremony. Three tells to avoid outright:
+
+- Em dashes (`—`, U+2014). Restructure the sentence instead: a period and two sentences, a colon, parentheses, or a comma where it genuinely fits. Hyphens (`-`) and en dashes (`–`) are fine.
+- Bold inside a prose sentence. Bold is for line-start labels, headings, and table cells. If a clause feels like it needs bold for emphasis, the sentence is buried; lead with it instead.
+- Inflation and AI vocabulary: "critical", "robust", "comprehensive", "leverage", "utilize", "ensure", "It's not just X, it's Y". Say what the code does.
+
+An Overview paragraph in the right register reads like:
+
+> Adds a soft-hide for stale suggestion names. The new boolean ships in an additive migration, the GET returns hidden names separately, and hide/restore is admin-gated. The hidden row and any flags using it are preserved, so hiding is reversible.
+
 Save the complete review to `$review_file` and inform the user with a clickable file link:
 
 ```

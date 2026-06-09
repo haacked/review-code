@@ -96,7 +96,7 @@ Run the parse script to determine the review mode and parameters:
 ~/.claude/skills/review-code/scripts/parse-review-arg.sh $ARGUMENTS 2>&1
 ```
 
-Save the JSON output as `PARSE_RESULT`. Reference this throughout — do not run the parse script again.
+Save the JSON output as `PARSE_RESULT`. Reference this throughout; do not run the parse script again.
 
 **Handler File Selection:**
 
@@ -125,7 +125,7 @@ Code reviews are context-heavy and work best with a fresh context.
 ~/.claude/skills/review-code/scripts/clear-marker.sh check
 ```
 
-If the output is `skip`, proceed directly to Step 3 — the user already cleared.
+If the output is `skip`, proceed directly to Step 3; the user already cleared.
 
 **Otherwise**, use AskUserQuestion:
 - Question: "Code reviews work best with a fresh context. Clear conversation history before starting?"
@@ -153,7 +153,7 @@ Initialize the review session by running the orchestrator and caching the result
 ~/.claude/skills/review-code/scripts/review-status-handler.sh init $ARGUMENTS
 ```
 
-Save the output as `SESSION_ID` — you'll need it for all subsequent operations. Then get the status:
+Save the output as `SESSION_ID`; you'll need it for all subsequent operations. Then get the status:
 
 ```bash
 ~/.claude/skills/review-code/scripts/review-status-handler.sh get-status "<SESSION_ID>"
@@ -186,7 +186,7 @@ Display the error to the user. Then clean up the session:
 ~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
 ```
 
-Stop — do not proceed with review.
+Stop. Do not proceed with review.
 
 ### Handler: "ambiguous"
 

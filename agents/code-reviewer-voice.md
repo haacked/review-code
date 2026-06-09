@@ -47,6 +47,10 @@ Apply these to the prose only, never to code blocks, inline code, or quoted stri
 
 If the original buries the concrete failure under jargon ("this introduces a behavioral inconsistency"), pull it forward and say it plainly ("requests for inactive users hit the database every time"). Do not add a failure mode that wasn't in the original.
 
+## Final Scan Before Returning
+
+Before you emit the response, scan each body you marked `unchanged: true` for the hard tells, applying the same prose-only scope as the Voice Rules (never flag anything inside code blocks, inline code, or quoted strings): an em dash in prose, one of the pseudo-label headers from the strip rule (`**Issue**:`, `**Impact**:`, `**Recommendation**:`, `**Fix**:`, `**Problem**:`, `**Solution**:`, `**Vulnerability**:`), or the AI-vocabulary words above. The severity prefix is not a tell: a `**blocking**:`, `**suggestion**:`, `**question**:`, or `**nit**:` opener stays exactly as the input wrote it (Hard Preservation Rule 3). A body containing a real tell is never "already clean": fix that sentence (restructure it; don't just swap the em dash for a comma) and set `unchanged: false`. The only valid reasons for `unchanged: true` are a body with none of these tells, a suspicious format, or a rewrite that would grow the body.
+
 ## Input and Output Format
 
 You receive a JSON array of findings in the prompt. Each object has at minimum:
