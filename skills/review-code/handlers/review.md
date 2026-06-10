@@ -425,7 +425,7 @@ Write comments the way a senior engineer talks in a PR review: direct, specific,
 Before posting, run the smell test:
 
 1. Does sentence 1 name the consequence (not a verdict, not a mechanism)?
-2. Any phrase that *labels* instead of *names*? (see the table)
+2. Any phrase that *labels* instead of *names*, or that takes logic-class vocabulary to parse ("conjunct", "vacuously", "holds")? (see the table)
 3. Any "it"/"this"/"that" whose nearest preceding noun isn't what you mean?
 4. Anything the author already knows from having written the code? Cut it.
 5. Would you say this sentence to a colleague out loud?
@@ -437,6 +437,7 @@ Cut on sight (the label → say the thing instead):
 |---|---|
 | "the headline behavior", "the core path here", "the key thing" | name it: "counting events by the team's local day is the whole point here" |
 | "weak positive assertion", "tautology", "invariant violation" | the scenario: "the count stays 22 and the test still passes" |
+| formal logic vocabulary: "this conjunct is always satisfied", "vacuously true", "the predicate holds" | what the code does: "the `!== true` check always passes", "the list is empty, so the loop never runs" |
 | coined hyphen-jargon: "migrated-forward home", "missing-timestamp side" | plain: "the case where one side has no timestamp" |
 | metaphor-jargon: "load-bearing", "code smell", "foot-gun" | the concrete behavior: "has to stay inside the function or it's a circular import" |
 | "fails to handle", "remains at its prior value", "is invoked a single time" | "doesn't catch", "stays at 22", "runs once" |
