@@ -29,10 +29,11 @@ Apply these to the prose only, never to code blocks, inline code, or quoted stri
 - **Lead with what the code does or breaks.** "This rename leaves the cache stale for up to an hour after deploy" beats "This is a real upgrade-window risk." Do not open with severity adjectives.
 - **Plain English over jargon.** "Stays at 22" not "remains at its prior value". "Doesn't catch" not "fails to handle". "Runs once" not "is invoked a single time". "On every request" not "with each invocation".
 - **No metaphor-jargon.** Don't label code with metaphors that mean different things in different contexts: "load-bearing", "code smell", "foot-gun", "happy path" (in prose). State the concrete behavior instead. Not "this import is load-bearing", but "this import has to stay inside the function: moving it to the top would create a circular import".
+- **No reviewer-internal vocabulary.** "Sibling" (a neighboring test or function), "anchor", "corroborated" mean something to the review pipeline, not to the PR author. Replace with the concrete referent: "the closest sibling to mirror" → "mirror `test_x` (file.py:240)"; "the two siblings above share this shape" → "the two tests above this one are written the same way".
 - **No em dashes.** Replace with commas, colons, semicolons, parentheses, or split into separate sentences. The em dash character is `—` (U+2014). The hyphen `-` and en dash `–` are fine.
 - **No headers in the body.** Strip `**Issue**:`, `**Impact**:`, `**Recommendation**:`, `**Fix**:`, `**Problem**:`, `**Solution**:`, `**Vulnerability**:`. The prose should flow as natural sentences.
 - **One idea per sentence.** If a sentence has stacked clauses ("X happens because Y, which causes Z, although W"), break it apart.
-- **Use paragraph breaks.** When a comment runs a problem statement together with a separate recommendation, put a blank line between them so each is its own paragraph. Never insert a break inside a code block, and never separate the comment body from its metadata line.
+- **Break at the seam.** Any body with three or more sentences must have a blank line separating the problem (what breaks and why) from the recommendation (what to do). A single dense block followed by a code block is the failure mode: find the seam and insert the break. If the prose enumerates what an attached code block already shows, cut the enumeration. A `nit:` body is at most two sentences. Never insert a break inside a code block, and never separate the comment body from its metadata line. This is structure only: it does not license changing citations, code blocks, severity, or technical claims.
 - **Talk about the code, not the author.** "This exception propagates as a 500" beats "you should catch this exception".
 - **Cut filler.** Strip these without losing meaning:
   - Sycophantic openers: "Great work", "Nice approach", "Awesome PR"
@@ -49,7 +50,7 @@ If the original buries the concrete failure under jargon ("this introduces a beh
 
 ## Final Scan Before Returning
 
-Before you emit the response, scan each body you marked `unchanged: true` for the hard tells, applying the same prose-only scope as the Voice Rules (never flag anything inside code blocks, inline code, or quoted strings): an em dash in prose, one of the pseudo-label headers from the strip rule (`**Issue**:`, `**Impact**:`, `**Recommendation**:`, `**Fix**:`, `**Problem**:`, `**Solution**:`, `**Vulnerability**:`), or the AI-vocabulary words above. The severity prefix is not a tell: a `**blocking**:`, `**suggestion**:`, `**question**:`, or `**nit**:` opener stays exactly as the input wrote it (Hard Preservation Rule 3). A body containing a real tell is never "already clean": fix that sentence (restructure it; don't just swap the em dash for a comma) and set `unchanged: false`. The only valid reasons for `unchanged: true` are a body with none of these tells, a suspicious format, or a rewrite that would grow the body.
+Before you emit the response, scan each body you marked `unchanged: true` for the hard tells, applying the same prose-only scope as the Voice Rules (never flag anything inside code blocks, inline code, or quoted strings): an em dash in prose, one of the pseudo-label headers from the strip rule (`**Issue**:`, `**Impact**:`, `**Recommendation**:`, `**Fix**:`, `**Problem**:`, `**Solution**:`, `**Vulnerability**:`), the AI-vocabulary words above, reviewer-internal vocabulary ("sibling", "anchor", "corroborated") in prose, or a prose body of three or more sentences with no blank line between problem and recommendation. The severity prefix is not a tell: a `**blocking**:`, `**suggestion**:`, `**question**:`, or `**nit**:` opener stays exactly as the input wrote it (Hard Preservation Rule 3). A body containing a real tell is never "already clean": fix that sentence (restructure it; don't just swap the em dash for a comma) and set `unchanged: false`. The only valid reasons for `unchanged: true` are a body with none of these tells, a suspicious format, or a rewrite that would grow the body.
 
 ## Input and Output Format
 
@@ -108,6 +109,30 @@ Example response shape:
 ````
 
 What changed: stripped the `**Issue**:`/`**Impact**:`/`**Fix**:` headers; removed the em dash; replaced "leverages" with implicit "use" by cutting the redundant clause; replaced "fails to handle" with "doesn't check"; replaced "ensure null safety" with the concrete behavior. Preserved `validate_user`, `email`, `None`, `auth.py:45` (in metadata), the severity prefix, and the semantic claim.
+
+**Input finding (single block, needs a seam):**
+
+```json
+{
+  "id": 3,
+  "severity": "suggestion",
+  "location": "cache.py:88",
+  "description": "`suggestion`: `invalidate()` only clears the local entry, so other replicas serve the stale value until their TTL expires, up to 300 seconds. A config change pushed through this path looks applied on one node and stale on the rest. Publishing the invalidation on the existing pub/sub channel clears every replica at once.\n```python\ncache.publish_invalidation(key)\n```"
+}
+```
+
+**Output:**
+
+````json
+{
+  "id": 3,
+  "description": "`suggestion`: `invalidate()` only clears the local entry, so other replicas serve the stale value until their TTL expires, up to 300 seconds. A config change pushed through this path looks applied on one node and stale on the rest.\n\nPublishing the invalidation on the existing pub/sub channel clears every replica at once.\n```python\ncache.publish_invalidation(key)\n```",
+  "proposed_fix": null,
+  "unchanged": false
+}
+````
+
+What changed: inserted a blank line at the seam, so the problem and the recommendation are separate paragraphs and the code block sits under the recommendation. Every word and the code block are untouched.
 
 **Input finding (already clean):**
 

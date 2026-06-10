@@ -442,6 +442,7 @@ Cut on sight (the label → say the thing instead):
 | "fails to handle", "remains at its prior value", "is invoked a single time" | "doesn't catch", "stays at 22", "runs once" |
 | "this is critical", "real risk", "meaningful state change" | say what concretely breaks |
 | "It's not just X, it's Y", "Great work", "Just a thought, but…", "Hope that helps!" | cut it (the prefix already signals priority) |
+| reviewer-internal vocabulary: "sibling", "the closest sibling to mirror", "anchor", "corroborated" | name the thing and where it is: "mirror `test_saving_flag_strips_legacy_holdout_groups`, just above", "the two tests above this one" |
 | em dash (—) | comma, colon, semicolon, parentheses, or two sentences |
 
 Two worked examples. First, lead with the consequence instead of a verdict:
@@ -719,7 +720,7 @@ Record `copilot_meta_review` in `$token_usage` with `{ total_tokens: 0, tool_use
 
 ### Voice Pass (Final Rewrite)
 
-Before composing the review document, run a single voice-pass agent over the surviving findings to rewrite their `description` and `proposed_fix` text in a clean, conversational voice. The voice agent never changes severity, citations, line numbers, identifiers, numbers, or code blocks; it only changes phrasing.
+Before composing the review document, run a single voice-pass agent over the surviving findings to rewrite their `description` and `proposed_fix` text in a clean, conversational voice. The voice agent never changes severity, citations, line numbers, identifiers, numbers, or code blocks; it changes phrasing and paragraph structure, nothing else.
 
 **Skip conditions:** If `$selected_agents` is empty (no findings will be produced) or the surviving finding pool is empty, skip this step entirely.
 
@@ -728,8 +729,9 @@ Before composing the review document, run a single voice-pass agent over the sur
 **Dispatch the rewrite.** Invoke the Task tool with subagent_type `code-reviewer-voice` and a prompt that:
 
 1. Tells the agent to rewrite the `description` and `proposed_fix` fields in conversational voice while preserving every citation, file path, line number, identifier, number, and code block exactly.
-2. Embeds the JSON array of findings inside a **four-backtick** fence tagged `json` (because finding bodies typically contain triple-backtick code blocks; a three-backtick wrapper would close prematurely).
-3. Reminds the agent to wrap its response in a four-backtick `json` fence in the same order as the input, with `id`, `description`, `proposed_fix`, and `unchanged` on each object.
+2. Tells the agent it is also responsible for paragraph structure: any body with three or more sentences must have a blank line separating the problem (what breaks and why) from the recommendation (what to do); enumerations that restate what an attached code block already shows get cut; a `nit:` body is at most two sentences. This structural responsibility does not license changing citations, code blocks, severity, or technical claims.
+3. Embeds the JSON array of findings inside a **four-backtick** fence tagged `json` (because finding bodies typically contain triple-backtick code blocks; a three-backtick wrapper would close prematurely).
+4. Reminds the agent to wrap its response in a four-backtick `json` fence in the same order as the input, with `id`, `description`, `proposed_fix`, and `unchanged` on each object.
 
 Save the agent's response. Extract usage metadata and record in `$token_usage["code-reviewer-voice"]`.
 
@@ -744,7 +746,7 @@ Save the agent's response. Extract usage metadata and record in `$token_usage["c
 
 1. Confirm the severity prefix matches: extract the prefix token from each (`` `blocking`: ``, `` `suggestion`: ``, `**blocking**:`, bare `blocking:`, etc.) and check string equality. If the prefix differs in any way, fail the check.
 2. Confirm the rewritten body contains every backtick-quoted token from the original whose text matches a file-path pattern (e.g., `auth.py:45`, `src/foo.ts`, `path/to/file.py`) or a numeric line reference (e.g., `:67`, `line 67`). Identifiers and exception names that happen to be backtick-quoted (`OverflowError`, `dateutil.parser.parse()`) are not subject to this check. If the original contains no path-shaped or line-number tokens, skip this check.
-3. Confirm the rewritten body length is not greater than the original by more than 5% (allowing slack for punctuation tweaks).
+3. Confirm the rewritten body length is not greater than the original by more than 5% (allowing slack for punctuation tweaks and inserted paragraph breaks; a blank line adds two newline characters and never fails this check on its own).
 
 If any check fails, discard the rewrite and keep the original finding. Track the failure count in `$token_usage["code-reviewer-voice"].validation_failures`.
 
@@ -1072,6 +1074,8 @@ When combining agent findings into the review document, add a "Suggested Comment
 
    Comment bodies already have their in-prose file:line citations rendered as GitHub permalinks (see "Link File References in Comment Bodies" above). Keep those links intact when writing the bodies into the review file.
 
+   Bodies must also already carry the seam structure (see "Break at the seam" under Inline Comment Voice) before they're written into the review file; preserve their paragraph breaks, never flatten a body into one block.
+
 2. **Check against existing comments**: For each finding, check if there are existing inline comments (from `$inline_comments`) that:
    - Are on the same file
    - Are within 5 lines of the finding
@@ -1179,6 +1183,8 @@ If any condition fails, skip draft review creation.
 1. **Extract suggested comments from the review**: Parse the "Suggested Comments" section to get file path, line number, and comment body. Extract ONLY the text inside the ` ```text ``` ` code block. Do NOT include the `*From: <Agent Name> (<confidence>% confidence)*` line. Confidence percentages are internal metadata and must never appear in GitHub comments.
 
    Keep any GitHub permalinks in the comment body intact (see "Link File References in Comment Bodies" above). They render as clickable links in the posted comment. The same applies to the `summary` field and `unmapped_comments` descriptions.
+
+   Bodies must already carry the seam structure (see "Break at the seam" under Inline Comment Voice); copy their blank lines into the draft payload verbatim.
 
    Look for this pattern in the review file:
    ```
