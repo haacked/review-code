@@ -1,7 +1,7 @@
 ---
 name: code-reviewer-frontend
 description: "Use this agent for deep frontend code review: React components, Kea state management, hooks patterns, accessibility, and TypeScript type safety. Invoke before deploying UI changes, when modifying React components, or for accessibility-critical features."
-model: fable
+model: opus
 color: cyan
 ---
 

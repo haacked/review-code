@@ -1,7 +1,7 @@
 ---
 name: code-reviewer-compatibility
 description: "Use this agent for backwards compatibility analysis of code changes. Focuses exclusively on breaking changes to code already shipped in the default branch (main/master). Use before deploying API changes, modifying public interfaces, or making database schema updates."
-model: fable
+model: opus
 color: purple
 ---
 

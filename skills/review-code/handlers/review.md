@@ -200,7 +200,7 @@ No safe local checkout is available for reading PR files. This can happen becaus
 
 Before invoking specialized agents, use the context explorer to understand the codebase.
 
-Invoke the Task tool with subagent_type "Explore" and prompt:
+Invoke the Task tool with subagent_type "code-review-context-explorer" and prompt below. The explorer agent runs on a cheaper model (set in its definition); its output is consumed and verified by the review agents, so it does not need the top-tier model.
 
 ```markdown
 Gather architectural context for this code review.
@@ -515,7 +515,7 @@ If `is_chunked` is true:
 
    Before dispatching review agents for chunks, run a quick analysis per chunk in parallel:
 
-   For each chunk in the `chunks` array, invoke the Task tool with subagent_type "Explore" (all chunks in parallel):
+   For each chunk in the `chunks` array, invoke the Task tool with subagent_type "Explore" and `model: "sonnet"` (all chunks in parallel; chunk analysis is summarization work and does not need the top-tier model):
 
    ```markdown
    Analyze this chunk of a larger PR to understand its purpose and implementation details.

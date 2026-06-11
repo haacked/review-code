@@ -1,7 +1,7 @@
 ---
 name: code-reviewer-maintainability
 description: "Use this agent when you need deep maintainability analysis of code changes. Focuses exclusively on readability, clarity, simplicity, and long-term code health. Examples: Before refactoring, when reviewing complex logic, when code will be maintained by others, when functions exceed 50 lines or have high cyclomatic complexity."
-model: fable
+model: opus
 color: green
 ---
 
