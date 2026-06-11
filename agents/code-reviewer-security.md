@@ -17,7 +17,7 @@ Do not flag input that is already protected by the framework (typed DRF serializ
 
 ## Before You Review
 
-Read `$architectural_context` first. It contains callers and dependencies already gathered. If it already answers a step below, note that in your Investigation Summary and move to the next step.
+Read `$architectural_context` first. It contains callers and dependencies already gathered. Treat it as your completed search results, including negative ones: "no other callers found" means none exist; do not re-verify. Re-run a search only to fill a named gap the context does not cover, or to read the exact code behind a finding you are about to report. Note in your Investigation Summary which steps the context answered.
 
 Assume all user input is malicious. Work these two steps in order before forming any opinion.
 

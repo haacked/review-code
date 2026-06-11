@@ -200,7 +200,7 @@ No safe local checkout is available for reading PR files. This can happen becaus
 
 Before invoking specialized agents, use the context explorer to understand the codebase.
 
-Invoke the Task tool with subagent_type "Explore" and prompt:
+Invoke the Task tool with subagent_type "code-review-context-explorer" and prompt below. The explorer agent runs on a cheaper model (set in its definition); review agents read the actual code behind any finding before reporting it, so the explorer does not need the top-tier model.
 
 ```markdown
 Gather architectural context for this code review.
@@ -302,6 +302,22 @@ Invoke the agents determined by the scope classification. If an area was specifi
 | architecture | code-reviewer-architecture | Necessity, patterns, code reuse, simplicity, solution proportionality |
 | infra-config | code-reviewer-infra-config | Cross-env consistency, route/service correctness, operational safety, config validation |
 | *(frontend detected)* | code-reviewer-frontend | React/TS patterns, components, state, a11y |
+
+**Area-scoped diffs for file-type-scoped agents:**
+
+The frontend and infra-config agents review only their own file types, so don't pay to send them the rest of the diff:
+
+- **code-reviewer-frontend**: replace `$diff` with only the hunks for frontend files: `.tsx`/`.jsx`, `.css`/`.scss`, templates, and `.ts`/`.js` files that sit alongside the changed `.tsx`/`.jsx` files or under the repo's UI source root (e.g., `frontend/`, `web/`, `client/`, `src/components/`). A `.ts`/`.js` file matching neither rule is ambiguous; the rule below says to include it.
+- **code-reviewer-infra-config**: replace `$diff` with only the hunks for files where `file_metadata` has `is_infra_config: true`.
+
+In both cases, append after the diff:
+
+```
+**Other files changed in this PR (not shown above, outside your review scope):**
+<comma-separated list of the remaining changed file paths>
+```
+
+All other agents receive the full diff. If slicing is ambiguous for a file (e.g., shared types imported by both frontend and backend), include it; only omit hunks that are clearly outside the agent's scope.
 
 **Build the context to pass to each agent:**
 
@@ -515,7 +531,7 @@ If `is_chunked` is true:
 
    Before dispatching review agents for chunks, run a quick analysis per chunk in parallel:
 
-   For each chunk in the `chunks` array, invoke the Task tool with subagent_type "Explore" (all chunks in parallel):
+   For each chunk in the `chunks` array, invoke the Task tool with subagent_type "Explore" and `model: "sonnet"` (all chunks in parallel; chunk analysis is summarization work and does not need the top-tier model):
 
    ```markdown
    Analyze this chunk of a larger PR to understand its purpose and implementation details.
@@ -1029,7 +1045,7 @@ token_usage_log="$(dirname "$(dirname "$(dirname "$review_file")")")/token-usage
 Each line is a JSON object:
 
 ```json
-{"reviewed_at": "<ISO 8601 timestamp>", "org": "<org>", "repo": "<repo>", "mode": "<mode>", "identifier": "<pr_number or branch name>", "diff_tokens": <diff_tokens>, "files_changed": <number>, "lines_added": <number>, "lines_removed": <number>, "exploration_depth": "<exploration_depth>", "agents_run": <number of agents run>, "agents_skipped": <number of agents skipped>}
+{"reviewed_at": "<ISO 8601 timestamp>", "org": "<org>", "repo": "<repo>", "mode": "<mode>", "identifier": "<pr_number or branch name>", "diff_tokens": <diff_tokens>, "files_changed": <number>, "lines_added": <number>, "lines_removed": <number>, "exploration_depth": "<exploration_depth>", "agents_run": <number of agents run>, "agents_skipped": <number of agents skipped>, "total_tokens": <sum of total_tokens across $token_usage>, "total_tool_uses": <sum of tool_uses across $token_usage>, "agents": {"<agent key>": <that agent's total_tokens>, ...}}
 ```
 
 Extract these values from the session data:
@@ -1039,6 +1055,13 @@ Extract these values from the session data:
 - `identifier`: PR number if PR mode, branch name if branch mode, commit hash for commit mode, etc.
 - `diff_tokens`: from the top-level `diff_tokens` field
 - `files_changed`, `lines_added`, `lines_removed`: from `summary.stats`
+
+Compute the token fields from the `$token_usage` map (see "Track Token Usage"):
+- `total_tokens`: sum of `total_tokens` over all entries
+- `total_tool_uses`: sum of `tool_uses` over all entries
+- `agents`: an object with one key per `$token_usage` entry (e.g., `context_explorer`, `code-reviewer-security`, `validator-1`) mapping to that entry's `total_tokens`
+
+These cover subagent consumption only; the orchestrating conversation's own tokens are not measurable from here. If `$token_usage` is empty (e.g., every usage block was absent), log `total_tokens: 0`, `total_tool_uses: 0`, and `agents: {}` rather than omitting the fields. This log is the baseline for measuring cost optimizations, so never skip the token fields.
 
 Use `Bash` with `jq` to append the JSON line (ensures correct escaping and consistent format):
 
@@ -1056,6 +1079,9 @@ jq -nc \
   --arg exploration_depth "<exploration_depth>" \
   --argjson agents_run <number of agents run> \
   --argjson agents_skipped <number of agents skipped> \
+  --argjson total_tokens <total_tokens> \
+  --argjson total_tool_uses <total_tool_uses> \
+  --argjson agents '<per-agent JSON object, e.g. {"context_explorer": 42000, "code-reviewer-security": 88000}>' \
   '$ARGS.named' >> "$token_usage_log"
 ```
 

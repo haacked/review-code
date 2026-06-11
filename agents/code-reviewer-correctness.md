@@ -15,7 +15,7 @@ Other agents check if code is secure, performant, maintainable, or well-tested. 
 
 ## Before You Review
 
-Read `$architectural_context` first. It contains callers, dependencies, and similar patterns already gathered. If it already answers a step below, note that in your Investigation Summary and move to the next step. Then perform these targeted checks before forming any opinion:
+Read `$architectural_context` first. It contains callers, dependencies, and similar patterns already gathered. Treat it as your completed search results, including negative ones: "no other callers found" means none exist; do not re-verify. Re-run a search only to fill a named gap the context does not cover, or to read the exact code behind a finding you are about to report. Note in your Investigation Summary which steps the context answered. Every step below must be answered, by the context or by your own search, before you form an opinion:
 
 1. **Trace every integration boundary crossing in the diff**: For each cache write, queue publish, API call, or database write, grep for the reader or consumer and open its code. Verify the format, encoding, and field names match. Do not claim a mismatch without reading both sides.
 2. **Find similar boundary-crossing code in the same file or module**: Search for other code that crosses the same boundary (e.g., other Redis writers in the same file). If they use a different serialization format, that is direct evidence of a mismatch risk.
