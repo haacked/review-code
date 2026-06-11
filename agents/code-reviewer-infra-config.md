@@ -15,7 +15,7 @@ Other agents check application code for bugs, security, and performance. You che
 
 ## Before You Review
 
-Read `$architectural_context` first. Then perform these targeted checks before forming any opinion:
+Read `$architectural_context` first. Treat it as your completed search results, including negative ones; do not re-run searches it already answers. Every step below must be answered, by the context or by your own search, before you form an opinion:
 
 1. **Read all modified files in full**: Understand the complete context of each changed file, not just the diff hunks.
 2. **Find cross-environment counterparts**: For each modified file, search for parallel files in other environments (dev, staging, prod, regional variants). Compare whether the same logical change is present. Use patterns like the directory name with different env suffixes, or grep for the file basename across the repo.
