@@ -200,7 +200,7 @@ No safe local checkout is available for reading PR files. This can happen becaus
 
 Before invoking specialized agents, use the context explorer to understand the codebase.
 
-Invoke the Task tool with subagent_type "code-review-context-explorer" and prompt below. The explorer agent runs on a cheaper model (set in its definition); its output is consumed and verified by the review agents, so it does not need the top-tier model.
+Invoke the Task tool with subagent_type "code-review-context-explorer" and prompt below. The explorer agent runs on a cheaper model (set in its definition); review agents read the actual code behind any finding before reporting it, so the explorer does not need the top-tier model.
 
 ```markdown
 Gather architectural context for this code review.
@@ -307,7 +307,7 @@ Invoke the agents determined by the scope classification. If an area was specifi
 
 The frontend and infra-config agents review only their own file types, so don't pay to send them the rest of the diff:
 
-- **code-reviewer-frontend**: replace `$diff` with only the hunks for frontend files (components, hooks, styles, and other UI code: `.tsx`/`.jsx`, frontend-directory `.ts`/`.js`, `.css`/`.scss`, templates).
+- **code-reviewer-frontend**: replace `$diff` with only the hunks for frontend files: `.tsx`/`.jsx`, `.css`/`.scss`, templates, and `.ts`/`.js` files that sit alongside the changed `.tsx`/`.jsx` files or under the repo's UI source root (e.g., `frontend/`, `web/`, `client/`, `src/components/`). A `.ts`/`.js` file matching neither rule is ambiguous; the rule below says to include it.
 - **code-reviewer-infra-config**: replace `$diff` with only the hunks for files where `file_metadata` has `is_infra_config: true`.
 
 In both cases, append after the diff:
