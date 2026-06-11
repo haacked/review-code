@@ -1029,7 +1029,7 @@ token_usage_log="$(dirname "$(dirname "$(dirname "$review_file")")")/token-usage
 Each line is a JSON object:
 
 ```json
-{"reviewed_at": "<ISO 8601 timestamp>", "org": "<org>", "repo": "<repo>", "mode": "<mode>", "identifier": "<pr_number or branch name>", "diff_tokens": <diff_tokens>, "files_changed": <number>, "lines_added": <number>, "lines_removed": <number>, "exploration_depth": "<exploration_depth>", "agents_run": <number of agents run>, "agents_skipped": <number of agents skipped>}
+{"reviewed_at": "<ISO 8601 timestamp>", "org": "<org>", "repo": "<repo>", "mode": "<mode>", "identifier": "<pr_number or branch name>", "diff_tokens": <diff_tokens>, "files_changed": <number>, "lines_added": <number>, "lines_removed": <number>, "exploration_depth": "<exploration_depth>", "agents_run": <number of agents run>, "agents_skipped": <number of agents skipped>, "total_tokens": <sum of total_tokens across $token_usage>, "total_tool_uses": <sum of tool_uses across $token_usage>, "agents": {"<agent key>": <that agent's total_tokens>, ...}}
 ```
 
 Extract these values from the session data:
@@ -1039,6 +1039,13 @@ Extract these values from the session data:
 - `identifier`: PR number if PR mode, branch name if branch mode, commit hash for commit mode, etc.
 - `diff_tokens`: from the top-level `diff_tokens` field
 - `files_changed`, `lines_added`, `lines_removed`: from `summary.stats`
+
+Compute the token fields from the `$token_usage` map (see "Track Token Usage"):
+- `total_tokens`: sum of `total_tokens` over all entries
+- `total_tool_uses`: sum of `tool_uses` over all entries
+- `agents`: an object with one key per `$token_usage` entry (e.g., `context_explorer`, `code-reviewer-security`, `validator-1`) mapping to that entry's `total_tokens`
+
+These cover subagent consumption only; the orchestrating conversation's own tokens are not measurable from here. If `$token_usage` is empty (e.g., every usage block was absent), log `total_tokens: 0`, `total_tool_uses: 0`, and `agents: {}` rather than omitting the fields. This log is the baseline for measuring cost optimizations, so never skip the token fields.
 
 Use `Bash` with `jq` to append the JSON line (ensures correct escaping and consistent format):
 
@@ -1056,6 +1063,9 @@ jq -nc \
   --arg exploration_depth "<exploration_depth>" \
   --argjson agents_run <number of agents run> \
   --argjson agents_skipped <number of agents skipped> \
+  --argjson total_tokens <total_tokens> \
+  --argjson total_tool_uses <total_tool_uses> \
+  --argjson agents '<per-agent JSON object, e.g. {"context_explorer": 42000, "code-reviewer-security": 88000}>' \
   '$ARGS.named' >> "$token_usage_log"
 ```
 
