@@ -303,6 +303,22 @@ Invoke the agents determined by the scope classification. If an area was specifi
 | infra-config | code-reviewer-infra-config | Cross-env consistency, route/service correctness, operational safety, config validation |
 | *(frontend detected)* | code-reviewer-frontend | React/TS patterns, components, state, a11y |
 
+**Area-scoped diffs for file-type-scoped agents:**
+
+The frontend and infra-config agents review only their own file types, so don't pay to send them the rest of the diff:
+
+- **code-reviewer-frontend**: replace `$diff` with only the hunks for frontend files (components, hooks, styles, and other UI code: `.tsx`/`.jsx`, frontend-directory `.ts`/`.js`, `.css`/`.scss`, templates).
+- **code-reviewer-infra-config**: replace `$diff` with only the hunks for files where `file_metadata` has `is_infra_config: true`.
+
+In both cases, append after the diff:
+
+```
+**Other files changed in this PR (not shown above, outside your review scope):**
+<comma-separated list of the remaining changed file paths>
+```
+
+All other agents receive the full diff. If slicing is ambiguous for a file (e.g., shared types imported by both frontend and backend), include it; only omit hunks that are clearly outside the agent's scope.
+
 **Build the context to pass to each agent:**
 
 ```markdown
