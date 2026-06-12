@@ -455,6 +455,7 @@ Cut on sight (the label → say the thing instead):
 | "weak positive assertion", "tautology", "invariant violation" | the scenario: "the count stays 22 and the test still passes" |
 | formal logic vocabulary: "this conjunct is always satisfied", "vacuously true", "the predicate holds" | what the code does: "the `!== true` check always passes", "the list is empty, so the loop never runs" |
 | coined hyphen-jargon: "migrated-forward home", "missing-timestamp side" | plain: "the case where one side has no timestamp" |
+| coined noun-phrase labels: "the withholding boundary", "the staleness window" | the sentence the label compresses: "the endpoint doesn't return a person's other distinct IDs to `feature_flag:read`-only tokens" (the author can't expand a name they've never seen) |
 | metaphor-jargon: "load-bearing", "code smell", "foot-gun" | the concrete behavior: "has to stay inside the function or it's a circular import" |
 | "fails to handle", "remains at its prior value", "is invoked a single time" | "doesn't catch", "stays at 22", "runs once" |
 | "this is critical", "real risk", "meaningful state change" | say what concretely breaks |
