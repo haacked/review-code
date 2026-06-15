@@ -1,7 +1,7 @@
 ---
 name: finding-validator
 description: "Adversarial validation agent that attempts to disprove blocking findings from code review. Receives a finding and the code, then tries to construct the strongest argument that the finding is wrong, theoretical, or not a real issue."
-model: fable
+model: opus
 color: magenta
 ---
 
