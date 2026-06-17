@@ -1328,6 +1328,57 @@ If failed, show the error and suggest using the review file manually.
   3. Suggest: "You can copy comments from the review file and post them manually on GitHub."
   4. **STOP HERE.** Do NOT attempt to post comments using `gh pr review` or any other method as a fallback. This will submit the review instead of keeping it pending.
 
+### Resolve Addressed Threads (--append, PR Mode Only)
+
+When this is an **append** review (`append` is true in the session JSON) **and** `mode` is `pr`, resolve the review threads from your previous review whose findings the author has since addressed. This keeps the PR's unresolved-thread list honest: stale threads you already re-checked shouldn't keep nagging the author.
+
+Skip this step entirely if `append` is not true, or if `mode` is not `pr`. Threads only exist on pull requests. This step runs whenever `append` is true and `mode` is `pr`, independent of `--draft`: a `--draft` posting that was skipped or failed earlier does not skip thread resolution.
+
+**Determine your reviewer identity.** Use `reviewer_username` from the session JSON. If it is empty, fall back to:
+
+```bash
+gh api user --jq '.login'
+```
+
+Call the result `$reviewer`. If you cannot determine a login, skip this step (without an author scope you cannot safely tell your threads from a teammate's).
+
+**List your unresolved threads.** Scope strictly to threads whose first comment is yours:
+
+```bash
+~/.claude/skills/review-code/scripts/resolve-review-threads.sh <pr_number> --author "$reviewer" --json
+```
+
+The output `threads` array holds objects with `commentId`, `path`, `line`, `isOutdated`, `author`, and `body` (the full text of your original comment, used for the re-flag comparison below). If the array is empty, there is nothing to resolve; skip the rest of this step.
+
+**Decide which threads to resolve.** Resolve a thread **only when you are confident the finding is addressed**, which requires BOTH signals:
+
+1. **The code at that location changed.** Either the thread's `isOutdated` is true, or the current review diff touches `path` at or near `line`. Requiring this is what stops you from resolving a still-open issue that a flaky re-run merely failed to surface.
+2. **Your fresh findings do not re-flag the same issue.** No finding in this review covers the same `path` within ~5 lines of `line` describing the same concern as the thread's `body`. Read the whole `body` (the listing carries up to ~1500 characters), not just its opening: a partial fix often changes the line while leaving the issue the comment described.
+
+A thread that fails either signal stays open. When in doubt, leave it open: resolving is irreversible and visible to everyone on the PR.
+
+Build `$resolve_ids` as the list of `commentId` values that pass both signals.
+
+**Resolve the confident set.** If `$resolve_ids` is non-empty, pass each as a `--comment-id`, keeping the `--author` scope as a safety guard so a stray id can never resolve a teammate's thread:
+
+```bash
+~/.claude/skills/review-code/scripts/resolve-review-threads.sh <pr_number> --author "$reviewer" \
+  --comment-id <id1> --comment-id <id2> --json
+```
+
+**Report.** Tell the user what changed and why, listing each resolved thread with its reason and each thread you deliberately left open:
+
+```
+Resolved 2 threads from the previous review:
+- src/api.py:42 — code changed and no longer flagged
+- src/db.py:88 — thread outdated, fix confirmed
+
+Left open 1 thread:
+- src/auth.py:12 — re-flagged in this review
+```
+
+If `$resolve_ids` was empty, say so briefly (e.g. "No previous-review threads were confidently addressed; left all open.").
+
 ### Cleanup Session
 
 After the review is complete, clean up the session (replace `<SESSION_ID>` with the actual session ID):
