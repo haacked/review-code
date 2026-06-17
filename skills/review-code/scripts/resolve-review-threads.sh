@@ -140,17 +140,23 @@ fetch_all_threads() {
             cursor_args+=(-f cursor="$cursor")
         fi
 
-        local result
+        local result gh_err
+        gh_err=$(mktemp)
         result=$(gh api graphql \
             -f query="$query" \
             -F owner="$owner" \
             -F repo="$repo_name" \
             -F number="$pr_number" \
             "${cursor_args[@]}" \
-            2> /dev/null) || {
-            log_error "GraphQL query failed: ${result}"
+            2> "$gh_err") || {
+            log_error "GraphQL query failed: $(
+                cat "$gh_err"
+                echo "${result}"
+            )"
+            rm -f "$gh_err"
             exit 1
         }
+        rm -f "$gh_err"
 
         local parsed
         parsed=$(echo "$result" | jq '{
@@ -251,166 +257,167 @@ display_threads() {
     done
 }
 
-# ── Argument parsing ─────────────────────────────────────────────────────────
+# ── Argument parsing + main ──────────────────────────────────────────────────
 
 usage() {
     sed -n '4,28p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
-FILTER_MODE="list"
-DRY_RUN=false
-JSON_OUTPUT=false
-PR_ARG=""
-AUTHOR_FILTER=""
-COMMENT_IDS=()
+main() {
+    FILTER_MODE="list"
+    DRY_RUN=false
+    JSON_OUTPUT=false
+    PR_ARG=""
+    AUTHOR_FILTER=""
+    COMMENT_IDS=()
 
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --outdated)
-            if [[ "$FILTER_MODE" != "list" ]]; then
-                log_error "Cannot combine --outdated with --all or --comment-id"
-                exit 1
-            fi
-            FILTER_MODE="outdated"
-            shift
-            ;;
-        --all)
-            if [[ "$FILTER_MODE" != "list" ]]; then
-                log_error "Cannot combine --all with --outdated or --comment-id"
-                exit 1
-            fi
-            FILTER_MODE="all"
-            shift
-            ;;
-        --comment-id)
-            if [[ "$FILTER_MODE" != "list" && "$FILTER_MODE" != "comment-ids" ]]; then
-                log_error "Cannot combine --comment-id with --outdated or --all"
-                exit 1
-            fi
-            if [[ $# -lt 2 ]]; then
-                log_error "--comment-id requires an argument"
-                exit 1
-            fi
-            FILTER_MODE="comment-ids"
-            if [[ ! "$2" =~ ^[0-9]+$ ]]; then
-                log_error "--comment-id requires a numeric REST API comment ID, got: $2"
-                exit 1
-            fi
-            COMMENT_IDS+=("$2")
-            shift 2
-            ;;
-        --author)
-            if [[ $# -lt 2 ]]; then
-                log_error "--author requires an argument"
-                exit 1
-            fi
-            AUTHOR_FILTER="$2"
-            shift 2
-            ;;
-        --dry-run)
-            DRY_RUN=true
-            shift
-            ;;
-        --json)
-            JSON_OUTPUT=true
-            shift
-            ;;
-        -h | --help)
-            usage
-            exit 0
-            ;;
-        -*)
-            log_error "Unknown option: $1"
-            usage >&2
-            exit 1
-            ;;
-        *)
-            if [[ -n "$PR_ARG" ]]; then
-                log_error "Unexpected argument: $1"
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --outdated)
+                if [[ "$FILTER_MODE" != "list" ]]; then
+                    log_error "Cannot combine --outdated with --all or --comment-id"
+                    exit 1
+                fi
+                FILTER_MODE="outdated"
+                shift
+                ;;
+            --all)
+                if [[ "$FILTER_MODE" != "list" ]]; then
+                    log_error "Cannot combine --all with --outdated or --comment-id"
+                    exit 1
+                fi
+                FILTER_MODE="all"
+                shift
+                ;;
+            --comment-id)
+                if [[ "$FILTER_MODE" != "list" && "$FILTER_MODE" != "comment-ids" ]]; then
+                    log_error "Cannot combine --comment-id with --outdated or --all"
+                    exit 1
+                fi
+                if [[ $# -lt 2 ]]; then
+                    log_error "--comment-id requires an argument"
+                    exit 1
+                fi
+                FILTER_MODE="comment-ids"
+                if [[ ! "$2" =~ ^[0-9]+$ ]]; then
+                    log_error "--comment-id requires a numeric REST API comment ID, got: $2"
+                    exit 1
+                fi
+                COMMENT_IDS+=("$2")
+                shift 2
+                ;;
+            --author)
+                if [[ $# -lt 2 ]]; then
+                    log_error "--author requires an argument"
+                    exit 1
+                fi
+                AUTHOR_FILTER="$2"
+                shift 2
+                ;;
+            --dry-run)
+                DRY_RUN=true
+                shift
+                ;;
+            --json)
+                JSON_OUTPUT=true
+                shift
+                ;;
+            -h | --help)
+                usage
+                exit 0
+                ;;
+            -*)
+                log_error "Unknown option: $1"
                 usage >&2
                 exit 1
-            fi
-            PR_ARG="$1"
-            shift
-            ;;
-    esac
-done
+                ;;
+            *)
+                if [[ -n "$PR_ARG" ]]; then
+                    log_error "Unexpected argument: $1"
+                    usage >&2
+                    exit 1
+                fi
+                PR_ARG="$1"
+                shift
+                ;;
+        esac
+    done
 
-# ── Main logic ───────────────────────────────────────────────────────────────
+    # ── Main logic ───────────────────────────────────────────────────────────────
 
-resolve_pr_target "$PR_ARG"
+    resolve_pr_target "$PR_ARG"
 
-log_info "Fetching review threads for ${REPO}#${PR_NUMBER}…"
+    log_info "Fetching review threads for ${REPO}#${PR_NUMBER}…"
 
-all_threads=$(fetch_all_threads "$OWNER" "$REPO_NAME" "$PR_NUMBER")
+    all_threads=$(fetch_all_threads "$OWNER" "$REPO_NAME" "$PR_NUMBER")
 
-# Filter to unresolved, and (if requested) to a specific author.
-unresolved=$(echo "$all_threads" | jq '[.[] | select(.isResolved == false)]')
-if [[ -n "$AUTHOR_FILTER" ]]; then
-    unresolved=$(echo "$unresolved" | jq --arg a "$AUTHOR_FILTER" \
-        '[.[] | select((.author // "" | ascii_downcase) == ($a | ascii_downcase))]')
-fi
-unresolved_count=$(echo "$unresolved" | jq 'length')
-
-if [[ "$unresolved_count" -eq 0 ]]; then
-    if [[ "$JSON_OUTPUT" == "true" ]]; then
-        jq -n --arg repo "$REPO" --argjson pr "$PR_NUMBER" \
-            '{repo: $repo, pr: $pr, threads: [], resolvedCount: 0, totalUnresolved: 0, affectedFiles: []}'
-    else
-        echo "No unresolved threads on ${REPO}#${PR_NUMBER}." >&2
+    # Filter to unresolved, and (if requested) to a specific author.
+    unresolved=$(echo "$all_threads" | jq '[.[] | select(.isResolved == false)]')
+    if [[ -n "$AUTHOR_FILTER" ]]; then
+        unresolved=$(echo "$unresolved" | jq --arg a "$AUTHOR_FILTER" \
+            '[.[] | select((.author // "" | ascii_downcase) == ($a | ascii_downcase))]')
     fi
-    exit 0
-fi
+    unresolved_count=$(echo "$unresolved" | jq 'length')
 
-# Apply filter
-filtered="[]"
-label=""
-case "$FILTER_MODE" in
-    list)
+    if [[ "$unresolved_count" -eq 0 ]]; then
         if [[ "$JSON_OUTPUT" == "true" ]]; then
-            echo "$unresolved" | jq --arg repo "$REPO" --argjson pr "$PR_NUMBER" '{
+            jq -n --arg repo "$REPO" --argjson pr "$PR_NUMBER" \
+                '{repo: $repo, pr: $pr, threads: [], resolvedCount: 0, totalUnresolved: 0, affectedFiles: []}'
+        else
+            echo "No unresolved threads on ${REPO}#${PR_NUMBER}." >&2
+        fi
+        exit 0
+    fi
+
+    # Apply filter
+    filtered="[]"
+    label=""
+    case "$FILTER_MODE" in
+        list)
+            if [[ "$JSON_OUTPUT" == "true" ]]; then
+                echo "$unresolved" | jq --arg repo "$REPO" --argjson pr "$PR_NUMBER" '{
         repo: $repo,
         pr: $pr,
         threads: .,
         totalUnresolved: length,
         affectedFiles: ([.[].path] | unique)
       }'
+            else
+                display_threads "$unresolved" "unresolved"
+            fi
+            exit 0
+            ;;
+        outdated)
+            filtered=$(echo "$unresolved" | jq '[.[] | select(.isOutdated == true)]')
+            label="outdated"
+            ;;
+        all)
+            filtered="$unresolved"
+            label="unresolved"
+            ;;
+        comment-ids)
+            id_array=$(printf '%s\n' "${COMMENT_IDS[@]}" | jq -s 'map(tonumber)')
+            filtered=$(echo "$unresolved" | jq --argjson ids "$id_array" '[.[] | select(.commentId as $c | $ids | index($c) != null)]')
+            label="matching"
+            ;;
+    esac
+
+    filtered_count=$(echo "$filtered" | jq 'length')
+
+    if [[ "$filtered_count" -eq 0 ]]; then
+        if [[ "$JSON_OUTPUT" == "true" ]]; then
+            jq -n --arg repo "$REPO" --argjson pr "$PR_NUMBER" --argjson total "$unresolved_count" \
+                '{repo: $repo, pr: $pr, threads: [], resolvedCount: 0, totalUnresolved: $total, affectedFiles: []}'
         else
-            display_threads "$unresolved" "unresolved"
+            echo "No ${label} threads to resolve (${unresolved_count} unresolved total)." >&2
         fi
         exit 0
-        ;;
-    outdated)
-        filtered=$(echo "$unresolved" | jq '[.[] | select(.isOutdated == true)]')
-        label="outdated"
-        ;;
-    all)
-        filtered="$unresolved"
-        label="unresolved"
-        ;;
-    comment-ids)
-        id_array=$(printf '%s\n' "${COMMENT_IDS[@]}" | jq -s 'map(tonumber)')
-        filtered=$(echo "$unresolved" | jq --argjson ids "$id_array" '[.[] | select(.commentId as $c | $ids | index($c) != null)]')
-        label="matching"
-        ;;
-esac
-
-filtered_count=$(echo "$filtered" | jq 'length')
-
-if [[ "$filtered_count" -eq 0 ]]; then
-    if [[ "$JSON_OUTPUT" == "true" ]]; then
-        jq -n --arg repo "$REPO" --argjson pr "$PR_NUMBER" --argjson total "$unresolved_count" \
-            '{repo: $repo, pr: $pr, threads: [], resolvedCount: 0, totalUnresolved: $total, affectedFiles: []}'
-    else
-        echo "No ${label} threads to resolve (${unresolved_count} unresolved total)." >&2
     fi
-    exit 0
-fi
 
-# Dry run
-if [[ "$DRY_RUN" == "true" ]]; then
-    if [[ "$JSON_OUTPUT" == "true" ]]; then
-        echo "$filtered" | jq --arg repo "$REPO" --argjson pr "$PR_NUMBER" --argjson total "$unresolved_count" '{
+    # Dry run
+    if [[ "$DRY_RUN" == "true" ]]; then
+        if [[ "$JSON_OUTPUT" == "true" ]]; then
+            echo "$filtered" | jq --arg repo "$REPO" --argjson pr "$PR_NUMBER" --argjson total "$unresolved_count" '{
       repo: $repo,
       pr: $pr,
       threads: [.[] | . + {resolved: false}],
@@ -419,45 +426,45 @@ if [[ "$DRY_RUN" == "true" ]]; then
       affectedFiles: ([.[].path] | unique),
       dryRun: true
     }'
-    else
-        echo "Dry run — would resolve:" >&2
-        display_threads "$filtered" "${label}"
+        else
+            echo "Dry run — would resolve:" >&2
+            display_threads "$filtered" "${label}"
+        fi
+        exit 0
     fi
-    exit 0
-fi
 
-# Resolve threads
-log_info "Resolving ${filtered_count} ${label} thread(s)…"
+    # Resolve threads
+    log_info "Resolving ${filtered_count} ${label} thread(s)…"
 
-resolved_count=0
-failed_count=0
-resolved_files=()
+    resolved_count=0
+    failed_count=0
+    resolved_files=()
 
-while IFS=$'\t' read -r thread_id thread_path thread_line; do
-    if resolve_thread "$thread_id"; then
-        log_success "Resolved: ${thread_path}:${thread_line}"
-        resolved_count=$((resolved_count + 1))
-        resolved_files+=("$thread_path")
+    while IFS=$'\t' read -r thread_id thread_path thread_line; do
+        if resolve_thread "$thread_id"; then
+            log_success "Resolved: ${thread_path}:${thread_line}"
+            resolved_count=$((resolved_count + 1))
+            resolved_files+=("$thread_path")
+        else
+            log_warn "Failed to resolve: ${thread_path}:${thread_line}"
+            failed_count=$((failed_count + 1))
+        fi
+    done < <(echo "$filtered" | jq -r '.[] | [.id, .path, (.line // "-" | tostring)] | @tsv')
+
+    if [[ ${#resolved_files[@]} -gt 0 ]]; then
+        file_count=$(printf '%s\n' "${resolved_files[@]}" | sort -u | grep -c . || true)
     else
-        log_warn "Failed to resolve: ${thread_path}:${thread_line}"
-        failed_count=$((failed_count + 1))
+        file_count=0
     fi
-done < <(echo "$filtered" | jq -r '.[] | [.id, .path, (.line // "-" | tostring)] | @tsv')
 
-if [[ ${#resolved_files[@]} -gt 0 ]]; then
-    file_count=$(printf '%s\n' "${resolved_files[@]}" | sort -u | grep -c . || true)
-else
-    file_count=0
-fi
-
-# Summary
-if [[ "$JSON_OUTPUT" == "true" ]]; then
-    echo "$filtered" | jq \
-        --arg repo "$REPO" \
-        --argjson pr "$PR_NUMBER" \
-        --argjson resolved "$resolved_count" \
-        --argjson failed "$failed_count" \
-        --argjson total "$unresolved_count" '{
+    # Summary
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+        echo "$filtered" | jq \
+            --arg repo "$REPO" \
+            --argjson pr "$PR_NUMBER" \
+            --argjson resolved "$resolved_count" \
+            --argjson failed "$failed_count" \
+            --argjson total "$unresolved_count" '{
       repo: $repo,
       pr: $pr,
       threads: .,
@@ -466,10 +473,15 @@ if [[ "$JSON_OUTPUT" == "true" ]]; then
       totalUnresolved: $total,
       affectedFiles: ([.[].path] | unique)
     }'
-else
-    if [[ "$failed_count" -gt 0 ]]; then
-        log_warn "Resolved ${resolved_count}/${filtered_count} thread(s) across ${file_count} file(s) (${failed_count} failed)"
     else
-        log_success "Resolved ${resolved_count} thread(s) across ${file_count} file(s)"
+        if [[ "$failed_count" -gt 0 ]]; then
+            log_warn "Resolved ${resolved_count}/${filtered_count} thread(s) across ${file_count} file(s) (${failed_count} failed)"
+        else
+            log_success "Resolved ${resolved_count} thread(s) across ${file_count} file(s)"
+        fi
     fi
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
 fi
