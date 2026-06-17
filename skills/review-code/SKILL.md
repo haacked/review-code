@@ -45,7 +45,7 @@ Single-agent arguments, each on local changes only:
 - `--draft` or `-d` - Create a pending GitHub review with inline comments (PR mode only). Automatically detects and adjusts for comment drift when the PR receives new commits between review generation and draft posting.
 - `--self` - Allow creating draft review on your own PR (for testing)
 - `--overwrite` - Replace existing review file without prompting
-- `--append` - Append to existing review file without prompting
+- `--append` - Append to existing review file without prompting. In PR mode, also resolves review threads from your previous review whose findings the author has since addressed (the code changed and the new review no longer flags them).
 - `--fix` - After the review, apply fixes for findings the agent can resolve cleanly. Edits the working tree directly. Items not fixed (and the choice made on any judgment-call fixes) are listed in a Fix Summary section in the review. Not compatible with `learn` or `find`.
 - `--parent <ref>` - Override the base branch used for branch / current-branch reviews. By default, branches with a recorded stack parent (Graphite or `branch.<name>.parent` in git config) review against that parent; use `--parent` to force a different base, e.g. `--parent main`.
 
