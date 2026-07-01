@@ -193,7 +193,7 @@ You are on the PR's branch in the user's working directory. Use the Read tool to
 **If `working_dir` is null:**
 ```
 **File Access:**
-No safe local checkout is available for reading PR files. This can happen because no local clone is configured for the repo in `repos.conf`, because worktree provisioning failed, or because the PR ref could not be fetched into the user's clone. Work from the diff content only.
+No safe local checkout is available for reading PR files. This can happen because no local clone is configured for the repo in `repos.conf`, because worktree provisioning failed, or because the PR ref could not be fetched into the user's clone. Work primarily from the diff content, but when a finding hinges on control flow, ordering, or behavior the diff hunk doesn't show, fetch the specific file rather than concluding you can't tell (see "Verify before asking or hedging" below).
 ```
 
 ### Gather Architectural Context
@@ -409,11 +409,11 @@ Prefix every finding so the author knows what action is expected. The prefix mus
 
 If a comment has no prefix, treat it as a suggestion.
 
-**Verify before asking.**
+**Verify before asking or hedging.**
 
-Before writing a `question:` comment, try to answer the question yourself from the source. The author has access to the same files; if the answer is one read away, asking instead of looking is just noise.
+Before writing a `question:` comment, or hedging a `blocking:`/`suggestion:` finding with "I can't tell from the diff" / "not sure if this is a bug", try to answer it yourself from the source. The author has access to the same files; if the answer is one read away, asking instead of looking is just noise.
 
-When the question is about file content (does X exist, what does Y do, where is Z defined), try these in cheapest-first order and stop as soon as one works:
+When the answer is about file content (does X exist, what does Y do, where is Z defined, which of two calls runs first), try these in cheapest-first order and stop as soon as one works:
 
 1. Grep the diff itself. The change context is already in the session data; many questions are answered there with no extra tool calls.
 2. If `working_dir` is set, use Read/Grep on the PR's files at `git.working_dir`.
@@ -422,7 +422,7 @@ When the question is about file content (does X exist, what does Y do, where is 
 
 Only ask the author when the answer genuinely depends on context outside the code: their intent, a future plan, an incident the code is responding to, an external system's behavior. "What do you mean?" / "Does X exist?" / "Where is Y handled?" almost always have an answer in the repo, and asking the author for them wastes their time.
 
-If you exhausted the steps above and still cannot verify a specific fact (the file is outside the diff and not fetchable, the symbol is in a system you don't have access to), you may write a `question:` comment, but cite what you checked. "I couldn't find `foo()` in the diff or in `bar.py` at this ref. Is it defined elsewhere, or should this call use `baz()` instead?" beats a bare "Where is `foo` defined?"
+If you exhausted the steps above and still cannot verify a specific fact (the file is outside the diff and not fetchable, the symbol is in a system you don't have access to), you may write a `question:` comment (or note the residual uncertainty in a `blocking:`/`suggestion:` finding), but cite what you checked. "I couldn't find `foo()` in the diff or in `bar.py` at this ref. Is it defined elsewhere, or should this call use `baz()` instead?" beats a bare "Where is `foo` defined?"
 
 **Inline Comment Voice:**
 
