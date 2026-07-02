@@ -220,13 +220,15 @@ session_cleanup() {
     rm -f "${command_dir}/${session_id}.meta.json"
 }
 
-# Cleanup old sessions (older than 1 hour)
+# Cleanup old sessions (older than $2, default 1 hour)
 # Args: $1 = command name (optional, if not provided cleans all commands)
+#       $2 = staleness threshold in minutes (optional, default 60)
 # Routes each stale session through session_cleanup so per-session teardown
 # (e.g. worktree removal) runs. Meta files have no per-session teardown so
 # they're swept separately with find -delete.
 session_cleanup_old() {
     local command_name="${1:-}"
+    local max_age_minutes="${2:-60}"
 
     local search_dir
     if [[ -z "${command_name}" ]]; then
@@ -241,9 +243,9 @@ session_cleanup_old() {
     while IFS= read -r -d '' stale_file; do
         session_id=$(basename "${stale_file}" .json)
         session_cleanup "${session_id}" 2> /dev/null || true
-    done < <(find "${search_dir}" -name "*.json" -not -name "*.meta.json" -type f -mmin +60 -print0 2> /dev/null)
+    done < <(find "${search_dir}" -name "*.json" -not -name "*.meta.json" -type f -mmin "+${max_age_minutes}" -print0 2> /dev/null)
 
-    find "${search_dir}" -name "*.meta.json" -type f -mmin +60 -delete 2> /dev/null || true
+    find "${search_dir}" -name "*.meta.json" -type f -mmin "+${max_age_minutes}" -delete 2> /dev/null || true
 }
 
 # List active sessions for a command

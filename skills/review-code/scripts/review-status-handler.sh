@@ -46,6 +46,9 @@ ORCHESTRATOR=$(find_orchestrator)
 # Main logic
 case "${ACTION}" in
     "init")
+        # Sweep sessions (and worktrees) from a crashed/abandoned prior review.
+        # 24h threshold avoids reaping one still paused on a prompt elsewhere.
+        session_cleanup_old "review-code" 1440 2> /dev/null || true
         # Initialize session - run orchestrator and cache result
         # Pass arguments separately to preserve word splitting
         review_data=$("${ORCHESTRATOR}" "$@")

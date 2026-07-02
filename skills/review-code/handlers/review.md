@@ -35,6 +35,12 @@ If user selects "Merge and continue":
 3. Write merged content to PR review file
 4. Delete branch review file: `rm "$branch_review_path"`
 
+If user selects "Cancel": clean up the session, then stop (a worktree may have been provisioned for this session; this releases it instead of leaving it behind).
+
+```bash
+~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
+```
+
 **If `needs_rename` is true** (branch review exists but should migrate to PR format):
 
 Use AskUserQuestion:
@@ -49,6 +55,12 @@ If user selects "Migrate and continue":
 2. Move file: `mv "$file_path" "$new_path"`
 3. Update `review_file` variable to new path
 
+If user selects "Cancel": clean up the session, then stop.
+
+```bash
+~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
+```
+
 **If `file_info.file_exists` is true** (a review file exists but neither of the above conditions apply):
 
 First, check the session JSON for `overwrite` and `append` flags:
@@ -59,6 +71,12 @@ First, check the session JSON for `overwrite` and `append` flags:
     1. "Overwrite": Replace the existing review
     2. "Append": Add new findings to the existing review
     3. "Cancel": Stop without reviewing
+
+If user selects "Cancel": clean up the session, then stop.
+
+```bash
+~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
+```
 
 ### Extract Session Data
 
@@ -1326,7 +1344,8 @@ If failed, show the error and suggest using the review file manually.
   1. Display the error message to the user
   2. Tell them: "Draft review creation failed. The review has been saved to the markdown file."
   3. Suggest: "You can copy comments from the review file and post them manually on GitHub."
-  4. **STOP HERE.** Do NOT attempt to post comments using `gh pr review` or any other method as a fallback. This will submit the review instead of keeping it pending.
+  4. Clean up the session: `~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"`
+  5. **STOP HERE.** Do NOT attempt to post comments using `gh pr review` or any other method as a fallback. This will submit the review instead of keeping it pending.
 
 ### Resolve Addressed Threads (--append, PR Mode Only)
 
