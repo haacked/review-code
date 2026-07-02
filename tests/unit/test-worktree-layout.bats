@@ -11,11 +11,11 @@ setup() {
     source "$HELPER"
 }
 
-@test "worktree_root: falls back to ~/.claude/skills/review-code/worktrees by default" {
+@test "worktree_root: falls back to ~/.claude/skills/review-code/.worktrees by default" {
     unset REVIEW_CODE_WORKTREE_DIR
     run worktree_root
     [ "$status" -eq 0 ]
-    [ "$output" = "$HOME/.claude/skills/review-code/worktrees" ]
+    [ "$output" = "$HOME/.claude/skills/review-code/.worktrees" ]
 }
 
 @test "worktree_root: honors REVIEW_CODE_WORKTREE_DIR" {

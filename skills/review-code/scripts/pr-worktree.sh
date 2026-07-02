@@ -5,7 +5,7 @@
 #   pr-worktree.sh provision <org> <repo> <pr_number> <local_clone>
 #     Fetches refs/pull/<N>/head into refs/review-code/pr/<N> inside the user's
 #     clone, then creates (or reuses) a detached worktree at
-#     ${REVIEW_CODE_WORKTREE_DIR:-$HOME/.claude/skills/review-code/worktrees}/<org>/<repo>/pr-<N>.
+#     ${REVIEW_CODE_WORKTREE_DIR:-$HOME/.claude/skills/review-code/.worktrees}/<org>/<repo>/pr-<N>.
 #
 #     stdout: JSON {"worktree_path": "<abs>", "ref": "refs/review-code/pr/<N>"}
 #     stderr: progress / diagnostics
