@@ -240,6 +240,26 @@ EOF
     [ "$status" -eq 0 ]
 }
 
+@test "pr-worktree teardown: removes a worktree locked by an external tool" {
+    run bash -c "'$SCRIPT' provision \"\$@\" 2>/dev/null" _ myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    local wt_path
+    wt_path=$(echo "$output" | jq -r '.worktree_path')
+
+    # Simulate an external tool (e.g. Supacode) locking the worktree it
+    # discovered on disk, independent of review-code's own provisioning.
+    git -C "$CLONE_DIR" worktree lock "$wt_path" --reason "locked by external tool"
+    run git -C "$CLONE_DIR" worktree list --porcelain
+    [[ "$output" == *"locked"* ]]
+
+    run "$SCRIPT" teardown myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    [ ! -d "$wt_path" ]
+
+    run git -C "$CLONE_DIR" worktree list --porcelain
+    [[ "$output" != *"$wt_path"* ]]
+}
+
 # =============================================================================
 # path layout
 # =============================================================================

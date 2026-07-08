@@ -12,9 +12,10 @@
 #     exit 1 on fetch or worktree failure (caller falls back to diff-only)
 #
 #   pr-worktree.sh teardown <org> <repo> <pr_number> <local_clone>
-#     Removes the worktree via `git worktree remove --force`. Keeps the ref
-#     (trivially small; speeds up re-reviews of the same PR).
-#     No error if the worktree is already gone.
+#     Unlocks (in case an external tool locked it) and removes the worktree
+#     via `git worktree remove --force`. Keeps the ref (trivially small;
+#     speeds up re-reviews of the same PR). No error if the worktree is
+#     already gone.
 
 set -euo pipefail
 
@@ -190,6 +191,14 @@ teardown() {
     fi
 
     log "Removing worktree ${path}…"
+    # Some environments (e.g. Supacode's worktree manager) lock any git
+    # worktree they discover on disk, including ones we provision for
+    # ourselves. `git worktree remove` refuses a locked worktree unless
+    # --force is given twice; unlocking first lets a single --force work
+    # regardless of who (or what) placed the lock. `unlock` errors (and is
+    # swallowed) when the worktree isn't locked at all, which is the common
+    # case.
+    git -C "${local_clone}" worktree unlock "${path}" > /dev/null 2>&1 || true
     git -C "${local_clone}" worktree remove --force "${path}" > /dev/null 2>&1 || true
     # Best-effort cleanup of empty ancestor directories.
     local repo_dir="${path%/*}"
