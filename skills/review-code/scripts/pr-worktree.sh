@@ -196,7 +196,12 @@ teardown() {
     # touch a locked worktree. Now that we unlock deliberately, check for
     # uncommitted/untracked changes ourselves before removing anything -
     # mirroring the dirty-worktree guard in git-bclean-local.
-    if [[ -n "$(git -C "${path}" status --porcelain 2> /dev/null)" ]]; then
+    local status_output
+    if ! status_output=$(git -C "${path}" status --porcelain --untracked-files=normal 2>&1); then
+        log "Leaving worktree ${path} in place (couldn't check for uncommitted changes)."
+        return 0
+    fi
+    if [[ -n "${status_output}" ]]; then
         log "Leaving worktree ${path} in place (has uncommitted changes)."
         return 0
     fi
