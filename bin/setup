@@ -117,12 +117,29 @@ verify_repo_structure() {
     fi
 }
 
+# Copy every *.sh in $1 to $2, marking each executable. No-op if $1 doesn't
+# exist or is empty.
+copy_scripts_dir() {
+    local src_subdir="$1"
+    local dst_subdir="$2"
+    [[ -d "${src_subdir}" ]] || return 0
+    local src
+    for src in "${src_subdir}/"*.sh; do
+        [[ -e "${src}" ]] || continue
+        local filename
+        filename=$(basename "${src}")
+        cp "${src}" "${dst_subdir}/${filename}"
+        chmod +x "${dst_subdir}/${filename}"
+    done
+}
+
 install_skill() {
     local src_dir="${SCRIPT_DIR}/skills/review-code"
     local dst_dir="${SKILL_DIR}"
 
     # Create skill directory structure
     mkdir -p "${dst_dir}/scripts/helpers"
+    mkdir -p "${dst_dir}/scripts/session-hooks"
     mkdir -p "${dst_dir}/reviews"
     mkdir -p "${dst_dir}/learnings"
 
@@ -155,17 +172,11 @@ install_skill() {
     done
 
     # Copy helper scripts
-    if [[ -d "${src_dir}/scripts/helpers" ]]; then
-        for src in "${src_dir}/scripts/helpers/"*.sh; do
-            [[ -e "${src}" ]] || continue
-            local filename
-            filename=$(basename "${src}")
-            local dst="${dst_dir}/scripts/helpers/${filename}"
+    copy_scripts_dir "${src_dir}/scripts/helpers" "${dst_dir}/scripts/helpers"
 
-            cp "${src}" "${dst}"
-            chmod +x "${dst}"
-        done
-    fi
+    # Copy session hooks (per-command teardown invoked by session-manager.sh;
+    # e.g. review-code-cleanup.sh removes a provisioned PR worktree)
+    copy_scripts_dir "${src_dir}/scripts/session-hooks" "${dst_dir}/scripts/session-hooks"
 
     # Copy handlers
     if [[ -d "${src_dir}/handlers" ]]; then

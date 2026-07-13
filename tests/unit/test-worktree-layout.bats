@@ -42,3 +42,19 @@ setup() {
     run worktree_layout_depth
     [ "$output" = "3" ]
 }
+
+@test "worktree_lock_for: lowercases org and repo and appends .lock" {
+    REVIEW_CODE_WORKTREE_DIR=/tmp/wt run worktree_lock_for "Acme" "Widget"
+    [ "$output" = "/tmp/wt/acme/widget.lock" ]
+}
+
+@test "worktree_lock_for: is a sibling of the repo's worktree directory, not nested in it" {
+    REVIEW_CODE_WORKTREE_DIR=/tmp/wt
+    export REVIEW_CODE_WORKTREE_DIR
+    local wt_path lock_path
+    wt_path=$(worktree_path_for "acme" "widget" 7)
+    lock_path=$(worktree_lock_for "acme" "widget")
+    # Both live directly under .../acme/, so removing a PR worktree can never
+    # remove the lock, and vice versa.
+    [ "$(dirname "$(dirname "$wt_path")")" = "$(dirname "$lock_path")" ]
+}
