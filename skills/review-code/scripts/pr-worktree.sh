@@ -15,7 +15,8 @@
 #     Unlocks (in case an external tool locked it) and removes the worktree
 #     via `git worktree remove --force`. Keeps the ref (trivially small;
 #     speeds up re-reviews of the same PR). No error if the worktree is
-#     already gone.
+#     already gone. Leaves the worktree untouched if it has uncommitted or
+#     untracked changes, so in-progress edits are never destroyed.
 
 set -euo pipefail
 
@@ -187,6 +188,21 @@ teardown() {
     path=$(canonicalize "${path}")
 
     if ! worktree_is_registered "${local_clone}" "${path}"; then
+        return 0
+    fi
+
+    # An external lock (see below) used to be the only thing standing between
+    # a stray `--force` and an in-progress edit, since a single --force can't
+    # touch a locked worktree. Now that we unlock deliberately, check for
+    # uncommitted/untracked changes ourselves before removing anything -
+    # mirroring the dirty-worktree guard in git-bclean-local.
+    local status_output
+    if ! status_output=$(git -C "${path}" status --porcelain --untracked-files=normal 2>&1); then
+        log "Leaving worktree ${path} in place (couldn't check for uncommitted changes)."
+        return 0
+    fi
+    if [[ -n "${status_output}" ]]; then
+        log "Leaving worktree ${path} in place (has uncommitted changes)."
         return 0
     fi
 

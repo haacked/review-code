@@ -260,6 +260,39 @@ EOF
     [[ "$output" != *"$wt_path"* ]]
 }
 
+@test "pr-worktree teardown: leaves a worktree with uncommitted changes in place" {
+    run bash -c "'$SCRIPT' provision \"\$@\" 2>/dev/null" _ myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    local wt_path
+    wt_path=$(echo "$output" | jq -r '.worktree_path')
+
+    # Simulate in-progress edits, e.g. a reviewer applying a suggested fix.
+    echo "uncommitted edit" >> "$wt_path/file.txt"
+
+    run "$SCRIPT" teardown myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    [ -d "$wt_path" ]
+
+    run git -C "$CLONE_DIR" worktree list --porcelain
+    [[ "$output" == *"$wt_path"* ]]
+}
+
+@test "pr-worktree teardown: leaves a worktree with untracked files in place" {
+    run bash -c "'$SCRIPT' provision \"\$@\" 2>/dev/null" _ myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    local wt_path
+    wt_path=$(echo "$output" | jq -r '.worktree_path')
+
+    echo "scratch notes" > "$wt_path/untracked.txt"
+
+    run "$SCRIPT" teardown myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    [ -d "$wt_path" ]
+
+    run git -C "$CLONE_DIR" worktree list --porcelain
+    [[ "$output" == *"$wt_path"* ]]
+}
+
 # =============================================================================
 # path layout
 # =============================================================================
