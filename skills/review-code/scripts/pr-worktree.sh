@@ -21,8 +21,9 @@
 # Both commands serialize on a per-org/repo mkdir-based lock before touching
 # the local clone, since concurrent `git fetch`/`git worktree add|remove`
 # against the same clone is not safe (see worktree_lock_for). Lock wait tops
-# out at REVIEW_CODE_LOCK_TIMEOUT seconds (default 30); the caller falls back
-# to diff-only on timeout.
+# out at REVIEW_CODE_LOCK_TIMEOUT seconds (default 30). On timeout, provision's
+# caller falls back to diff-only; teardown's caller swallows the failure and
+# leaves the worktree in place for a later run to remove.
 
 set -euo pipefail
 
@@ -52,7 +53,10 @@ trap cleanup_lock EXIT INT TERM
 
 # Serializes provision/teardown per org/repo (see worktree_lock_for). mkdir is
 # the lock primitive: atomic create, no extra dependency, and portable (macOS
-# has no `flock`). Self-clears via the EXIT trap even if the caller is killed.
+# has no `flock`). The EXIT/INT/TERM trap clears it on normal exit and on
+# Ctrl-C/terminate, but a SIGKILL or OOM-kill leaves the directory behind;
+# there is no stale-lock recovery yet, so a killed holder wedges every future
+# provision/teardown for that org/repo until someone manually rmdirs it.
 acquire_lock() {
     local lockfile="$1"
     local waited=0

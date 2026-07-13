@@ -126,8 +126,7 @@ copy_scripts_dir() {
     local src
     for src in "${src_subdir}/"*.sh; do
         [[ -e "${src}" ]] || continue
-        local filename
-        filename=$(basename "${src}")
+        local filename="${src##*/}"
         cp "${src}" "${dst_subdir}/${filename}"
         chmod +x "${dst_subdir}/${filename}"
     done

@@ -208,7 +208,7 @@ setup() {
 }
 
 @test "setup: install_skill copies session hooks" {
-    run bash -c "grep -A80 'install_skill()' '$PROJECT_ROOT/bin/setup' | grep -q 'session-hooks'"
+    run bash -c "awk '/^install_skill\(\)/{f=1} f{print} /^}/{if(f)exit}' '$PROJECT_ROOT/bin/setup' | grep -q 'session-hooks'"
     [ "$status" -eq 0 ]
 }
 
