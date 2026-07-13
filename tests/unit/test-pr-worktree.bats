@@ -216,6 +216,67 @@ EOF
     grep -q "post-crash" "$wt_path/file.txt"
 }
 
+@test "pr-worktree provision: serializes concurrent invocations for the same org/repo" {
+    # Manually hold the lock provision() would acquire, to verify it actually
+    # waits rather than racing a second `git fetch`/`worktree add` against the
+    # same clone concurrently.
+    local lock_path="$WORKTREE_ROOT/myorg/myrepo.lock"
+    mkdir -p "$(dirname "$lock_path")"
+    mkdir "$lock_path"
+
+    "$SCRIPT" provision myorg myrepo 42 "$CLONE_DIR" \
+        > "$TEST_DIR/bg-output.json" 2> "$TEST_DIR/bg-output.log" &
+    local bg_pid=$!
+
+    sleep 2
+    # Still blocked on the lock: no worktree yet.
+    [ ! -d "$WORKTREE_ROOT/myorg/myrepo/pr-42" ]
+    kill -0 "$bg_pid"
+
+    rmdir "$lock_path"
+    wait "$bg_pid"
+    [ "$?" -eq 0 ]
+    [ -d "$WORKTREE_ROOT/myorg/myrepo/pr-42" ]
+    # provision released its own lock via the EXIT trap.
+    [ ! -d "$lock_path" ]
+}
+
+@test "pr-worktree provision: gives up and returns 1 after the lock timeout" {
+    # Hold the lock and never release it, forcing provision() down the
+    # timeout path. REVIEW_CODE_LOCK_TIMEOUT keeps this test fast.
+    local lock_path="$WORKTREE_ROOT/myorg/myrepo.lock"
+    mkdir -p "$(dirname "$lock_path")"
+    mkdir "$lock_path"
+
+    REVIEW_CODE_LOCK_TIMEOUT=2 run "$SCRIPT" provision myorg myrepo 42 "$CLONE_DIR"
+
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Timed out waiting for worktree lock"* ]]
+    [ ! -d "$WORKTREE_ROOT/myorg/myrepo/pr-42" ]
+    # The still-held lock is the caller's, not provision's; it must remain.
+    [ -d "$lock_path" ]
+}
+
+@test "pr-worktree teardown: gives up and returns 1 after the lock timeout" {
+    # Provision first so there's a real worktree teardown would otherwise
+    # remove, then confirm a contended lock blocks teardown too and leaves
+    # that worktree untouched.
+    run bash -c "'$SCRIPT' provision \"\$@\" 2>/dev/null" _ myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+
+    local lock_path="$WORKTREE_ROOT/myorg/myrepo.lock"
+    mkdir "$lock_path"
+
+    REVIEW_CODE_LOCK_TIMEOUT=2 run "$SCRIPT" teardown myorg myrepo 42 "$CLONE_DIR"
+
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Timed out waiting for worktree lock"* ]]
+    # The worktree survived because teardown never got the lock.
+    [ -d "$WORKTREE_ROOT/myorg/myrepo/pr-42" ]
+    # The still-held lock is the caller's, not teardown's; it must remain.
+    [ -d "$lock_path" ]
+}
+
 # =============================================================================
 # teardown
 # =============================================================================

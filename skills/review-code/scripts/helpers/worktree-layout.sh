@@ -31,3 +31,14 @@ worktree_path_for() {
 worktree_layout_depth() {
     echo 3
 }
+
+# Lock directory (mkdir-based) guarding provision/teardown for a given
+# org/repo pair. Both operations run `git fetch` and `git worktree add/remove`
+# against the same local clone, which is not safe to do concurrently - two
+# overlapping reviews of the same repo could race on git's internal
+# refs/worktree metadata.
+worktree_lock_for() {
+    local org="$1"
+    local repo="$2"
+    echo "$(worktree_root)/${org,,}/${repo,,}.lock"
+}

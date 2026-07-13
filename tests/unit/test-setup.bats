@@ -188,7 +188,7 @@ setup() {
 }
 
 @test "setup: install_skill copies uninstall script" {
-    run bash -c "grep -A80 'install_skill()' '$PROJECT_ROOT/bin/setup' | grep -q 'uninstall.sh'"
+    run bash -c "awk '/^install_skill\(\)/{f=1} f{print} /^}/{if(f)exit}' '$PROJECT_ROOT/bin/setup' | grep -q 'uninstall.sh'"
     [ "$status" -eq 0 ]
 }
 
@@ -205,6 +205,44 @@ setup() {
 @test "setup: install_skill creates learnings directory" {
     run bash -c "grep -A80 'install_skill()' '$PROJECT_ROOT/bin/setup' | grep -q 'learnings'"
     [ "$status" -eq 0 ]
+}
+
+@test "setup: install_skill copies session hooks" {
+    run bash -c "awk '/^install_skill\(\)/{f=1} f{print} /^}/{if(f)exit}' '$PROJECT_ROOT/bin/setup' | grep -q 'session-hooks'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: install_skill actually deploys session-hooks files to disk" {
+    # Regression test for a bug where scripts/session-hooks/ was added to the
+    # repo (review-code-cleanup.sh) but install_skill only ever copied
+    # scripts/*.sh and scripts/helpers/*.sh, silently never deploying it.
+    TEST_TEMP_DIR=$(mktemp -d)
+    src_dir="${TEST_TEMP_DIR}/src/skills/review-code"
+    dst_dir="${TEST_TEMP_DIR}/dst/skills/review-code"
+    mkdir -p "${src_dir}/scripts/session-hooks"
+    echo '#!/usr/bin/env bash' > "${src_dir}/scripts/session-hooks/review-code-cleanup.sh"
+    mkdir -p "${src_dir}/scripts/helpers"
+    touch "${src_dir}/SKILL.md"
+
+    run bash -c "
+        set -euo pipefail
+        info() { :; }
+        debug() { :; }
+        warn() { :; }
+        error() { :; }
+        SCRIPT_DIR='${TEST_TEMP_DIR}/src'
+        CLAUDE_DIR='${TEST_TEMP_DIR}/dst'
+        SKILL_DIR='${dst_dir}'
+        source <(sed -n '/^copy_scripts_dir()/,/^}/p' '$PROJECT_ROOT/bin/setup')
+        source <(sed -n '/^install_skill()/,/^}/p' '$PROJECT_ROOT/bin/setup')
+        install_skill
+    "
+
+    [ "$status" -eq 0 ]
+    [ -f "${dst_dir}/scripts/session-hooks/review-code-cleanup.sh" ]
+    [ -x "${dst_dir}/scripts/session-hooks/review-code-cleanup.sh" ]
+
+    rm -rf "${TEST_TEMP_DIR}"
 }
 
 # =============================================================================

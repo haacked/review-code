@@ -17,6 +17,13 @@
 #     speeds up re-reviews of the same PR). No error if the worktree is
 #     already gone. Leaves the worktree untouched if it has uncommitted or
 #     untracked changes, so in-progress edits are never destroyed.
+#
+# Both commands serialize on a per-org/repo mkdir-based lock before touching
+# the local clone, since concurrent `git fetch`/`git worktree add|remove`
+# against the same clone is not safe (see worktree_lock_for). Lock wait tops
+# out at REVIEW_CODE_LOCK_TIMEOUT seconds (default 30). On timeout, provision's
+# caller falls back to diff-only; teardown's caller swallows the failure and
+# leaves the worktree in place for a later run to remove.
 
 set -euo pipefail
 
@@ -33,6 +40,36 @@ export GIT_TERMINAL_PROMPT=0
 # All progress output goes to stderr; stdout is reserved for the provision JSON.
 log() {
     echo "$*" >&2
+}
+
+LOCK_DIR=""
+
+cleanup_lock() {
+    if [[ -n "${LOCK_DIR}" ]]; then
+        rmdir "${LOCK_DIR}" 2> /dev/null || true
+    fi
+}
+trap cleanup_lock EXIT INT TERM
+
+# Serializes provision/teardown per org/repo (see worktree_lock_for). mkdir is
+# the lock primitive: atomic create, no extra dependency, and portable (macOS
+# has no `flock`). The EXIT/INT/TERM trap clears it on normal exit and on
+# Ctrl-C/terminate, but a SIGKILL or OOM-kill leaves the directory behind;
+# there is no stale-lock recovery yet, so a killed holder wedges every future
+# provision/teardown for that org/repo until someone manually rmdirs it.
+acquire_lock() {
+    local lockfile="$1"
+    local waited=0
+    mkdir -p "$(dirname "${lockfile}")"
+    while ! mkdir "${lockfile}" 2> /dev/null; do
+        sleep 1
+        waited=$((waited + 1))
+        if ((waited >= ${REVIEW_CODE_LOCK_TIMEOUT:-30})); then
+            error "Timed out waiting for worktree lock: ${lockfile}"
+            return 1
+        fi
+    done
+    LOCK_DIR="${lockfile}"
 }
 
 # Resolve symlinks in <path>. Needed because `git worktree list` returns
@@ -119,6 +156,8 @@ provision() {
     local pr_number="$3"
     local local_clone="$4"
 
+    acquire_lock "$(worktree_lock_for "${org}" "${repo}")" || return 1
+
     local ref
     ref=$(ref_for "${pr_number}")
     local path
@@ -182,6 +221,8 @@ teardown() {
     # pointer (which may be gone), but the clone still has a stale
     # registration that needs `git worktree remove --force` to drop.
     local local_clone="$4"
+
+    acquire_lock "$(worktree_lock_for "${org}" "${repo}")" || return 1
 
     local path
     path=$(worktree_path_for "${org}" "${repo}" "${pr_number}")
