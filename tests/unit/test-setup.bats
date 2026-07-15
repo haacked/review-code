@@ -328,7 +328,7 @@ get_section_headers() {
 has_section() {
     local file="$1"
     local section="$2"
-    grep -qE "^## ${section}$" "${file}" 2> /dev/null
+    grep -qFx "## ${section}" "${file}" 2> /dev/null
 }
 
 extract_section() {
@@ -344,6 +344,27 @@ extract_section() {
         }
         printing { print }
     ' "${file}"
+}
+
+dedupe_sections_in_place() {
+    local file="$1"
+    local original
+    original=$(cat "${file}")
+
+    local deduped
+    deduped=$(awk '
+        /^## / {
+            if ($0 in seen) { skip = 1 } else { seen[$0] = 1; skip = 0 }
+        }
+        !skip { print }
+    ' "${file}")
+
+    if [[ "${deduped}" == "${original}" ]]; then
+        return 1
+    fi
+
+    printf '%s\n' "${deduped}" > "${file}"
+    return 0
 }
 
 merge_markdown_sections() {
@@ -367,6 +388,70 @@ merge_markdown_sections() {
     done <<< "${section_headers}"
 
     echo "${new_sections_added}"
+}
+
+# Minimal stand-ins for bin/setup's logging helpers. The real ones write to
+# stderr specifically so they can't corrupt a caller's `$(...)` capture; this
+# copy must match that or the process_context_file tests below would pass
+# for the wrong reason.
+debug() {
+    echo "-> $1" >&2
+}
+
+get_file_checksum() {
+    local file="$1"
+    if [[ -f "${file}" ]]; then
+        if command -v md5 &> /dev/null; then
+            md5 -q "${file}"
+        else
+            md5sum "${file}" | cut -d' ' -f1
+        fi
+    else
+        echo ""
+    fi
+}
+
+process_context_file() {
+    local src="$1"
+    local dst="$2"
+    local display_name="$3"
+
+    if [[ ! -f "${dst}" ]]; then
+        cp "${src}" "${dst}"
+        echo "new"
+        return
+    fi
+
+    local was_deduped=false
+    if dedupe_sections_in_place "${dst}"; then
+        was_deduped=true
+        debug "Removed duplicate section(s): ${display_name}"
+    fi
+
+    local src_sum dst_sum
+    src_sum=$(get_file_checksum "${src}")
+    dst_sum=$(get_file_checksum "${dst}")
+
+    if [[ "${src_sum}" == "${dst_sum}" ]]; then
+        if [[ "${was_deduped}" == true ]]; then
+            echo "deduped"
+        else
+            echo "updated"
+        fi
+        return
+    fi
+
+    local sections_added
+    sections_added=$(merge_markdown_sections "${src}" "${dst}")
+
+    if [[ "${sections_added}" -gt 0 ]]; then
+        debug "Merged ${sections_added} new section(s): ${display_name}"
+        echo "merged"
+    elif [[ "${was_deduped}" == true ]]; then
+        echo "deduped"
+    else
+        echo "preserved"
+    fi
 }
 FUNCTIONS
 }
@@ -441,6 +526,26 @@ EOF
 
     run has_section "$TEST_TEMP_DIR/test.md" "Missing Section"
     [ "$status" -ne 0 ]
+
+    teardown_smart_merge
+}
+
+@test "has_section: returns 0 for a title containing regex metacharacters" {
+    setup_smart_merge
+    source "$TEST_TEMP_DIR/smart_merge.sh"
+
+    # Regression test: titles like "Derive Awareness (Critical)" or
+    # "Accessibility Requirements (WCAG 2.1 AA)" contain unescaped ERE
+    # metacharacters. A grep -E match on these previously always failed,
+    # so has_section reported the section missing even when present,
+    # causing merge_markdown_sections to re-append it on every run.
+    cat > "$TEST_TEMP_DIR/test.md" << 'EOF'
+## Derive Awareness (Critical)
+Content
+EOF
+
+    run has_section "$TEST_TEMP_DIR/test.md" "Derive Awareness (Critical)"
+    [ "$status" -eq 0 ]
 
     teardown_smart_merge
 }
@@ -593,6 +698,31 @@ EOF
     teardown_smart_merge
 }
 
+@test "merge_markdown_sections: does not duplicate a section whose title has regex metacharacters across repeated runs" {
+    setup_smart_merge
+    source "$TEST_TEMP_DIR/smart_merge.sh"
+
+    # Regression test for the bin/setup rerun bug: sections like
+    # "Derive Awareness (Critical)" were re-appended on every run because
+    # has_section's grep -E never matched the literal parentheses.
+    cat > "$TEST_TEMP_DIR/src.md" << 'EOF'
+## Derive Awareness (Critical)
+Detection signals here.
+EOF
+
+    cp "$TEST_TEMP_DIR/src.md" "$TEST_TEMP_DIR/dst.md"
+
+    # Simulate `bin/setup` being run repeatedly (its stated, supported usage).
+    for _ in 1 2 3; do
+        merge_markdown_sections "$TEST_TEMP_DIR/src.md" "$TEST_TEMP_DIR/dst.md" > /dev/null
+    done
+
+    occurrences=$(grep -c "## Derive Awareness (Critical)" "$TEST_TEMP_DIR/dst.md")
+    [ "$occurrences" -eq 1 ]
+
+    teardown_smart_merge
+}
+
 @test "merge_markdown_sections: handles empty source file" {
     setup_smart_merge
     source "$TEST_TEMP_DIR/smart_merge.sh"
@@ -613,9 +743,159 @@ EOF
     teardown_smart_merge
 }
 
+@test "setup: has dedupe_sections_in_place function" {
+    run bash -c "grep -q '^dedupe_sections_in_place()' '$PROJECT_ROOT/bin/setup'"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: process_context_file uses dedupe_sections_in_place" {
+    run bash -c "grep -A20 '^process_context_file()' '$PROJECT_ROOT/bin/setup' | grep -q 'dedupe_sections_in_place'"
+    [ "$status" -eq 0 ]
+}
+
+@test "dedupe_sections_in_place: removes duplicate sections, keeps first occurrence" {
+    setup_smart_merge
+    source "$TEST_TEMP_DIR/smart_merge.sh"
+
+    cat > "$TEST_TEMP_DIR/dup.md" << 'EOF'
+# Title
+
+## Derive Awareness (Critical)
+First copy, this is the one that should survive.
+
+## Other Section
+Other content.
+
+## Derive Awareness (Critical)
+Second copy, a duplicate that should be removed.
+EOF
+
+    run dedupe_sections_in_place "$TEST_TEMP_DIR/dup.md"
+    [ "$status" -eq 0 ]
+
+    occurrences=$(grep -c "## Derive Awareness (Critical)" "$TEST_TEMP_DIR/dup.md")
+    [ "$occurrences" -eq 1 ]
+    grep -q "First copy, this is the one that should survive." "$TEST_TEMP_DIR/dup.md"
+    ! grep -q "Second copy, a duplicate that should be removed." "$TEST_TEMP_DIR/dup.md"
+    # Untouched section and the pre-H2 title survive.
+    grep -q "^# Title$" "$TEST_TEMP_DIR/dup.md"
+    grep -q "## Other Section" "$TEST_TEMP_DIR/dup.md"
+
+    teardown_smart_merge
+}
+
+@test "dedupe_sections_in_place: returns non-zero and leaves file unchanged when there are no duplicates" {
+    setup_smart_merge
+    source "$TEST_TEMP_DIR/smart_merge.sh"
+
+    cat > "$TEST_TEMP_DIR/clean.md" << 'EOF'
+## Section One
+Content one.
+
+## Section Two
+Content two.
+EOF
+    cp "$TEST_TEMP_DIR/clean.md" "$TEST_TEMP_DIR/clean.md.orig"
+
+    run dedupe_sections_in_place "$TEST_TEMP_DIR/clean.md"
+    [ "$status" -ne 0 ]
+
+    diff "$TEST_TEMP_DIR/clean.md" "$TEST_TEMP_DIR/clean.md.orig"
+
+    teardown_smart_merge
+}
+
+@test "dedupe_sections_in_place: collapses many repeated duplicates (simulates a corrupted installation)" {
+    setup_smart_merge
+    source "$TEST_TEMP_DIR/smart_merge.sh"
+
+    {
+        echo "# Rust Review Guidelines"
+        for _ in $(seq 1 238); do
+            echo ""
+            echo "## Derive Awareness (Critical)"
+            echo "Detection signals here."
+        done
+    } > "$TEST_TEMP_DIR/bloated.md"
+
+    run dedupe_sections_in_place "$TEST_TEMP_DIR/bloated.md"
+    [ "$status" -eq 0 ]
+
+    occurrences=$(grep -c "## Derive Awareness (Critical)" "$TEST_TEMP_DIR/bloated.md")
+    [ "$occurrences" -eq 1 ]
+
+    teardown_smart_merge
+}
+
 @test "setup: has process_context_file function" {
     run bash -c "grep -q '^process_context_file()' '$PROJECT_ROOT/bin/setup'"
     [ "$status" -eq 0 ]
+}
+
+@test "setup: logging helpers write to stderr, not stdout" {
+    # Regression test: process_context_file's return value is the stdout of
+    # a \$(...) call, and it calls debug() internally. If any of info/warn/
+    # error/debug wrote to stdout, that log text would corrupt the captured
+    # status (see the two tests below for the concrete failure mode this
+    # caused: "deduped"/"merged" silently vanishing from the setup summary).
+    for fn in info warn error debug; do
+        run bash -c "grep -A2 \"^${fn}()\" '$PROJECT_ROOT/bin/setup' | grep -q '>&2'"
+        [ "$status" -eq 0 ]
+    done
+}
+
+@test "process_context_file: returns a single-word status even when a section was deduplicated" {
+    setup_smart_merge
+    source "$TEST_TEMP_DIR/smart_merge.sh"
+
+    cat > "$TEST_TEMP_DIR/src.md" << 'EOF'
+## Derive Awareness (Critical)
+Content.
+EOF
+
+    # A destination that already has every section from src, just duplicated,
+    # so dedupe changes it but merge finds nothing new to add.
+    cat > "$TEST_TEMP_DIR/dst.md" << 'EOF'
+## Derive Awareness (Critical)
+Content.
+
+## Derive Awareness (Critical)
+Content.
+EOF
+
+    result=$(process_context_file "$TEST_TEMP_DIR/src.md" "$TEST_TEMP_DIR/dst.md" "test.md")
+
+    # Must be exactly "deduped", not that plus a stray debug line, and not
+    # silently swallowed into `*) ;;` by a case statement that can't match
+    # a multi-line value.
+    [ "$result" = "deduped" ]
+
+    teardown_smart_merge
+}
+
+@test "process_context_file: returns a single-word status when new sections are merged" {
+    setup_smart_merge
+    source "$TEST_TEMP_DIR/smart_merge.sh"
+
+    cat > "$TEST_TEMP_DIR/src.md" << 'EOF'
+## Existing Section
+Source content.
+
+## New Section
+New content.
+EOF
+
+    cat > "$TEST_TEMP_DIR/dst.md" << 'EOF'
+## Existing Section
+User content, kept as-is.
+EOF
+
+    result=$(process_context_file "$TEST_TEMP_DIR/src.md" "$TEST_TEMP_DIR/dst.md" "test.md")
+
+    [ "$result" = "merged" ]
+    grep -q "## New Section" "$TEST_TEMP_DIR/dst.md"
+
+    teardown_smart_merge
 }
 
 @test "setup: install_context uses process_context_file" {
