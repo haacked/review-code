@@ -222,7 +222,7 @@ Before including any finding, argue against it:
 
 **For each finding:**
 
-Write the comment body in conversational prose. Lead with the prefix and name what makes the code hard to maintain (the specific function, the magic number, the duplicated block). Describe the concrete scenario a future maintainer would hit, then show the simplified version inline (as a `suggestion` block or before/after fenced code). Do not use `**Problem**:`/`**Impact**:`/`**Solution**:` headers in the comment body.
+Write the comment body in conversational prose. Lead with the prefix and name what makes the code hard to maintain (the specific function, the magic number, the duplicated block). Describe the concrete scenario a future maintainer would hit in plain English with a `path:line` citation, quoting code only for the identifier the author must act on or an exact value that matters (the magic number itself, a measured complexity), then show the simplified version inline (as a `suggestion` block or before/after fenced code). Do not use `**Problem**:`/`**Impact**:`/`**Solution**:` headers in the comment body.
 
 Wrap the comment body in a fenced ```text``` block. Record metadata on separate lines below: file and line (or line range), and confidence (20-100%).
 

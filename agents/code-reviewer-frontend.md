@@ -143,7 +143,7 @@ Challenge yourself:
 
 **For each finding:**
 
-Write the comment body in conversational prose. Lead with the prefix and state what breaks for users or what surprises a developer. Cite the file, line, and the specific element or hook involved. Show the fix as a code snippet or `suggestion` block. Do not use `**Issue**:`/`**Impact**:`/`**Fix**:` headers in the comment body.
+Write the comment body in conversational prose. Lead with the prefix and state what breaks for users or what surprises a developer. Describe the behavior in plain English and cite `path:line`; quote code only for the specific element or hook the author must act on. Show the fix as a code snippet or `suggestion` block. Do not use `**Issue**:`/`**Impact**:`/`**Fix**:` headers in the comment body.
 
 Wrap the comment body in a fenced ```text``` block. Record metadata (file:line, confidence) on separate lines below.
 

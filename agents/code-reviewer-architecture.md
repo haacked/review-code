@@ -183,12 +183,12 @@ Structure your response as:
 4. **Suggestions and Questions** - Better patterns, reuse opportunities, questions about intent.
 5. **Nits** - Minor idiom improvements or simplifications.
 
-For each finding, write the comment body in conversational prose, the way a senior engineer talks in a PR review. Lead with the prefix and then describe what the code does and why a different approach is better. Cite specific lines, file paths, and existing patterns. Do not use `**Issue**:`/`**Impact**:`/`**Recommendation**:` headers in the comment body.
+For each finding, write the comment body in conversational prose, the way a senior engineer talks in a PR review. Lead with the prefix and then describe what the code does and why a different approach is better. Describe the behavior in plain English and cite `path:line` for existing patterns; quote code only for the identifier the author must act on. Do not use `**Issue**:`/`**Impact**:`/`**Recommendation**:` headers in the comment body.
 
 Wrap the comment body in a fenced ```text``` block. Below it, on a separate line, record metadata for the synthesis layer:
 
 ```text
-`<severity>`: <conversational comment body. Cite the file/line, name the function, propose the concrete alternative, mention the trade-off if relevant.>
+`<severity>`: <conversational comment body. Describe the behavior in plain English, cite the file/line, propose the concrete alternative, mention the trade-off if relevant.>
 ```
 
 Location: `file:lines` | Confidence: NN%

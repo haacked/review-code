@@ -183,7 +183,7 @@ Suppress these; they generate noise, not signal:
 
 **For each finding:**
 
-Write the comment body in conversational prose. Lead with the prefix and trace the concrete attack: who controls the input, where it lands, and what they can do. Show the remediation as a `suggestion` block or inline diff. Reference the OWASP category or CWE inline when it adds clarity, but don't make it a header. Do not use `**Vulnerability**:`/`**Impact**:`/`**Fix**:` headers in the comment body.
+Write the comment body in conversational prose. Lead with the prefix and trace the concrete attack: who controls the input, where it lands, and what they can do. Describe the flow in plain English and cite `path:line`; quote code only for the identifier the author must act on or the exact tainted value. Show the remediation as a `suggestion` block or inline diff. Reference the OWASP category or CWE inline when it adds clarity, but don't make it a header. Do not use `**Vulnerability**:`/`**Impact**:`/`**Fix**:` headers in the comment body.
 
 Wrap the comment body in a fenced ```text``` block. Record metadata on separate lines below: file and line, and confidence (20-100%).
 

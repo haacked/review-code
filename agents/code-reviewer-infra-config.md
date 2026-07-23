@@ -168,7 +168,7 @@ Before including any finding, argue against it:
 
 **For each finding:**
 
-Write the comment body in conversational prose. Lead with the prefix and state what breaks at deploy time, then show the corrected YAML/HCL as a `suggestion` block or fenced code block. Cite the cross-environment counterpart or the service definition that proves the inconsistency inside the comment body. Do not use `**Issue**:`/`**Impact**:`/`**Fix**:` headers in the comment body.
+Write the comment body in conversational prose. Lead with the prefix and state what breaks at deploy time, then show the corrected YAML/HCL as a `suggestion` block or fenced code block. Describe the inconsistency in plain English and cite the cross-environment counterpart or service definition (`path:line`) that proves it; quote config only for the exact key or value the author must change. Do not use `**Issue**:`/`**Impact**:`/`**Fix**:` headers in the comment body.
 
 Wrap the comment body in a fenced ```text``` block. Below it, on a single line, record:
 
