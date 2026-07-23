@@ -1,4 +1,5 @@
 ---
+name: review-code
 description: Run specialized code review agents on code changes or pull requests
 argument-hint: [find|learn|pr|commit|branch|range|area]
 allowed-tools: Bash(~/.claude/skills/review-code/scripts/*:*), Read(~/.claude/**), Write(~/.claude/skills/review-code/learnings/*), Edit(~/.claude/skills/review-code/learnings/*)
