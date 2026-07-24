@@ -49,6 +49,8 @@ Single-agent arguments, each on local changes only:
 - `--append` - Append to existing review file without prompting. In PR mode, also resolves review threads from your previous review whose findings the author has since addressed (the code changed and the new review no longer flags them).
 - `--fix` - After the review, apply fixes for findings the agent can resolve cleanly. Edits the working tree directly. Items not fixed (and the choice made on any judgment-call fixes) are listed in a Fix Summary section in the review. Not compatible with `learn` or `find`.
 - `--parent <ref>` - Override the base branch used for branch / current-branch reviews. By default, branches with a recorded stack parent (Graphite or `branch.<name>.parent` in git config) review against that parent; use `--parent` to force a different base, e.g. `--parent main`.
+- `--adversary:copilot` - After synthesis, run a second-opinion pass through the GitHub Copilot CLI (`copilot`) that validates Claude's findings and scans for anything obvious that was missed. Requires the `copilot` CLI installed; if it isn't, the review proceeds without it and says so. Not compatible with `learn` or `find`.
+- `--adversary:codex` - Same second-opinion pass, using the OpenAI Codex CLI (`codex`) instead. Mutually exclusive with `--adversary:copilot`.
 
 **Optional File Pattern:**
 
@@ -72,6 +74,7 @@ Examples:
 - `/review-code find 123` - Find review for PR #123
 - `/review-code learn 123` - Analyze what happened after reviewing PR #123
 - `/review-code 123 --draft -f` - Review PR, create draft review, skip confirmation
+- `/review-code 123 --adversary:copilot` - Review PR #123, then have Copilot double-check the findings
 
 ---
 

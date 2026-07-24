@@ -3,6 +3,11 @@
 # Cross-platform date handling helpers
 # Handles differences between BSD (macOS) and GNU (Linux) date commands
 
+# Guard against being sourced more than once per process (multiple engine
+# helpers each pull this in via cli-timeout-helpers.sh).
+[[ -n "${_DATE_HELPERS_SOURCED:-}" ]] && return
+_DATE_HELPERS_SOURCED=1
+
 # Get file modification time as epoch seconds
 # Usage: get_file_mtime <file_path>
 # Returns: epoch seconds on stdout, or empty string on error
@@ -51,5 +56,18 @@ days_ago_iso() {
         date -v-"${days}"d -u +"%Y-%m-%dT%H:%M:%SZ"
     else
         date -d "${days} days ago" -u +"%Y-%m-%dT%H:%M:%SZ"
+    fi
+}
+
+# Get current time in milliseconds since epoch
+# Usage: current_time_ms
+# Returns: epoch milliseconds on stdout
+current_time_ms() {
+    if command -v gdate > /dev/null 2>&1; then
+        echo $(($(gdate +%s%N) / 1000000))
+    elif command -v python3 > /dev/null 2>&1; then
+        python3 -c 'import time; print(int(time.time() * 1000))'
+    else
+        echo $(($(date +%s) * 1000))
     fi
 }

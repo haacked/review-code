@@ -93,7 +93,7 @@ From the session file JSON, extract these fields for building agent context:
 - `chunks`: (optional) array of chunk objects when the diff was split
 - `chunk_metadata`: (optional) object with `chunked`, `reason`, `chunk_count`
 - `debug_session_dir`: (optional) path to debug session directory when debug mode is enabled
-- `copilot_available`: (optional) boolean, true if Copilot CLI is installed
+- `adversary`: (optional) object `{engine: "copilot"|"codex", available: boolean}`, present only when `--adversary:copilot` or `--adversary:codex` was specified. `available` reflects whether that engine's CLI is actually installed.
 
 ### Classify Review Scope
 
@@ -157,7 +157,7 @@ jq -n --arg dir "$debug_session_dir" --arg content "$variable_with_content" \
 - **09-per-chunk-analysis** (chunked reviews only): Record timing (start/end). For each chunk, save the prompt as `chunk-{id}-prompt.md` and result as `chunk-{id}-result.md`.
 - **10-agent-dispatch**: Record timing (start/end). For each agent (or chunk x agent combination), save the prompt as `{agent}-prompt.md` (or `chunk-{id}-{agent}-prompt.md`) and result as `{agent}-result.md` (or `chunk-{id}-{agent}-result.md`). Save stats with agent count.
 - **11-synthesis**: Record timing (start/end). Save the merged findings as `merged-findings.md` and corroboration results as `corroboration.md`.
-- **11b-copilot-meta-review** (when Copilot available): Record timing (start/end). Save the input payload as `input.json`, the raw Copilot output as `raw-output.md`, and the parsed JSON response as `response.json`. On timeout or error, also save `stderr.log` (from `copilot_stderr` field) and `log-path.txt` (from `copilot_log` field).
+- **11b-adversary-meta-review** (when `adversary.available` is true): Record timing (start/end). Save the input payload as `input.json`, the raw adversary output as `raw-output.md`, and the parsed JSON response as `response.json`. On timeout or error, also save `stderr.log` (from the `<engine>_stderr` field, e.g. `copilot_stderr` or `codex_stderr`) and `log-path.txt` (from the `<engine>_log` field).
 - **11c-voice-rewrite**: Record timing (start/end). Save the input findings as `input.json`, the agent's raw response as `raw-output.md`, the parsed rewrites as `output.json`, a side-by-side comparison of original vs. rewritten descriptions as `comparison.md`, and the per-finding accept/reject decisions as `validation.json`.
 - **12-token-usage**: After the review is complete, save stats with per-agent token usage and aggregate totals (see "Track Token Usage" below).
 
@@ -639,7 +639,7 @@ This filter reduces noise before the expensive extended-thinking synthesis step.
 
 Synthesize the remaining findings using extended thinking into a coherent, deduplicated review document. Apply confidence-based filtering and cross-agent corroboration before producing the final output.
 
-**Cross-agent corroboration:** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function. Cross-model corroboration (a Copilot meta-review `CONFIRMED` verdict) also counts as corroboration even if only one Claude agent flagged the issue.
+**Cross-agent corroboration:** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function. Cross-model corroboration (an adversary meta-review `CONFIRMED` verdict) also counts as corroboration even if only one Claude agent flagged the issue.
 
 **Filtering rules:**
 - **Corroborated (2+ agents or chunks):** Keep even if individual confidence is below 40%.
@@ -652,13 +652,13 @@ Synthesize the remaining findings using extended thinking into a coherent, dedup
 
 The `description` and `proposed_fix` text becomes the literal body of the PR review comment. Keep it free of process and provenance metadata. Do not append, prepend, or embed:
 
-- Agent or model attribution: "*(corroborated by Copilot)*", "*(Copilot confirmed)*", "*(Copilot disagreed: …)*", "*(Copilot note: …)*", "*(flagged by Copilot during meta-review)*", "*(corroborated by correctness and architecture)*", "*(found by code-reviewer-security)*", or any similar tag naming a reviewer agent, model, or pipeline stage.
+- Agent or model attribution: "*(corroborated by Copilot)*", "*(Copilot confirmed)*", "*(Copilot disagreed: …)*", "*(Copilot note: …)*", "*(flagged by Copilot during meta-review)*", the same phrasing with "Codex" in place of "Copilot", "*(corroborated by correctness and architecture)*", "*(found by code-reviewer-security)*", or any similar tag naming a reviewer agent, model, or pipeline stage.
 - Validation provenance: "*Downgraded from blocking: [validator reasoning]*" or any other note that exists to record the synthesis pipeline's verdict.
 - Confidence percentages, agent IDs, or any other internal scoring.
 
-Exception: if a model name like "Copilot" appears in a parenthetical that is substantive content about the code under review (e.g., "*(the Copilot SDK rejects this header)*"), keep it. The rule targets pipeline bookkeeping, not technical claims that happen to mention a product.
+Exception: if a model name like "Copilot" or "Codex" appears in a parenthetical that is substantive content about the code under review (e.g., "*(the Copilot SDK rejects this header)*"), keep it. The rule targets pipeline bookkeeping, not technical claims that happen to mention a product.
 
-Corroboration, dismissal reasoning, and confidence are signals the synthesis stage uses for filtering and ordering. Track them in your working state (the in-memory finding objects during consolidation), not in the `description` or `proposed_fix` fields. If you need to record provenance for debugging, use `$debug_session_dir` artifacts (e.g., `11b-copilot-meta-review/response.json`), never the comment body.
+Corroboration, dismissal reasoning, and confidence are signals the synthesis stage uses for filtering and ordering. Track them in your working state (the in-memory finding objects during consolidation), not in the `description` or `proposed_fix` fields. If you need to record provenance for debugging, use `$debug_session_dir` artifacts (e.g., `11b-adversary-meta-review/response.json`), never the comment body.
 
 **Priority ordering in the final review:**
 1. Corroborated blocking findings
@@ -725,11 +725,15 @@ Where `targets` contains `{"path": "<file>", "line": <number>}` objects, and `di
 
 - **Otherwise** (non-blocking findings): Use the Read tool to verify the claim is accurate before including it.
 
-### Copilot Meta-Review
+### Adversary Meta-Review
 
-If `copilot_available` is true in the session data, run a Copilot meta-review after Claude findings have been synthesized and validated. This gives Copilot a focused task: validate Claude's findings and scan the diff for anything glaringly obvious that was missed.
+This step only runs when the user explicitly opted in with `--adversary:copilot` or `--adversary:codex`. There is no automatic adversary review: without the flag, skip this entire step silently and move on to the Voice Pass.
 
-**Skip conditions:** If `copilot_available` is false or absent, skip this step entirely.
+**Skip conditions:**
+- If `adversary` is absent from the session data (no `--adversary:*` flag was given): skip this step entirely, no message needed.
+- If `adversary.available` is false (the flag was given but that engine's CLI isn't installed): tell the user once — "Adversary review requested via `--adversary:$engine` but the `$engine` CLI isn't installed; skipping." — then skip the rest of this step.
+
+Otherwise, let `$engine` be `adversary.engine` (`"copilot"` or `"codex"`) and continue below. This gives the adversary engine a focused task: validate Claude's findings and scan the diff for anything glaringly obvious that was missed.
 
 **Build the findings payload.** Collect all findings that survived synthesis and validation into a JSON array. For each finding, include: a sequential `id` (starting at 1), `agent` (source agent name), `type` (blocking/suggestion/nit/question), `file`, `line`, `description`, `proposed_fix` (if any), and `confidence`.
 
@@ -740,37 +744,37 @@ jq -n \
   --argjson findings '<findings JSON array>' \
   --arg diff "$diff" \
   --argjson timeout_seconds 300 \
-  '$ARGS.named' | ~/.claude/skills/review-code/scripts/copilot-meta-review.sh
+  '$ARGS.named' | ~/.claude/skills/review-code/scripts/$engine-meta-review.sh
 ```
 
-Where `$diff` is the full diff from session data and `<findings JSON array>` is the JSON array of surviving findings. Use `jq` to safely encode both as JSON.
+Where `$diff` is the full diff from session data, `<findings JSON array>` is the JSON array of surviving findings, and `$engine` selects `copilot-meta-review.sh` or `codex-meta-review.sh`. Use `jq` to safely encode both as JSON.
 
-Save the JSON output as `$copilot_meta_review`.
+Save the JSON output as `$adversary_meta_review`.
 
-In **debug mode**, save debug artifacts under stage `11b-copilot-meta-review`: save the input payload as `input.json`, the raw Copilot output as `raw-output.md`, and the parsed response as `response.json`. On timeout or error, also save `stderr.log` and `log-path.txt`.
+In **debug mode**, save debug artifacts under stage `11b-adversary-meta-review`: save the input payload as `input.json`, the raw adversary output as `raw-output.md`, and the parsed response as `response.json`. On timeout or error, also save `stderr.log` (from the script's `<engine>_stderr` field) and `log-path.txt` (from its `<engine>_log` field).
 
 **Integrate meta-review results:**
 
-If `$copilot_meta_review` has `available: true`, `timed_out: false`, and no `error` field:
+If `$adversary_meta_review` has `available: true`, `timed_out: false`, and no `error` field:
 
 All updates below are to synthesis-time metadata (corroboration flag, confidence, severity). Do NOT modify the finding's `description` or `proposed_fix` text to record any of this. See "Comment Body Hygiene" above.
 
 1. **Process validations.** For each entry in `validations`:
    - **CONFIRMED**: Mark the matching finding as cross-model corroborated (metadata only). Boost confidence by 15 percentage points (capped at 95%).
-   - **DISMISSED**: If the finding is `blocking:`, downgrade to `suggestion:`. Do NOT remove the finding entirely; Claude's analysis takes precedence. Copilot's dissenting reasoning is debug data only: log it under the `11b-copilot-meta-review` debug stage if `$debug_session_dir` is set, but do not embed it in the comment body.
-   - **ADJUSTED**: If Copilot's reasoning, read in isolation, would cause a competent reviewer to change what they write in the comment (a different line number, an additional condition, a revised failure description), incorporate it into the body as if it were your own analysis and do not annotate the change with Copilot attribution. If the reasoning only evaluates the finding's validity or tone without adding technical content, ignore it. When you do adjust the body, save the original `description`, the new `description`, and Copilot's reasoning under the `11b-copilot-meta-review` debug stage as `adjusted-{finding_id}.json` (when `$debug_session_dir` is set) so the change is auditable.
+   - **DISMISSED**: If the finding is `blocking:`, downgrade to `suggestion:`. Do NOT remove the finding entirely; Claude's analysis takes precedence. The adversary's dissenting reasoning is debug data only: log it under the `11b-adversary-meta-review` debug stage if `$debug_session_dir` is set, but do not embed it in the comment body.
+   - **ADJUSTED**: If the adversary's reasoning, read in isolation, would cause a competent reviewer to change what they write in the comment (a different line number, an additional condition, a revised failure description), incorporate it into the body as if it were your own analysis and do not annotate the change with attribution to `$engine`. If the reasoning only evaluates the finding's validity or tone without adding technical content, ignore it. When you do adjust the body, save the original `description`, the new `description`, and the adversary's reasoning under the `11b-adversary-meta-review` debug stage as `adjusted-{finding_id}.json` (when `$debug_session_dir` is set) so the change is auditable.
    - If a `finding_id` does not match any surviving finding, ignore it silently.
 
 2. **Process missed issues.** For each entry in `missed_issues`:
    - Apply the same scope filter: drop any that reference files not in `IN_SCOPE_PATHS`.
-   - For surviving missed issues, add them to the finding pool with `agent: "copilot"` (metadata) and the type from the meta-review output. The `description` reads as a normal review finding; do not tag it with "(flagged by Copilot)" or any similar attribution.
-   - These are subject to the same filtering thresholds as Claude findings. Since they come from a single source (Copilot), they are solo findings and need confidence >= 40% to be included (unless they are questions/nits). Assign a default confidence of 50% to Copilot missed issues.
+   - For surviving missed issues, add them to the finding pool with `agent: $engine` (metadata) and the type from the meta-review output. The `description` reads as a normal review finding; do not tag it with "(flagged by Copilot)"/"(flagged by Codex)" or any similar attribution.
+   - These are subject to the same filtering thresholds as Claude findings. Since they come from a single source (the adversary engine), they are solo findings and need confidence >= 40% to be included (unless they are questions/nits). Assign a default confidence of 50% to adversary missed issues.
 
-3. **Corroboration rule.** Cross-model corroboration (Claude + Copilot CONFIRMED) counts as corroboration even if only one Claude agent flagged the issue.
+3. **Corroboration rule.** Cross-model corroboration (Claude + adversary CONFIRMED) counts as corroboration even if only one Claude agent flagged the issue.
 
-**Error handling:** If the script returns `available: false`, `timed_out: true`, or contains an `error` field, ignore the meta-review result and continue with Claude-only findings. Never fail or stop the review because of a Copilot error.
+**Error handling:** If the script returns `available: false`, `timed_out: true`, or contains an `error` field, ignore the meta-review result and continue with Claude-only findings. Never fail or stop the review because of an adversary-engine error.
 
-Record `copilot_meta_review` in `$token_usage` with `{ total_tokens: 0, tool_uses: 0, duration_ms }` using the `duration_ms` value from the output.
+Record `adversary_meta_review` in `$token_usage` with `{ total_tokens: 0, tool_uses: 0, duration_ms }` using the `duration_ms` value from the output.
 
 ### Voice Pass (Final Rewrite)
 
@@ -778,7 +782,7 @@ Before composing the review document, run a single voice-pass agent over the sur
 
 **Skip conditions:** If `$selected_agents` is empty (no findings will be produced) or the surviving finding pool is empty, skip this step entirely.
 
-**Build the input.** Collect all findings that survived synthesis, validation, and Copilot meta-review (the same pool the document composer will use). For each, include an integer `id` (sequential, starting at 1), `severity` (`blocking`/`suggestion`/`question`/`nit`), `location` (file:line or file path), `description` (the comment body, including any embedded code blocks), and `proposed_fix` (string or null). Build a JSON array.
+**Build the input.** Collect all findings that survived synthesis, validation, and the adversary meta-review (the same pool the document composer will use). For each, include an integer `id` (sequential, starting at 1), `severity` (`blocking`/`suggestion`/`question`/`nit`), `location` (file:line or file path), `description` (the comment body, including any embedded code blocks), and `proposed_fix` (string or null). Build a JSON array.
 
 **Dispatch the rewrite.** Invoke the Task tool with subagent_type `code-reviewer-voice` and a prompt that:
 
@@ -820,7 +824,7 @@ The Voice Pass step runs in all review modes (quick and comprehensive) when find
 - `comparison.md`: a side-by-side of original vs. rewritten descriptions for each finding (markdown table or sequential blocks). This is the artifact you inspect to evaluate whether the voice pass is helping.
 - `validation.json`: per-finding `{accepted: true|false, reason: "..."}` showing which rewrites passed preservation checks.
 
-Use the same `debug-artifact-writer.sh` bridge pattern as the `11b-copilot-meta-review` stage.
+Use the same `debug-artifact-writer.sh` bridge pattern as the `11b-adversary-meta-review` stage.
 
 ### Link File References in Comment Bodies
 
@@ -884,7 +888,7 @@ If any precondition fails, skip applying fixes but still produce the Fix Summary
 
 **Classification (per finding):**
 
-For each finding that survived synthesis, validation, Copilot meta-review, and voice pass, classify it into one of three buckets. The finding has `severity` (blocking/suggestion/nit/question), `file`, `line`, `description`, `proposed_fix`, and `confidence`.
+For each finding that survived synthesis, validation, the adversary meta-review, and voice pass, classify it into one of three buckets. The finding has `severity` (blocking/suggestion/nit/question), `file`, `line`, `description`, `proposed_fix`, and `confidence`.
 
 - **`fix_high_confidence`**: apply without commentary in the summary. All of:
   - One of: `severity` is `blocking` or `suggestion` and `confidence >= 80%`; OR `severity` is `nit` and `proposed_fix` is a single-line or single-identifier change.
@@ -964,7 +968,7 @@ The user-facing summary message picks up the fix counts in the "Compose the Revi
 - `edits.json`: per-edit record `{finding_id, file, line, before_excerpt, after_excerpt}` capturing what was changed.
 - `outcomes.json`: the final `$fix_outcomes` map.
 
-Use the same `debug-artifact-writer.sh` bridge pattern as the `11b-copilot-meta-review` and `11c-voice-rewrite` stages.
+Use the same `debug-artifact-writer.sh` bridge pattern as the `11b-adversary-meta-review` and `11c-voice-rewrite` stages.
 
 ### Compose the Review Document
 

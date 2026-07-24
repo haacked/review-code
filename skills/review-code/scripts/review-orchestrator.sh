@@ -27,6 +27,8 @@ set -euo pipefail
 source "${SCRIPT_DIR}/helpers/gh-wrapper.sh"
 # shellcheck source=lib/helpers/copilot-helpers.sh
 source "${SCRIPT_DIR}/helpers/copilot-helpers.sh"
+# shellcheck source=lib/helpers/codex-helpers.sh
+source "${SCRIPT_DIR}/helpers/codex-helpers.sh"
 
 # Main orchestration function
 main() {
@@ -57,6 +59,8 @@ main() {
     append_mode=$(echo "${parse_result}" | jq -r '.append_mode // "false"')
     local fix_mode
     fix_mode=$(echo "${parse_result}" | jq -r '.fix_mode // "false"')
+    local adversary_mode
+    adversary_mode=$(echo "${parse_result}" | jq -r '.adversary_mode // empty')
 
     # Extract org/repo early for git-based modes
     # Cache git org/repo to avoid redundant operations
@@ -509,12 +513,17 @@ build_review_data() {
     jq_args+=(--argjson diff_tokens "${diff_tokens}")
     jq_args+=(--arg commit_messages "${commit_messages}")
 
-    # Check if Copilot CLI is available for cross-model review
-    local copilot_is_available="false"
-    if copilot_available; then
-        copilot_is_available="true"
+    # Adversary meta-review is opt-in via --adversary:copilot / --adversary:codex.
+    # Only check the requested engine's availability; an engine the user didn't ask
+    # for should never influence the review just because it happens to be installed.
+    local adversary_is_available="false"
+    if [[ "${adversary_mode}" == "copilot" ]] && copilot_available; then
+        adversary_is_available="true"
+    elif [[ "${adversary_mode}" == "codex" ]] && codex_available; then
+        adversary_is_available="true"
     fi
-    jq_args+=(--arg copilot_available "${copilot_is_available}")
+    jq_args+=(--arg adversary_engine "${adversary_mode}")
+    jq_args+=(--arg adversary_available "${adversary_is_available}")
 
     # Single jq invocation with conditional pr field and chunk data
     final_output=$(jq "${jq_args[@]}" \
@@ -542,7 +551,7 @@ build_review_data() {
         + (if $chunks[0] != null then {chunks: $chunks[0], chunk_metadata: $chunk_metadata} else {} end)
         + (if $debug_session_dir != "" then {debug_session_dir: $debug_session_dir} else {} end)
         + (if $commit_messages != "" then {commit_messages: $commit_messages} else {} end)
-        + (if $copilot_available == "true" then {copilot_available: true} else {} end)
+        + (if $adversary_engine != "" then {adversary: {engine: $adversary_engine, available: ($adversary_available == "true")}} else {} end)
         + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")) | with_entries(select(.value != "")))')
     debug_save_json "07-final-output" "output.json" <<< "${final_output}"
     debug_time "07-final-output" "end"

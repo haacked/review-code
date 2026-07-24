@@ -20,6 +20,9 @@ LEARN_MODE="false"
 OVERWRITE_MODE="false"
 APPEND_MODE="false"
 FIX_MODE="false"
+ADVERSARY_MODE=""
+ADVERSARY_CONFLICT="false"
+ADVERSARY_FLAG_SEEN="false"
 PARENT_OVERRIDE=""
 PARENT_FLAG_SEEN="false"
 remaining_args=()
@@ -48,6 +51,13 @@ for arg_item in "$@"; do
         APPEND_MODE="true"
     elif [[ "${arg_item}" == "--fix" ]]; then
         FIX_MODE="true"
+    elif [[ "${arg_item}" == --adversary:* ]]; then
+        ADVERSARY_FLAG_SEEN="true"
+        adversary_value="${arg_item#--adversary:}"
+        if [[ -n "${ADVERSARY_MODE}" ]] && [[ "${ADVERSARY_MODE}" != "${adversary_value}" ]]; then
+            ADVERSARY_CONFLICT="true"
+        fi
+        ADVERSARY_MODE="${adversary_value}"
     elif [[ "${arg_item}" == "--parent" ]]; then
         PARENT_FLAG_SEEN="true"
         expect_value="parent"
@@ -279,6 +289,11 @@ build_json_output() {
         jq_args+=("--arg" "fix_mode" "true")
     fi
 
+    # Add adversary_mode if set
+    if [[ -n "${ADVERSARY_MODE}" ]]; then
+        jq_args+=("--arg" "adversary_mode" "${ADVERSARY_MODE}")
+    fi
+
     jq -nc "${jq_args[@]}" "${jq_filter}"
 }
 
@@ -316,18 +331,43 @@ validate_overwrite_append_mode() {
     fi
 }
 
-# Helper: Validate --fix is not used with incompatible subcommands.
-# `learn` and `find` do not produce findings to act on, so --fix is meaningless.
-validate_fix_mode() {
-    [[ "${FIX_MODE}" != "true" ]] && return 0
+# Helper: Exit with an error naming the given flag if learn or find mode is
+# active. `learn` and `find` do not produce findings to act on or meta-review,
+# so flags that operate on findings are meaningless there.
+validate_not_compatible_with_learn_or_find() {
+    local flag_label="$1"
     if [[ "${LEARN_MODE}" == "true" ]]; then
-        build_json_error "--fix is not compatible with learn mode."
+        build_json_error "${flag_label} is not compatible with learn mode."
         exit 1
     fi
     if [[ "${FIND_MODE}" == "true" ]]; then
-        build_json_error "--fix is not compatible with find mode."
+        build_json_error "${flag_label} is not compatible with find mode."
         exit 1
     fi
+}
+
+# Helper: Validate --fix is not used with incompatible subcommands.
+validate_fix_mode() {
+    [[ "${FIX_MODE}" != "true" ]] && return 0
+    validate_not_compatible_with_learn_or_find "--fix"
+}
+
+# Helper: Validate --adversary:<engine> flags.
+validate_adversary_mode() {
+    if [[ "${ADVERSARY_CONFLICT}" == "true" ]]; then
+        build_json_error "Cannot combine multiple --adversary flags. Use --adversary:copilot or --adversary:codex, not both."
+        exit 1
+    fi
+    if [[ "${ADVERSARY_FLAG_SEEN}" == "true" ]] && [[ -z "${ADVERSARY_MODE}" ]]; then
+        build_json_error "--adversary requires a value. Use --adversary:copilot or --adversary:codex."
+        exit 1
+    fi
+    [[ -z "${ADVERSARY_MODE}" ]] && return 0
+    if [[ "${ADVERSARY_MODE}" != "copilot" ]] && [[ "${ADVERSARY_MODE}" != "codex" ]]; then
+        build_json_error "Invalid --adversary value: '${ADVERSARY_MODE}'. Use --adversary:copilot or --adversary:codex."
+        exit 1
+    fi
+    validate_not_compatible_with_learn_or_find "--adversary:${ADVERSARY_MODE}"
 }
 
 # Helper: Validate --parent received a real value, not a missing arg, empty
@@ -637,6 +677,9 @@ if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
 
     # Validate --fix is not used with incompatible subcommands
     validate_fix_mode
+
+    # Validate --adversary:<engine> is not used with incompatible subcommands
+    validate_adversary_mode
 
     # 0. Learn Mode (Highest Priority - before review modes)
     if detect_learn_mode; then

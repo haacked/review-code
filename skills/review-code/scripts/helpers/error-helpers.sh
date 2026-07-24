@@ -4,6 +4,11 @@
 # These match the interface from bin/helpers/_utils.sh but are optimized
 # for minimal overhead in library scripts that may be called frequently
 
+# Guard against being sourced more than once per process (review-orchestrator.sh
+# sources this directly, then again transitively via git-helpers.sh).
+[[ -n "${_ERROR_HELPERS_SOURCED:-}" ]] && return
+_ERROR_HELPERS_SOURCED=1
+
 # Get caller context for error messages
 # Returns: "script:line (function)" or empty if unavailable
 _get_caller_context() {
