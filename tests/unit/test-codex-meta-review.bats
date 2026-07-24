@@ -217,6 +217,45 @@ MOCKEOF
     [ "$verdict" = "CONFIRMED" ]
 }
 
+@test "codex-meta-review: uses the last agent_message when a turn emits several" {
+    local first_response='{"validations":[{"finding_id":1,"verdict":"DISMISSED","reasoning":"stale"}],"missed_issues":[]}'
+    local second_response='{"validations":[{"finding_id":1,"verdict":"CONFIRMED","reasoning":"final"}],"missed_issues":[]}'
+    cat > "$MOCK_DIR/codex" << MOCKEOF
+#!/bin/bash
+echo '{"type":"thread.started"}'
+echo '$(codex_agent_message_line "${first_response}")'
+echo '$(codex_agent_message_line "${second_response}")'
+echo '{"type":"turn.completed"}'
+MOCKEOF
+    chmod +x "$MOCK_DIR/codex"
+    run_with_sample_input
+    [ "$status" -eq 0 ]
+
+    local verdict reasoning
+    verdict=$(echo "$output" | jq -r '.validations[0].verdict')
+    reasoning=$(echo "$output" | jq -r '.validations[0].reasoning')
+    [ "$verdict" = "CONFIRMED" ]
+    [ "$reasoning" = "final" ]
+}
+
+@test "codex-meta-review: falls back to raw output when no agent_message event is present" {
+    cat > "$MOCK_DIR/codex" << 'MOCKEOF'
+#!/bin/bash
+echo '{"type":"thread.started"}'
+echo '{"type":"item.started","item":{"id":"item_1","type":"command_execution"}}'
+echo '{"type":"turn.completed"}'
+MOCKEOF
+    chmod +x "$MOCK_DIR/codex"
+    run_with_sample_input
+    [ "$status" -eq 0 ]
+
+    local available validations_count
+    available=$(echo "$output" | jq -r '.available')
+    validations_count=$(echo "$output" | jq '.validations | length')
+    [ "$available" = "true" ]
+    [ "$validations_count" -eq 0 ]
+}
+
 # =============================================================================
 # Timeout tests
 # =============================================================================

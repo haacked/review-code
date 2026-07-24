@@ -49,3 +49,16 @@ codex_parse_final_message() {
 
     echo "${result}"
 }
+
+# Run the Codex CLI for a meta-review. Matches the invoke_fn contract
+# documented on meta-review-shared.sh's run_meta_review: forwards the
+# output/duration/log-file variable names through to run_cli_with_timeout,
+# which binds them in the caller's scope via nameref.
+# Usage: codex_invoke <prompt> <timeout_secs> <log_dir> <log_prefix> <output_var> <duration_var> <log_file_var>
+codex_invoke() {
+    local prompt="$1" timeout_secs="$2" log_dir="$3" log_prefix="$4"
+    local output_var="$5" duration_var="$6" log_file_var="$7"
+    run_cli_with_timeout codex "${log_dir}" "${log_prefix}" "${timeout_secs}" \
+        "${output_var}" "${duration_var}" "${log_file_var}" \
+        exec --json --sandbox read-only "${prompt}"
+}

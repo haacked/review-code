@@ -114,6 +114,103 @@ parse_freeform_fallback() {
         '{"validations": $validations, "missed_issues": []}'
 }
 
+# Generic meta-review driver shared by every adversary engine's *-meta-review.sh
+# entry point. Handles input parsing, diff-size capping, prompt building, and
+# outcome dispatch; each engine supplies only its own availability check,
+# response parser, and CLI invocation.
+#
+# Usage: run_meta_review <engine> <available_fn> <parse_fn> <invoke_fn> <log_dir> <timeout_default> <max_diff_bytes>
+#   available_fn: called with no args, returns 0 if the engine's CLI is installed
+#   parse_fn:     called with the CLI's raw stdout on stdin, echoes the extracted response text
+#   invoke_fn:    called as `invoke_fn <prompt> <timeout_secs> <log_dir> <log_prefix> <output_var> <duration_var> <log_file_var>`;
+#                 must run the CLI via run_cli_with_timeout (or equivalent) and
+#                 return 0/1/2 with the same meaning as run_cli_with_timeout.
+run_meta_review() {
+    local engine="$1" available_fn="$2" parse_fn="$3" invoke_fn="$4"
+    local log_dir="$5" timeout_default="$6" max_diff_bytes="$7"
+
+    if ! "${available_fn}"; then
+        meta_review_json_output false false duration_ms 0
+        return 0
+    fi
+
+    # Single jq call to extract all input fields
+    local input parsed_fields findings_json diff timeout_secs
+    input=$(cat)
+    parsed_fields=$(jq -r --arg default_timeout "${timeout_default}" \
+        '[(.findings // []), (.diff // ""), (.timeout_seconds // ($default_timeout | tonumber))] | @json' <<< "${input}")
+    findings_json=$(jq -r '.[0]' <<< "${parsed_fields}")
+    diff=$(jq -r '.[1]' <<< "${parsed_fields}")
+    timeout_secs=$(jq -r '.[2]' <<< "${parsed_fields}")
+
+    local findings_count
+    findings_count=$(jq 'length' <<< "${findings_json}")
+    if [[ "${findings_count}" -eq 0 ]]; then
+        meta_review_json_output true false duration_ms 0
+        return 0
+    fi
+
+    # Clear diff if it exceeds this engine's practical limits (byte count, not char count)
+    if [[ -n "${diff}" ]]; then
+        local diff_bytes
+        diff_bytes=$(printf '%s' "${diff}" | LC_ALL=C wc -c | tr -d '[:space:]')
+        if [[ "${diff_bytes}" -gt ${max_diff_bytes} ]]; then
+            diff=""
+        fi
+    fi
+
+    local findings_text
+    findings_text=$(format_findings_for_prompt "${findings_json}")
+    local prompt
+    prompt=$(build_meta_review_prompt "${findings_text}" "${diff}")
+
+    local raw_output="" duration_ms=0 log_file=""
+    local run_result=0
+    "${invoke_fn}" "${prompt}" "${timeout_secs}" "${log_dir}" "${engine}" raw_output duration_ms log_file || run_result=$?
+
+    local stderr_tail=""
+    [[ "${run_result}" -ne 0 ]] && stderr_tail=$(cli_read_stderr "${log_file}")
+
+    case "${run_result}" in
+        0)
+            local parsed_text
+            parsed_text=$("${parse_fn}" <<< "${raw_output}")
+
+            # Try structured JSON, fall back to freeform verdict extraction
+            local result
+            if ! result=$(parse_structured_response "${parsed_text}"); then
+                result=$(parse_freeform_fallback "${parsed_text}" "${findings_json}")
+            fi
+
+            local validations missed_issues
+            validations=$(jq '.validations // []' <<< "${result}")
+            missed_issues=$(jq '.missed_issues // []' <<< "${result}")
+
+            meta_review_json_output true false \
+                validations "${validations}" \
+                missed_issues "${missed_issues}" \
+                raw_output "${parsed_text}" \
+                "${engine}_log" "${log_file}" \
+                duration_ms "${duration_ms}"
+            ;;
+        1)
+            meta_review_json_output true true \
+                raw_output "" \
+                "${engine}_log" "${log_file}" \
+                "${engine}_stderr" "${stderr_tail}" \
+                duration_ms "${duration_ms}"
+            ;;
+        *)
+            meta_review_json_output true false \
+                error "${engine} exited with error" \
+                raw_output "" \
+                "${engine}_log" "${log_file}" \
+                "${engine}_stderr" "${stderr_tail}" \
+                duration_ms "${duration_ms}"
+            ;;
+    esac
+}
+
 meta_review_json_output() {
     local available="$1"
     local timed_out="$2"

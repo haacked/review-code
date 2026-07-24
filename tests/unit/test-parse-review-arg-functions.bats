@@ -902,9 +902,25 @@ reset_globals() {
 @test "adversary mode: validate_adversary_mode passes when unset" {
     ADVERSARY_MODE=""
     ADVERSARY_CONFLICT="false"
+    ADVERSARY_FLAG_SEEN="false"
     LEARN_MODE="true"
     run validate_adversary_mode
     [ "$status" -eq 0 ]
+}
+
+@test "adversary mode: --adversary: with no value is rejected" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "--adversary:" "123"
+    [ "$ADVERSARY_MODE" = "" ]
+    [ "$ADVERSARY_FLAG_SEEN" = "true" ]
+    run validate_adversary_mode
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"--adversary requires a value"* ]]
+}
+
+@test "adversary mode: --adversary: with no value is rejected via main script" {
+    run bash -c "bash '$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh' --adversary: 123 2>&1"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"--adversary requires a value"* ]]
 }
 
 @test "adversary mode: validate_adversary_mode rejects combining copilot and codex" {

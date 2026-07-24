@@ -22,6 +22,7 @@ APPEND_MODE="false"
 FIX_MODE="false"
 ADVERSARY_MODE=""
 ADVERSARY_CONFLICT="false"
+ADVERSARY_FLAG_SEEN="false"
 PARENT_OVERRIDE=""
 PARENT_FLAG_SEEN="false"
 remaining_args=()
@@ -51,6 +52,7 @@ for arg_item in "$@"; do
     elif [[ "${arg_item}" == "--fix" ]]; then
         FIX_MODE="true"
     elif [[ "${arg_item}" == --adversary:* ]]; then
+        ADVERSARY_FLAG_SEEN="true"
         adversary_value="${arg_item#--adversary:}"
         if [[ -n "${ADVERSARY_MODE}" ]] && [[ "${ADVERSARY_MODE}" != "${adversary_value}" ]]; then
             ADVERSARY_CONFLICT="true"
@@ -354,6 +356,10 @@ validate_fix_mode() {
 validate_adversary_mode() {
     if [[ "${ADVERSARY_CONFLICT}" == "true" ]]; then
         build_json_error "Cannot combine multiple --adversary flags. Use --adversary:copilot or --adversary:codex, not both."
+        exit 1
+    fi
+    if [[ "${ADVERSARY_FLAG_SEEN}" == "true" ]] && [[ -z "${ADVERSARY_MODE}" ]]; then
+        build_json_error "--adversary requires a value. Use --adversary:copilot or --adversary:codex."
         exit 1
     fi
     [[ -z "${ADVERSARY_MODE}" ]] && return 0
