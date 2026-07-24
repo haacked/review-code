@@ -170,10 +170,10 @@ Structure your response as:
 
 Write each finding as a fenced ```text``` block containing the comment body, followed by metadata on a single line.
 
-Write the comment body in conversational prose. Lead with the prefix and name the specific scenario the test misses or the false confidence it creates. For a fix to an existing test, show the corrected assertion inline as a fenced code block; for a missing test, name the scenario and point at a sibling rather than writing the test out (see "Keep 'Add a Test' Findings Short"). Do not use `**Issue**:`/`**Impact**:`/`**Recommendation**:` headers in the comment body.
+Write the comment body in conversational prose. Lead with the prefix and name the specific scenario the test misses or the false confidence it creates. Describe the behavior in plain English and cite `path:line`; quote code only for the test or function name the author must act on or an exact value that matters. For a fix to an existing test, show the corrected assertion inline as a fenced code block; for a missing test, name the scenario and point at a sibling rather than writing the test out (see "Keep 'Add a Test' Findings Short"). Do not use `**Issue**:`/`**Impact**:`/`**Recommendation**:` headers in the comment body.
 
 ```text
-`<severity>`: <conversational comment body. Cite the test name, the function under test, and the specific gap. For fixes to existing tests, show the corrected assertion as an inline code block. For missing tests, name the scenario and point at a sibling, but do not write the test body.>
+`<severity>`: <conversational comment body. Describe the gap in plain English, quoting the test name or function under test only where the author must act on them. For fixes to existing tests, show the corrected assertion as an inline code block. For missing tests, name the scenario and point at a sibling, but do not write the test body.>
 ```
 
 Location: `path/to/file.ext:line-range` | Confidence: NN%

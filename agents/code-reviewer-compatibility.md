@@ -173,7 +173,7 @@ Structure your response as:
 4. **Suggestions**: Breaking changes worth documenting or providing migration guidance for
 5. **Nits**: Deprecation opportunities missed
 
-For each finding, write the comment body in conversational prose. Lead with the prefix and state what breaks for which consumers, then show the backwards-compatible alternative as a `suggestion` block or inline diff. If the break is intentional, mention the migration path inside the comment body itself. Do not use `**Issue**:`/`**Impact**:`/`**Fix**:` headers in the comment body.
+For each finding, write the comment body in conversational prose. Lead with the prefix and state what breaks for which consumers, describing the behavior in plain English with a `path:line` citation and quoting code only for the symbol the author must act on or an exact value that matters (a removed signature, a version number), then show the backwards-compatible alternative as a `suggestion` block or inline diff. If the break is intentional, mention the migration path inside the comment body itself. Do not use `**Issue**:`/`**Impact**:`/`**Fix**:` headers in the comment body.
 
 Wrap the comment body in a fenced ```text``` block. Below it, on a single line, record:
 
