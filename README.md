@@ -87,7 +87,7 @@ This creates a virtuous cycle where reviews get better as you identify new patte
 - **PR and Local Review Modes**: Review pull requests, branches, commits, ranges, or uncommitted changes
 - **Stack-Aware Branch Reviews**: Detects Graphite parents (or `branch.<name>.parent` in git config) so stacked branches review against the right base
 - **Draft GitHub Reviews**: `--draft` posts inline comments as a pending review, with automatic comment-drift detection when new commits land between generation and submission
-- **Copilot Integration**: Cross-checks findings against GitHub Copilot's review for corroboration
+- **Adversary Meta-Review** (opt-in): `--adversary:copilot` or `--adversary:codex` runs a second-opinion pass through the Copilot or Codex CLI that validates findings and scans for anything obvious that was missed
 - **Learning Loop**: `learn` subcommand analyzes PR outcomes and folds patterns back into context files
 - **Token Optimizations**: Diff filtering (excludes lock files, snapshots, generated code), context caching (40-60% savings)
 - **Confidence Scoring**: Every finding includes confidence level (20-100%) to help prioritize

@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
-# copilot-meta-review.sh - Use Copilot CLI to validate review findings and do a cursory code scan
+# codex-meta-review.sh - Use Codex CLI to validate review findings and do a cursory code scan
 #
 # Usage:
-#   echo '{"findings": [...], "diff": "<diff text>", "timeout_seconds": 300}' | copilot-meta-review.sh
+#   echo '{"findings": [...], "diff": "<diff text>", "timeout_seconds": 300}' | codex-meta-review.sh
 #
 # Input (stdin): JSON with findings array (required), diff (optional), and optional timeout_seconds
 # Output (stdout): JSON with available, timed_out, validations, missed_issues, duration_ms
 #
-# A lighter meta-review than a full parallel pass: validate Claude's findings
-# and do a cursory scan for anything obvious that was missed.
+# Mirrors copilot-meta-review.sh's contract so the review handler can dispatch to either
+# engine interchangeably: validate Claude's findings + cursory scan for obvious misses.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=helpers/copilot-helpers.sh
-source "${SCRIPT_DIR}/helpers/copilot-helpers.sh"
+# shellcheck source=helpers/codex-helpers.sh
+source "${SCRIPT_DIR}/helpers/codex-helpers.sh"
 # shellcheck source=helpers/meta-review-shared.sh
 source "${SCRIPT_DIR}/helpers/meta-review-shared.sh"
 
 main() {
-    if ! copilot_available; then
+    if ! codex_available; then
         meta_review_json_output false false duration_ms 0
         return 0
     fi
@@ -27,7 +27,7 @@ main() {
     # Single jq call to extract all input fields
     local input parsed_fields findings_json diff timeout_secs
     input=$(cat)
-    parsed_fields=$(jq -r --arg default_timeout "${COPILOT_META_REVIEW_TIMEOUT}" \
+    parsed_fields=$(jq -r --arg default_timeout "${CODEX_META_REVIEW_TIMEOUT}" \
         '[(.findings // []), (.diff // ""), (.timeout_seconds // ($default_timeout | tonumber))] | @json' <<< "${input}")
     findings_json=$(jq -r '.[0]' <<< "${parsed_fields}")
     diff=$(jq -r '.[1]' <<< "${parsed_fields}")
@@ -40,11 +40,11 @@ main() {
         return 0
     fi
 
-    # Clear diff if it exceeds Copilot's practical limits (byte count, not char count)
+    # Clear diff if it exceeds Codex's practical limits (byte count, not char count)
     if [[ -n "${diff}" ]]; then
         local diff_bytes
         diff_bytes=$(printf '%s' "${diff}" | LC_ALL=C wc -c | tr -d '[:space:]')
-        if [[ "${diff_bytes}" -gt ${COPILOT_MAX_DIFF_BYTES} ]]; then
+        if [[ "${diff_bytes}" -gt ${CODEX_MAX_DIFF_BYTES} ]]; then
             diff=""
         fi
     fi
@@ -56,10 +56,8 @@ main() {
 
     local raw_output="" duration_ms=0 log_file=""
     local run_result=0
-    run_cli_with_timeout copilot "${COPILOT_LOG_DIR}" copilot "${timeout_secs}" raw_output duration_ms log_file \
-        -p "${prompt}" \
-        --output-format json \
-        --silent || run_result=$?
+    run_cli_with_timeout codex "${CODEX_LOG_DIR}" codex "${timeout_secs}" raw_output duration_ms log_file \
+        exec --json --sandbox read-only "${prompt}" || run_result=$?
 
     local stderr_tail=""
     [[ "${run_result}" -ne 0 ]] && stderr_tail=$(cli_read_stderr "${log_file}")
@@ -67,7 +65,7 @@ main() {
     case "${run_result}" in
         0)
             local parsed_text
-            parsed_text=$(copilot_parse_final_message <<< "${raw_output}")
+            parsed_text=$(codex_parse_final_message <<< "${raw_output}")
 
             # Try structured JSON, fall back to freeform verdict extraction
             local result
@@ -83,22 +81,22 @@ main() {
                 validations "${validations}" \
                 missed_issues "${missed_issues}" \
                 raw_output "${parsed_text}" \
-                copilot_log "${log_file}" \
+                codex_log "${log_file}" \
                 duration_ms "${duration_ms}"
             ;;
         1)
             meta_review_json_output true true \
                 raw_output "" \
-                copilot_log "${log_file}" \
-                copilot_stderr "${stderr_tail}" \
+                codex_log "${log_file}" \
+                codex_stderr "${stderr_tail}" \
                 duration_ms "${duration_ms}"
             ;;
         *)
             meta_review_json_output true false \
-                error "copilot exited with error" \
+                error "codex exited with error" \
                 raw_output "" \
-                copilot_log "${log_file}" \
-                copilot_stderr "${stderr_tail}" \
+                codex_log "${log_file}" \
+                codex_stderr "${stderr_tail}" \
                 duration_ms "${duration_ms}"
             ;;
     esac

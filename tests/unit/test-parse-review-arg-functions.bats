@@ -857,6 +857,128 @@ reset_globals() {
 }
 
 # =============================================================================
+# Adversary mode tests
+# =============================================================================
+
+@test "adversary mode: ADVERSARY_MODE is empty by default" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh"
+    [ "$ADVERSARY_MODE" = "" ]
+}
+
+@test "adversary mode: --adversary:copilot sets ADVERSARY_MODE" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "--adversary:copilot" "123"
+    [ "$ADVERSARY_MODE" = "copilot" ]
+    [ "$arg" = "123" ]
+}
+
+@test "adversary mode: --adversary:codex sets ADVERSARY_MODE" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "--adversary:codex" "123"
+    [ "$ADVERSARY_MODE" = "codex" ]
+    [ "$arg" = "123" ]
+}
+
+@test "adversary mode: --adversary:copilot as second argument" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "123" "--adversary:copilot"
+    [ "$ADVERSARY_MODE" = "copilot" ]
+    [ "$arg" = "123" ]
+}
+
+@test "adversary mode: build_json_output includes adversary_mode when set" {
+    file_pattern=""
+    ADVERSARY_MODE="copilot"
+    run build_json_output "test" "key" "val"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"adversary_mode":"copilot"'* ]]
+}
+
+@test "adversary mode: build_json_output excludes adversary_mode when unset" {
+    file_pattern=""
+    ADVERSARY_MODE=""
+    run build_json_output "test" "key" "val"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *'"adversary_mode"'* ]]
+}
+
+@test "adversary mode: validate_adversary_mode passes when unset" {
+    ADVERSARY_MODE=""
+    ADVERSARY_CONFLICT="false"
+    LEARN_MODE="true"
+    run validate_adversary_mode
+    [ "$status" -eq 0 ]
+}
+
+@test "adversary mode: validate_adversary_mode rejects combining copilot and codex" {
+    ADVERSARY_MODE="codex"
+    ADVERSARY_CONFLICT="true"
+    run validate_adversary_mode
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Cannot combine multiple --adversary flags"* ]]
+}
+
+@test "adversary mode: validate_adversary_mode rejects an unknown engine" {
+    ADVERSARY_MODE="bogus"
+    ADVERSARY_CONFLICT="false"
+    run validate_adversary_mode
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Invalid --adversary value"* ]]
+}
+
+@test "adversary mode: validate_adversary_mode rejects --adversary:copilot with learn" {
+    ADVERSARY_MODE="copilot"
+    ADVERSARY_CONFLICT="false"
+    LEARN_MODE="true"
+    FIND_MODE="false"
+    run validate_adversary_mode
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"not compatible with learn"* ]]
+}
+
+@test "adversary mode: validate_adversary_mode rejects --adversary:codex with find" {
+    ADVERSARY_MODE="codex"
+    ADVERSARY_CONFLICT="false"
+    LEARN_MODE="false"
+    FIND_MODE="true"
+    run validate_adversary_mode
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"not compatible with find"* ]]
+}
+
+@test "adversary mode: validate_adversary_mode passes for normal review" {
+    ADVERSARY_MODE="copilot"
+    ADVERSARY_CONFLICT="false"
+    LEARN_MODE="false"
+    FIND_MODE="false"
+    run validate_adversary_mode
+    [ "$status" -eq 0 ]
+}
+
+@test "adversary mode: combines with --fix and --draft" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "--adversary:codex" "--fix" "--draft" "123"
+    [ "$ADVERSARY_MODE" = "codex" ]
+    [ "$FIX_MODE" = "true" ]
+    [ "$DRAFT_MODE" = "true" ]
+    [ "$arg" = "123" ]
+}
+
+@test "adversary mode: --adversary:copilot --adversary:codex rejected via main script" {
+    run bash -c "bash '$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh' --adversary:copilot --adversary:codex 123 2>&1"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Cannot combine multiple --adversary flags"* ]]
+}
+
+@test "adversary mode: --adversary:copilot learn rejected via main script" {
+    run bash -c "bash '$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh' --adversary:copilot learn 2>&1"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not compatible with learn"* ]]
+}
+
+@test "adversary mode: --adversary:codex find rejected via main script" {
+    run bash -c "bash '$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh' --adversary:codex find 123 2>&1"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not compatible with find"* ]]
+}
+
+# =============================================================================
 # get_base_branch tests
 # =============================================================================
 
