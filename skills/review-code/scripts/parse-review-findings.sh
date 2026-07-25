@@ -89,6 +89,16 @@ main() {
     local finding_line=""
     local finding_description=""
 
+    # H3/H4 finding header with optional numbering and optional backticks
+    # around the path:line token (see Pattern 1 below). Kept in variables
+    # because a backtick inside a bracket expression defeats inline =~.
+    local finding_header_re='^#{3,4}[[:space:]]+([0-9]+\.[[:space:]]+)?`?([^:`]+):([0-9]+)`?'
+    # Numbered prose-title finding header: ### 2. The allowlist does not hold
+    local prose_header_re='^#{3,4}[[:space:]]+[0-9]+\.[[:space:]]+(.+)$'
+    # Standalone location line under a prose-titled finding: `path/file.sh:14`
+    # or `path/file.sh:73-74`
+    local standalone_loc_re='^`([^:`]+):([0-9]+)(-[0-9]+)?`[[:space:]]*$'
+
     while IFS= read -r line || [[ -n "${line}" ]]; do
         # Detect agent section headers (## Security Review, ## Performance Review, etc.)
         if [[ "${line}" =~ ^##[[:space:]]+(Security|Performance|Correctness|Maintainability|Testing|Compatibility|Architecture|Frontend)[[:space:]]+Review ]]; then
@@ -103,9 +113,10 @@ main() {
         fi
 
         # Detect file:line reference patterns
-        # Pattern 1: #### `path/to/file.py:123`, with optional "N. " numbering
-        # as written by branch-mode review documents: ### 1. `path/to/file.py:123`
-        if [[ "${line}" =~ ^\#{3,4}[[:space:]]+([0-9]+\.[[:space:]]+)?\`([^:]+):([0-9]+)\` ]]; then
+        # Pattern 1: #### `path/to/file.py:123`. Reviews vary the header shape,
+        # so accept optional "N. " numbering (### 1. `path:123`) and headers
+        # without backticks (#### path/to/file.py:123).
+        if [[ "${line}" =~ ${finding_header_re} ]]; then
             flush_pending_finding
 
             finding_file="${BASH_REMATCH[2]}"
@@ -113,6 +124,29 @@ main() {
             finding_description=""
             current_confidence=""
             in_finding=true
+            continue
+        fi
+
+        # Pattern 1b: numbered prose-title header (### 2. The allowlist does
+        # not hold). The location arrives later, either inline in the body or
+        # as a standalone `path:line` line (Pattern 1c).
+        if [[ "${line}" =~ ${prose_header_re} ]]; then
+            flush_pending_finding
+
+            finding_file=""
+            finding_line=""
+            finding_description="${BASH_REMATCH[1]}"
+            current_confidence=""
+            in_finding=true
+            continue
+        fi
+
+        # Pattern 1c: standalone location line for the current finding. For a
+        # range, keep the starting line.
+        if [[ "${in_finding}" == true ]] && [[ -z "${finding_file}" ]] \
+            && [[ "${line}" =~ ${standalone_loc_re} ]]; then
+            finding_file="${BASH_REMATCH[1]}"
+            finding_line="${BASH_REMATCH[2]}"
             continue
         fi
 
