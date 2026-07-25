@@ -12,54 +12,25 @@ Save the output as `SESSION_FILE`. Read the session file using the Read tool and
 
 ### Handle Existing Review Files
 
-From the session file JSON, extract:
-- `file_info.file_exists`: whether a review file already exists
-- `file_info.file_path`: path to the existing review
-- `file_info.has_branch_review`: whether both PR and branch reviews exist (defaults to false)
-- `file_info.branch_review_path`: path to the branch review
-- `file_info.needs_rename`: whether the branch review should migrate to PR format (defaults to false)
-- `file_info.pr_number`: the associated PR number
+From the session file JSON, extract `file_info`: `file_exists`, `file_path`, `has_branch_review`, `branch_review_path`, `needs_rename`, and `pr_number`. The merge and migrate procedures below live in `~/.claude/skills/review-code/handlers/existing-review-files.md`; Read it when an option that uses one is selected.
 
 **If `has_branch_review` is true** (both PR and branch reviews exist):
 
 Use AskUserQuestion:
 - Question: "A branch review exists alongside the PR review. Merge before proceeding?"
 - Options:
-  1. "Merge and continue": Merge branch review into PR review, then proceed
-  2. "Continue without merging": Keep both files, proceed
-  3. "Cancel": Stop and handle manually
-
-If user selects "Merge and continue":
-1. Read both files using the Read tool
-2. Append branch review content to PR review with separator: `\n\n---\n\n## Previous Branch Review\n\n`
-3. Write merged content to PR review file
-4. Delete branch review file: `rm "$branch_review_path"`
-
-If user selects "Cancel": clean up the session, then stop (a worktree may have been provisioned for this session; this releases it instead of leaving it behind).
-
-```bash
-~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
-```
+  1. "Merge and continue": run the merge procedure, then proceed
+  2. "Continue without merging": keep both files, proceed
+  3. "Cancel": stop and let the user handle it manually
 
 **If `needs_rename` is true** (branch review exists but should migrate to PR format):
 
 Use AskUserQuestion:
 - Question: "A PR (#$pr_number) exists. Migrate branch review to PR format before proceeding?"
 - Options:
-  1. "Migrate and continue": Rename to PR format, then proceed
-  2. "Continue as branch review": Keep current format, proceed
-  3. "Cancel": Stop and handle manually
-
-If user selects "Migrate and continue":
-1. Compute new path with `pr-$pr_number.md` filename
-2. Move file: `mv "$file_path" "$new_path"`
-3. Update `review_file` variable to new path
-
-If user selects "Cancel": clean up the session, then stop.
-
-```bash
-~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
-```
+  1. "Migrate and continue": run the migrate procedure, update `review_file` to the new path, then proceed
+  2. "Continue as branch review": keep current format, proceed
+  3. "Cancel": stop and let the user handle it manually
 
 **If `file_info.file_exists` is true** (a review file exists but neither of the above conditions apply):
 
@@ -72,7 +43,7 @@ First, check the session JSON for `overwrite` and `append` flags:
     2. "Append": Add new findings to the existing review
     3. "Cancel": Stop without reviewing
 
-If user selects "Cancel": clean up the session, then stop.
+On "Cancel" in any of the prompts above: clean up the session, then stop. A worktree may have been provisioned for this session; cleanup releases it instead of leaving it behind.
 
 ```bash
 ~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
@@ -385,8 +356,6 @@ For each finding you report:
 4. For bug claims: read surrounding code to confirm the behavior before reporting
 5. For every `blocking:` or `suggestion:` finding, include a **concrete code fix**: show the recommended change as a diff (`- old` / `+ new`) or replacement code block. If you cannot provide a concrete fix, demote the finding to `question:`.
 
-Do NOT report anything as a bug unless you've verified the behavior by reading the code.
-
 **Comment Prefixes:**
 
 Prefix every finding so the author knows what action is expected. The prefix must be code-formatted in the comment body (e.g., `` `blocking`: This must be fixed ``):
@@ -415,47 +384,17 @@ If you exhausted the steps above and still cannot verify a specific fact (the fi
 
 **Inline Comment Voice:**
 
-Write comments the way a senior engineer talks in a PR review: direct, specific, and conversational. No headers, no formality, no filler.
+Write comments the way a senior engineer talks in a PR review: direct, specific, conversational. A dedicated voice agent rewrites every surviving comment body before publication, so spend your effort on the technical content in a plain register. The points below are the ones the voice agent cannot fix afterward; get them right when drafting.
 
-- No `**Issue**:` / `**Impact**:` / `**Recommendation**:` headers. Start with the prefix, then flow into natural prose.
-- Describe behavior, cite the code. When a sentence explains what code does, say it in plain English and carry a `path:line` citation for the claim (in PR mode the linkify step turns these into permalinks). Reserve inline code for the identifier the author must act on, an exact value or error message that matters ("stays at 22", `TypeError`), or a name with no natural English equivalent. If the reader has to mentally execute a quoted expression to follow the sentence, describe what the expression does instead and cite where it lives.
-- For `blocking:` and `suggestion:` findings, always include a concrete code fix (see Accuracy Requirements above). For `question:` and `nit:`, offer code when it helps. Use GitHub's `suggestion` syntax for single-line fixes.
-- Write about the code, not the author. "This exception propagates as a 500" not "you should catch this exception."
-- Match certainty to label. State findings plain when they're clear in the diff; use `question:` when the answer depends on callers, runtime config, or prior conventions. Express uncertainty plainly: "Unless I'm missing something."
-- Defer on judgment calls: "your call", "worth considering", "that said."
-- Lead with the consequence. Sentence 1 names what breaks or what's at risk; the rest gives enough mechanism to show why. Two failure modes: opening with a verdict ("this is a real upgrade-window risk") or mid-mechanism ("this `it.each` only feeds numeric timestamps, so the guards never run"). Both make the author dig before reaching the point.
-- Anchor in what the code does today. "This branch has no coverage" beats "if someone later swaps the guard…."
-- One finding per comment. Length: `nit:` ≤ 2 sentences; others ≤ ~4 plus the fix. When the mechanism needs before/after context to be understandable, spend an extra plain-English sentence rather than compressing into a dense code-quoted one; clarity beats compression, and every sentence still has to earn its place. After drafting, cut anything the author already knows, any clause that restates the line above, any adjective doing no work.
-- Break at the seam. When a comment runs past two or three sentences, put a blank line between the problem (what breaks and why) and the recommendation (what to do). Two short paragraphs scan faster than one dense block. Never break inside a code block or between the body and its metadata line.
+- Lead with the consequence, and name it. Sentence 1 says what breaks or what's at risk; the rest gives just enough mechanism to show why. Don't open with a verdict ("this is a real upgrade-window risk") or mid-mechanism. The voice agent can reorder phrasing but never invents a consequence you didn't state.
+- Describe behavior in plain English and cite `path:line` for each claim (in PR mode the linkify step turns citations into permalinks). Reserve inline code for the identifier the author must act on or an exact value that matters ("stays at 22", `TypeError`). If the reader has to mentally execute a quoted expression to follow a sentence, describe what the expression does and cite where it lives; the voice agent isn't allowed to paraphrase quoted code, so this is yours to get right.
+- Anchor in what the code does today ("this branch has no coverage"), not in a hypothetical future ("if someone later swaps the guard…").
+- For `blocking:` and `suggestion:` findings, always include a concrete code fix (see Accuracy Requirements above); use GitHub's `suggestion` syntax for single-line fixes. For `question:` and `nit:`, offer code when it helps.
+- Write about the code, not the author, and match certainty to the label: state findings plainly when they're clear in the diff, use `question:` when the answer depends on callers or config, and defer on judgment calls ("your call", "worth considering").
+- One finding per comment. `nit:` is at most 2 sentences; others at most ~4 plus the fix. Past two or three sentences, put a blank line between the problem and the recommendation.
+- Say the thing, not a label for the thing: no `**Issue**:`/`**Impact**:` headers, no coined jargon ("the staleness window"), no formal-logic vocabulary ("vacuously true"), no filler. Name the concrete behavior instead.
 
-Before posting, run the smell test:
-
-1. Does sentence 1 name the consequence (not a verdict, not a mechanism)?
-2. Any phrase that *labels* instead of *names*, or that takes logic-class vocabulary to parse ("conjunct", "vacuously", "holds")? (see the table)
-3. Any "it"/"this"/"that" whose nearest preceding noun isn't what you mean?
-4. Anything the author already knows from having written the code? Cut it.
-5. Would you say this sentence to a colleague out loud?
-6. More than two or three sentences with no blank line? Split the problem from the fix.
-7. Does any sentence require parsing a quoted code expression to follow it? Describe the behavior in plain English and cite the location.
-
-Cut on sight (the label → say the thing instead):
-
-| Don't write | Write |
-|---|---|
-| "the headline behavior", "the core path here", "the key thing" | name it: "counting events by the team's local day is the whole point here" |
-| "weak positive assertion", "tautology", "invariant violation" | the scenario: "the count stays 22 and the test still passes" |
-| formal logic vocabulary: "this conjunct is always satisfied", "vacuously true", "the predicate holds" | what the code does: "the `!== true` check always passes", "the list is empty, so the loop never runs" |
-| coined hyphen-jargon: "migrated-forward home", "missing-timestamp side" | plain: "the case where one side has no timestamp" |
-| coined noun-phrase labels: "the withholding boundary", "the staleness window" | the sentence the label compresses: "the endpoint doesn't return a person's other distinct IDs to `feature_flag:read`-only tokens" (the author can't expand a name they've never seen) |
-| metaphor-jargon: "load-bearing", "code smell", "foot-gun" | the concrete behavior: "has to stay inside the function or it's a circular import" |
-| "fails to handle", "remains at its prior value", "is invoked a single time" | "doesn't catch", "stays at 22", "runs once" |
-| "this is critical", "real risk", "meaningful state change" | say what concretely breaks |
-| "It's not just X, it's Y", "Great work", "Just a thought, but…", "Hope that helps!" | cut it (the prefix already signals priority) |
-| reviewer-internal vocabulary: "sibling", "the closest sibling to mirror", "anchor", "corroborated" | name the thing and where it is: "mirror `test_saving_flag_strips_legacy_holdout_groups`, just above", "the two tests above this one" |
-| quoted expressions as sentence subjects: "since `"groups" not in filters` never fires" | describe the behavior and cite the line: "the shortcut that skips full validation never applies here, because the write always includes `groups` (feature_flag.py:1241)" |
-| em dash (—) | comma, colon, semicolon, parentheses, or two sentences |
-
-Two worked examples. First, lead with the consequence instead of a verdict:
+One worked example: lead with the consequence instead of a verdict.
 
 Good:
 ```
@@ -467,36 +406,6 @@ Bad:
 `blocking`: This is the spot that produces a real upgrade-window risk on self-hosted. `License.update_available_product_features()` only re-syncs on org create, license save, or the hourly Celery beat at `:30`. On a code-only deploy, an existing Enterprise org's `available_product_features` still holds the old key until the next tick, ~up to 60 minutes.
 ```
 (The bad version opens with a verdict; the author has to clear the framing before reaching what the code is doing.)
-
-Second, name the behavior instead of coining a label, and anchor in the present:
-
-Good:
-```
-`suggestion`: Nothing tests what happens when one side has no `$feature_flag_evaluated_at`. That's the documented case where the group entry should win (a migration leftover, or an older SDK that wrote before this field existed), but all three `it.each` cases pass a numeric timestamp on both sides, so the `isNumber()` guards in `_groupEntryIsStale` always pass and that branch never runs.
-
-Add a case where one side omits the timestamp and assert the group still wins.
-```
-
-Bad:
-```
-`suggestion`: This it.each only feeds numeric timestamps, so the isNumber(groupLoadedAt) && isNumber(mainLoadedAt) guards in _groupEntryIsStale never run against a missing-timestamp side. Those guards are what keep the group entry winning as the migrated-forward home when one side has no $feature_flag_evaluated_at (an older-SDK or pre-stamp write). If someone later drops them for a plain mainTs > groupTs, a group entry with no timestamp would start losing to an undefined main timestamp and the cached flags would silently flip, with no test to catch it. Add a case where one side omits $feature_flag_evaluated_at and assert the group still wins.
-```
-(The bad version opens mid-mechanism, coins jargon ("migrated-forward home", "missing-timestamp side"), and builds the case around a future refactor that hasn't happened. The good version leads with the gap, gives just enough mechanism to see why that case never runs, and puts a blank line before the ask so the recommendation stands on its own.)
-
-Third, describe behavior instead of quoting expressions:
-
-Good:
-```
-`blocking`: Deleting an Early Access Feature can now fail. Before this change, cleanup wrote the flag's filters straight to the database with no validation; it now goes through `update_flag`, which validates the stored filters (products/early_access_features/backend/api.py:214). A legacy flag with a property missing `key` fails that validation with a raw `TypeError` from the pre-delete hook (products/early_access_features/backend/apps.py:45), which has no error handling.
-
-Wrap the cleanup write in try/except and fall back to the raw save, so a legacy flag that fails validation still deletes cleanly.
-```
-
-Bad:
-```
-`blocking`: This turns "destroy always succeeds" into "destroy can fail." Before this PR, `related_feature_flag.filters = ...; related_feature_flag.save()` never validated the flag, so cleanup always went through. Now `update_flag` runs the flag through `FeatureFlagSerializer`'s full `validate_filters`, and since `set_feature_enrollment` spreads the entire stored filters, the `"groups" not in filters` partial-update escape hatch (feature_flag.py:1241) never fires, so a group-aggregated flag hits the hard rule at feature_flag.py:1367 and `Property(**prop_dict)` raises a raw `TypeError` at feature_flag.py:1380.
-```
-(The bad version makes the reader execute quoted expressions to follow the argument, and packs two failure modes into one comment. The good version covers one failure mode, says what the code does in plain English, cites each claim with a repo-root `path:line`, and quotes only the tokens the author will act on. The second failure mode gets its own comment.)
 
 **Handling Existing PR Comments:**
 
@@ -561,15 +470,7 @@ Synthesize the remaining findings using extended thinking into a coherent, dedup
 
 **Comment Body Hygiene:**
 
-The `description` and `proposed_fix` text becomes the literal body of the PR review comment. Keep it free of process and provenance metadata. Do not append, prepend, or embed:
-
-- Agent or model attribution: "*(corroborated by Copilot)*", "*(Copilot confirmed)*", "*(Copilot disagreed: …)*", "*(Copilot note: …)*", "*(flagged by Copilot during meta-review)*", the same phrasing with "Codex" in place of "Copilot", "*(corroborated by correctness and architecture)*", "*(found by code-reviewer-security)*", or any similar tag naming a reviewer agent, model, or pipeline stage.
-- Validation provenance: "*Downgraded from blocking: [validator reasoning]*" or any other note that exists to record the synthesis pipeline's verdict.
-- Confidence percentages, agent IDs, or any other internal scoring.
-
-Exception: if a model name like "Copilot" or "Codex" appears in a parenthetical that is substantive content about the code under review (e.g., "*(the Copilot SDK rejects this header)*"), keep it. The rule targets pipeline bookkeeping, not technical claims that happen to mention a product.
-
-Corroboration, dismissal reasoning, and confidence are signals the synthesis stage uses for filtering and ordering. Track them in your working state (the in-memory finding objects during consolidation), not in the `description` or `proposed_fix` fields. If you need to record provenance for debugging, use `$debug_session_dir` artifacts (e.g., `11b-adversary-meta-review/response.json`), never the comment body.
+The `description` and `proposed_fix` text becomes the literal body of the PR review comment; keep pipeline bookkeeping out of it. No agent or model attribution ("*(corroborated by Copilot)*", "*(found by code-reviewer-security)*"), no validator verdicts ("*Downgraded from blocking: …*"), no confidence percentages or other internal scoring. Corroboration, dismissal reasoning, and confidence are synthesis-time signals: track them in your working state (or in `$debug_session_dir` artifacts when debugging), never in the body. A model name is fine when it's substantive content about the code under review ("*(the Copilot SDK rejects this header)*"); the rule targets bookkeeping, not technical claims that mention a product.
 
 **Priority ordering in the final review:**
 1. Corroborated blocking findings
@@ -661,19 +562,13 @@ Save the agent's response. Extract usage metadata and record in `$token_usage["c
 - If a rewritten entry has an `id` that doesn't appear in the input, ignore that entry and count it as a parse anomaly toward the validation-failure budget below.
 - If the returned array length differs from the input array length by more than 1, treat the entire response as malformed and apply the agent-error fallback (continue with original findings).
 
-**Validate preservation.** For each rewritten finding where `unchanged` is `false`, before accepting the change:
+**Validate preservation.** For each rewrite where `unchanged` is `false`, accept it only if all three checks hold; otherwise keep the original and count the failure in `$token_usage["code-reviewer-voice"].validation_failures`:
 
-1. Confirm the severity prefix matches: extract the prefix token from each (`` `blocking`: ``, `` `suggestion`: ``, `**blocking**:`, bare `blocking:`, etc.) and check string equality. If the prefix differs in any way, fail the check.
-2. Confirm the rewritten body contains every backtick-quoted token from the original whose text matches a file-path pattern (e.g., `auth.py:45`, `src/foo.ts`, `path/to/file.py`) or a numeric line reference (e.g., `:67`, `line 67`). Identifiers and exception names that happen to be backtick-quoted (`OverflowError`, `dateutil.parser.parse()`) are not subject to this check. If the original contains no path-shaped or line-number tokens, skip this check.
-3. Confirm the rewritten body length is not greater than the original by more than 5% (allowing slack for punctuation tweaks and inserted paragraph breaks; a blank line adds two newline characters and never fails this check on its own).
+1. The severity prefix is string-identical in form (`` `blocking`: `` stays `` `blocking`: ``, `**blocking**:` stays `**blocking**:`).
+2. Every backtick-quoted path-shaped or line-number token from the original (`auth.py:45`, `src/foo.ts`, `:67`, `line 67`) still appears. Backtick-quoted identifiers (`OverflowError`) are exempt; skip the check when the original has no such tokens.
+3. The body grew by no more than 5% (paragraph breaks and punctuation tweaks never fail this on their own).
 
-If any check fails, discard the rewrite and keep the original finding. Track the failure count in `$token_usage["code-reviewer-voice"].validation_failures`.
-
-**Failure modes (all fail open, never blocking the review):**
-
-- **Agent times out or errors:** Continue with original findings.
-- **JSON parse fails or array length differs by more than 1:** Continue with original findings.
-- **More than 50% of findings fail validation:** Discard all rewrites. The voice agent is misbehaving; better to ship verbose comments than wrong ones.
+**Fail open, never block the review:** on an agent error or timeout, a JSON parse failure, or an array length off by more than 1, continue with the original findings. If more than 50% of rewrites fail validation, discard all rewrites; the voice agent is misbehaving, and verbose comments beat wrong ones.
 
 The Voice Pass step runs in all review modes (quick and comprehensive) when findings exist. There is no mode-based guard.
 
@@ -741,11 +636,7 @@ The `token_usage` block records per-step token consumption (agents, context expl
 
 This metadata is used by the learning system to determine when the review was created. The `review_commit` field records the PR's HEAD SHA at review time, enabling drift detection when creating draft reviews later. The `diff_tokens` field is an estimated token count of the diff (~4 chars per token).
 
-**Narrative voice.** The Inline Comment Voice rules earlier in this handler govern the comment bodies; the narrative you compose here (Overview, findings prose, per-agent sections, the metadata `reasoning` field) needs the same register. Write it the way you'd write a Slack summary to a colleague who is about to review the code: plain verbs, short sentences, no ceremony. Three tells to avoid outright:
-
-- Em dashes (`—`, U+2014). Restructure the sentence instead: a period and two sentences, a colon, parentheses, or a comma where it genuinely fits. Hyphens (`-`) and en dashes (`–`) are fine.
-- Bold inside a prose sentence. Bold is for line-start labels, headings, and table cells. If a clause feels like it needs bold for emphasis, the sentence is buried; lead with it instead.
-- Inflation and AI vocabulary: "critical", "robust", "comprehensive", "leverage", "utilize", "ensure", "It's not just X, it's Y". Say what the code does.
+**Narrative voice.** The Inline Comment Voice rules govern the comment bodies; the narrative you compose here (Overview, findings prose, per-agent sections, the metadata `reasoning` field) needs the same register. Write it the way you'd write a Slack summary to a colleague who is about to review the code: plain verbs, short sentences, no ceremony. Three tells to avoid outright: em dashes (restructure with a comma, colon, parentheses, or two sentences), bold inside a prose sentence (lead with the point instead), and inflation vocabulary ("critical", "robust", "comprehensive", "leverage", "ensure", "It's not just X, it's Y").
 
 An Overview paragraph in the right register reads like:
 

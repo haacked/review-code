@@ -27,55 +27,28 @@ Proceed to the submode handler below.
 
 ### Learn Submode: "single"
 
-**Step 1: Display cross-reference summary**
+Extract `summary` and `learn_data` from `LEARN_RESULT`.
 
-Extract `summary` from `LEARN_RESULT` and display:
+**1. Show the cross-reference summary.** From `summary`, report for PR #`pr_number`: how many of Claude's findings were likely addressed in subsequent commits vs. not modified vs. unclear (`claude_addressed`, `claude_not_addressed`, `claude_total`), how many findings from other reviewers Claude also caught vs. missed (`other_caught_by_claude`, `other_missed_by_claude`, `other_total`), and how many items need the user's judgment (`prompts_count`).
 
-```
-Cross-Reference Summary for PR #<summary.pr_number>
+**2. Process prompts for uncertain items.** For each item in `prompts_needed`:
 
-Claude's Findings (<summary.claude_total> total):
-- <summary.claude_addressed> likely addressed in subsequent commits
-- <summary.claude_not_addressed> not modified after review
-- <remaining> unclear
-
-Other Reviewers Found (<summary.other_total> total):
-- <summary.other_caught_by_claude> also caught by Claude
-- <summary.other_missed_by_claude> Claude missed
-
-Prompts needed: <summary.prompts_count>
-```
-
-Also extract `learn_data` from `LEARN_RESULT` for use in later steps.
-
-**Step 2: Process prompts for uncertain items**
-
-For each item in `prompts_needed`, ask the user:
-
-For **"unaddressed" findings** (Claude found, file not modified after review):
-
-Use AskUserQuestion:
+For **"unaddressed" findings** (Claude found, file not modified after review), show file, line, description, agent, and confidence, then use AskUserQuestion:
 - Question: "Claude flagged this issue, but the file wasn't modified. What happened?"
-- Display finding details: file, line, description, agent, confidence
 - Options:
   1. "False positive": Claude was wrong, no fix needed
   2. "Correct but deferred": Valid issue, postponed
   3. "Correct but low priority": Valid but not worth changing
   4. "Skip": Don't record this learning
 
-For **"missed" findings** (other reviewer found, Claude missed):
-
-Use AskUserQuestion:
+For **"missed" findings** (other reviewer found, Claude missed), show file, line, description, and author, then use AskUserQuestion:
 - Question: "Another reviewer found this issue that Claude missed. Should Claude learn to detect this?"
-- Display finding details: file, line, description, author
 - Options:
   1. "Yes, add to patterns": Claude should catch this in future reviews
   2. "No, too specific": One-off case, not worth generalizing
   3. "Skip": Don't record this learning
 
-**Step 3: Record learnings**
-
-For each response other than "Skip", append a record to `~/.claude/skills/review-code/learnings/index.jsonl`:
+**3. Record learnings.** For each response other than "Skip", append a record to `~/.claude/skills/review-code/learnings/index.jsonl`:
 
 ```json
 {
@@ -99,46 +72,17 @@ For each response other than "Skip", append a record to `~/.claude/skills/review
 }
 ```
 
-**Step 4: Mark PR as analyzed**
+**4. Mark the PR as analyzed.** Read `~/.claude/skills/review-code/learnings/analyzed.json` (create `{}` if missing). Extract `org` and `repo` from `learn_data`. Merge `{"<org>/<repo>": {"<pr_number>": "<timestamp>"}}` into the existing data and write it back.
 
-Read `~/.claude/skills/review-code/learnings/analyzed.json` (create `{}` if missing). Extract `org` and `repo` from `learn_data`. Merge `{"<org>/<repo>": {"<pr_number>": "<timestamp>"}}` into the existing data and write it back.
-
-**Step 5: Display completion**
-
-```
-Learning complete for PR #<pr_number>
-
-Learnings recorded:
-- <N> false positives
-- <N> missed patterns added
-
-Run '/review-code learn --apply' when ready to update context files.
-```
+**5. Wrap up.** Report the counts of learnings recorded by type, and point at `/review-code learn --apply` for updating context files once patterns accumulate.
 
 ---
 
 ### Learn Submode: "batch"
 
-**Step 1: Extract batch data**
-
 From `LEARN_RESULT`, extract `count` and `prs`.
 
-**Step 2: Handle empty batch**
-
-If `count` is 0:
-
-```
-No unanalyzed PRs found with existing reviews.
-
-To create reviews for analysis:
-1. Run '/review-code <pr-number>' on PRs
-2. Wait for PRs to be merged
-3. Run '/review-code learn' to analyze outcomes
-```
-
-Stop here.
-
-**Step 3: Process each PR**
+If `count` is 0, tell the user there are no unanalyzed PRs with existing reviews (reviews come from running `/review-code <pr>`; outcome analysis makes sense once those PRs are merged) and stop.
 
 For each PR in the batch, run:
 
@@ -146,78 +90,19 @@ For each PR in the batch, run:
 ~/.claude/skills/review-code/scripts/learn-orchestrator.sh single "<PR_NUM>" --org "<ORG>" --repo "<REPO>"
 ```
 
-Follow the "single" submode flow for each PR (user prompts, record learnings, mark analyzed).
+Follow the "single" submode flow for each PR (user prompts, record learnings, mark analyzed). After each PR, use AskUserQuestion to ask whether to continue to the next PR or stop; exit the loop on "Stop here".
 
-After each PR, ask:
-
-Use AskUserQuestion:
-- Question: "Continue to next PR?"
-- Options:
-  1. "Yes, analyze next PR"
-  2. "Stop here"
-
-Exit the batch loop if the user selects "Stop here".
-
-**Step 4: Display batch summary**
-
-```
-Batch Analysis Complete
-
-PRs analyzed: <analyzed>/<total>
-Learnings recorded: <N> total
-- <N> false positives
-- <N> deferred issues
-- <N> missed patterns
-
-Run '/review-code learn --apply' to update context files.
-```
+When done, report PRs analyzed out of the total and the counts of learnings recorded by type, and point at `/review-code learn --apply`.
 
 ---
 
 ### Learn Submode: "apply"
 
-**Step 1: Extract proposals**
-
 From `LEARN_RESULT`, extract `actionable` and `proposals`.
 
-**Step 2: Handle no proposals**
+If `actionable` is 0, explain why nothing is ready: applying requires at least 3 occurrences of the same pattern type sharing language/framework context. Report the current totals from `LEARN_RESULT` (learnings collected, grouped patterns) and suggest continuing to collect with `/review-code learn <pr>`. Stop.
 
-If `actionable` is 0:
-
-```
-No patterns ready for context updates.
-
-Requirements:
-- At least 3 occurrences of the same pattern type
-- Learnings must share language/framework context
-
-Current learnings: <N> total
-Grouped patterns: <N>
-Patterns meeting threshold: 0
-
-Continue collecting learnings with '/review-code learn <pr>'
-```
-
-Stop here.
-
-**Step 3: Present each proposal**
-
-For each proposal in `proposals`, display:
-
-```
-Proposed Context Update
-
-Target file: <proposal.target_file>
-Section: <proposal.section>
-Based on: <N> learnings
-
-Proposed content:
-<proposed content from proposal>
-
-Identified from PRs: <pr list>
-```
-
-Use AskUserQuestion:
+**Present each proposal.** For each proposal in `proposals`, show the target file (`proposal.target_file`), the section, how many learnings it's based on, the proposed content, and the PRs it was identified from. Then use AskUserQuestion:
 - Options:
   1. "Apply": Add content to the context file
   2. "Edit first": Modify content before applying
@@ -232,22 +117,10 @@ Use AskUserQuestion:
 
 **If "Stop":** Exit the loop.
 
-**Step 4: Offer to clear applied learnings**
-
-Use AskUserQuestion:
+**Offer to clear applied learnings.** Use AskUserQuestion:
 - Question: "Clear the learnings that were applied?"
 - Options:
   1. "Yes, clear applied": Remove learnings used in applied proposals from index.jsonl
   2. "No, keep all": Keep all learnings for future reference
 
-**Step 5: Display apply summary**
-
-```
-Context Updates Applied
-
-Files updated:
-- <file> (<N> patterns)
-- <file> (<N> patterns)
-
-These improvements will be used in future reviews.
-```
+Finish by listing the context files updated and the number of patterns each received.

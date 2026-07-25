@@ -147,11 +147,9 @@ See the review file for copy/paste ready comments.
 If `--draft` was specified and this is a PR review (not own PR), create a pending GitHub review with inline comments.
 
 **Rules for draft reviews:**
-- The draft contains ONLY inline comments at specific file:line locations
-- The review summary is a brief 1-2 sentence overview, not the full review
-- The full detailed review stays in the markdown file only
-- NEVER use `gh pr review` directly. Always use `create-draft-review.sh`
-- NEVER include confidence percentages in GitHub comments. Confidence is internal metadata only
+- The draft contains only inline comments at specific file:line locations
+- The review summary is a brief 1-2 sentence overview; the full detailed review stays in the markdown file only
+- All draft creation goes through `create-draft-review.sh` (see the error handling below for why)
 
 From the session data, extract: `draft` (defaults to false), `is_own_pr` (defaults to false), `self` (defaults to false), and `mode`.
 
@@ -164,7 +162,7 @@ If any condition fails, skip draft review creation.
 
 **If conditions are met:**
 
-1. **Extract suggested comments from the review**: Parse the "Suggested Comments" section to get file path, line number, and comment body. Extract ONLY the text inside the ` ```text ``` ` code block. Do NOT include the `*From: <Agent Name> (<confidence>% confidence)*` line. Confidence percentages are internal metadata and must never appear in GitHub comments.
+1. **Extract suggested comments from the review**: Parse the "Suggested Comments" section to get file path, line number, and comment body. Extract only the text inside the ` ```text ``` ` code block; the `*From: <Agent Name> (<confidence>% confidence)*` line is internal metadata and never goes to GitHub.
 
    Keep any GitHub permalinks in the comment body intact (see "Link File References in Comment Bodies" above). They render as clickable links in the posted comment. The same applies to the `summary` field and `unmapped_comments` descriptions.
 
@@ -283,7 +281,7 @@ If failed, show the error and suggest using the review file manually.
   2. Tell them: "Draft review creation failed. The review has been saved to the markdown file."
   3. Suggest: "You can copy comments from the review file and post them manually on GitHub."
   4. Clean up the session: `~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"`
-  5. **STOP HERE.** Do NOT attempt to post comments using `gh pr review` or any other method as a fallback. This will submit the review instead of keeping it pending.
+  5. **Stop here.** Do not post the findings any other way: a regular PR comment or a direct `gh pr review` call publishes immediately instead of staying pending (and the PreToolUse hook blocks the direct calls regardless).
 
 ### Resolve Addressed Threads (--append, PR Mode Only)
 
