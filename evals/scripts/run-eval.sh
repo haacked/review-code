@@ -256,16 +256,13 @@ run_crafted_benchmark() {
     # Detached HEAD: restore by commit SHA instead of branch name
     [[ -n "${original_ref}" ]] || original_ref=$(git -C "${TARGET_REPO}" rev-parse HEAD)
 
-    # Restore the original checkout and delete the temp branch when this function
-    # returns. The handler clears the trap because RETURN traps persist after the
-    # function that set them returns, and would otherwise re-fire on later
-    # function returns where these locals no longer exist.
+    # Restore the original checkout and delete the temp branch. Called explicitly
+    # at every exit path; a RETURN trap is unreliable here (bash fires it after
+    # the function's locals are out of scope, aborting under set -u).
     cleanup_crafted_benchmark() {
-        trap - RETURN
         git -C "${TARGET_REPO}" checkout "${original_ref}" --quiet 2> /dev/null || true
         git -C "${TARGET_REPO}" branch -D "${tmp_branch}" --quiet 2> /dev/null || true
     }
-    trap cleanup_crafted_benchmark RETURN
 
     echo "  Applying patch to ${tmp_branch}…"
 
@@ -282,6 +279,7 @@ run_crafted_benchmark() {
         echo "  Applying base patch…"
         if ! git -C "${TARGET_REPO}" apply "${base_patch}"; then
             echo "  Error: failed to apply base patch for ${id}" >&2
+            cleanup_crafted_benchmark
             return 1
         fi
         git -C "${TARGET_REPO}" add -A
@@ -292,6 +290,7 @@ run_crafted_benchmark() {
         echo "  Warning: patch does not apply cleanly, attempting forced apply" >&2
         if ! git -C "${TARGET_REPO}" apply "${patch}" --allow-empty 2> /dev/null; then
             echo "  Error: failed to apply patch for ${id}" >&2
+            cleanup_crafted_benchmark
             return 1
         fi
     else
@@ -315,6 +314,12 @@ run_crafted_benchmark() {
     [[ -n "${org}" ]] || org="unknown"
     [[ -n "${repo}" ]] || repo="unknown"
 
+    # A review file left over from a previous run would make the skill prompt
+    # to overwrite, which stalls a non-interactive claude -p run. Eval branch
+    # review files are eval-owned, so removing them is safe.
+    rm -f "${SKILL_REVIEWS_DIR}/${org}/${repo}/${tmp_branch}.md" \
+        "${SKILL_REVIEWS_DIR}/${org}/${repo}/branch-${tmp_branch}.md"
+
     # Run the review via claude -p from inside the target repo, so the skill's
     # git commands operate on the checkout that has the benchmark branch.
     # Unset CLAUDECODE to allow running inside an existing Claude Code session.
@@ -331,25 +336,30 @@ run_crafted_benchmark() {
         echo "  Warning: claude exited with code ${claude_exit}" >&2
     fi
 
-    # Locate the review file and copy it to results
-    local review_file="${SKILL_REVIEWS_DIR}/${org}/${repo}/branch-${tmp_branch}.md"
-    if [[ -f "${review_file}" ]]; then
+    # Locate the review file and copy it to results. Branch reviews are saved
+    # as <branch>.md; older skill versions used branch-<branch>.md.
+    local review_file=""
+    local candidate
+    for candidate in \
+        "${SKILL_REVIEWS_DIR}/${org}/${repo}/${tmp_branch}.md" \
+        "${SKILL_REVIEWS_DIR}/${org}/${repo}/branch-${tmp_branch}.md"; do
+        if [[ -f "${candidate}" ]]; then
+            review_file="${candidate}"
+            break
+        fi
+    done
+    if [[ -z "${review_file}" ]]; then
+        review_file=$(find "${SKILL_REVIEWS_DIR}" -name "*${tmp_branch}*" -type f 2> /dev/null | head -1)
+    fi
+
+    if [[ -n "${review_file}" ]]; then
         cp "${review_file}" "${result_dir}/review.md"
         echo "  Review saved to ${result_dir}/review.md"
     else
-        echo "  Warning: review file not found at ${review_file}" >&2
-        echo "  Checking for any review matching this branch…" >&2
-        local found
-        found=$(find "${SKILL_REVIEWS_DIR}" -name "*${tmp_branch}*" -type f 2> /dev/null | head -1)
-        if [[ -n "${found}" ]]; then
-            cp "${found}" "${result_dir}/review.md"
-            echo "  Found review at ${found}"
-        else
-            echo "  No review output found" >&2
-        fi
+        echo "  Warning: no review output found for ${tmp_branch}" >&2
     fi
 
-    # Cleanup happens automatically via the RETURN trap
+    cleanup_crafted_benchmark
     echo "  Done with ${id}"
 }
 
