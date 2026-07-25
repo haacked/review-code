@@ -16,18 +16,33 @@
 # Crafted benchmarks: applies patch to a temporary branch, reviews via `claude -p`
 # Real-world PR benchmarks: reviews via PR URL directly (no patch needed)
 # Results are saved to evals/results/.
+#
+# Environment:
+#   EVAL_TARGET_REPO   Git checkout that crafted benchmark patches are applied in
+#                      (default: this repo). Set it to a separate clone or worktree
+#                      to keep benchmark branches out of the checkout you work in.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EVALS_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${EVALS_DIR}/.." && pwd)"
+TARGET_REPO="${EVAL_TARGET_REPO:-${REPO_ROOT}}"
 REGISTRY="${EVALS_DIR}/benchmarks/registry.json"
 RESULTS_DIR="${EVALS_DIR}/results"
 SKILL_REVIEWS_DIR="${HOME}/.claude/skills/review-code/reviews"
 BASELINE_PROMPT="${EVALS_DIR}/prompts/baseline.md"
 
 source "${SCRIPT_DIR}/helpers/eval-helpers.sh"
+
+# Build the claude -p prompt that runs the review-code skill.
+# `claude -p` does not register personal skills as slash commands (verified on
+# claude 2.1.219: both `/review-code` and the Skill tool report unknown), so
+# instruct the model to load the installed skill file and follow it directly.
+# Args: $1 = the /review-code arguments (e.g. "my-branch --force")
+skill_prompt() {
+    echo "Read ${HOME}/.claude/skills/review-code/SKILL.md and follow its instructions exactly, as if the user ran: /review-code $1"
+}
 
 # Generate a unique run ID from timestamp + short git SHA
 generate_run_id() {
@@ -185,7 +200,7 @@ run_pr_benchmark() {
     # Unset CLAUDECODE to allow running inside an existing Claude Code session.
     echo "  Budget: \$${budget}"
     local claude_exit=0
-    env -u CLAUDECODE "${frozen_env[@]}" claude -p "/review-code ${pr_url} --force" \
+    env -u CLAUDECODE "${frozen_env[@]}" claude -p "$(skill_prompt "${pr_url} --force")" \
         --dangerously-skip-permissions \
         --max-budget-usd "${budget}" \
         > "${result_dir}/claude-output.txt" 2>&1 || claude_exit=$?
@@ -230,71 +245,87 @@ run_crafted_benchmark() {
     fi
 
     # Fail fast if working tree is dirty — patching on a dirty tree risks losing work
-    if [[ -n "$(git -C "${REPO_ROOT}" status --porcelain 2> /dev/null)" ]]; then
+    if [[ -n "$(git -C "${TARGET_REPO}" status --porcelain 2> /dev/null)" ]]; then
         echo "Error: working tree is dirty; commit or stash changes before running crafted benchmarks" >&2
         return 1
     fi
 
     local tmp_branch="eval-tmp-${id}"
-    local original_branch
-    original_branch=$(git -C "${REPO_ROOT}" branch --show-current 2> /dev/null || echo "HEAD")
+    local original_ref
+    original_ref=$(git -C "${TARGET_REPO}" branch --show-current 2> /dev/null)
+    # Detached HEAD: restore by commit SHA instead of branch name
+    [[ -n "${original_ref}" ]] || original_ref=$(git -C "${TARGET_REPO}" rev-parse HEAD)
 
-    # Ensure we restore the original branch and clean up the temp branch on any exit
+    # Restore the original checkout and delete the temp branch when this function
+    # returns. The handler clears the trap because RETURN traps persist after the
+    # function that set them returns, and would otherwise re-fire on later
+    # function returns where these locals no longer exist.
     cleanup_crafted_benchmark() {
-        git -C "${REPO_ROOT}" checkout "${original_branch}" --quiet 2> /dev/null || true
-        git -C "${REPO_ROOT}" branch -D "${tmp_branch}" --quiet 2> /dev/null || true
+        trap - RETURN
+        git -C "${TARGET_REPO}" checkout "${original_ref}" --quiet 2> /dev/null || true
+        git -C "${TARGET_REPO}" branch -D "${tmp_branch}" --quiet 2> /dev/null || true
     }
     trap cleanup_crafted_benchmark RETURN
 
     echo "  Applying patch to ${tmp_branch}…"
 
     # Create a temporary branch from HEAD, apply the patch, and commit
-    git -C "${REPO_ROOT}" checkout -b "${tmp_branch}" --quiet 2> /dev/null || {
+    git -C "${TARGET_REPO}" checkout -b "${tmp_branch}" --quiet 2> /dev/null || {
         # Branch may already exist from a previous failed run; clean it up
-        git -C "${REPO_ROOT}" branch -D "${tmp_branch}" --quiet 2> /dev/null || true
-        git -C "${REPO_ROOT}" checkout -b "${tmp_branch}" --quiet
+        git -C "${TARGET_REPO}" branch -D "${tmp_branch}" --quiet 2> /dev/null || true
+        git -C "${TARGET_REPO}" checkout -b "${tmp_branch}" --quiet
     }
 
     # Apply base.patch first if it exists (creates files needed by diff.patch)
     local base_patch="${bench_dir}/base.patch"
     if [[ -f "${base_patch}" ]]; then
         echo "  Applying base patch…"
-        if ! git -C "${REPO_ROOT}" apply "${base_patch}"; then
+        if ! git -C "${TARGET_REPO}" apply "${base_patch}"; then
             echo "  Error: failed to apply base patch for ${id}" >&2
             return 1
         fi
-        git -C "${REPO_ROOT}" add -A
-        git -C "${REPO_ROOT}" commit -m "eval: base state for ${id}" --quiet --no-gpg-sign
+        git -C "${TARGET_REPO}" add -A
+        git -C "${TARGET_REPO}" commit -m "eval: base state for ${id}" --quiet --no-gpg-sign
     fi
 
-    if ! git -C "${REPO_ROOT}" apply --check "${patch}" 2> /dev/null; then
+    if ! git -C "${TARGET_REPO}" apply --check "${patch}" 2> /dev/null; then
         echo "  Warning: patch does not apply cleanly, attempting forced apply" >&2
-        if ! git -C "${REPO_ROOT}" apply "${patch}" --allow-empty 2> /dev/null; then
+        if ! git -C "${TARGET_REPO}" apply "${patch}" --allow-empty 2> /dev/null; then
             echo "  Error: failed to apply patch for ${id}" >&2
             return 1
         fi
     else
-        git -C "${REPO_ROOT}" apply "${patch}"
+        git -C "${TARGET_REPO}" apply "${patch}"
     fi
 
-    git -C "${REPO_ROOT}" add -A
-    git -C "${REPO_ROOT}" commit -m "eval: apply benchmark ${id}" --quiet --no-gpg-sign
+    git -C "${TARGET_REPO}" add -A
+    git -C "${TARGET_REPO}" commit -m "eval: apply benchmark ${id}" --quiet --no-gpg-sign
 
     echo "  Running review on ${tmp_branch}…"
 
-    # Determine the org/repo for locating the review output
-    local org repo
-    org=$(git -C "${REPO_ROOT}" remote get-url origin 2> /dev/null | sed -E 's#.*[:/]([^/]+)/([^/]+?)(\.git)?$#\1#' || echo "unknown")
-    repo=$(git -C "${REPO_ROOT}" remote get-url origin 2> /dev/null | sed -E 's#.*[:/]([^/]+)/([^/]+?)(\.git)?$#\2#' || echo "unknown")
+    # Determine the org/repo for locating the review output. Plain string
+    # slicing instead of sed: BSD sed rejects the lazy quantifier a trailing
+    # optional .git group would need.
+    local origin_url org repo
+    origin_url=$(git -C "${TARGET_REPO}" remote get-url origin 2> /dev/null || echo "")
+    origin_url="${origin_url%.git}"
+    repo="${origin_url##*/}"
+    org="${origin_url%/*}"
+    org="${org##*[:/]}"
+    [[ -n "${org}" ]] || org="unknown"
+    [[ -n "${repo}" ]] || repo="unknown"
 
-    # Run the review via claude -p.
+    # Run the review via claude -p from inside the target repo, so the skill's
+    # git commands operate on the checkout that has the benchmark branch.
     # Unset CLAUDECODE to allow running inside an existing Claude Code session.
     echo "  Budget: \$${budget}"
     local claude_exit=0
-    env -u CLAUDECODE claude -p "/review-code ${tmp_branch} --force" \
-        --dangerously-skip-permissions \
-        --max-budget-usd "${budget}" \
-        > "${result_dir}/claude-output.txt" 2>&1 || claude_exit=$?
+    (
+        cd "${TARGET_REPO}" \
+            && env -u CLAUDECODE claude -p "$(skill_prompt "${tmp_branch} --force")" \
+                --dangerously-skip-permissions \
+                --max-budget-usd "${budget}"
+    ) > "${result_dir}/claude-output.txt" 2>&1 || claude_exit=$?
 
     if [[ ${claude_exit} -ne 0 ]]; then
         echo "  Warning: claude exited with code ${claude_exit}" >&2
