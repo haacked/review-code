@@ -95,6 +95,25 @@ From the session file JSON, extract these fields for building agent context:
 - `debug_session_dir`: (optional) path to debug session directory when debug mode is enabled
 - `adversary`: (optional) object `{engine: "copilot"|"codex", available: boolean}`, present only when `--adversary:copilot` or `--adversary:codex` was specified. `available` reflects whether that engine's CLI is actually installed.
 
+Mode-specific fields:
+- **PR mode:** `pr`: PR details (number, title, author, body, comments, etc.); `file_ref`: git ref for file access (present when reviewing from a different branch or via a provisioned worktree). When the review runs outside the PR's repo and a local clone is mapped in `repos.conf`, `git.working_dir` points at a detached worktree checked out to the PR. Otherwise (no mapping, provisioning failed, or the PR ref could not be fetched into an in-repo clone), `working_dir` is null and only the diff is available.
+- **Branch/commit/range modes:** `branch`, `base_branch`, `commit`, `range`
+- **Area-specific reviews:** `area`
+
+### Load Conditional Instructions
+
+Some steps apply only to certain sessions, and their instructions live in separate handler files. Check the session JSON now and Read every file whose condition holds, in one pass, before continuing:
+
+| Condition (session JSON) | Read this file |
+|---|---|
+| `debug_session_dir` is a non-empty string | `~/.claude/skills/review-code/handlers/review-debug.md` |
+| `chunk_metadata.chunked` is `true` | `~/.claude/skills/review-code/handlers/review-chunked.md` |
+| `adversary` is present | `~/.claude/skills/review-code/handlers/review-adversary.md` |
+| `mode` is `"pr"` | `~/.claude/skills/review-code/handlers/review-pr-output.md` |
+| `fix` is `true` | `~/.claude/skills/review-code/handlers/review-fix.md` |
+
+Each file states where in the flow below its steps run. If no condition holds, read nothing and continue.
+
 ### Classify Review Scope
 
 Run the scope classifier to determine exploration depth and agent selection based on diff size and file characteristics:
@@ -122,44 +141,7 @@ Skipping: $skipped_agents (join with ", ")
 
 ### Debug Mode Setup
 
-Extract `debug_session_dir` from the session JSON. If it is a non-empty string, debug mode is active for this review. Store it as `$debug_session_dir`.
-
-When `$debug_session_dir` is set, write debug artifacts at key stages by calling the bridge script. Each write is a single Bash call. Debug writes must never block or fail the review: if a write fails, ignore the error and continue.
-
-**Helper pattern for debug writes:**
-
-To save content:
-```bash
-echo '{"action":"save","debug_dir":"$debug_session_dir","stage":"<stage>","filename":"<name>","content":"<text>"}' | ~/.claude/skills/review-code/scripts/debug-artifact-writer.sh
-```
-
-To record timing:
-```bash
-echo '{"action":"time","debug_dir":"$debug_session_dir","stage":"<stage>","event":"start"}' | ~/.claude/skills/review-code/scripts/debug-artifact-writer.sh
-```
-
-To write stats:
-```bash
-echo '{"action":"stats","debug_dir":"$debug_session_dir","stage":"<stage>","data":{"key":"value"}}' | ~/.claude/skills/review-code/scripts/debug-artifact-writer.sh
-```
-
-For content with special characters (quotes, newlines), use jq to build the JSON safely:
-```bash
-jq -n --arg dir "$debug_session_dir" --arg content "$variable_with_content" \
-  '{"action":"save","debug_dir":$dir,"stage":"08-context-explorer","filename":"result.md","content":$content}' \
-  | ~/.claude/skills/review-code/scripts/debug-artifact-writer.sh
-```
-
-**Stages to instrument (when `$debug_session_dir` is set):**
-
-- **07-scope-classification**: Save the classifier output as `classification.json` (the full JSON from `classify-review-scope.sh`).
-- **08-context-explorer**: Record timing (start/end). Save the explorer prompt as `prompt.md` and the result (`$architectural_context`) as `result.md`.
-- **09-per-chunk-analysis** (chunked reviews only): Record timing (start/end). For each chunk, save the prompt as `chunk-{id}-prompt.md` and result as `chunk-{id}-result.md`.
-- **10-agent-dispatch**: Record timing (start/end). For each agent (or chunk x agent combination), save the prompt as `{agent}-prompt.md` (or `chunk-{id}-{agent}-prompt.md`) and result as `{agent}-result.md` (or `chunk-{id}-{agent}-result.md`). Save stats with agent count.
-- **11-synthesis**: Record timing (start/end). Save the merged findings as `merged-findings.md` and corroboration results as `corroboration.md`.
-- **11b-adversary-meta-review** (when `adversary.available` is true): Record timing (start/end). Save the input payload as `input.json`, the raw adversary output as `raw-output.md`, and the parsed JSON response as `response.json`. On timeout or error, also save `stderr.log` (from the `<engine>_stderr` field, e.g. `copilot_stderr` or `codex_stderr`) and `log-path.txt` (from the `<engine>_log` field).
-- **11c-voice-rewrite**: Record timing (start/end). Save the input findings as `input.json`, the agent's raw response as `raw-output.md`, the parsed rewrites as `output.json`, a side-by-side comparison of original vs. rewritten descriptions as `comparison.md`, and the per-finding accept/reject decisions as `validation.json`.
-- **12-token-usage**: After the review is complete, save stats with per-agent token usage and aggregate totals (see "Track Token Usage" below).
+If you loaded `review-debug.md` (`debug_session_dir` set), store `$debug_session_dir` now and write its per-stage artifacts as the flow reaches each stage.
 
 ### Track Token Usage
 
@@ -172,17 +154,6 @@ duration_ms: NNN</usage>
 ```
 
 Maintain a `$token_usage` map throughout the review. After each Agent/Task tool invocation completes (context explorer, review agents, chunk analyzers, finding validators), parse the `<usage>` block from its response and record `total_tokens`, `tool_uses`, and `duration_ms` keyed by agent name (e.g., `context_explorer`, `code-reviewer-security`, `chunk-1-analysis`, `validator-1`). If the usage block is absent from a response, skip that entry.
-
-**Check for chunked diff:**
-
-If `chunk_metadata` exists and `chunk_metadata.chunked` is `true`, set `is_chunked = true`. Extract `chunk_count` from `chunk_metadata.chunk_count` and the `chunks` array. Display to the user:
-
-"This is a large PR ({chunk_metadata.reason}). Splitting into {chunk_count} chunks for focused review."
-
-Mode-specific fields:
-- **PR mode:** `pr`: PR details (number, title, author, body, comments, etc.); `file_ref`: git ref for file access (present when reviewing from a different branch or via a provisioned worktree). When the review runs outside the PR's repo and a local clone is mapped in `repos.conf`, `git.working_dir` points at a detached worktree checked out to the PR. Otherwise (no mapping, provisioning failed, or the PR ref could not be fetched into an in-repo clone), `working_dir` is null and only the diff is available.
-- **Branch/commit/range modes:** `branch`, `base_branch`, `commit`, `range`
-- **Area-specific reviews:** `area`
 
 ### Prepare File Access Instructions
 
@@ -558,69 +529,9 @@ IMPORTANT: Build upon the previous review. Do not duplicate findings. You may:
 
 ### Collect and Synthesize Results
 
-After all review agents complete, extract usage metadata from each agent's response and record in `$token_usage` keyed by agent type (e.g., `$token_usage["code-reviewer-security"]`). For chunked reviews, key by `chunk-{id}-{agent-type}`.
+After all review agents complete, extract usage metadata from each agent's response and record in `$token_usage` keyed by agent type (e.g., `$token_usage["code-reviewer-security"]`).
 
-**Chunked review dispatch:**
-
-If `is_chunked` is true:
-
-1. **Per-chunk analysis:**
-
-   Before dispatching review agents for chunks, run a quick analysis per chunk in parallel:
-
-   For each chunk in the `chunks` array, invoke the Task tool with subagent_type "Explore" and `model: "sonnet"` (all chunks in parallel; chunk analysis is summarization work and does not need the top-tier model):
-
-   ```markdown
-   Analyze this chunk of a larger PR to understand its purpose and implementation details.
-
-   **PR:** #$pr_number - $pr_title
-   **Chunk:** $chunk.id of $chunk_count: $chunk.label
-   **Files:** $chunk.files
-
-   **File Metadata:**
-   $file_metadata
-
-   **Diff for this chunk:**
-   $chunk.diff
-
-   $file_access_instructions
-
-   **Context from full-diff analysis (already gathered):**
-   $architectural_context
-
-   Build on this context. Focus on chunk-specific details not covered above.
-
-   Provide a brief (2-3 paragraph) summary covering:
-   1. What this chunk accomplishes and how it fits the PR's overall goal
-   2. Chunk-specific implementation details: data flow, error handling, edge cases
-   3. Integration points with other system components
-
-   Time-box to 1-2 minutes of exploration.
-   ```
-
-   Save each chunk's analysis result as `$chunk_analyses[$chunk.id]`. Extract usage metadata from each response and record in `$token_usage` as `chunk-{id}-analysis`.
-
-2. After all per-chunk analyses complete, for each chunk in the `chunks` array, for each applicable agent:
-   - Replace `$diff` in the agent context with the chunk's `diff` field (the subset of changes for this chunk)
-   - Add a chunk context header to each agent prompt:
-     ```
-     **Chunk Context:**
-     You are reviewing chunk $chunk.id of $chunk_count: $chunk.label
-     Files in this chunk: $chunk.files (comma-separated list)
-     Other chunks cover: (list labels of other chunks)
-     If you notice issues that may interact with code in other chunks, flag them as questions.
-     ```
-   - Add the per-chunk analysis to each agent prompt:
-     ```
-     **Chunk Analysis:**
-     $chunk_analyses[$chunk.id]
-     ```
-   - Keep all other context the same: full `file_metadata`, full `architectural_context`, full `review_context`, all PR metadata
-   - Dispatch all (chunk x agent) combinations in parallel via the Task tool
-
-3. After all tasks complete, merge all findings into a single pool for synthesis.
-
-If `is_chunked` is false (or `chunk_metadata` is absent), behavior is identical to the non-chunked path above.
+**Chunked review dispatch:** If you loaded `review-chunked.md` (large diff split into chunks), dispatch per its instructions instead — per-chunk analysis, then chunk x agent combinations — and merge all findings into a single pool for the synthesis below.
 
 **Pre-synthesis scope filter**
 
@@ -639,7 +550,7 @@ This filter reduces noise before the expensive extended-thinking synthesis step.
 
 Synthesize the remaining findings using extended thinking into a coherent, deduplicated review document. Apply confidence-based filtering and cross-agent corroboration before producing the final output.
 
-**Cross-agent corroboration:** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function. Cross-model corroboration (an adversary meta-review `CONFIRMED` verdict) also counts as corroboration even if only one Claude agent flagged the issue.
+**Cross-agent corroboration:** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function. Cross-model corroboration (an adversary meta-review `CONFIRMED` verdict, only when an adversary pass ran) also counts as corroboration even if only one Claude agent flagged the issue.
 
 **Filtering rules:**
 - **Corroborated (2+ agents or chunks):** Keep even if individual confidence is below 40%.
@@ -667,13 +578,10 @@ Corroboration, dismissal reasoning, and confidence are signals the synthesis sta
 4. Solo suggestions (>= 40% confidence)
 5. Questions and nits
 
-**Important:** The final review document does NOT separate findings by chunk. Present a unified review organized by the priority ordering above, the same as for non-chunked reviews.
-
 ### Validate Findings Against the Diff
 
 Before including any finding in the final review, verify it references code actually in the diff (across all chunks if chunked). This catches wrong line numbers, findings about unrelated files, and stale references.
 
-**Important:** Always use the FULL diff from the session data (not chunk diffs) for position mapping. The position mapper needs the complete diff to map findings to correct GitHub inline comment positions.
 **Step 1: Run the position mapper.** For each agent finding that references a specific file and line, build a targets array and run:
 
 ```bash
@@ -727,54 +635,7 @@ Where `targets` contains `{"path": "<file>", "line": <number>}` objects, and `di
 
 ### Adversary Meta-Review
 
-This step only runs when the user explicitly opted in with `--adversary:copilot` or `--adversary:codex`. There is no automatic adversary review: without the flag, skip this entire step silently and move on to the Voice Pass.
-
-**Skip conditions:**
-- If `adversary` is absent from the session data (no `--adversary:*` flag was given): skip this step entirely, no message needed.
-- If `adversary.available` is false (the flag was given but that engine's CLI isn't installed): tell the user once — "Adversary review requested via `--adversary:$engine` but the `$engine` CLI isn't installed; skipping." — then skip the rest of this step.
-
-Otherwise, let `$engine` be `adversary.engine` (`"copilot"` or `"codex"`) and continue below. This gives the adversary engine a focused task: validate Claude's findings and scan the diff for anything glaringly obvious that was missed.
-
-**Build the findings payload.** Collect all findings that survived synthesis and validation into a JSON array. For each finding, include: a sequential `id` (starting at 1), `agent` (source agent name), `type` (blocking/suggestion/nit/question), `file`, `line`, `description`, `proposed_fix` (if any), and `confidence`.
-
-**Dispatch the meta-review:**
-
-```bash
-jq -n \
-  --argjson findings '<findings JSON array>' \
-  --arg diff "$diff" \
-  --argjson timeout_seconds 300 \
-  '$ARGS.named' | ~/.claude/skills/review-code/scripts/$engine-meta-review.sh
-```
-
-Where `$diff` is the full diff from session data, `<findings JSON array>` is the JSON array of surviving findings, and `$engine` selects `copilot-meta-review.sh` or `codex-meta-review.sh`. Use `jq` to safely encode both as JSON.
-
-Save the JSON output as `$adversary_meta_review`.
-
-In **debug mode**, save debug artifacts under stage `11b-adversary-meta-review`: save the input payload as `input.json`, the raw adversary output as `raw-output.md`, and the parsed response as `response.json`. On timeout or error, also save `stderr.log` (from the script's `<engine>_stderr` field) and `log-path.txt` (from its `<engine>_log` field).
-
-**Integrate meta-review results:**
-
-If `$adversary_meta_review` has `available: true`, `timed_out: false`, and no `error` field:
-
-All updates below are to synthesis-time metadata (corroboration flag, confidence, severity). Do NOT modify the finding's `description` or `proposed_fix` text to record any of this. See "Comment Body Hygiene" above.
-
-1. **Process validations.** For each entry in `validations`:
-   - **CONFIRMED**: Mark the matching finding as cross-model corroborated (metadata only). Boost confidence by 15 percentage points (capped at 95%).
-   - **DISMISSED**: If the finding is `blocking:`, downgrade to `suggestion:`. Do NOT remove the finding entirely; Claude's analysis takes precedence. The adversary's dissenting reasoning is debug data only: log it under the `11b-adversary-meta-review` debug stage if `$debug_session_dir` is set, but do not embed it in the comment body.
-   - **ADJUSTED**: If the adversary's reasoning, read in isolation, would cause a competent reviewer to change what they write in the comment (a different line number, an additional condition, a revised failure description), incorporate it into the body as if it were your own analysis and do not annotate the change with attribution to `$engine`. If the reasoning only evaluates the finding's validity or tone without adding technical content, ignore it. When you do adjust the body, save the original `description`, the new `description`, and the adversary's reasoning under the `11b-adversary-meta-review` debug stage as `adjusted-{finding_id}.json` (when `$debug_session_dir` is set) so the change is auditable.
-   - If a `finding_id` does not match any surviving finding, ignore it silently.
-
-2. **Process missed issues.** For each entry in `missed_issues`:
-   - Apply the same scope filter: drop any that reference files not in `IN_SCOPE_PATHS`.
-   - For surviving missed issues, add them to the finding pool with `agent: $engine` (metadata) and the type from the meta-review output. The `description` reads as a normal review finding; do not tag it with "(flagged by Copilot)"/"(flagged by Codex)" or any similar attribution.
-   - These are subject to the same filtering thresholds as Claude findings. Since they come from a single source (the adversary engine), they are solo findings and need confidence >= 40% to be included (unless they are questions/nits). Assign a default confidence of 50% to adversary missed issues.
-
-3. **Corroboration rule.** Cross-model corroboration (Claude + adversary CONFIRMED) counts as corroboration even if only one Claude agent flagged the issue.
-
-**Error handling:** If the script returns `available: false`, `timed_out: true`, or contains an `error` field, ignore the meta-review result and continue with Claude-only findings. Never fail or stop the review because of an adversary-engine error.
-
-Record `adversary_meta_review` in `$token_usage` with `{ total_tokens: 0, tool_uses: 0, duration_ms }` using the `duration_ms` value from the output.
+If you loaded `review-adversary.md` (`--adversary:*` flag), run its meta-review pass here, between finding validation and the Voice Pass. Otherwise continue to the Voice Pass.
 
 ### Voice Pass (Final Rewrite)
 
@@ -816,159 +677,15 @@ If any check fails, discard the rewrite and keep the original finding. Track the
 
 The Voice Pass step runs in all review modes (quick and comprehensive) when findings exist. There is no mode-based guard.
 
-**Debug instrumentation:** When `$debug_session_dir` is set, save artifacts under stage `11c-voice-rewrite`:
-
-- `input.json`: the JSON array sent to the agent
-- `raw-output.md`: the agent's raw response
-- `output.json`: the parsed JSON array
-- `comparison.md`: a side-by-side of original vs. rewritten descriptions for each finding (markdown table or sequential blocks). This is the artifact you inspect to evaluate whether the voice pass is helping.
-- `validation.json`: per-finding `{accepted: true|false, reason: "..."}` showing which rewrites passed preservation checks.
-
-Use the same `debug-artifact-writer.sh` bridge pattern as the `11b-adversary-meta-review` stage.
+In debug mode, save the stage `11c-voice-rewrite` artifacts (see `review-debug.md`).
 
 ### Link File References in Comment Bodies
 
-**PR reviews only.** Run this only when `mode` is `pr` and `owner`, `repo`, and `pr.head_sha` are all present in session data. Local, branch, commit, range, and area reviews have no GitHub blob URL to build, so skip this step and leave references as plain `path:line` text.
-
-Run it as the final body-formatting step, after the Voice Pass. The voice agent preserves `path:line` tokens exactly and its preservation check expects them in plain form, so linkify only once that check has run. Apply the rewrite in place to each surviving finding's `description` (and to any unmapped-comment text). The same linkified bodies feed both the review file's Suggested Comments and the `--draft` comments, so doing it once here covers both.
-
-When a comment body cites a file and line **other than the comment's own anchor location**, render the citation as a GitHub permalink. GitHub renders markdown in review comment bodies and in the review summary, so a permalink lets the reader jump straight to the cited line.
-
-Build the URL from session data:
-
-```
-https://github.com/<owner>/<repo>/blob/<pr.head_sha>/<repo_root_path>#L<line>
-```
-
-- For a line range, use `#L<start>-L<end>`.
-- `<repo_root_path>` is the path from the repository root, exactly as it appears in the diff. Never a relative or truncated path.
-- `<pr.head_sha>` is the full commit SHA the review ran against. Pinning to it keeps the anchor on the right line after later pushes.
-
-Prefer a descriptive anchor over a bare path. Turn:
-
-> … this cache is defined as `HyperCache(namespace="team_metadata")` (team_llm_gateway_policy_cache.py:91), so the gauges emit `namespace="team_metadata"`.
-
-into:
-
-> … this cache is defined as [`HyperCache(namespace="team_metadata")`](https://github.com/PostHog/posthog/blob/abc123def/products/llm_analytics/backend/team_llm_gateway_policy_cache.py#L91), so the gauges emit `namespace="team_metadata"`.
-
-When the citation supports a plain-English behavioral claim, anchor the permalink on the claim's key phrase rather than a quoted code token:
-
-> … now hits [the rule that blocks group aggregation on flags linked to an Early Access Feature](https://github.com/PostHog/posthog/blob/abc123def/products/feature_flags/backend/api/feature_flag.py#L1367) and returns a 400.
-
-When no natural phrase fits, link the citation text itself: `[team_llm_gateway_policy_cache.py:91](<url>)`.
-
-Do not link:
-- The comment's own anchor line. The comment already sits there, so a self-link is noise.
-- Backtick-quoted identifiers, type names, or values that don't point at a location (`OverflowError`, `distinct_id`).
-- Paths outside the repository (third-party packages, stdlib).
+If you loaded `review-pr-output.md` (PR mode), run its "Link File References in Comment Bodies" step here, right after the Voice Pass. Other modes leave references as plain `path:line` text.
 
 ### Apply Fixes (--fix flag)
 
-If the session JSON has `fix: true`, apply fixes for the surviving findings before composing the review document. Skip this step entirely when `fix` is absent or false.
-
-The goal: act like a principal engineer doing a careful local cleanup pass. Fix what's clearly right; explain what you skipped or where you had to make a judgment call. The fix step never posts to GitHub: it edits the working tree only.
-
-**Preconditions:**
-
-1. The surviving finding pool is non-empty. If it's empty, skip the fix step and note "No findings to fix" in the Fix Summary section of the review document.
-2. A writable working tree contains the reviewed code. Decide using this table:
-
-   | `mode`                               | `file_ref` set? | `git.local_clone` set? | Apply fixes? | Target / reason it's skipped |
-   |--------------------------------------|-----------------|------------------------|--------------|------------------------------|
-   | `local`, `branch`, `commit`, `range` | n/a             | n/a                    | yes          | `git.working_dir`            |
-   | `area`                               | n/a             | n/a                    | yes          | `git.working_dir`            |
-   | `pr`                                 | no              | n/a                    | yes          | `git.working_dir`            |
-   | `pr`                                 | yes             | yes                    | no           | working tree is a disposable provisioned worktree; edits would be reaped at session end |
-   | `pr`                                 | yes             | no                     | no           | user's working tree is on a different branch; edits would silently corrupt unrelated branch state |
-
-3. The working tree directory exists and is writable.
-
-If any precondition fails, skip applying fixes but still produce the Fix Summary section with a one-line reason.
-
-**Classification (per finding):**
-
-For each finding that survived synthesis, validation, the adversary meta-review, and voice pass, classify it into one of three buckets. The finding has `severity` (blocking/suggestion/nit/question), `file`, `line`, `description`, `proposed_fix`, and `confidence`.
-
-- **`fix_high_confidence`**: apply without commentary in the summary. All of:
-  - One of: `severity` is `blocking` or `suggestion` and `confidence >= 80%`; OR `severity` is `nit` and `proposed_fix` is a single-line or single-identifier change.
-  - `proposed_fix` is concrete (a diff, replacement code, or precise textual change), self-contained in one file, and unambiguous.
-  - The change does not alter a public API, exported type, function signature, or stable identifier that other callers depend on.
-  - The change does not require touching files outside the diff's modified files.
-
-- **`fix_with_judgment`**: apply, then record the choice in the summary. Any of:
-  - `confidence` is 60–79%.
-  - `proposed_fix` exists but needs adaptation (style, naming, placement) before it fits the surrounding code.
-  - There are 2+ reasonable approaches and you chose one. Pick the one a principal engineer would defend: clearest read, fewest moving parts, lowest blast radius. Avoid clever or speculative refactors.
-  - The fix touches a small amount of related code outside the immediate line (e.g., adding a helper, removing a now-unused import) where doing so leaves the codebase cleaner than the minimal patch.
-
-- **`skip`**: do not apply. Any of:
-  - `severity` is `question` (the author needs to decide) or the finding is `nit` without a trivial in-place fix.
-  - `confidence < 60%`.
-  - No concrete `proposed_fix` is available.
-  - The fix would change a public API, exported symbol, or behavior contract.
-  - The fix requires domain knowledge or product intent you don't have from the diff and architectural context.
-  - The fix would touch files outside the modified set, or would create new files, in a way that goes beyond the finding's stated scope.
-  - Applying the fix would create or worsen a conflict with another finding's fix.
-
-When two findings conflict (different fixes proposed for the same lines), pick the one with higher confidence; if tied, prefer `blocking` over `suggestion`. Mark the dropped finding as `skip` with reason "conflicts with higher-priority fix at <file:line>".
-
-**Applying fixes:**
-
-Maintain a `$fix_outcomes` map keyed by finding `id` (the voice-pass step mints sequential integer ids on each finding) with shape `{ status, file, line, severity, description, reason?, choice? }` where:
-- `status` is the bucket name: `fix_high_confidence`, `fix_with_judgment`, or `skip`.
-- `reason` is required when `status` is `skip`.
-- `choice` is required when `status` is `fix_with_judgment` and explains the option taken and the alternatives considered.
-
-For each finding classified `fix_high_confidence` or `fix_with_judgment`:
-
-1. Read the file named by the finding's `file` to capture the current text.
-2. Locate a unique textual anchor for the change using identifiers in the finding's `description` and `proposed_fix`; do not trust the diff's literal line numbers (the working tree may have drifted). If no unique anchor exists, reclassify the finding as `skip` with reason "could not locate fix target after working-tree drift".
-3. Apply the change with the Edit tool, using the anchor as `old_string`. Make the smallest edit that fully addresses the finding; do not bundle unrelated cleanups into the same edit. Edit's exact-match contract verifies the change atomically; if it errors, drop the finding to `skip` with the error as the reason.
-4. Record the outcome in `$fix_outcomes`.
-
-Group findings by file. Within one file, apply edits sequentially (the Edit tool's exact-match contract makes parallel same-file edits race) and re-read the file before each subsequent edit so anchors reflect prior fixes. Across files, you may dispatch edits in parallel.
-
-After all fixes are applied, do not run formatters, linters, or test suites automatically. The user will review the changes themselves.
-
-**Fix Summary section:**
-
-Build a `## Fix Summary` section. The "Compose the Review Document" step below places it immediately after the metadata header (and after the Review Scope note when one is present) and before the per-agent sections.
-
-The summary's opening line is one of two forms:
-
-- When fixes ran: `_Applied via `--fix`. <N> findings reviewed: <H> auto-fixed, <J> fixed with judgment calls below, <S> skipped._`
-- When preconditions failed: `_`--fix` was requested but no fixes were applied: <one-line reason>._`
-
-After the opening line, render the two subsections below. Omit each subsection entirely when its list would be empty.
-
-```markdown
-## Fix Summary
-
-<opening line, per the rules above>
-
-### Judgment Calls
-
-- **`<file>:<line>`** (`<severity>`): <one-sentence description of what changed>.
-  <One or two sentences naming the chosen approach and the alternatives considered, in plain English.>
-
-### Skipped
-
-- **`<file>:<line>`** (`<severity>`): <one-sentence description>.
-  Skipped: <reason in plain English>.
-```
-
-List judgment-call and skipped items in priority order. High-confidence fixes are not listed; the diff in the working tree is their record. Counts in the opening line reflect the actual outcomes regardless of which subsections are rendered.
-
-The user-facing summary message picks up the fix counts in the "Compose the Review Document" step below. No action needed here.
-
-**Debug instrumentation:** When `$debug_session_dir` is set, save artifacts under stage `11d-fix-pass`:
-
-- `classification.json`: per-finding `{id, status, reason?, choice?}` decisions.
-- `edits.json`: per-edit record `{finding_id, file, line, before_excerpt, after_excerpt}` capturing what was changed.
-- `outcomes.json`: the final `$fix_outcomes` map.
-
-Use the same `debug-artifact-writer.sh` bridge pattern as the `11b-adversary-meta-review` and `11c-voice-rewrite` stages.
+If you loaded `review-fix.md` (session has `fix: true`), apply fixes per its instructions now, before composing the review document.
 
 ### Compose the Review Document
 
@@ -995,13 +712,7 @@ Use the same `debug-artifact-writer.sh` bridge pattern as the `11b-adversary-met
 
 **For area-specific reviews**, include only that area's findings.
 
-If `is_chunked` is true, add a "Review Scope" note at the top of the review document (after the metadata header):
-
-```markdown
-> **Review Scope:** This review covered $chunk_count chunks ($total_file_count files total).
-```
-
-If the session has `fix: true`, place the `## Fix Summary` section (built in the "Apply Fixes" step above) directly after the metadata header (and after the Review Scope note, when present) and before the per-agent sections.
+If the session has `fix: true`, place the `## Fix Summary` section (built by the fix pass in `review-fix.md`) directly after the metadata header (and after the chunked "Review Scope" note, when present) and before the per-agent sections.
 
 Include the metadata header at the top of the file:
 
@@ -1026,7 +737,7 @@ diff_tokens: <diff_tokens from session data>
 -->
 ```
 
-The `token_usage` block records per-step token consumption (agents, context explorer, validators, and other steps) and the aggregate total. For chunked reviews, sum tokens by agent type across chunks (e.g., all `chunk-*-code-reviewer-security` entries become a single `code-reviewer-security` total). Always include the `total` field as the sum of all steps in `$token_usage`.
+The `token_usage` block records per-step token consumption (agents, context explorer, validators, and other steps) and the aggregate total. Always include the `total` field as the sum of all steps in `$token_usage`.
 
 This metadata is used by the learning system to determine when the review was created. The `review_commit` field records the PR's HEAD SHA at review time, enabling drift detection when creating draft reviews later. The `diff_tokens` field is an estimated token count of the diff (~4 chars per token).
 
@@ -1063,15 +774,7 @@ Token usage: ~$total_tokens tokens across $step_count steps ($exploration_depth 
 
 Where `$total_tokens` is the sum of all `total_tokens` from `$token_usage` and `$step_count` is the number of entries (includes agents, context explorer, validators, and other steps).
 
-**Write token usage debug artifacts (when `$debug_session_dir` is set):** Build a JSON object from `$token_usage` and save via the debug bridge:
-
-```bash
-jq -n --argjson agents '<JSON object with per-agent {total_tokens, tool_uses, duration_ms}>' \
-  --arg total '<total_tokens sum>' --arg count '<step_count>' \
-  --arg dir "$debug_session_dir" \
-  '{"action":"stats","debug_dir":$dir,"stage":"12-token-usage","data":{"agents":$agents,"total_tokens":($total|tonumber),"step_count":($count|tonumber),"agent_count":($count|tonumber)}}' \
-  | ~/.claude/skills/review-code/scripts/debug-artifact-writer.sh
-```
+In debug mode, save the stage `12-token-usage` artifacts (see `review-debug.md`).
 
 **Do NOT post the full review to GitHub.** The detailed review is saved to the markdown file only. If `--draft` mode is enabled, a separate draft review with inline comments will be created in the next step. That draft contains only brief inline comments, not the full review summary.
 
@@ -1130,299 +833,9 @@ jq -nc \
   '$ARGS.named' >> "$token_usage_log"
 ```
 
-### Generate Suggested Comments (PR Mode Only)
+### PR Outputs: Suggested Comments, Draft Review, Thread Resolution
 
-If this is a PR review and `is_own_pr` is false, generate suggested inline comments for the review file.
-
-From the session data, extract:
-- `is_own_pr`: whether the current user authored the PR (defaults to false)
-- `pr.comments.inline`: existing inline comments on the PR (defaults to empty array)
-
-**If `is_own_pr` is false:**
-
-When combining agent findings into the review document, add a "Suggested Comments" section:
-
-1. **Extract findings with locations**: From each agent's output, identify findings that have a specific file path and line number.
-
-   Comment bodies already have their in-prose file:line citations rendered as GitHub permalinks (see "Link File References in Comment Bodies" above). Keep those links intact when writing the bodies into the review file.
-
-   Bodies must also already carry the seam structure (see "Break at the seam" under Inline Comment Voice) before they're written into the review file; preserve their paragraph breaks, never flatten a body into one block.
-
-2. **Check against existing comments**: For each finding, check if there are existing inline comments (from `$inline_comments`) that:
-   - Are on the same file
-   - Are within 5 lines of the finding
-   - Address the same issue (use your judgment on semantic similarity)
-
-3. **Categorize findings**:
-   - **New comment**: No existing comment addresses this issue
-   - **Build upon existing**: Existing comment is related but incomplete
-   - **Already covered**: Existing comment fully addresses the finding
-
-4. **Format the section** following this structure:
-
-```markdown
----
-
-## Suggested Comments
-
-These suggestions are for posting as inline PR review comments.
-
-### New Comments
-
-For each finding that needs a new comment:
-
-#### `<file_path>:<line_number>`
-
-```text
-<comment text: direct, specific, conversational (see Inline Comment Voice above)>
-```
-
-*From: <Agent Name> (<confidence>% confidence)*
-
----
-
-### Build Upon Existing
-
-For findings where there's a related but incomplete existing comment:
-
-#### `<file_path>:<line_number>`
-
-**Existing comment by @<author>:**
-> <quote the existing comment>
-
-**Add to discussion:**
-
-```text
-<suggested addition that builds on the existing comment>
-```
-
-*From: <Agent Name> (<confidence>% confidence)*
-
----
-
-### Already Covered
-
-List findings where existing comments are sufficient:
-
-- `<file_path>:<line_number>` - @<author>'s comment adequately addresses <brief description>
-
----
-
-### Summary
-
-| Status | Count |
-|--------|-------|
-| New comments | X |
-| Build upon existing | Y |
-| Already covered | Z |
-```
-
-5. **Append to review file**: Add the "Suggested Comments" section after the main review content.
-
-6. **Display summary to user**: After saving, show:
-
-```
-Suggested Comments:
-- X new comments to consider posting
-- Y comments that build on existing discussion
-- Z findings already covered by existing comments
-
-See the review file for copy/paste ready comments.
-```
-
-### Create Draft Review (--draft flag)
-
-If `--draft` was specified and this is a PR review (not own PR), create a pending GitHub review with inline comments.
-
-**Rules for draft reviews:**
-- The draft contains ONLY inline comments at specific file:line locations
-- The review summary is a brief 1-2 sentence overview, not the full review
-- The full detailed review stays in the markdown file only
-- NEVER use `gh pr review` directly. Always use `create-draft-review.sh`
-- NEVER include confidence percentages in GitHub comments. Confidence is internal metadata only
-
-From the session data, extract: `draft` (defaults to false), `is_own_pr` (defaults to false), `self` (defaults to false), and `mode`.
-
-**Only proceed if ALL conditions are true:**
-- `draft_mode` is "true"
-- `mode` is "pr"
-- `is_own_pr` is "false" OR `self_mode` is "true"
-
-If any condition fails, skip draft review creation.
-
-**If conditions are met:**
-
-1. **Extract suggested comments from the review**: Parse the "Suggested Comments" section to get file path, line number, and comment body. Extract ONLY the text inside the ` ```text ``` ` code block. Do NOT include the `*From: <Agent Name> (<confidence>% confidence)*` line. Confidence percentages are internal metadata and must never appear in GitHub comments.
-
-   Keep any GitHub permalinks in the comment body intact (see "Link File References in Comment Bodies" above). They render as clickable links in the posted comment. The same applies to the `summary` field and `unmapped_comments` descriptions.
-
-   Bodies must already carry the seam structure (see "Break at the seam" under Inline Comment Voice); copy their blank lines into the draft payload verbatim.
-
-   Look for this pattern in the review file:
-   ```
-   #### `<file_path>:<line_number>`
-   ```text
-   <comment body>
-   ```
-   ```
-
-2. **Map comment locations to diff positions**: Build a targets array and run through the position mapper:
-
-```bash
-~/.claude/skills/review-code/scripts/diff-position-mapper.sh <<'EOF'
-{"diff": "<diff from session data>", "targets": [<targets array>]}
-EOF
-```
-
-3. **Separate mappable vs unmappable comments**:
-   - Mappable: Comments with valid line mappings (will be inline comments)
-   - Unmappable: Comments where line not in diff (will go in summary)
-
-4. **Build input for create-draft-review.sh**:
-
-```json
-{
-  "owner": "<org from session>",
-  "repo": "<repo from session>",
-  "pr_number": <number from session>,
-  "reviewer_username": "<reviewer from session>",
-  "review_commit": "<pr.head_sha from session, if available>",
-  "original_diff": "<diff from session data>",
-  "summary": "<Short, conversational summary (see guidance below)>",
-  "comments": [
-    {"path": "file.ts", "line": 42, "side": "RIGHT", "body": "Clean comment text", "line_content": "    the_actual_code()"}
-  ],
-  "unmapped_comments": [
-    {"description": "General finding that couldn't be mapped to diff"}
-  ]
-}
-```
-
-**Comment drift detection:** When `review_commit` is provided, `create-draft-review.sh` automatically detects if the PR received new commits since the review was generated. If comments have drifted, it remaps them to their correct positions using content-based matching. Comments that cannot be remapped are moved to `unmapped_comments`.
-
-**Extracting `line_content`:** For each comment, extract the code at the target file:line from the diff. Find the file in the diff, locate the target line number within the hunks, and use the code text at that line (without the `+`/`-`/` ` prefix). This enables content-based matching for drift detection.
-
-**Writing the summary:** The `summary` field is the casual top-level comment on a GitHub review. Keep it to 1-2 short sentences. The author knows what their PR does, so never restate or narrate the approach back to them.
-
-Don't catalog or preview the inline comments either. The author scrolls down and sees them. Mention something in the summary only if it doesn't have a natural inline target (cross-cutting concerns, missing tests for a behavior that spans files, false-positive callouts on prior reviews).
-
-Default to short. Most PRs deserve a simple "LGTM!", "Nice fix!", or "Looks good!" with a note about inline comments if any. Only elaborate when something genuinely surprised you.
-
-Good examples:
-- "LGTM!"
-- "Nice fix! A couple non-blocking suggestions inline."
-- "Looks good, one blocking issue inline."
-- "TIL about `Intl.Segmenter`, cool find. A couple suggestions inline."
-
-Bad examples (robotic, narrating the approach, or over-explaining):
-- "Code review with 3 inline suggestions. See review file for full details."
-- "Nice fix for a real validation gap. The two-phase approach (relative date regex first, then dateutil) is clean." (narrates the approach)
-- "I really liked how you extracted the retry logic into its own module, much cleaner." (restates what the PR does)
-- "One performance suggestion in the hot path, a rename worth doing now, a few clarity nits, and some test coverage gaps." (catalogs the inline comments; the author can see them)
-
-**Code Suggestions:**
-
-When recommending a code change, use GitHub's suggestion syntax in the comment body:
-
-````markdown
-```suggestion
-replacement code here
-```
-````
-
-This renders as an "Apply suggestion" button the PR author can click to commit the change.
-
-5. **Create the pending review**:
-
-```bash
-~/.claude/skills/review-code/scripts/create-draft-review.sh <<'EOF'
-<draft_input JSON here>
-EOF
-```
-
-6. **Display result to user**:
-
-If successful:
-```
-Draft review created on GitHub!
-
-Review: <review_url>
-
-Summary:
-- Inline comments: X
-- Summary comments: Y
-{If drift_detected is true:}
-- Note: PR received new commits since review. Comments were adjusted to match current diff.
-
-The review is in PENDING state. Visit GitHub to:
-- Edit or remove any comments
-- Add additional comments
-- Submit with Approve/Request Changes/Comment
-```
-
-If failed, show the error and suggest using the review file manually.
-
-**Error handling:**
-- **Not PR mode**: "The --draft flag only works when reviewing a pull request"
-- **Own PR**: "Cannot create draft review on your own pull request"
-- **No mappable comments**: Create review with summary only, warn user
-- **API failure (HTTP 422, etc.)**:
-  1. Display the error message to the user
-  2. Tell them: "Draft review creation failed. The review has been saved to the markdown file."
-  3. Suggest: "You can copy comments from the review file and post them manually on GitHub."
-  4. Clean up the session: `~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"`
-  5. **STOP HERE.** Do NOT attempt to post comments using `gh pr review` or any other method as a fallback. This will submit the review instead of keeping it pending.
-
-### Resolve Addressed Threads (--append, PR Mode Only)
-
-When this is an **append** review (`append` is true in the session JSON) **and** `mode` is `pr`, resolve the review threads from your previous review whose findings the author has since addressed. This keeps the PR's unresolved-thread list honest: stale threads you already re-checked shouldn't keep nagging the author.
-
-Skip this step entirely if `append` is not true, or if `mode` is not `pr`. Threads only exist on pull requests. This step runs whenever `append` is true and `mode` is `pr`, independent of `--draft`: a `--draft` posting that was skipped or failed earlier does not skip thread resolution.
-
-**Determine your reviewer identity.** Use `reviewer_username` from the session JSON. If it is empty, fall back to:
-
-```bash
-gh api user --jq '.login'
-```
-
-Call the result `$reviewer`. If you cannot determine a login, skip this step (without an author scope you cannot safely tell your threads from a teammate's).
-
-**List your unresolved threads.** Scope strictly to threads whose first comment is yours:
-
-```bash
-~/.claude/skills/review-code/scripts/resolve-review-threads.sh <pr_number> --author "$reviewer" --json
-```
-
-The output `threads` array holds objects with `commentId`, `path`, `line`, `isOutdated`, `author`, and `body` (the full text of your original comment, used for the re-flag comparison below). If the array is empty, there is nothing to resolve; skip the rest of this step.
-
-**Decide which threads to resolve.** Resolve a thread **only when you are confident the finding is addressed**, which requires BOTH signals:
-
-1. **The code at that location changed.** Either the thread's `isOutdated` is true, or the current review diff touches `path` at or near `line`. Requiring this is what stops you from resolving a still-open issue that a flaky re-run merely failed to surface.
-2. **Your fresh findings do not re-flag the same issue.** No finding in this review covers the same `path` within ~5 lines of `line` describing the same concern as the thread's `body`. Read the whole `body` (the listing carries up to ~1500 characters), not just its opening: a partial fix often changes the line while leaving the issue the comment described.
-
-A thread that fails either signal stays open. When in doubt, leave it open: resolving is irreversible and visible to everyone on the PR.
-
-Build `$resolve_ids` as the list of `commentId` values that pass both signals.
-
-**Resolve the confident set.** If `$resolve_ids` is non-empty, pass each as a `--comment-id`, keeping the `--author` scope as a safety guard so a stray id can never resolve a teammate's thread:
-
-```bash
-~/.claude/skills/review-code/scripts/resolve-review-threads.sh <pr_number> --author "$reviewer" \
-  --comment-id <id1> --comment-id <id2> --json
-```
-
-**Report.** Tell the user what changed and why, listing each resolved thread with its reason and each thread you deliberately left open:
-
-```
-Resolved 2 threads from the previous review:
-- src/api.py:42 — code changed and no longer flagged
-- src/db.py:88 — thread outdated, fix confirmed
-
-Left open 1 thread:
-- src/auth.py:12 — re-flagged in this review
-```
-
-If `$resolve_ids` was empty, say so briefly (e.g. "No previous-review threads were confidently addressed; left all open.").
+If you loaded `review-pr-output.md` (PR mode), run its remaining steps now, in order: "Generate Suggested Comments", "Create Draft Review" (--draft), and "Resolve Addressed Threads" (--append).
 
 ### Cleanup Session
 
