@@ -2,7 +2,7 @@
 
 ## Production Infrastructure
 
-**CRITICAL**: PostHog production runs behind load balancers and proxies. Always consider this when implementing features that involve IP addresses, rate limiting, authentication, or geolocation.
+PostHog production runs behind load balancers and proxies. Keep this in mind for any code that touches IP addresses, rate limiting, authentication, or geolocation.
 
 ### Architecture Stack
 
@@ -11,57 +11,18 @@
 - Contour is configured with `num-trusted-hops: 1` to properly extract client IPs from headers
 - NLB preserves client IPs via `preserve_client_ip.enabled=true`
 
-### Client IP Detection (Security Critical)
+### Client IP Detection
 
-**CRITICAL**: Socket IPs are always the load balancer's IP, never the actual client IP.
+The socket IP is always the load balancer's address, never the client's. Code that uses it for rate limiting puts every client in one bucket (attackers bypass the limit, legitimate users get throttled together); for IP-based authentication or geo-blocking, it grants or denies everyone at once; in security logs, it corrupts the audit trail for incident response. Flag any of these, and flag hand-rolled IP detection when the ecosystem has a vetted extractor (Rust: `tower_governor::key_extractor::SmartIpKeyExtractor`; look for similar "smart" extractors in other languages).
 
-**NEVER use socket IP addresses** - they will always be the load balancer's IP, not the client's IP.
-
-**ALWAYS use X-Forwarded-For headers** in this precedence:
+Client IP precedence:
 
 1. `X-Forwarded-For` (primary, set by load balancer/proxy)
 2. `X-Real-IP` (fallback)
 3. `Forwarded` (RFC 7239 standard format)
-4. Socket IP (last resort only for local development)
+4. Socket IP (local development only)
 
-**Common Libraries:**
-
-- Rust: `tower_governor::key_extractor::SmartIpKeyExtractor`
-- Look for similar "smart" IP extractors in other languages
-
-### Common Pitfalls to Avoid
-
-- ❌ Using socket IP for rate limiting → all requests share one rate limit
-- ❌ Using socket IP for authentication → security bypass
-- ❌ Using socket IP for geolocation → all traffic appears from one location
-- ❌ Implementing custom IP detection → reinventing the wheel, likely buggy
-
-### Security Vulnerabilities from Incorrect IP Handling
-
-- **Rate Limit Bypass**: Using socket IP allows attackers to bypass rate limits (all traffic shares one bucket)
-- **Authentication Bypass**: IP-based auth using socket IP grants access to anyone
-- **Audit Trail Corruption**: Incorrect IPs in security logs impede incident response
-- **Geographic Restrictions Bypass**: IP-based geo-blocking becomes ineffective
-
-**Example Critical Issue:**
-
-```text
-🔴 CRITICAL: Authentication bypass via socket IP usage (auth.rs:89)
-
-Vulnerability: IP allowlist check uses socket address instead of real client IP
-Impact: Complete authentication bypass for restricted endpoints
-
-Fix:
-- let client_ip = req.socket_addr().ip();  // VULNERABLE
-+ let client_ip = SmartIpKeyExtractor::extract(&req);  // SECURE
-```
-
-### Infrastructure Security Checklist
-
-- [ ] Proper header extraction for client identification?
-- [ ] Protection against header spoofing attacks?
-- [ ] Rate limiting applied per real client, not load balancer?
-- [ ] Security logs capture actual client IPs for forensics?
+When reviewing IP handling, also check for protection against header spoofing and that security logs capture the real client IP.
 
 ### Infrastructure Repository References
 
@@ -113,18 +74,7 @@ When reviewing networking, IP handling, or infrastructure-related code, consult 
 - Provide fallback behavior
 - Clean up when features toggle
 
-### Kea State Management
-
-**When to use Kea vs React State:**
-- React State: Local UI state, form inputs, toggles
-- Kea Logic: Shared state, async workflows, cross-component communication
-
-**Kea issues to catch:**
-- Direct state mutations (must return new objects)
-- Missing error handling in async listeners
-- Missing cleanup in `beforeUnmount`
-- Incorrect selector memoization
-- Circular dependencies between logics
+Kea state management guidance lives in the kea framework context, which loads whenever Kea is detected in the diff.
 
 ## SDK Repositories
 

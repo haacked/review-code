@@ -697,6 +697,11 @@ main() {
         rm -rf "${legacy_cache}"
     fi
 
+    # Remove the retired react-kea context file: the language detector only
+    # ever emits react and kea separately, so this file never loaded and its
+    # content lives in react.md and kea.md.
+    rm -f "${SKILL_DIR}/context/frameworks/react-kea.md"
+
     # Install components
     echo ""
     info "Installing review-code components…"
