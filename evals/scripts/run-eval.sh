@@ -21,6 +21,8 @@
 #   EVAL_TARGET_REPO   Git checkout that crafted benchmark patches are applied in
 #                      (default: this repo). Set it to a separate clone or worktree
 #                      to keep benchmark branches out of the checkout you work in.
+#   EVAL_BUDGET_USD    Per-benchmark budget cap, overriding each benchmark's
+#                      metadata (default: metadata budget_usd, else 5).
 
 set -euo pipefail
 
@@ -142,9 +144,10 @@ run_benchmark() {
     local result_dir="${RESULTS_DIR}/${run_id}/${id}"
     mkdir -p "${result_dir}"
 
-    # Per-benchmark budget from metadata, defaulting to $5
+    # Per-benchmark budget: env override, else metadata, else $5
     local budget
     budget=$(jq -r '.budget_usd // 5' "${bench_dir}/metadata.json" 2> /dev/null)
+    budget="${EVAL_BUDGET_USD:-${budget}}"
 
     if [[ "${approach}" == "baseline" ]]; then
         run_baseline_benchmark "${id}" "${bench_dir}" "${result_dir}" "${budget}"
