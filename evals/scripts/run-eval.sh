@@ -41,9 +41,14 @@ source "${SCRIPT_DIR}/helpers/eval-helpers.sh"
 # `claude -p` does not register personal skills as slash commands (verified on
 # claude 2.1.219: both `/review-code` and the Skill tool report unknown), so
 # instruct the model to load the installed skill file and follow it directly.
+# Print mode cannot answer AskUserQuestion prompts, so pin the answer the
+# skill's current-branch disambiguation would ask for: review the branch
+# against its base, never a substitute range (a range changes the review
+# file's name and the harness then can't find the output).
 # Args: $1 = the /review-code arguments (e.g. "my-branch --force")
 skill_prompt() {
-    echo "Read ${HOME}/.claude/skills/review-code/SKILL.md and follow its instructions exactly, as if the user ran: /review-code $1"
+    echo "Read ${HOME}/.claude/skills/review-code/SKILL.md and follow its instructions exactly, as if the user ran: /review-code $1
+This session cannot answer interactive prompts. If the skill asks what to review (uncommitted vs branch changes), review the branch changes vs the base branch, re-initializing the session with the branch argument if needed."
 }
 
 # Generate a unique run ID from timestamp + short git SHA
@@ -327,6 +332,7 @@ run_crafted_benchmark() {
     # git commands operate on the checkout that has the benchmark branch.
     # Unset CLAUDECODE to allow running inside an existing Claude Code session.
     echo "  Budget: \$${budget}"
+    touch "${result_dir}/.start"
     local claude_exit=0
     (
         cd "${TARGET_REPO}" \
@@ -340,7 +346,10 @@ run_crafted_benchmark() {
     fi
 
     # Locate the review file and copy it to results. Branch reviews are saved
-    # as <branch>.md; older skill versions used branch-<branch>.md.
+    # as <branch>.md; older skill versions used branch-<branch>.md. As a last
+    # resort take the newest review in the repo's directory written since this
+    # benchmark started (the skill may have reviewed an equivalent range and
+    # saved under a range-based name).
     local review_file=""
     local candidate
     for candidate in \
@@ -353,6 +362,11 @@ run_crafted_benchmark() {
     done
     if [[ -z "${review_file}" ]]; then
         review_file=$(find "${SKILL_REVIEWS_DIR}" -name "*${tmp_branch}*" -type f 2> /dev/null | head -1)
+    fi
+    if [[ -z "${review_file}" ]]; then
+        review_file=$(find "${SKILL_REVIEWS_DIR}/${org}/${repo}" -name '*.md' -type f \
+            -newer "${result_dir}/.start" 2> /dev/null | head -1)
+        [[ -z "${review_file}" ]] || echo "  Note: matched review by timestamp: ${review_file}" >&2
     fi
 
     if [[ -n "${review_file}" ]]; then
