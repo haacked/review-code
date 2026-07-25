@@ -205,24 +205,29 @@ Rate each dimension from 1 (poor) to 5 (excellent):
 - **signal_to_noise**: What is the ratio of valuable, real findings to filler, noise, or false positives? High signal = mostly real issues.
 - **overall_quality**: Overall quality of the review as a professional code review.
 
-Also provide brief notes explaining your scoring rationale.
+Respond with only a JSON object, no code fence and no other text:
+{"actionability": N, "specificity": N, "signal_to_noise": N, "overall_quality": N, "notes": "brief rationale"}
 PROMPT
     )
 
     local judge_result
-    judge_result=$(claude -p "${prompt}" \
+    judge_result=$(env -u CLAUDECODE claude -p "${prompt}" \
         --output-format json \
         --max-budget-usd 0.50 \
-        2> /dev/null || echo '{"actionability":0,"specificity":0,"signal_to_noise":0,"overall_quality":0,"notes":"LLM judge failed"}')
+        2> /dev/null || echo '{"result":""}')
 
-    # Extract just the fields we need (claude output may have wrapper)
-    echo "${judge_result}" | jq '{
-        actionability: (.actionability // 0),
-        specificity: (.specificity // 0),
-        signal_to_noise: (.signal_to_noise // 0),
-        overall_quality: (.overall_quality // 0),
-        notes: (.notes // "")
-    }'
+    # --output-format json wraps the model's text in an envelope; the scores
+    # are in the .result string (possibly fenced despite instructions).
+    echo "${judge_result}" | jq -r '.result // ""' \
+        | sed 's/^```json$//; s/^```$//' \
+        | jq '{
+            actionability: (.actionability // 0),
+            specificity: (.specificity // 0),
+            signal_to_noise: (.signal_to_noise // 0),
+            overall_quality: (.overall_quality // 0),
+            notes: (.notes // "")
+        }' 2> /dev/null \
+        || echo '{"actionability":0,"specificity":0,"signal_to_noise":0,"overall_quality":0,"notes":"LLM judge failed"}'
 }
 
 # Compute composite score from pattern matching and LLM judge results

@@ -103,12 +103,13 @@ main() {
         fi
 
         # Detect file:line reference patterns
-        # Pattern 1: #### `path/to/file.py:123`
-        if [[ "${line}" =~ ^\#{3,4}[[:space:]]+\`([^:]+):([0-9]+)\` ]]; then
+        # Pattern 1: #### `path/to/file.py:123`, with optional "N. " numbering
+        # as written by branch-mode review documents: ### 1. `path/to/file.py:123`
+        if [[ "${line}" =~ ^\#{3,4}[[:space:]]+([0-9]+\.[[:space:]]+)?\`([^:]+):([0-9]+)\` ]]; then
             flush_pending_finding
 
-            finding_file="${BASH_REMATCH[1]}"
-            finding_line="${BASH_REMATCH[2]}"
+            finding_file="${BASH_REMATCH[2]}"
+            finding_line="${BASH_REMATCH[3]}"
             finding_description=""
             current_confidence=""
             in_finding=true
