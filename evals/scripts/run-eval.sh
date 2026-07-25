@@ -22,7 +22,9 @@
 #                      (default: this repo). Set it to a separate clone or worktree
 #                      to keep benchmark branches out of the checkout you work in.
 #   EVAL_BUDGET_USD    Per-benchmark budget cap, overriding each benchmark's
-#                      metadata (default: metadata budget_usd, else 5).
+#                      metadata (default: no cap). A benchmark killed mid-review
+#                      by a cap produces an unscoreable partial result, so caps
+#                      are opt-in.
 
 set -euo pipefail
 
@@ -106,7 +108,7 @@ run_baseline_benchmark() {
     local id="$1"
     local bench_dir="$2"
     local result_dir="$3"
-    local budget="${4:-5}"
+    local budget="${4:-}"
 
     local diff_content
     diff_content=$(read_benchmark_diff "${bench_dir}") || return 1
@@ -115,12 +117,15 @@ run_baseline_benchmark() {
     prompt=$(build_baseline_prompt "${bench_dir}" "${diff_content}")
 
     echo "  Running baseline review (bare prompt)..."
-    echo "  Budget: \$${budget}"
+    echo "  Budget: ${budget:+\$}${budget:-none}"
+
+    local budget_args=()
+    [[ -z "${budget}" ]] || budget_args=(--max-budget-usd "${budget}")
 
     local claude_exit=0
     env -u CLAUDECODE claude -p "${prompt}" \
         --dangerously-skip-permissions \
-        --max-budget-usd "${budget}" \
+        "${budget_args[@]}" \
         > "${result_dir}/claude-output.txt" 2>&1 || claude_exit=$?
 
     if [[ ${claude_exit} -ne 0 ]]; then
@@ -149,10 +154,10 @@ run_benchmark() {
     local result_dir="${RESULTS_DIR}/${run_id}/${id}"
     mkdir -p "${result_dir}"
 
-    # Per-benchmark budget: env override, else metadata, else $5
-    local budget
-    budget=$(jq -r '.budget_usd // 5' "${bench_dir}/metadata.json" 2> /dev/null)
-    budget="${EVAL_BUDGET_USD:-${budget}}"
+    # Budget cap: EVAL_BUDGET_USD or none. Benchmark metadata budget_usd is
+    # ignored; a cap that kills a run mid-review leaves a partial result that
+    # scores as a false regression.
+    local budget="${EVAL_BUDGET_USD:-}"
 
     if [[ "${approach}" == "baseline" ]]; then
         run_baseline_benchmark "${id}" "${bench_dir}" "${result_dir}" "${budget}"
@@ -177,7 +182,7 @@ run_pr_benchmark() {
     local bench_dir="$2"
     local result_dir="$3"
     local pr_url="$4"
-    local budget="${5:-5}"
+    local budget="${5:-}"
 
     # Extract org/repo/number from the PR URL (lowercase for file lookup)
     local org repo pr_number
@@ -206,11 +211,13 @@ run_pr_benchmark() {
 
     # Run the review via claude -p using the PR URL.
     # Unset CLAUDECODE to allow running inside an existing Claude Code session.
-    echo "  Budget: \$${budget}"
+    echo "  Budget: ${budget:+\$}${budget:-none}"
+    local budget_args=()
+    [[ -z "${budget}" ]] || budget_args=(--max-budget-usd "${budget}")
     local claude_exit=0
     env -u CLAUDECODE "${frozen_env[@]}" claude -p "$(skill_prompt "${pr_url} --force")" \
         --dangerously-skip-permissions \
-        --max-budget-usd "${budget}" \
+        "${budget_args[@]}" \
         > "${result_dir}/claude-output.txt" 2>&1 || claude_exit=$?
 
     if [[ ${claude_exit} -ne 0 ]]; then
@@ -244,7 +251,7 @@ run_crafted_benchmark() {
     local id="$1"
     local bench_dir="$2"
     local result_dir="$3"
-    local budget="${4:-5}"
+    local budget="${4:-}"
 
     local patch="${bench_dir}/diff.patch"
     if [[ ! -f "${patch}" ]]; then
@@ -331,14 +338,16 @@ run_crafted_benchmark() {
     # Run the review via claude -p from inside the target repo, so the skill's
     # git commands operate on the checkout that has the benchmark branch.
     # Unset CLAUDECODE to allow running inside an existing Claude Code session.
-    echo "  Budget: \$${budget}"
+    echo "  Budget: ${budget:+\$}${budget:-none}"
+    local budget_args=()
+    [[ -z "${budget}" ]] || budget_args=(--max-budget-usd "${budget}")
     touch "${result_dir}/.start"
     local claude_exit=0
     (
         cd "${TARGET_REPO}" \
             && env -u CLAUDECODE claude -p "$(skill_prompt "${tmp_branch} --force")" \
                 --dangerously-skip-permissions \
-                --max-budget-usd "${budget}"
+                "${budget_args[@]}"
     ) > "${result_dir}/claude-output.txt" 2>&1 || claude_exit=$?
 
     if [[ ${claude_exit} -ne 0 ]]; then
