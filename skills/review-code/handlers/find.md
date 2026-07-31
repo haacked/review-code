@@ -55,25 +55,17 @@ file://$file_path
 
 Show a brief summary from `file_summary` (the first ~50 lines of the review file) and offer to open or read the full review.
 
+The merge and migrate procedures below live in `~/.claude/skills/review-code/handlers/existing-review-files.md`; Read it when an option that uses one is selected.
+
 **If `has_branch_review` is true (both a PR review and a branch review exist):**
 
-Warn the user and use AskUserQuestion:
+Warn the user, show the branch review path (`$branch_review_path`), and use AskUserQuestion:
 
 - Question: "A branch review exists alongside the PR review. What would you like to do?"
 - Options:
-  1. "Merge into PR review": Append branch review content to PR review, then delete the branch review
-  2. "Keep both": Leave both files as-is
-  3. "Delete branch review": Remove the branch review file
-
-Show the branch review path: `$branch_review_path`
-
-If the user selects "Merge into PR review":
-
-1. Read both files using the Read tool
-2. Append the branch review content to the PR review with separator: `\n\n---\n\n## Previous Branch Review\n\n`
-3. Write the merged content to the PR review file
-4. Delete the branch review file: `rm "$branch_review_path"`
-5. Confirm: "Merged branch review into PR review and deleted the old file."
+  1. "Merge into PR review": run the merge procedure
+  2. "Keep both": leave both files as-is
+  3. "Delete branch review": `rm "$branch_review_path"`
 
 **If `needs_rename` is true (branch review exists, PR exists, no PR review):**
 
@@ -89,11 +81,5 @@ Use AskUserQuestion:
 
 - Question: "A PR (#$pr_number) now exists for this branch. Migrate the review?"
 - Options:
-  1. "Migrate to PR review": Rename the file from branch to PR format
-  2. "Keep as branch review": Leave the file as-is
-
-If the user selects "Migrate to PR review":
-
-1. Compute the new path: replace `$file_path`'s filename with `pr-$pr_number.md`
-2. Move the file: `mv "$file_path" "$new_path"`
-3. Confirm: "Migrated review to $new_path"
+  1. "Migrate to PR review": run the migrate procedure
+  2. "Keep as branch review": leave the file as-is

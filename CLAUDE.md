@@ -12,6 +12,10 @@ This repo contains the source files for the `/review-code` skill:
 - `agents/` - Agent definitions
 - `bin/` - Development utilities (fmt, lint, test, setup)
 
+## Agent Definitions
+
+The nine domain reviewers in `agents/` deliberately repeat four shared blocks instead of sourcing them from one file: "Before You Review", "Self-Challenge", the confidence rubric, and the finding format (a fenced ```text body plus the `Location: path:line | Confidence: NN%` trailer). Each subagent receives its own prompt exactly once, so deduplicating would save no runtime tokens; keep the four blocks in sync when editing one. The finding format is parsed by `parse-review-findings.sh` and the synthesis step in `handlers/review.md`; don't change its shape.
+
 ## Architecture
 
 **In the repository:**

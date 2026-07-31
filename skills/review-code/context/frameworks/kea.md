@@ -2,135 +2,39 @@
 
 ## State Management & Kea Logic
 
-**Kea Over-Engineering** - Use React state for:
+Use React state for local component state: form inputs, UI toggles, self-contained primitive components, state no other component needs. Use Kea for state shared across components, complex async workflows with side effects, and global application state. A Kea logic wrapping what could be a `useState` is over-engineering; shared state threaded through props that unrelated components need is the opposite miss.
 
-- Local component state (form inputs, UI toggles)
-- Simple controlled inputs
-- Self-contained primitive components
-- State that no other component needs
+Kea issues to catch:
 
-**Use Kea for:**
-
-- State shared across multiple components
-- Complex async workflows with side effects
-- Global application state
-- State accessed by unrelated components
-
-**Critical Kea Issues:**
-
-- Direct state mutations (always return new objects)
-- Missing error handling in async listeners
-- Missing cleanup in afterUnmount
-- Listeners without try/catch blocks
+- Direct state mutations in reducers (reducers must return new objects/arrays)
+- Missing error handling in async listeners (listeners without try/catch)
+- Missing cleanup in `afterUnmount`
 
 ## Kea Logic Keys
 
-**CRITICAL**: The `key()` function must create stable, predictable keys.
-
-**Anti-patterns to avoid:**
+The `key()` function must produce stable, predictable keys. Unstable keys break component identity and cause remounting; keys built from object references change on every render; `JSON.stringify` crashes on circular references and produces long keys.
 
 ```typescript
-// ❌ BAD: Fragile - fails with circular refs, creates long keys
+// Fragile: crashes on circular refs, non-deterministic, or reference-based
 key((props) => JSON.stringify(props.value))
+key((props) => props.complexObject)
 
-// ❌ BAD: Non-deterministic
-key((props) => Math.random())
-
-// ❌ BAD: Complex objects
-key((props) => props.complexObject)  // Reference changes break mounting
-```
-
-**Best practices:**
-
-```typescript
-// ✅ GOOD: Simple primitive
+// Stable: primitives or predictable string combinations
 key((props) => props.id)
-
-// ✅ GOOD: Stable string combination
 key((props) => `${props.type}-${props.id}`)
-
-// ✅ GOOD: Predictable array serialization
-key((props) => {
-    const value = props.value
-    if (value === null) return 'null'
-    if (Array.isArray(value)) {
-        return value.map(v => v ?? 'null').join('-')
-    }
-    return String(value)
-})
 ```
 
-**Why this matters:**
-
-- Circular references crash with JSON.stringify
-- Long keys waste memory and hurt performance
-- Unstable keys cause unnecessary remounting
-- Non-deterministic keys break component identity
+For array or nullable props, serialize predictably (e.g. `value.map((v) => v ?? 'null').join('-')`).
 
 ## Props Synchronization
 
-**CRITICAL**: Add `propsChanged` when logic receives props that can change externally.
-
-**When to use propsChanged:**
-
-- Logic receives a `value` prop from parent
-- Parent component controls the state
-- Props affect internal state that must stay in sync
-
-**Missing propsChanged causes:**
-
-- Component state diverging from parent
-- Stale data displayed after prop updates
-- User confusion from UI not reflecting changes
-
-**Pattern:**
+Add `propsChanged` when a logic receives props that can change externally (a `value` controlled by the parent, config that affects internal state). Without it, the logic's state silently diverges from the parent after the first render and the UI shows stale data.
 
 ```typescript
 propsChanged(({ actions, props }, oldProps) => {
-    // Only sync when value actually changed
     if (props.value !== oldProps.value) {
         actions.updateInternalState(props.value)
     }
-
-    // For complex values, use deep equality
-    if (JSON.stringify(props.config) !== JSON.stringify(oldProps.config)) {
-        actions.reloadWithNewConfig(props.config)
-    }
+    // For complex values, compare with deep equality before reloading
 }),
 ```
-
-**Example - Form input logic:**
-
-```typescript
-const formInputLogic = kea({
-    key: (props) => props.fieldName,
-    props: {} as { value: string; onSet: (value: string) => void },
-
-    actions: {
-        setLocalValue: (value: string) => ({ value }),
-    },
-
-    reducers: ({ props }) => ({
-        localValue: [
-            props.value,
-            {
-                setLocalValue: (_, { value }) => value,
-            },
-        ],
-    }),
-
-    // IMPORTANT: Sync when parent changes value
-    propsChanged(({ actions, props }, oldProps) => {
-        if (props.value !== oldProps.value) {
-            actions.setLocalValue(props.value)
-        }
-    }),
-
-    listeners: ({ props }) => ({
-        setLocalValue: ({ value }) => {
-            props.onSet(value)
-        },
-    }),
-})
-```
-

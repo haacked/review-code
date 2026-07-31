@@ -84,6 +84,49 @@ EOF
     echo "$result" | jq -e '.has_frontend == true'
 }
 
+@test "detects kea from a Logic.ts filename when the diff has no kea import" {
+    diff=$(cat <<'EOF'
+diff --git a/frontend/src/scenes/sceneLogic.ts b/frontend/src/scenes/sceneLogic.ts
++++ b/frontend/src/scenes/sceneLogic.ts
+@@ -40,7 +40,7 @@
+     reducers: {
+-        activeTab: [null, { setTab: (_, { tab }) => tab }],
++        activeTab: ['overview', { setTab: (_, { tab }) => tab }],
+     },
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.frameworks | contains(["kea"])'
+    echo "$result" | jq -e '.has_frontend == true'
+}
+
+@test "detects kea from a Logic.tsx filename" {
+    diff=$(cat <<'EOF'
+diff --git a/frontend/src/lib/featureFlagLogic.tsx b/frontend/src/lib/featureFlagLogic.tsx
++++ b/frontend/src/lib/featureFlagLogic.tsx
+@@ -12,0 +12,1 @@
++        loadFlags: async () => await api.get('flags'),
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.frameworks | contains(["kea"])'
+}
+
+@test "does not detect kea from an unrelated TypeScript filename" {
+    diff=$(cat <<'EOF'
+diff --git a/frontend/src/lib/formatting.ts b/frontend/src/lib/formatting.ts
++++ b/frontend/src/lib/formatting.ts
+@@ -1,0 +1,1 @@
++export const toTitle = (s: string): string => s.toUpperCase()
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.frameworks | contains(["kea"]) | not'
+}
+
 @test "detects Django framework" {
     diff=$(cat <<'EOF'
 diff --git a/views.py b/views.py

@@ -277,7 +277,7 @@ All functions are no-ops when `REVIEW_CODE_DEBUG` is not set to `1`.
 Currently integrated into:
 
 - ✅ `scripts/review-orchestrator.sh` - Main orchestration, timing, final output (stages 00-07)
-- ✅ `handlers/review.md` - Claude-side stages via `debug-artifact-writer.sh` (stages 08-11)
+- ✅ `handlers/review-debug.md` - Claude-side stages via `debug-artifact-writer.sh` (stages 07-12; loaded by `handlers/review.md` when debug mode is active)
 - ✅ Core helper functions tested
 - 🔄 Diff pipeline (future: detailed before/after diffs)
 - 🔄 Context loading (future: which files loaded)

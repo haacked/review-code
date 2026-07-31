@@ -103,6 +103,17 @@ while IFS= read -r file; do
             # Unknown extension - no language detected
             ;;
     esac
+
+    # Kea logic files follow a naming convention, so the path identifies them
+    # even when the hunk touches only a reducer or listener body. The content
+    # patterns below miss that case: the kea import sits outside the hunk, and
+    # useValues/useActions live in the component, not the logic file.
+    case "${file##*/}" in
+        *Logic.ts | *Logic.tsx | logic.ts | logic.tsx)
+            seen_frameworks[kea]=1
+            has_frontend=true
+            ;;
+    esac
 done <<< "${file_paths}"
 
 # Convert associative arrays to indexed arrays for JSON output

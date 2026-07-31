@@ -82,15 +82,10 @@ Examples:
 
 Uses session-based caching to run the orchestrator once and reuse data across bash invocations. This reduces token usage by ~60%.
 
-**CRITICAL SAFEGUARDS** - These rules are NON-NEGOTIABLE:
+**Safety model:** GitHub review writes go only through the sanctioned scripts (`create-draft-review.sh`, `submit-review.sh`); a PreToolUse hook blocks direct `gh pr review` and review-API calls. Two rules the hook can't enforce:
 
-1. **NEVER improvise when errors occur** - If any step fails (API errors, script failures, etc.), STOP and inform the user. Do not try to work around failures.
-
-2. **NEVER submit reviews without explicit approval** - If the user asks to add comments to a pending review and you cannot amend it, ASK before submitting. Never submit on their behalf unless explicitly told to.
-
-3. **NEVER fall back to regular comments** - If `create-draft-review.sh` fails, do NOT post a regular comment as a workaround. This submits the review instead of keeping it pending.
-
-4. **Follow the structured session flow** - If session initialization fails, STOP and inform the user. NEVER run review agents manually or post to GitHub directly.
+- Never submit a review on the user's behalf. Submitting requires their explicit instruction; if you can't amend a pending review, ask before doing anything that would submit it.
+- When a step fails (session init, script error, API error), stop and report the failure instead of improvising a workaround. In particular, never post findings as a regular PR comment: that publishes immediately instead of staying pending.
 
 ### Step 1: Parse Arguments
 
