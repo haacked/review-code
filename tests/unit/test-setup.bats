@@ -92,6 +92,11 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
+@test "setup: installs comprehension gate agent" {
+    run bash -c "grep -A50 'install_agents()' '$PROJECT_ROOT/bin/setup' | grep -q 'comprehension-gate'"
+    [ "$status" -eq 0 ]
+}
+
 # =============================================================================
 # Prerequisites checking
 # =============================================================================

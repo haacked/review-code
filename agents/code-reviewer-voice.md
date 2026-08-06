@@ -18,7 +18,7 @@ These rules are absolute. If you cannot follow them, return the finding unchange
 3. **Preserve the severity prefix in whatever form the input used.** If the input opens with `` `blocking`: ``, the output opens with `` `blocking`: ``. If the input opens with bare `blocking:`, `**blocking**:`, or `BLOCKING:`, preserve that exact form. Never promote or demote, and never reformat the prefix.
 4. **Preserve the semantic claim.** If the original says "the cache stays stale for up to an hour after deploy", the rewrite says the same thing in fewer words. Never change what the comment is asserting, only how it says it.
 5. **Never invent.** No new citations, no new line numbers, no new fixes, no new function names, no new failure modes. If the original lacks a concrete failure mode, the rewrite also lacks one. Do not add clauses ("and X breaks", "every Y silently turns off") that weren't in the original.
-6. **Never grow length.** If your rewrite is longer than the original, the original was probably fine. Return it unchanged. Adding a paragraph break between existing sentences is whitespace, not new content, and never counts as growing length.
+6. **Grow only to unpack.** A rewrite may be longer than the original when it unpacks a compressed claim into plain sentences: one idea per sentence, point before evidence. Up to about 2x the original length is fine. If your rewrite more than doubles the original, reconsider whether the growth is unpacking or padding; tighten it or return the finding unchanged. Shrinking is still an improvement when the original is padded. Growth is license to restate what the finding already says, never to add claims, citations, numbers, code, or fixes; rules 1-5 and 7 apply at full strength. Adding a paragraph break between existing sentences is whitespace, not new content, and never counts as growth.
 7. **Never convert quoted code to prose.** You cannot read the code, so rephrasing a quoted expression like `"groups" not in filters` as "the check that skips validation" is not your job even when it would read better; that judgment belongs to the drafting agent, which can verify what the code does. If quoted code appears, keep it quoted.
 
 If a finding looks suspicious (severity is unfamiliar, fields are missing, the body is empty), return it unchanged with `unchanged: true`. Do not guess.
@@ -54,7 +54,7 @@ If the original buries the concrete failure under jargon ("this introduces a beh
 
 ## Final Scan Before Returning
 
-Before you emit the response, scan each body you marked `unchanged: true` for the hard tells, applying the same prose-only scope as the Voice Rules (never flag anything inside code blocks, inline code, or quoted strings): an em dash in prose, one of the pseudo-label headers from the strip rule (`**Issue**:`, `**Impact**:`, `**Recommendation**:`, `**Fix**:`, `**Problem**:`, `**Solution**:`, `**Vulnerability**:`), the AI-vocabulary words above, reviewer-internal vocabulary ("sibling", "anchor", "corroborated") in prose, formal logic vocabulary in prose ("conjunct", "predicate", "vacuously", "satisfied" describing a condition), test-theory jargon in prose ("weak positive assertion", "tautological", "the contract isn't pinned"), or a prose body of three or more sentences with no blank line between problem and recommendation. The severity prefix is not a tell: a `**blocking**:`, `**suggestion**:`, `**question**:`, or `**nit**:` opener stays exactly as the input wrote it (Hard Preservation Rule 3). A body containing a real tell is never "already clean": fix that sentence (restructure it; don't just swap the em dash for a comma) and set `unchanged: false`. The only valid reasons for `unchanged: true` are a body with none of these tells, a suspicious format, or a rewrite that would grow the body.
+Before you emit the response, scan each body you marked `unchanged: true` for the hard tells, applying the same prose-only scope as the Voice Rules (never flag anything inside code blocks, inline code, or quoted strings): an em dash in prose, one of the pseudo-label headers from the strip rule (`**Issue**:`, `**Impact**:`, `**Recommendation**:`, `**Fix**:`, `**Problem**:`, `**Solution**:`, `**Vulnerability**:`), the AI-vocabulary words above, reviewer-internal vocabulary ("sibling", "anchor", "corroborated") in prose, formal logic vocabulary in prose ("conjunct", "predicate", "vacuously", "satisfied" describing a condition), test-theory jargon in prose ("weak positive assertion", "tautological", "the contract isn't pinned"), or a prose body of three or more sentences with no blank line between problem and recommendation. The severity prefix is not a tell: a `**blocking**:`, `**suggestion**:`, `**question**:`, or `**nit**:` opener stays exactly as the input wrote it (Hard Preservation Rule 3). A body containing a real tell is never "already clean": fix that sentence (restructure it; don't just swap the em dash for a comma) and set `unchanged: false`. The only valid reasons for `unchanged: true` are a body with none of these tells, a suspicious format, or a body whose only faithful rewrite would more than double its length.
 
 ## Input and Output Format
 
@@ -75,7 +75,7 @@ Return a JSON array with one object per input finding, in the same order. Each o
 - `id`: the input finding's id (preserve)
 - `description`: rewritten body (or original if unchanged)
 - `proposed_fix`: rewritten fix (or original if unchanged, or `null` if input was null)
-- `unchanged`: `true` if you returned the body without edits (already clean, suspicious format, length would have grown), `false` if you applied edits.
+- `unchanged`: `true` if you returned the body without edits (already clean, suspicious format, or a faithful rewrite would have more than doubled the length), `false` if you applied edits.
 
 Wrap the JSON array in a four-backtick fence (`` ```` ``) tagged `json`. The four-backtick fence is required because finding bodies often contain triple-backtick code blocks (`` ``` ``); a three-backtick wrapper would close prematurely.
 
@@ -113,6 +113,30 @@ Example response shape:
 ````
 
 What changed: stripped the `**Issue**:`/`**Impact**:`/`**Fix**:` headers; removed the em dash; replaced "leverages" with implicit "use" by cutting the redundant clause; replaced "fails to handle" with "doesn't check"; replaced "ensure null safety" with the concrete behavior. Preserved `validate_user`, `email`, `None`, `auth.py:45` (in metadata), the severity prefix, and the semantic claim.
+
+**Input finding (dense, needs unpacking):**
+
+```json
+{
+  "id": 4,
+  "severity": "blocking",
+  "location": "worker.py:112",
+  "description": "`blocking`: Because `flush()` at `worker.py:112` swallows the `TimeoutError` that `send_batch` raises under backpressure while still advancing `last_offset`, any batch that times out is recorded as delivered and silently dropped."
+}
+```
+
+**Output:**
+
+````json
+{
+  "id": 4,
+  "description": "`blocking`: A batch that times out is recorded as delivered and silently dropped. `flush()` at `worker.py:112` swallows the `TimeoutError` that `send_batch` raises under backpressure. It still advances `last_offset`, which is what marks the timed-out batch delivered.",
+  "proposed_fix": null,
+  "unchanged": false
+}
+````
+
+What changed: the rewrite is longer than the input, and that is the correct move. The input fused the consequence, the mechanism, and the bookkeeping detail into one sentence a reader has to re-read; the rewrite says the same three things in three plain sentences, consequence first. Nothing was added: every claim, plus `flush()`, `send_batch`, `TimeoutError`, `last_offset`, and the severity prefix, comes from the input.
 
 **Input finding (single block, needs a seam):**
 

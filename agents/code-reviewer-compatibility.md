@@ -175,6 +175,8 @@ Structure your response as:
 
 For each finding, write the comment body in conversational prose. Lead with the prefix and state what breaks for which consumers, describing the behavior in plain English with a `path:line` citation and quoting code only for the symbol the author must act on or an exact value that matters (a removed signature, a version number), then show the backwards-compatible alternative as a `suggestion` block or inline diff. If the break is intentional, mention the migration path inside the comment body itself. Do not use `**Issue**:`/`**Impact**:`/`**Fix**:` headers in the comment body.
 
+Write the body for a teammate who has not read the diff and shouldn't have to decode anything. One idea per sentence: if a sentence carries two claims, split it, and state a claim before the evidence for it. Use as many plain sentences as the finding needs; past about 8, it's probably two findings. A `nit:` body is at most 2 sentences.
+
 Wrap the comment body in a fenced ```text``` block. Below it, on a single line, record:
 
 ```

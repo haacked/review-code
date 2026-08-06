@@ -1,6 +1,6 @@
 ## Adversary Meta-Review
 
-Loaded when `adversary` is present in the session JSON, meaning the user opted in with `--adversary:copilot` or `--adversary:codex`. This pass runs after "Validate Findings Against the Diff" and before the Voice Pass: it gives the adversary engine a focused task — validate Claude's findings and scan the diff for anything glaringly obvious that was missed.
+Loaded when `adversary` is present in the session JSON, meaning the user opted in with `--adversary:copilot` or `--adversary:codex`. This pass runs after "Validate Findings Against the Diff" and before the Comprehension Gate and Voice Pass: it gives the adversary engine a focused task — validate Claude's findings and scan the diff for anything glaringly obvious that was missed.
 
 If `adversary.available` is false (the flag was given but that engine's CLI isn't installed): tell the user once — "Adversary review requested via `--adversary:$engine` but the `$engine` CLI isn't installed; skipping." — then skip the rest of this pass.
 

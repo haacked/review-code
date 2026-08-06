@@ -172,6 +172,8 @@ Write each finding as a fenced ```text``` block containing the comment body, fol
 
 Write the comment body in conversational prose. Lead with the prefix and name the specific scenario the test misses or the false confidence it creates. Describe the behavior in plain English and cite `path:line`; quote code only for the test or function name the author must act on or an exact value that matters. For a fix to an existing test, show the corrected assertion inline as a fenced code block; for a missing test, name the scenario and point at a sibling rather than writing the test out (see "Keep 'Add a Test' Findings Short"). Do not use `**Issue**:`/`**Impact**:`/`**Recommendation**:` headers in the comment body.
 
+Write the body for a teammate who has not read the diff and shouldn't have to decode anything. One idea per sentence: if a sentence carries two claims, split it, and state a claim before the evidence for it. Use as many plain sentences as the finding needs; past about 8, it's probably two findings. A `nit:` body is at most 2 sentences.
+
 ```text
 `<severity>`: <conversational comment body. Describe the gap in plain English, quoting the test name or function under test only where the author must act on them. For fixes to existing tests, show the corrected assertion as an inline code block. For missing tests, name the scenario and point at a sibling, but do not write the test body.>
 ```

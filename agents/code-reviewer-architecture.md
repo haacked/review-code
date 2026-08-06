@@ -185,6 +185,8 @@ Structure your response as:
 
 For each finding, write the comment body in conversational prose, the way a senior engineer talks in a PR review. Lead with the prefix and then describe what the code does and why a different approach is better. Describe the behavior in plain English and cite `path:line` for existing patterns; quote code only for the identifier the author must act on. Do not use `**Issue**:`/`**Impact**:`/`**Recommendation**:` headers in the comment body.
 
+Write the body for a teammate who has not read the diff and shouldn't have to decode anything. One idea per sentence: if a sentence carries two claims, split it, and state a claim before the evidence for it. Use as many plain sentences as the finding needs; past about 8, it's probably two findings. A `nit:` body is at most 2 sentences.
+
 Wrap the comment body in a fenced ```text``` block. Below it, on a separate line, record metadata for the synthesis layer:
 
 ```text
