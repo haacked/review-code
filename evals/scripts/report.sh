@@ -38,9 +38,9 @@ color_score() {
 # Args: stdin = JSONL lines to display
 show_table() {
     # Print header
-    printf "${BOLD}%-22s %-10s %-20s %-10s %-8s %-8s %-8s %-10s${NC}\n" \
-        "Run" "Approach" "Benchmark" "SHA" "Recall" "Precis." "LLM" "Composite"
-    printf "%-22s %-10s %-20s %-10s %-8s %-8s %-8s %-10s\n" \
+    printf "${BOLD}%-22s %-10s %-20s %-10s %-8s %-8s %-8s %-8s %-10s${NC}\n" \
+        "Run" "Approach" "Benchmark" "SHA" "Recall" "Precis." "LLM" "Read." "Composite"
+    printf "%-22s %-10s %-20s %-10s %-8s %-8s %-8s %-8s %-10s\n" \
         "$(printf '─%.0s' {1..22})" \
         "$(printf '─%.0s' {1..10})" \
         "$(printf '─%.0s' {1..20})" \
@@ -48,10 +48,11 @@ show_table() {
         "$(printf '─%.0s' {1..8})" \
         "$(printf '─%.0s' {1..8})" \
         "$(printf '─%.0s' {1..8})" \
+        "$(printf '─%.0s' {1..8})" \
         "$(printf '─%.0s' {1..10})"
 
     while IFS= read -r line; do
-        local run_id approach benchmark sha recall precision llm composite
+        local run_id approach benchmark sha recall precision llm readability composite
         run_id=$(echo "${line}" | jq -r '.run_id')
         approach=$(echo "${line}" | jq -r '.approach // "skill"')
         benchmark=$(echo "${line}" | jq -r '.benchmark_id')
@@ -59,14 +60,15 @@ show_table() {
         recall=$(echo "${line}" | jq -r '.pattern_matching.recall.weighted')
         precision=$(echo "${line}" | jq -r '.pattern_matching.precision.ratio')
         llm=$(echo "${line}" | jq -r '.llm_judge.overall_quality')
+        readability=$(echo "${line}" | jq -r '.readability.mean // "-"')
         composite=$(echo "${line}" | jq -r '.composite_score')
 
         # Truncate long fields
         run_id="${run_id:0:22}"
         benchmark="${benchmark:0:20}"
 
-        printf "%-22s %-10s %-20s %-10s %-8s %-8s %-8s " \
-            "${run_id}" "${approach}" "${benchmark}" "${sha}" "${recall}" "${precision}" "${llm}"
+        printf "%-22s %-10s %-20s %-10s %-8s %-8s %-8s %-8s " \
+            "${run_id}" "${approach}" "${benchmark}" "${sha}" "${recall}" "${precision}" "${llm}" "${readability}"
         color_score "${composite}"
     done
 }
@@ -88,15 +90,25 @@ show_aggregate() {
     local total_composite=0
     local total_recall=0
     local total_precision=0
+    local total_readability=0
+    local readability_count=0
 
     while IFS= read -r line; do
-        local c r p
+        local c r p rd
         c=$(echo "${line}" | jq -r '.composite_score')
         r=$(echo "${line}" | jq -r '.pattern_matching.recall.weighted')
         p=$(echo "${line}" | jq -r '.pattern_matching.precision.ratio')
         total_composite=$(echo "${total_composite} + ${c}" | bc)
         total_recall=$(echo "${total_recall} + ${r}" | bc)
         total_precision=$(echo "${total_precision} + ${p}" | bc)
+        # Readability landed later than the other scores; average only the
+        # lines that have a scored value (count > 0), so old history and
+        # --no-llm runs don't drag the average down.
+        rd=$(echo "${line}" | jq -r 'if (.readability.mean | type) == "number" and (.readability.count // 0) > 0 then .readability.mean else empty end')
+        if [[ -n "${rd}" ]]; then
+            total_readability=$(echo "${total_readability} + ${rd}" | bc)
+            readability_count=$((readability_count + 1))
+        fi
     done <<< "${lines}"
 
     local avg_composite avg_recall avg_precision
@@ -104,11 +116,17 @@ show_aggregate() {
     avg_recall=$(echo "scale=2; ${total_recall} / ${count}" | bc)
     avg_precision=$(echo "scale=2; ${total_precision} / ${count}" | bc)
 
+    local avg_readability="-"
+    if [[ ${readability_count} -gt 0 ]]; then
+        avg_readability=$(echo "scale=2; ${total_readability} / ${readability_count}" | bc)
+    fi
+
     echo ""
     echo -e "${BOLD}Aggregate (${count} scores):${NC}"
-    printf "  Avg Recall:    %s\n" "${avg_recall}"
-    printf "  Avg Precision: %s\n" "${avg_precision}"
-    printf "  Avg Composite: "
+    printf "  Avg Recall:      %s\n" "${avg_recall}"
+    printf "  Avg Precision:   %s\n" "${avg_precision}"
+    printf "  Avg Readability: %s\n" "${avg_readability}"
+    printf "  Avg Composite:   "
     color_score "${avg_composite}"
 }
 
@@ -128,11 +146,12 @@ compare_approaches() {
     # Show per-benchmark comparison
     echo -e "${BOLD}Per-Benchmark Comparison (skill vs baseline):${NC}"
     echo ""
-    printf "${BOLD}%-25s %-10s %-8s %-8s %-10s${NC}\n" \
-        "Benchmark" "Approach" "Recall" "Precis." "Composite"
-    printf "%-25s %-10s %-8s %-8s %-10s\n" \
+    printf "${BOLD}%-25s %-10s %-8s %-8s %-8s %-10s${NC}\n" \
+        "Benchmark" "Approach" "Recall" "Precis." "Read." "Composite"
+    printf "%-25s %-10s %-8s %-8s %-8s %-10s\n" \
         "$(printf '─%.0s' {1..25})" \
         "$(printf '─%.0s' {1..10})" \
+        "$(printf '─%.0s' {1..8})" \
         "$(printf '─%.0s' {1..8})" \
         "$(printf '─%.0s' {1..8})" \
         "$(printf '─%.0s' {1..10})"
@@ -150,20 +169,22 @@ compare_approaches() {
         baseline_line=$(echo "${baseline_data}" | jq -c "select(.benchmark_id == \"${bid}\")" | tail -1)
 
         if [[ -n "${skill_line}" ]]; then
-            local s_recall s_precision s_composite
+            local s_recall s_precision s_readability s_composite
             s_recall=$(echo "${skill_line}" | jq -r '.pattern_matching.recall.weighted')
             s_precision=$(echo "${skill_line}" | jq -r '.pattern_matching.precision.ratio')
+            s_readability=$(echo "${skill_line}" | jq -r '.readability.mean // "-"')
             s_composite=$(echo "${skill_line}" | jq -r '.composite_score')
-            printf "%-25s %-10s %-8s %-8s " "${bid:0:25}" "skill" "${s_recall}" "${s_precision}"
+            printf "%-25s %-10s %-8s %-8s %-8s " "${bid:0:25}" "skill" "${s_recall}" "${s_precision}" "${s_readability}"
             color_score "${s_composite}"
         fi
 
         if [[ -n "${baseline_line}" ]]; then
-            local b_recall b_precision b_composite
+            local b_recall b_precision b_readability b_composite
             b_recall=$(echo "${baseline_line}" | jq -r '.pattern_matching.recall.weighted')
             b_precision=$(echo "${baseline_line}" | jq -r '.pattern_matching.precision.ratio')
+            b_readability=$(echo "${baseline_line}" | jq -r '.readability.mean // "-"')
             b_composite=$(echo "${baseline_line}" | jq -r '.composite_score')
-            printf "%-25s %-10s %-8s %-8s " "" "baseline" "${b_recall}" "${b_precision}"
+            printf "%-25s %-10s %-8s %-8s %-8s " "" "baseline" "${b_recall}" "${b_precision}" "${b_readability}"
             color_score "${b_composite}"
         fi
 
@@ -175,7 +196,7 @@ compare_approaches() {
             if (($(echo "${delta} > 0" | bc -l))); then
                 sign="+"
             fi
-            printf "%-25s %-10s %-8s %-8s " "" "delta" "" ""
+            printf "%-25s %-10s %-8s %-8s %-8s " "" "delta" "" "" ""
             if (($(echo "${delta} >= 0" | bc -l))); then
                 echo -e "${GREEN}${sign}${delta}${NC}"
             else
@@ -202,9 +223,10 @@ compare_approaches() {
         fi
 
         local count=0 total_recall=0 total_precision=0 total_composite=0
+        local total_readability=0 readability_count=0
         while IFS= read -r line; do
             [[ -z "${line}" ]] && continue
-            local r p c
+            local r p c rd
             r=$(echo "${line}" | jq -r '.pattern_matching.recall.weighted')
             p=$(echo "${line}" | jq -r '.pattern_matching.precision.ratio')
             c=$(echo "${line}" | jq -r '.composite_score')
@@ -212,6 +234,11 @@ compare_approaches() {
             total_precision=$(echo "${total_precision} + ${p}" | bc)
             total_composite=$(echo "${total_composite} + ${c}" | bc)
             count=$((count + 1))
+            rd=$(echo "${line}" | jq -r 'if (.readability.mean | type) == "number" and (.readability.count // 0) > 0 then .readability.mean else empty end')
+            if [[ -n "${rd}" ]]; then
+                total_readability=$(echo "${total_readability} + ${rd}" | bc)
+                readability_count=$((readability_count + 1))
+            fi
         done <<< "${data}"
 
         if [[ ${count} -gt 0 ]]; then
@@ -220,10 +247,16 @@ compare_approaches() {
             avg_precision=$(echo "scale=2; ${total_precision} / ${count}" | bc)
             avg_composite=$(echo "scale=2; ${total_composite} / ${count}" | bc)
 
+            local avg_readability="-"
+            if [[ ${readability_count} -gt 0 ]]; then
+                avg_readability=$(echo "scale=2; ${total_readability} / ${readability_count}" | bc)
+            fi
+
             echo -e "  ${BOLD}${a}${NC} (${count} scores):"
-            printf "    Avg Recall:    %s\n" "${avg_recall}"
-            printf "    Avg Precision: %s\n" "${avg_precision}"
-            printf "    Avg Composite: "
+            printf "    Avg Recall:      %s\n" "${avg_recall}"
+            printf "    Avg Precision:   %s\n" "${avg_precision}"
+            printf "    Avg Readability: %s\n" "${avg_readability}"
+            printf "    Avg Composite:   "
             color_score "${avg_composite}"
         fi
     done

@@ -4,11 +4,12 @@
 # Usage:
 #   score-eval.sh <run-id>                 Score all benchmarks in a run
 #   score-eval.sh <run-id> <benchmark-id>  Score a specific benchmark
-#   score-eval.sh <run-id> --no-llm        Skip LLM judge (pattern matching only)
+#   score-eval.sh <run-id> --no-llm        Skip LLM judges (pattern matching only)
 #
-# Compares review output to answer keys using two tiers:
+# Compares review output to answer keys using three tiers:
 # 1. Automated pattern matching (recall, precision, severity accuracy)
 # 2. LLM-as-judge scoring (actionability, specificity, signal-to-noise)
+# 3. LLM readability judge (cold-reader score per finding, no answer key)
 #
 # Outputs per-benchmark score JSON and appends to evals/history/scores.jsonl.
 
@@ -230,6 +231,62 @@ PROMPT
         || echo '{"actionability":0,"specificity":0,"signal_to_noise":0,"overall_quality":0,"notes":"LLM judge failed"}'
 }
 
+# Tier 3: LLM readability judge. Cold-reads each finding body with no answer
+# key, no diff, and no code access, and scores whether a reader can tell what
+# breaks and what to do from the body alone.
+# Args: $1 = review file path
+# Outputs: JSON readability object on stdout
+score_readability() {
+    local review_file="$1"
+
+    local review_content
+    review_content=$(cat "${review_file}")
+
+    local prompt
+    prompt=$(
+        cat << PROMPT
+You are grading the readability of code review comments, not their correctness. Assume every claim is true. You have no access to the diff or the code.
+
+## The Review
+
+${review_content}
+
+## Task
+
+Identify each finding comment body in the review: prose that opens with a severity prefix such as blocking, suggestion, question, or nit, in any formatting. For each one, reading cold:
+
+- Can you state in one sentence what breaks (or what is being asked), from the body alone?
+- Can you state in one sentence what the author should do, from the body alone?
+- Does the first sentence carry the main point?
+- How many sentences did you have to re-read to parse?
+
+Score each finding from 1 to 5: 5 = both questions answerable, point in the first sentence, zero re-reads; 4 = both answerable, minor friction; 3 = answerable with effort, or the point is buried; 2 = one answer missing, or heavy re-reading; 1 = cannot tell what breaks or what to do.
+
+Respond with only a JSON object, no code fence and no other text:
+{"findings": [{"location": "file:line or a short label", "score": N, "notes": "what was unclear, if anything"}], "mean": N.N, "count": N}
+
+If the review contains no findings, respond: {"findings": [], "mean": 0, "count": 0}
+PROMPT
+    )
+
+    local judge_result
+    judge_result=$(env -u CLAUDECODE claude -p "${prompt}" \
+        --output-format json \
+        --max-budget-usd 0.50 \
+        2> /dev/null || echo '{"result":""}')
+
+    # --output-format json wraps the model's text in an envelope; the scores
+    # are in the .result string (possibly fenced despite instructions).
+    echo "${judge_result}" | jq -r '.result // ""' \
+        | sed 's/^```json$//; s/^```$//' \
+        | jq '{
+            findings: (.findings // []),
+            mean: (.mean // 0),
+            count: (.count // 0)
+        }' 2> /dev/null \
+        || echo '{"findings":[],"mean":0,"count":0,"notes":"readability judge failed"}'
+}
+
 # Compute composite score from pattern matching and LLM judge results
 # Args: $1 = pattern matching JSON, $2 = LLM judge JSON
 # Outputs: composite score (float) on stdout
@@ -278,9 +335,12 @@ score_benchmark() {
     pattern_score=$(score_pattern_matching "${review_file}" "${answer_key}")
 
     local llm_score='{"actionability":0,"specificity":0,"signal_to_noise":0,"overall_quality":0,"notes":"skipped"}'
+    local readability_score='{"findings":[],"mean":0,"count":0,"notes":"skipped"}'
     if [[ "${skip_llm}" != "true" ]]; then
         echo "  Running LLM judge…"
         llm_score=$(score_llm_judge "${review_file}" "${answer_key}")
+        echo "  Running readability judge…"
+        readability_score=$(score_readability "${review_file}")
     fi
 
     local composite
@@ -303,6 +363,7 @@ score_benchmark() {
         --arg timestamp "${timestamp}" \
         --argjson pattern "${pattern_score}" \
         --argjson llm "${llm_score}" \
+        --argjson readability "${readability_score}" \
         --arg composite "${composite}" \
         '{
             run_id: $run_id,
@@ -312,6 +373,7 @@ score_benchmark() {
             timestamp: $timestamp,
             pattern_matching: $pattern,
             llm_judge: $llm,
+            readability: $readability,
             composite_score: ($composite | tonumber)
         }')
 
