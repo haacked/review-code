@@ -170,6 +170,8 @@ Before including any finding, argue against it:
 
 Write the comment body in conversational prose. Lead with the prefix and state what breaks at deploy time, then show the corrected YAML/HCL as a `suggestion` block or fenced code block. Describe the inconsistency in plain English and cite the cross-environment counterpart or service definition (`path:line`) that proves it; quote config only for the exact key or value the author must change. Do not use `**Issue**:`/`**Impact**:`/`**Fix**:` headers in the comment body.
 
+Write the body for a teammate who has not read the diff and shouldn't have to decode anything. One idea per sentence: if a sentence carries two claims, split it, and state a claim before the evidence for it. Use as many plain sentences as the finding needs; past about 8, it's probably two findings. A `nit:` body is at most 2 sentences.
+
 Wrap the comment body in a fenced ```text``` block. Below it, on a single line, record:
 
 ```

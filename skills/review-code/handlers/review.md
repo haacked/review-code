@@ -384,14 +384,14 @@ If you exhausted the steps above and still cannot verify a specific fact (the fi
 
 **Inline Comment Voice:**
 
-Write comments the way a senior engineer talks in a PR review: direct, specific, conversational. A dedicated voice agent rewrites every surviving comment body before publication, so spend your effort on the technical content in a plain register. The points below are the ones the voice agent cannot fix afterward; get them right when drafting.
+Analyze like a senior engineer; write the comment for a teammate who has not read the diff and shouldn't have to decode anything: direct, specific, conversational. A dedicated voice agent rewrites every surviving comment body before publication, so spend your effort on the technical content in a plain register. The points below are the ones the voice agent cannot fix afterward; get them right when drafting.
 
 - Lead with the consequence, and name it. Sentence 1 says what breaks or what's at risk; the rest gives just enough mechanism to show why. Don't open with a verdict ("this is a real upgrade-window risk") or mid-mechanism. The voice agent can reorder phrasing but never invents a consequence you didn't state.
 - Describe behavior in plain English and cite `path:line` for each claim (in PR mode the linkify step turns citations into permalinks). Reserve inline code for the identifier the author must act on or an exact value that matters ("stays at 22", `TypeError`). If the reader has to mentally execute a quoted expression to follow a sentence, describe what the expression does and cite where it lives; the voice agent isn't allowed to paraphrase quoted code, so this is yours to get right.
 - Anchor in what the code does today ("this branch has no coverage"), not in a hypothetical future ("if someone later swaps the guard…").
 - For `blocking:` and `suggestion:` findings, always include a concrete code fix (see Accuracy Requirements above); use GitHub's `suggestion` syntax for single-line fixes. For `question:` and `nit:`, offer code when it helps.
 - Write about the code, not the author, and match certainty to the label: state findings plainly when they're clear in the diff, use `question:` when the answer depends on callers or config, and defer on judgment calls ("your call", "worth considering").
-- One finding per comment. `nit:` is at most 2 sentences; others at most ~4 plus the fix. Past two or three sentences, put a blank line between the problem and the recommendation.
+- One finding per comment. One idea per sentence: if a sentence carries two claims, split it, and state a claim before the evidence for it. Write as many plain sentences as the finding needs; past about 8, it's probably two findings. `nit:` is at most 2 sentences. Past two or three sentences, put a blank line between the problem and the recommendation.
 - Say the thing, not a label for the thing: no `**Issue**:`/`**Impact**:` headers, no coined jargon ("the staleness window"), no formal-logic vocabulary ("vacuously true"), no filler. Name the concrete behavior instead.
 
 One worked example: lead with the consequence instead of a verdict.
@@ -536,19 +536,42 @@ Where `targets` contains `{"path": "<file>", "line": <number>}` objects, and `di
 
 ### Adversary Meta-Review
 
-If you loaded `review-adversary.md` (`--adversary:*` flag), run its meta-review pass here, between finding validation and the Voice Pass. Otherwise continue to the Voice Pass.
+If you loaded `review-adversary.md` (`--adversary:*` flag), run its meta-review pass here, between finding validation and the Voice Pass. Otherwise continue to the Comprehension Gate.
 
-### Voice Pass (Final Rewrite)
+### Comprehension Gate (Cold-Reader Check)
 
-Before composing the review document, run a single voice-pass agent over the surviving findings to rewrite their `description` and `proposed_fix` text in a clean, conversational voice. The voice agent never changes severity, citations, line numbers, identifiers, numbers, or code blocks; it changes phrasing and paragraph structure, nothing else.
+Before the Voice Pass, check that every surviving comment body is understandable by someone reading only the comment: no diff, no code. A cheap cold-reader answers, per finding, what breaks and what the author should do; bodies it cannot follow bounce back to the agent that wrote them for a plain rewrite. This step changes body text only: it never drops findings, changes severity, or edits citations. The Voice Pass that follows stays as mechanical polish; this gate carries the register.
 
 **Skip conditions:** If `$selected_agents` is empty (no findings will be produced) or the surviving finding pool is empty, skip this step entirely.
 
-**Build the input.** Collect all findings that survived synthesis, validation, and the adversary meta-review (the same pool the document composer will use). For each, include an integer `id` (sequential, starting at 1), `severity` (`blocking`/`suggestion`/`question`/`nit`), `location` (file:line or file path), `description` (the comment body, including any embedded code blocks), and `proposed_fix` (string or null). Build a JSON array.
+**Build the input.** Collect all findings that survived synthesis, validation, and the adversary meta-review. For each, include an integer `id` (sequential, starting at 1, local to this step), `severity`, `location`, `description`, `proposed_fix` (string or null), and `kind: "finding"`. Build a JSON array.
+
+**Dispatch the check.** Invoke the Task tool with subagent_type `comprehension-gate` and a prompt that embeds the JSON array inside a **four-backtick** fence tagged `json` (finding bodies typically contain triple-backtick code blocks) and reminds the agent to answer per its definition: for each item, `what_breaks` and `action` in one sentence each, a `PASS`/`REWRITE` verdict, and `notes` naming what was unclear on every `REWRITE`, returned as a four-backtick `json` fence in the same order. Save the response. Extract usage metadata and record in `$token_usage["comprehension-gate"]`.
+
+**Parse the output.** Extract the JSON array and match entries to input findings by `id`. An input `id` with no matching entry, an entry whose verdict is neither `PASS` nor `REWRITE`, or a malformed entry counts as `PASS` (fail open per finding). Ignore entries with unknown ids. If the returned array length differs from the input length by more than 1, treat the entire response as malformed and skip the rest of this step.
+
+**Handle REWRITE verdicts.** For each finding the gate marked `REWRITE`:
+
+1. Resume the agent that produced the finding (using the agent ID from the Task tool, the same mechanism as "Validate Findings Against the Diff" Step 2). If the finding has no resumable agent (for example, an adversary-added finding) or the resume errors, keep the body as-is.
+2. Send it the current `description` and `proposed_fix`, the gate's `notes`, and the gate's `what_breaks`/`action` attempts, and ask for a rewrite: lead with what breaks; one idea per sentence; a teammate who has not read the diff must be able to answer "what breaks" and "what should I do" from the body alone; preserve every `path:line` citation, identifier, number, code block, and the exact severity prefix; do not add claims, citations, or fixes that are not already in the finding; a `nit:` body stays at most 2 sentences. Ask it to return only the rewritten body and the rewritten `proposed_fix` (or null).
+3. Accept the rewrite only if the severity prefix is string-identical in form and every backtick-quoted path-shaped or line-number token from the original still appears (the Voice Pass preservation checks 1 and 2; no growth cap here, since the original author may legitimately restructure). If the reply is empty, malformed, or fails either check, keep the original and count the failure in `$token_usage["comprehension-gate"].validation_failures`.
+4. One bounce per finding. Take what comes back; never re-gate a rewrite. Record each resume's usage in `$token_usage` as `gate-bounce-{N}` (numbered sequentially).
+
+**Fail open, never block the review:** on an agent error or timeout, a JSON parse failure, or an array length off by more than 1, continue with the original findings. Verbose-but-correct beats blocked. This step runs in all review modes when findings exist; there is no mode-based guard.
+
+In debug mode, save the stage `11b2-comprehension-gate` artifacts (see `review-debug.md`).
+
+### Voice Pass (Final Rewrite)
+
+Before composing the review document, run a single voice-pass agent over the surviving findings to rewrite their `description` and `proposed_fix` text in a clean, conversational voice. The voice agent never changes severity, citations, line numbers, identifiers, numbers, or code blocks; it changes phrasing and paragraph structure, nothing else. It may unpack a dense sentence into more, plainer sentences, up to about 2x the original length.
+
+**Skip conditions:** If `$selected_agents` is empty (no findings will be produced) or the surviving finding pool is empty, skip this step entirely.
+
+**Build the input.** Collect all findings that survived synthesis, validation, and the adversary meta-review, with any comprehension-gate rewrites applied (the same pool the document composer will use). For each, include an integer `id` (sequential, starting at 1), `severity` (`blocking`/`suggestion`/`question`/`nit`), `location` (file:line or file path), `description` (the comment body, including any embedded code blocks), and `proposed_fix` (string or null). Build a JSON array.
 
 **Dispatch the rewrite.** Invoke the Task tool with subagent_type `code-reviewer-voice` and a prompt that:
 
-1. Tells the agent to rewrite the `description` and `proposed_fix` fields in conversational voice while preserving every citation, file path, line number, identifier, number, and code block exactly.
+1. Tells the agent to rewrite the `description` and `proposed_fix` fields in conversational voice while preserving every citation, file path, line number, identifier, number, and code block exactly. Unpacking a compressed sentence into more, plainer sentences is encouraged, up to about 2x the original length; growth never licenses new claims, citations, or fixes.
 2. Tells the agent it is also responsible for paragraph structure: any body with three or more sentences must have a blank line separating the problem (what breaks and why) from the recommendation (what to do); enumerations that restate what an attached code block already shows get cut; a `nit:` body is at most two sentences. This structural responsibility does not license changing citations, code blocks, severity, or technical claims.
 3. Embeds the JSON array of findings inside a **four-backtick** fence tagged `json` (because finding bodies typically contain triple-backtick code blocks; a three-backtick wrapper would close prematurely).
 4. Reminds the agent to wrap its response in a four-backtick `json` fence in the same order as the input, with `id`, `description`, `proposed_fix`, and `unchanged` on each object.
@@ -566,7 +589,7 @@ Save the agent's response. Extract usage metadata and record in `$token_usage["c
 
 1. The severity prefix is string-identical in form (`` `blocking`: `` stays `` `blocking`: ``, `**blocking**:` stays `**blocking**:`).
 2. Every backtick-quoted path-shaped or line-number token from the original (`auth.py:45`, `src/foo.ts`, `:67`, `line 67`) still appears. Backtick-quoted identifiers (`OverflowError`) are exempt; skip the check when the original has no such tokens.
-3. The body grew by no more than 5% (paragraph breaks and punctuation tweaks never fail this on their own).
+3. The body grew to no more than about 2x the original length (unpacking dense sentences into plain ones may grow the body; paragraph breaks and punctuation tweaks never fail this on their own).
 
 **Fail open, never block the review:** on an agent error or timeout, a JSON parse failure, or an array length off by more than 1, continue with the original findings. If more than 50% of rewrites fail validation, discard all rewrites; the voice agent is misbehaving, and verbose comments beat wrong ones.
 
@@ -636,11 +659,13 @@ The `token_usage` block records per-step token consumption (agents, context expl
 
 This metadata is used by the learning system to determine when the review was created. The `review_commit` field records the PR's HEAD SHA at review time, enabling drift detection when creating draft reviews later. The `diff_tokens` field is an estimated token count of the diff (~4 chars per token).
 
-**Narrative voice.** The Inline Comment Voice rules govern the comment bodies; the narrative you compose here (Overview, findings prose, per-agent sections, the metadata `reasoning` field) needs the same register. The voice agent rewrites finding bodies only and never sees this prose, so it is yours to get right. Write it the way you'd write a Slack summary to a colleague who is about to review the code: plain verbs, short sentences, no ceremony. Four tells to avoid outright: em dashes (restructure with a comma, colon, parentheses, or two sentences), bold inside a prose sentence (lead with the point instead), inflation vocabulary ("critical", "robust", "comprehensive", "leverage", "ensure", "It's not just X, it's Y"), and naming a category where the behavior belongs, whether that's a coined label ("the staleness window"), logic vocabulary ("vacuously true"), test-theory jargon ("weak positive assertion"), or pipeline vocabulary the author never sees ("corroborated", "sibling").
+**Narrative voice.** The Inline Comment Voice rules govern the comment bodies; the narrative you compose here (Overview, findings prose, per-agent sections, the metadata `reasoning` field) needs the same register. The voice agent rewrites finding bodies only and never sees this prose, so it is yours to get right. Write it the way you'd write a Slack summary to a colleague who has not read the diff and shouldn't have to decode anything: plain verbs, short sentences, one idea per sentence, no ceremony. Four tells to avoid outright: em dashes (restructure with a comma, colon, parentheses, or two sentences), bold inside a prose sentence (lead with the point instead), inflation vocabulary ("critical", "robust", "comprehensive", "leverage", "ensure", "It's not just X, it's Y"), and naming a category where the behavior belongs, whether that's a coined label ("the staleness window"), logic vocabulary ("vacuously true"), test-theory jargon ("weak positive assertion"), or pipeline vocabulary the author never sees ("corroborated", "sibling").
 
 An Overview paragraph in the right register reads like:
 
 > Adds a soft-hide for stale suggestion names. The new boolean ships in an additive migration, the GET returns hidden names separately, and hide/restore is admin-gated. The hidden row and any flags using it are preserved, so hiding is reversible.
+
+**Gate the Overview.** The voice agent never sees narrative prose, so after drafting the Overview paragraph, send it through the comprehension gate as a one-item batch: invoke the Task tool with subagent_type `comprehension-gate` and the array `[{"id": 1, "severity": "overview", "location": null, "description": "<overview text>", "proposed_fix": null, "kind": "prose"}]` in a four-backtick `json` fence. On `REWRITE`, you wrote this paragraph, so apply the notes yourself: lead with what the change does, one idea per sentence. Re-check the rewritten paragraph at most once, then proceed with your best version regardless of the second verdict. On any error or malformed response, keep the drafted Overview (fail open). Record usage in `$token_usage["comprehension-gate-overview"]`. In debug mode, save the stage `11e-overview-gate` artifacts (see `review-debug.md`).
 
 Save the complete review to `$review_file` and inform the user with a clickable file link:
 

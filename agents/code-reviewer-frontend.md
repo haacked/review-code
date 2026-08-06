@@ -145,6 +145,8 @@ Challenge yourself:
 
 Write the comment body in conversational prose. Lead with the prefix and state what breaks for users or what surprises a developer. Describe the behavior in plain English and cite `path:line`; quote code only for the specific element or hook the author must act on. Show the fix as a code snippet or `suggestion` block. Do not use `**Issue**:`/`**Impact**:`/`**Fix**:` headers in the comment body.
 
+Write the body for a teammate who has not read the diff and shouldn't have to decode anything. One idea per sentence: if a sentence carries two claims, split it, and state a claim before the evidence for it. Use as many plain sentences as the finding needs; past about 8, it's probably two findings. A `nit:` body is at most 2 sentences.
+
 Wrap the comment body in a fenced ```text``` block. Record metadata (file:line, confidence) on separate lines below.
 
 **Confidence scale:**

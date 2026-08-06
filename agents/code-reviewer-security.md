@@ -185,6 +185,8 @@ Suppress these; they generate noise, not signal:
 
 Write the comment body in conversational prose. Lead with the prefix and trace the concrete attack: who controls the input, where it lands, and what they can do. Describe the flow in plain English and cite `path:line`; quote code only for the identifier the author must act on or the exact tainted value. Show the remediation as a `suggestion` block or inline diff. Reference the OWASP category or CWE inline when it adds clarity, but don't make it a header. Do not use `**Vulnerability**:`/`**Impact**:`/`**Fix**:` headers in the comment body.
 
+Write the body for a teammate who has not read the diff and shouldn't have to decode anything. One idea per sentence: if a sentence carries two claims, split it, and state a claim before the evidence for it. Use as many plain sentences as the finding needs; past about 8, it's probably two findings. A `nit:` body is at most 2 sentences.
+
 Wrap the comment body in a fenced ```text``` block. Record metadata on separate lines below: file and line, and confidence (20-100%).
 
 **Confidence Scoring Guidelines:**

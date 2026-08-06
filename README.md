@@ -30,6 +30,7 @@ Specialized agents each focus on a distinct aspect of code quality, ensuring not
 **Supporting Agents:**
 - **Context Explorer**: Pre-review pass that gathers architectural context for the specialized reviewers
 - **Finding Validator**: Adversarial pass that attempts to disprove blocking findings before they ship
+- **Comprehension Gate**: Cold-reader pass that checks each comment body answers "what breaks" and "what should I do" on one read, and bounces the ones that don't back to their author for a plain rewrite
 - **Voice**: Final pass that rewrites comment bodies in a plain, conversational voice while preserving citations and code
 
 Each review agent runs independently and in parallel, providing deep expertise in its domain rather than a superficial scan across all concerns.
@@ -82,7 +83,7 @@ This creates a virtuous cycle where reviews get better as you identify new patte
 - **Specialized Review Agents**: Each agent focuses on a specific aspect of code quality
   - **Core Agents (7)**: Security, Performance, Correctness, Maintainability, Testing, Compatibility, Architecture
   - **Conditional Agents (2)**: Frontend (React/TypeScript files), Infra-Config (Helm/Terraform/K8s/CI-CD files)
-  - **Supporting Agents**: Context Explorer (pre-review), Finding Validator (adversarial pass), Voice (final rewrite)
+  - **Supporting Agents**: Context Explorer (pre-review), Finding Validator (adversarial pass), Comprehension Gate (cold-reader check), Voice (final rewrite)
 - **Hierarchical Context Loading**: Automatically loads language, framework, org, and repo-specific guidelines
 - **PR and Local Review Modes**: Review pull requests, branches, commits, ranges, or uncommitted changes
 - **Stack-Aware Branch Reviews**: Detects Graphite parents (or `branch.<name>.parent` in git config) so stacked branches review against the right base
@@ -319,7 +320,7 @@ This eliminates confusion about what's being reviewed and lets you cancel if the
 
 ## Review Agents
 
-The system includes seven core agents (always run), two conditional agents (run when matching files are detected), and three supporting agents (context exploration, finding validation, and voice).
+The system includes seven core agents (always run), two conditional agents (run when matching files are detected), and four supporting agents (context exploration, finding validation, comprehension gating, and voice).
 
 ### Core Agents
 
@@ -438,6 +439,10 @@ Runs before the specialized reviewers to gather architectural context — establ
 #### Finding Validator (`finding-validator`)
 
 Adversarial pass that takes blocking findings and attempts to disprove them, surfacing the strongest counter-argument so theoretical or false-positive findings are filtered out before they reach the author.
+
+#### Comprehension Gate (`comprehension-gate`)
+
+Cold-reader pass that judges each surviving comment body with no diff and no code access: can a teammate answer "what breaks" and "what should I do" from the body alone, on one read? Findings that fail bounce back to the agent that wrote them for a plain rewrite that leads with the point. The gate never rewrites text itself and never drops findings.
 
 #### Voice (`code-reviewer-voice`)
 

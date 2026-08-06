@@ -93,6 +93,10 @@ remove_agents() {
         "code-reviewer-compatibility"
         "code-reviewer-architecture"
         "code-reviewer-frontend"
+        "code-reviewer-infra-config"
+        "code-reviewer-voice"
+        "comprehension-gate"
+        "finding-validator"
     )
 
     local removed=0

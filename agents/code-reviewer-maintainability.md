@@ -224,6 +224,8 @@ Before including any finding, argue against it:
 
 Write the comment body in conversational prose. Lead with the prefix and name what makes the code hard to maintain (the specific function, the magic number, the duplicated block). Describe the concrete scenario a future maintainer would hit in plain English with a `path:line` citation, quoting code only for the identifier the author must act on or an exact value that matters (the magic number itself, a measured complexity), then show the simplified version inline (as a `suggestion` block or before/after fenced code). Do not use `**Problem**:`/`**Impact**:`/`**Solution**:` headers in the comment body.
 
+Write the body for a teammate who has not read the diff and shouldn't have to decode anything. One idea per sentence: if a sentence carries two claims, split it, and state a claim before the evidence for it. Use as many plain sentences as the finding needs; past about 8, it's probably two findings. A `nit:` body is at most 2 sentences.
+
 Wrap the comment body in a fenced ```text``` block. Record metadata on separate lines below: file and line (or line range), and confidence (20-100%).
 
 **Confidence Scoring Guidelines:**

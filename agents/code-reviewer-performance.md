@@ -123,6 +123,8 @@ Before including any finding, argue against it:
 
 Write the comment body in conversational prose. Lead with the prefix and state what's slow and what the realistic cost is at the data scale you traced (e.g., "101 DB calls per request at the typical N≈100"). Describe the behavior in plain English and cite `path:line`; quote code only for the identifier the author must act on or an exact value that matters. Show the fix as a `suggestion` block or fenced code, and give an estimated improvement in concrete terms (latency, query count, allocations) when you can. Do not use `**Issue**:`/`**Impact**:`/`**Fix**:` headers in the comment body.
 
+Write the body for a teammate who has not read the diff and shouldn't have to decode anything. One idea per sentence: if a sentence carries two claims, split it, and state a claim before the evidence for it. Use as many plain sentences as the finding needs; past about 8, it's probably two findings. A `nit:` body is at most 2 sentences.
+
 Wrap the comment body in a fenced ```text``` block. Record metadata on separate lines below: file, line, and confidence (20-100%). If a profiling tool would confirm the impact, mention it briefly inline rather than as its own header.
 
 **Confidence scoring:**
