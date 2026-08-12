@@ -44,6 +44,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLAUDE_DIR="${HOME}/.claude"
 SKILL_DIR="${CLAUDE_DIR}/skills/review-code"
 
+# PostHog Desktop agent directories that install_agents installed into,
+# reported in the summary output.
+POSTHOG_AGENT_DIRS=()
+
 # Functions
 #
 # All four write to stderr, not stdout: several call sites (e.g.
@@ -242,12 +246,34 @@ install_agents() {
         "finding-validator"
     )
 
-    # Create agents directory
-    mkdir -p "${CLAUDE_DIR}/agents"
+    install_agents_to "${CLAUDE_DIR}/agents" "${agents[@]}"
+    info "Installed ${#agents[@]} agents (9 reviewers + 1 context explorer + 1 voice rewriter + 1 comprehension gate + 1 finding validator)"
 
-    for agent in "${agents[@]}"; do
+    # PostHog Desktop points CLAUDE_CONFIG_DIR at its own data directory, so
+    # its sessions never read ~/.claude/agents. Install into each existing app
+    # config home so the reviewer subagents register there too. The glob also
+    # matches dev builds (posthog-code-dev); never create the app dir itself.
+    local config_home
+    for config_home in \
+        "${HOME}/Library/Application Support/@posthog/"posthog-code*/claude \
+        "${HOME}/.config/@posthog/"posthog-code*/claude; do
+        [[ -d "${config_home}" ]] || continue
+        install_agents_to "${config_home}/agents" "${agents[@]}"
+        POSTHOG_AGENT_DIRS+=("${config_home}/agents")
+        info "Installed ${#agents[@]} agents for PostHog Desktop (${config_home}/agents)"
+    done
+}
+
+install_agents_to() {
+    local target_dir="$1"
+    shift
+
+    mkdir -p "${target_dir}"
+
+    local agent
+    for agent in "$@"; do
         local src="${SCRIPT_DIR}/agents/${agent}.md"
-        local dst="${CLAUDE_DIR}/agents/${agent}.md"
+        local dst="${target_dir}/${agent}.md"
 
         # Backup existing file if not a symlink
         if [[ -f "${dst}" ]] && [[ ! -L "${dst}" ]]; then
@@ -262,8 +288,6 @@ install_agents() {
         # Copy file
         cp "${src}" "${dst}"
     done
-
-    info "Installed ${#agents[@]} agents (9 reviewers + 1 context explorer + 1 voice rewriter + 1 comprehension gate + 1 finding validator)"
 }
 
 cleanup_old_command() {
@@ -734,6 +758,10 @@ main() {
     echo "Installation locations:"
     echo "  - Skill: ${SKILL_DIR}/"
     echo "  - Agents: ${CLAUDE_DIR}/agents/"
+    local posthog_agent_dir
+    for posthog_agent_dir in ${POSTHOG_AGENT_DIRS[@]+"${POSTHOG_AGENT_DIRS[@]}"}; do
+        echo "  - Agents (PostHog Desktop): ${posthog_agent_dir}/"
+    done
     echo "  - Context: ${SKILL_DIR}/context/"
     echo "  - Reviews: ${SKILL_DIR}/reviews/"
     echo ""

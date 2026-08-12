@@ -99,13 +99,25 @@ remove_agents() {
         "finding-validator"
     )
 
-    local removed=0
+    # Agents are installed to ~/.claude plus any PostHog Desktop config homes
+    # (the app points CLAUDE_CONFIG_DIR at its own data directory).
+    local agent_dirs=("${CLAUDE_DIR}/agents")
+    local config_home
+    for config_home in \
+        "${HOME}/Library/Application Support/@posthog/"posthog-code*/claude \
+        "${HOME}/.config/@posthog/"posthog-code*/claude; do
+        [[ -d "${config_home}" ]] && agent_dirs+=("${config_home}/agents")
+    done
 
-    for agent in "${agents[@]}"; do
-        if [[ -f "${CLAUDE_DIR}/agents/${agent}.md" ]]; then
-            rm "${CLAUDE_DIR}/agents/${agent}.md"
-            removed=$((removed + 1))
-        fi
+    local removed=0
+    local dir
+    for dir in "${agent_dirs[@]}"; do
+        for agent in "${agents[@]}"; do
+            if [[ -f "${dir}/${agent}.md" ]]; then
+                rm "${dir}/${agent}.md"
+                removed=$((removed + 1))
+            fi
+        done
     done
 
     if [[ "${removed}" -gt 0 ]]; then
@@ -199,7 +211,7 @@ main() {
     echo ""
     info "Uninstallation complete!"
     echo ""
-    echo "Review-code has been removed from ~/.claude/"
+    echo "Review-code has been removed from ~/.claude/ and any PostHog Desktop config homes"
     echo ""
     echo "To reinstall:"
     echo "  curl -fsSL https://raw.githubusercontent.com/haacked/review-code/main/install.sh | bash"
