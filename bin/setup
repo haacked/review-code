@@ -253,6 +253,7 @@ install_agents() {
     # its sessions never read ~/.claude/agents. Install into each existing app
     # config home so the reviewer subagents register there too. The glob also
     # matches dev builds (posthog-code-dev); never create the app dir itself.
+    # Keep the glob in sync with its copy in uninstall.sh's remove_agents().
     local config_home
     for config_home in \
         "${HOME}/Library/Application Support/@posthog/"posthog-code*/claude \
