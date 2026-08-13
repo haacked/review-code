@@ -60,7 +60,7 @@ Loaded when the session JSON's `chunk_metadata.chunked` is `true`: the diff was 
      $chunk_analyses[$chunk.id]
      ```
    - Keep all other context the same: full `file_metadata`, full `architectural_context`, full `review_context`, all PR metadata
-   - Dispatch all (chunk x agent) combinations in parallel via the Task tool
+   - Dispatch all (chunk x agent) combinations in parallel via the Task tool (if the named reviewer subagent types aren't registered in this environment, apply the general-purpose fallback from review.md's "Subagent Availability" section)
 
 3. After all tasks complete, merge all findings into a single pool for synthesis.
 

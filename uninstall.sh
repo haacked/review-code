@@ -23,6 +23,10 @@ CLAUDE_DIR="${HOME}/.claude"
 SKILL_DIR="${CLAUDE_DIR}/skills/review-code"
 REVIEWS_DIR="${SKILL_DIR}/reviews"
 
+# PostHog Desktop agent directories remove_agents cleaned, reported in the
+# closing message.
+POSTHOG_AGENT_DIRS=()
+
 info() {
     echo -e "${GREEN}✓${NC} $1"
 }
@@ -99,13 +103,30 @@ remove_agents() {
         "finding-validator"
     )
 
-    local removed=0
-
-    for agent in "${agents[@]}"; do
-        if [[ -f "${CLAUDE_DIR}/agents/${agent}.md" ]]; then
-            rm "${CLAUDE_DIR}/agents/${agent}.md"
-            removed=$((removed + 1))
+    # Agents are installed to ~/.claude plus any PostHog Desktop config homes
+    # (the app points CLAUDE_CONFIG_DIR at its own data directory). The glob
+    # also matches dev builds (posthog-code-dev); keep it in sync with its
+    # copy in bin/setup's install_agents().
+    local agent_dirs=("${CLAUDE_DIR}/agents")
+    local config_home
+    for config_home in \
+        "${HOME}/Library/Application Support/@posthog/"posthog-code*/claude \
+        "${HOME}/.config/@posthog/"posthog-code*/claude; do
+        if [[ -d "${config_home}" ]]; then
+            agent_dirs+=("${config_home}/agents")
+            POSTHOG_AGENT_DIRS+=("${config_home}/agents")
         fi
+    done
+
+    local removed=0
+    local dir
+    for dir in "${agent_dirs[@]}"; do
+        for agent in "${agents[@]}"; do
+            if [[ -f "${dir}/${agent}.md" ]]; then
+                rm "${dir}/${agent}.md"
+                removed=$((removed + 1))
+            fi
+        done
     done
 
     if [[ "${removed}" -gt 0 ]]; then
@@ -200,6 +221,10 @@ main() {
     info "Uninstallation complete!"
     echo ""
     echo "Review-code has been removed from ~/.claude/"
+    local posthog_agent_dir
+    for posthog_agent_dir in ${POSTHOG_AGENT_DIRS[@]+"${POSTHOG_AGENT_DIRS[@]}"}; do
+        echo "Agents removed from PostHog Desktop: ${posthog_agent_dir}/"
+    done
     echo ""
     echo "To reinstall:"
     echo "  curl -fsSL https://raw.githubusercontent.com/haacked/review-code/main/install.sh | bash"

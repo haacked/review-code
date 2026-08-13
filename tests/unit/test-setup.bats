@@ -250,6 +250,62 @@ setup() {
     rm -rf "${TEST_TEMP_DIR}"
 }
 
+@test "setup: install_agents deploys agents into PostHog Desktop config homes" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    fake_home="${TEST_TEMP_DIR}/home"
+    app_config="${fake_home}/Library/Application Support/@posthog/posthog-code/claude"
+    mkdir -p "${app_config}"
+
+    run bash -c "
+        set -euo pipefail
+        info() { :; }
+        debug() { :; }
+        warn() { :; }
+        error() { :; }
+        HOME='${fake_home}'
+        SCRIPT_DIR='$PROJECT_ROOT'
+        CLAUDE_DIR='${fake_home}/.claude'
+        POSTHOG_AGENT_DIRS=()
+        source <(sed -n '/^install_agents()/,/^}/p' '$PROJECT_ROOT/bin/setup')
+        source <(sed -n '/^install_agents_to()/,/^}/p' '$PROJECT_ROOT/bin/setup')
+        install_agents
+    "
+
+    [ "$status" -eq 0 ]
+    [ -f "${fake_home}/.claude/agents/code-reviewer-security.md" ]
+    [ -f "${app_config}/agents/code-reviewer-security.md" ]
+    [ -f "${app_config}/agents/finding-validator.md" ]
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
+@test "setup: install_agents skips PostHog Desktop config homes that don't exist" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    fake_home="${TEST_TEMP_DIR}/home"
+    mkdir -p "${fake_home}"
+
+    run bash -c "
+        set -euo pipefail
+        info() { :; }
+        debug() { :; }
+        warn() { :; }
+        error() { :; }
+        HOME='${fake_home}'
+        SCRIPT_DIR='$PROJECT_ROOT'
+        CLAUDE_DIR='${fake_home}/.claude'
+        POSTHOG_AGENT_DIRS=()
+        source <(sed -n '/^install_agents()/,/^}/p' '$PROJECT_ROOT/bin/setup')
+        source <(sed -n '/^install_agents_to()/,/^}/p' '$PROJECT_ROOT/bin/setup')
+        install_agents
+    "
+
+    [ "$status" -eq 0 ]
+    [ -f "${fake_home}/.claude/agents/code-reviewer-security.md" ]
+    [ ! -e "${fake_home}/Library" ]
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
 # =============================================================================
 # Workflow tests
 # =============================================================================

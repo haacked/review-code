@@ -82,6 +82,56 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
+@test "uninstall.sh: remove_agents cleans PostHog Desktop config homes" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    fake_home="${TEST_TEMP_DIR}/home"
+    claude_agents="${fake_home}/.claude/agents"
+    app_agents="${fake_home}/Library/Application Support/@posthog/posthog-code/claude/agents"
+    mkdir -p "${claude_agents}" "${app_agents}"
+    touch "${claude_agents}/code-reviewer-security.md" "${app_agents}/code-reviewer-security.md"
+
+    run bash -c "
+        set -euo pipefail
+        info() { :; }
+        warn() { :; }
+        error() { :; }
+        HOME='${fake_home}'
+        CLAUDE_DIR='${fake_home}/.claude'
+        source <(sed -n '/^remove_agents()/,/^}/p' '$PROJECT_ROOT/uninstall.sh')
+        remove_agents
+    "
+
+    [ "$status" -eq 0 ]
+    [ ! -e "${claude_agents}/code-reviewer-security.md" ]
+    [ ! -e "${app_agents}/code-reviewer-security.md" ]
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
+@test "uninstall.sh: remove_agents handles absent PostHog Desktop config homes" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    fake_home="${TEST_TEMP_DIR}/home"
+    claude_agents="${fake_home}/.claude/agents"
+    mkdir -p "${claude_agents}"
+    touch "${claude_agents}/code-reviewer-security.md"
+
+    run bash -c "
+        set -euo pipefail
+        info() { :; }
+        warn() { :; }
+        error() { :; }
+        HOME='${fake_home}'
+        CLAUDE_DIR='${fake_home}/.claude'
+        source <(sed -n '/^remove_agents()/,/^}/p' '$PROJECT_ROOT/uninstall.sh')
+        remove_agents
+    "
+
+    [ "$status" -eq 0 ]
+    [ ! -e "${claude_agents}/code-reviewer-security.md" ]
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
 # =============================================================================
 # Script removal tests
 # =============================================================================

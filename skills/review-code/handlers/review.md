@@ -156,6 +156,10 @@ You are on the PR's branch in the user's working directory. Use the Read tool to
 No safe local checkout is available for reading PR files. This can happen because no local clone is configured for the repo in `repos.conf`, because worktree provisioning failed, or because the PR ref could not be fetched into the user's clone. Work primarily from the diff content, but when a finding hinges on control flow, ordering, or behavior the diff hunk doesn't show, fetch the specific file rather than concluding you can't tell (see "Verify before asking or hedging" below).
 ```
 
+### Subagent Availability
+
+The steps below spawn named subagent types: `code-review-context-explorer`, the `code-reviewer-*` reviewers, `finding-validator`, `comprehension-gate`, and `code-reviewer-voice`. Some harnesses don't register user-installed agents, so these names won't appear in the environment's available agent types. In that case, spawn a `general-purpose` agent for each invocation instead, prepending the full body of the matching agent definition (`~/.claude/agents/<subagent_type>.md`, frontmatter stripped) to the prompt. Read from `~/.claude/agents/` even when `CLAUDE_CONFIG_DIR` points elsewhere: it is the copy `bin/setup` always installs, while a redirected config home's `agents/` dir is typically what's missing or unread when this fallback applies. If the Agent tool accepts a `model` parameter, pass the definition's `model:` frontmatter value so each agent keeps its intended cost tier. Keep the same parallelism and the same finding format (it is parsed downstream), and mention the substitution once in the final output rather than per agent.
+
 ### Gather Architectural Context
 
 Before invoking specialized agents, use the context explorer to understand the codebase.
