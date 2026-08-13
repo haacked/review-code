@@ -163,8 +163,10 @@ main() {
                 is_branch: .is_branch,
                 is_current: .is_current,
                 base_branch: .base_branch,
+                base_source: .base_source,
                 reason: .reason
-            }'
+            }
+            + (if .base_lookup_degraded then {base_lookup_degraded} else {} end)'
             exit 0
             ;;
         "prompt")
@@ -173,8 +175,10 @@ main() {
                 status: "prompt",
                 current_branch: .current_branch,
                 base_branch: .base_branch,
+                base_source: .base_source,
                 has_uncommitted: .has_uncommitted
-            }'
+            }
+            + (if .base_lookup_degraded then {base_lookup_degraded} else {} end)'
             exit 0
             ;;
         "area")
@@ -198,11 +202,13 @@ main() {
             handle_commit_review "${commit}"
             ;;
         "branch")
-            local branch base_branch remote_ahead associated_pr
+            local branch base_branch remote_ahead associated_pr base_source base_lookup_degraded
             branch=$(echo "${parse_result}" | jq -r '.branch')
             base_branch=$(echo "${parse_result}" | jq -r '.base_branch')
             remote_ahead=$(echo "${parse_result}" | jq -r '.remote_ahead // "false"')
             associated_pr=$(echo "${parse_result}" | jq -r '.associated_pr // empty')
+            base_source=$(echo "${parse_result}" | jq -r '.base_source // "default"')
+            base_lookup_degraded=$(echo "${parse_result}" | jq -r '.base_lookup_degraded // empty')
 
             # Check if remote is ahead and prompt to pull
             if [[ "${remote_ahead}" == "true" ]]; then
@@ -211,7 +217,7 @@ main() {
             fi
 
             # Pass PR number to branch review handler
-            handle_branch_review "${branch}" "${base_branch}" "${associated_pr}"
+            handle_branch_review "${branch}" "${base_branch}" "${associated_pr}" "${base_source}" "${base_lookup_degraded}"
             ;;
         "range")
             local range
@@ -576,10 +582,12 @@ build_display_summary() {
 
     case "${mode}" in
         "branch")
-            local repo branch base_branch commit working_dir comparison commits files added removed
+            local repo branch base_branch base_source base_lookup_degraded commit working_dir comparison commits files added removed
             repo=$(echo "${summary_json}" | jq -r '.repository')
             branch=$(echo "${summary_json}" | jq -r '.branch')
             base_branch=$(echo "${summary_json}" | jq -r '.base_branch')
+            base_source=$(echo "${summary_json}" | jq -r '.base_source // "default"')
+            base_lookup_degraded=$(echo "${summary_json}" | jq -r '.base_lookup_degraded // empty')
             commit=$(echo "${summary_json}" | jq -r '.commit')
             working_dir=$(echo "${summary_json}" | jq -r '.working_directory')
             comparison=$(echo "${summary_json}" | jq -r '.comparison')
@@ -596,6 +604,21 @@ Commit: ${commit:0:10}
 Location: ${working_dir}
 Comparison: ${comparison}
 "
+
+            local base_label=""
+            case "${base_source}" in
+                "pr-base") base_label="from PR base" ;;
+                "stack-parent") base_label="from stack parent" ;;
+                "parent-flag") base_label="from --parent" ;;
+            esac
+            if [[ -n "${base_label}" ]]; then
+                output="${output}Base: ${base_branch} (${base_label})
+"
+            fi
+            if [[ "${base_lookup_degraded}" == "true" ]]; then
+                output="${output}Note: the open PR's base branch could not be used (gh offline or unauthenticated, base not fetched locally, or unrelated history); reviewing against the default branch.
+"
+            fi
 
             # Check for associated PR
             local has_pr
@@ -781,9 +804,11 @@ build_summary() {
     # Build mode-specific summary
     case "${mode}" in
         "branch")
-            local target_branch base_branch
+            local target_branch base_branch base_source base_lookup_degraded
             target_branch=$(echo "${parsed_args}" | jq -r '.mode_branch // "unknown"')
             base_branch=$(echo "${parsed_args}" | jq -r '.mode_base_branch // "unknown"')
+            base_source=$(echo "${parsed_args}" | jq -r '.mode_base_source // "default"')
+            base_lookup_degraded=$(echo "${parsed_args}" | jq -r '.mode_base_lookup_degraded // empty')
 
             # Count commits in branch (use pre-computed merge-base for accuracy)
             local commit_count
@@ -813,6 +838,8 @@ build_summary() {
                 --arg repo "${repo}"
                 --arg branch "${target_branch}"
                 --arg base_branch "${base_branch}"
+                --arg base_source "${base_source}"
+                --arg base_lookup_degraded "${base_lookup_degraded}"
                 --arg commit "${commit}"
                 --arg working_dir "${working_dir}"
                 --arg files "${files_changed}"
@@ -833,6 +860,7 @@ build_summary() {
                     repository: "\($org)/\($repo)",
                     branch: $branch,
                     base_branch: $base_branch,
+                    base_source: $base_source,
                     commit: $commit,
                     working_directory: $working_dir,
                     comparison: "\($base_branch)...\($branch)",
@@ -851,7 +879,8 @@ build_summary() {
                         author: $pr_author,
                         state: $pr_state
                     }
-                } else {} end)'
+                } else {} end)
+                + (if $base_lookup_degraded == "true" then {base_lookup_degraded: $base_lookup_degraded} else {} end)'
             ;;
         "commit")
             local target_commit
@@ -1249,6 +1278,8 @@ handle_branch_review() {
     local branch="$1"
     local base_branch="$2"
     local associated_pr="${3:-}"
+    local base_source="${4:-default}"
+    local base_lookup_degraded="${5:-}"
 
     # Get git context
     local git_context
@@ -1282,6 +1313,8 @@ handle_branch_review() {
         "${pr_context}"
         --arg mode_branch "${branch}"
         --arg mode_base_branch "${base_branch}"
+        --arg mode_base_source "${base_source}"
+        --arg mode_base_lookup_degraded "${base_lookup_degraded}"
     )
 
     # Add associated PR argument only if PR context exists

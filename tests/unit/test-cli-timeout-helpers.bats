@@ -52,6 +52,67 @@ teardown() {
 }
 
 # =============================================================================
+# run_with_timeout
+# =============================================================================
+
+@test "run_with_timeout: passes through stdout and exits 0 on success" {
+    cat > "$MOCK_DIR/mockcli" << 'EOF'
+#!/bin/bash
+echo "hello from mockcli"
+EOF
+    chmod +x "$MOCK_DIR/mockcli"
+
+    run run_with_timeout 5 mockcli
+    [ "$status" -eq 0 ]
+    [ "$output" = "hello from mockcli" ]
+}
+
+@test "run_with_timeout: propagates a nonzero exit code from the command" {
+    cat > "$MOCK_DIR/mockcli" << 'EOF'
+#!/bin/bash
+exit 3
+EOF
+    chmod +x "$MOCK_DIR/mockcli"
+
+    run run_with_timeout 5 mockcli
+    [ "$status" -eq 3 ]
+}
+
+@test "run_with_timeout: kills a command exceeding the timeout with status 124" {
+    if ! command -v gtimeout > /dev/null 2>&1 && ! command -v timeout > /dev/null 2>&1; then
+        skip "neither gtimeout nor timeout is installed"
+    fi
+
+    cat > "$MOCK_DIR/mockcli" << 'EOF'
+#!/bin/bash
+sleep 10
+EOF
+    chmod +x "$MOCK_DIR/mockcli"
+
+    run run_with_timeout 1 mockcli
+    [ "$status" -eq 124 ]
+}
+
+@test "run_with_timeout: runs the command directly when no timeout binary exists" {
+    # Constrain PATH to a directory containing only bash and the mock, so
+    # `command -v gtimeout` and `command -v timeout` both fail while the mock
+    # (and the bash shebang it needs) still resolve.
+    NO_TIMEOUT_DIR=$(mktemp -d)
+    ln -s "$(command -v bash)" "$NO_TIMEOUT_DIR/bash"
+    cat > "$NO_TIMEOUT_DIR/mockcli" << 'EOF'
+#!/bin/bash
+echo "ran without a timeout binary"
+EOF
+    chmod +x "$NO_TIMEOUT_DIR/mockcli"
+
+    PATH="$NO_TIMEOUT_DIR" run run_with_timeout 5 mockcli
+    [ "$status" -eq 0 ]
+    [ "$output" = "ran without a timeout binary" ]
+
+    rm -rf "$NO_TIMEOUT_DIR"
+}
+
+# =============================================================================
 # run_cli_with_timeout
 # =============================================================================
 

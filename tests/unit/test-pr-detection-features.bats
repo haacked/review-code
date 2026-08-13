@@ -15,6 +15,11 @@ setup() {
     # This ensures tests work both locally and in CI (where we're in detached HEAD)
     TEST_GIT_DIR="$(mktemp -d)"
 
+    # Install the gh stub before sourcing parse-review-arg.sh so base
+    # resolution never consults a real `gh` binary. See tests/helpers/gh-stub.bash.
+    source "$PROJECT_ROOT/tests/helpers/gh-stub.bash"
+    install_default_gh_stub
+
     # Source the script to get access to functions
     source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh"
 }
@@ -24,6 +29,7 @@ teardown() {
     if [ -n "$TEST_GIT_DIR" ] && [ -d "$TEST_GIT_DIR" ]; then
         rm -rf "$TEST_GIT_DIR"
     fi
+    remove_gh_stub_dir
 }
 
 # Helper: Setup a minimal git repository in TEST_GIT_DIR

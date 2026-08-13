@@ -25,6 +25,23 @@ cli_cleanup_old_logs() {
     find "${log_dir}" -maxdepth 1 -type f -name "${name_glob}" -mtime +7 -delete 2> /dev/null || true
 }
 
+# Run a command under a timeout, preferring gtimeout (macOS coreutils), then
+# timeout (Linux), else running it directly with no bound. The timeout binary
+# execs the command, so PATH resolution applies and shell functions (e.g. the
+# gh wrapper) are bypassed.
+# Usage: run_with_timeout <timeout_seconds> <command> [args...]
+run_with_timeout() {
+    local timeout_secs="$1"
+    shift
+    if command -v gtimeout > /dev/null 2>&1; then
+        gtimeout "${timeout_secs}" "$@"
+    elif command -v timeout > /dev/null 2>&1; then
+        timeout "${timeout_secs}" "$@"
+    else
+        "$@"
+    fi
+}
+
 # Run a CLI binary with a timeout, capturing output, timing, and stderr to a log file.
 # Usage: run_cli_with_timeout <binary> <log_dir> <log_prefix> <timeout_seconds> <output_var> <duration_var> <log_file_var> <cli_args...>
 # Sets the named variables via nameref. Returns 0 on success, 1 on timeout, 2 on error.
@@ -61,14 +78,7 @@ run_cli_with_timeout() {
     tmpfile=$(mktemp)
 
     local exit_code=0
-    if command -v gtimeout > /dev/null 2>&1; then
-        gtimeout "${timeout_secs}" "${binary}" "$@" > "${tmpfile}" 2>> "${_log_file_ref}" || exit_code=$?
-    elif command -v timeout > /dev/null 2>&1; then
-        timeout "${timeout_secs}" "${binary}" "$@" > "${tmpfile}" 2>> "${_log_file_ref}" || exit_code=$?
-    else
-        # No timeout command available, run directly
-        "${binary}" "$@" > "${tmpfile}" 2>> "${_log_file_ref}" || exit_code=$?
-    fi
+    run_with_timeout "${timeout_secs}" "${binary}" "$@" > "${tmpfile}" 2>> "${_log_file_ref}" || exit_code=$?
 
     local end_ms
     end_ms=$(current_time_ms)
