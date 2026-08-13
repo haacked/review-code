@@ -16,6 +16,7 @@ setup() {
     # effect for lookups performed after this point.
     source "$PROJECT_ROOT/tests/helpers/gh-stub.bash"
     install_default_gh_stub
+    source "$PROJECT_ROOT/tests/helpers/parent-child-fixture.bash"
 
     # Source the script to get access to functions
     source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh"
@@ -1101,17 +1102,9 @@ reset_globals() {
 
 @test "get_stack_parent: reads branch.<name>.parent and prefers origin/ ref" {
     setup_test_git_repo
-
-    git checkout -q -b parent-branch
-    echo "p" > p.txt && git add p.txt && git commit -q -m "P"
-    git update-ref refs/remotes/origin/parent-branch HEAD
-
-    git checkout -q -b child-branch
-    echo "c" > c.txt && git add c.txt && git commit -q -m "C"
+    make_parent_child_branches
     git config branch.child-branch.parent parent-branch
 
-    # Run from main to ensure we're not querying gt about the current branch.
-    git checkout -q main
     run get_stack_parent child-branch
     [ "$status" -eq 0 ]
     [ "$output" = "origin/parent-branch" ]
@@ -1167,15 +1160,9 @@ reset_globals() {
     git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main 2>/dev/null || true
     git update-ref refs/remotes/origin/main HEAD
 
-    git checkout -q -b parent-branch
-    echo "p" > p.txt && git add p.txt && git commit -q -m "P"
-    git update-ref refs/remotes/origin/parent-branch HEAD
-
-    git checkout -q -b child-branch
-    echo "c" > c.txt && git add c.txt && git commit -q -m "C"
+    make_parent_child_branches
     git config branch.child-branch.parent parent-branch
 
-    git checkout -q main
     run get_base_branch child-branch
     [ "$status" -eq 0 ]
     [ "$output" = "origin/parent-branch" ]
@@ -1288,27 +1275,18 @@ reset_globals() {
 # the PATH-based stub installed in setup() (see tests/helpers/gh-stub.bash).
 # =============================================================================
 
-# Helper: build a parent-branch/child-branch fixture on top of
-# setup_test_git_repo. parent-branch has an origin/ tracking ref; child-branch
-# forks from it. Leaves the repo checked out on main.
+# Helper: fresh repo plus the shared parent-branch/child-branch stack
+# (see tests/helpers/parent-child-fixture.bash).
 setup_parent_child_fixture() {
     setup_test_git_repo
-
-    git checkout -q -b parent-branch
-    echo "p" > p.txt && git add p.txt && git commit -q -m "P"
-    git update-ref refs/remotes/origin/parent-branch HEAD
-
-    git checkout -q -b child-branch
-    echo "c" > c.txt && git add c.txt && git commit -q -m "C"
-
-    git checkout -q main
+    make_parent_child_branches
 }
 
 @test "detect_base_info: PR base found and used, prefers origin/ ref" {
     setup_parent_child_fixture
     stub_gh_pr_list '[{"number":7,"baseRefName":"parent-branch"}]'
 
-    resolve_base_info child-branch
+    detect_base_info child-branch
     [ "$RESOLVED_BASE_BRANCH" = "origin/parent-branch" ]
     [ "$RESOLVED_BASE_SOURCE" = "pr-base" ]
     [ -z "${RESOLVED_BASE_DEGRADED:-}" ]
@@ -1326,7 +1304,7 @@ setup_parent_child_fixture() {
 
     stub_gh_pr_list '[{"number":3,"baseRefName":"main"}]'
 
-    resolve_base_info child-branch
+    detect_base_info child-branch
     [ "$RESOLVED_BASE_BRANCH" = "origin/main" ]
     [ "$RESOLVED_BASE_SOURCE" = "default" ]
     [ -z "${RESOLVED_BASE_DEGRADED:-}" ]
@@ -1338,7 +1316,7 @@ setup_parent_child_fixture() {
 
     git config branch.child-branch.parent parent-branch
 
-    resolve_base_info child-branch
+    detect_base_info child-branch
     [ "$RESOLVED_BASE_BRANCH" = "origin/parent-branch" ]
     [ "$RESOLVED_BASE_SOURCE" = "stack-parent" ]
 }
@@ -1349,7 +1327,7 @@ setup_parent_child_fixture() {
     # No branch.<name>.parent recorded, so this also exercises the
     # stack-parent -> default fallthrough.
 
-    resolve_base_info child-branch
+    detect_base_info child-branch
     [ "$RESOLVED_BASE_SOURCE" = "default" ]
     [ "$RESOLVED_BASE_DEGRADED" = "true" ]
 
@@ -1366,10 +1344,20 @@ setup_parent_child_fixture() {
     stub_gh_pr_list --fail
     git config branch.child-branch.parent parent-branch
 
-    resolve_base_info child-branch
+    detect_base_info child-branch
     [ "$RESOLVED_BASE_BRANCH" = "origin/parent-branch" ]
     [ "$RESOLVED_BASE_SOURCE" = "stack-parent" ]
     [ -z "${RESOLVED_BASE_DEGRADED:-}" ]
+}
+
+@test "detect_base_info: PR base not fetched locally degrades and falls back" {
+    setup_parent_child_fixture
+    stub_gh_pr_list '[{"number":12,"baseRefName":"unfetched-branch"}]'
+
+    detect_base_info child-branch 2> "${TEST_GIT_DIR}/stderr.log"
+    [ "$RESOLVED_BASE_SOURCE" = "default" ]
+    [ "$RESOLVED_BASE_DEGRADED" = "true" ]
+    grep -q "git fetch origin unfetched-branch" "${TEST_GIT_DIR}/stderr.log"
 }
 
 @test "detect_base_info: PR base takes precedence over Graphite stack parent" {
@@ -1382,7 +1370,7 @@ setup_parent_child_fixture() {
     git config branch.child-branch.parent third-branch
     stub_gh_pr_list '[{"number":9,"baseRefName":"parent-branch"}]'
 
-    resolve_base_info child-branch
+    detect_base_info child-branch
     [ "$RESOLVED_BASE_BRANCH" = "origin/parent-branch" ]
     [ "$RESOLVED_BASE_SOURCE" = "pr-base" ]
 }
@@ -1398,8 +1386,9 @@ setup_parent_child_fixture() {
 
     stub_gh_pr_list '[{"number":4,"baseRefName":"orphan-base"}]'
 
-    resolve_base_info child-branch 2> "${TEST_GIT_DIR}/stderr.log"
+    detect_base_info child-branch 2> "${TEST_GIT_DIR}/stderr.log"
     [ "$RESOLVED_BASE_SOURCE" = "default" ]
+    [ "$RESOLVED_BASE_DEGRADED" = "true" ]
     grep -q "no common history" "${TEST_GIT_DIR}/stderr.log"
 }
 
@@ -1416,10 +1405,24 @@ setup_parent_child_fixture() {
 
     stub_gh_pr_list '[{"number":8,"baseRefName":"parent-branch"}]'
 
-    resolve_base_info child-branch 2> "${TEST_GIT_DIR}/stderr.log"
+    detect_base_info child-branch 2> "${TEST_GIT_DIR}/stderr.log"
     [ "$RESOLVED_BASE_BRANCH" = "origin/parent-branch" ]
     [ "$RESOLVED_BASE_SOURCE" = "pr-base" ]
     grep -q "merge-base" "${TEST_GIT_DIR}/stderr.log"
+}
+
+@test "fetch_open_prs_for_branch: REVIEW_CODE_SKIP_PR_LOOKUP skips the gh call" {
+    setup_parent_child_fixture
+    stub_gh_pr_list '[{"number":7,"baseRefName":"parent-branch"}]'
+    : > "$GH_STUB_CALLS"
+
+    export REVIEW_CODE_SKIP_PR_LOOKUP=1
+    detect_base_info child-branch
+    unset REVIEW_CODE_SKIP_PR_LOOKUP
+
+    [ "$RESOLVED_BASE_SOURCE" = "default" ]
+    [ -z "${RESOLVED_BASE_DEGRADED:-}" ]
+    [ ! -s "$GH_STUB_CALLS" ]
 }
 
 @test "resolve_base_info: --parent override wins over PR base and makes no gh calls" {
@@ -1467,6 +1470,7 @@ setup_parent_child_fixture() {
     [[ "$output" == *'"associated_pr":"5"'* ]]
     [[ "$output" == *'"base_branch":"origin/parent-branch"'* ]]
     [[ "$output" == *"Multiple open PRs"* ]]
+    [[ "$output" == *"scoping the review to the newest one's base"* ]]
 }
 
 @test "parse-review-arg.sh: errexit regression under live execution (no origin/HEAD)" {

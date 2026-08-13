@@ -176,6 +176,9 @@ PR_LOOKUP_FAILED=""
 # or garbage output). Always returns 0. Call directly, never via $(...) —
 # globals assigned in a command substitution are lost with the subshell.
 fetch_open_prs_for_branch() {
+    # Routing-only callers (inject-handler.sh) set REVIEW_CODE_SKIP_PR_LOOKUP
+    # to skip the network call; handler selection never depends on the base.
+    [[ -n "${REVIEW_CODE_SKIP_PR_LOOKUP:-}" ]] && return 0
     local branch="${1:-}"
     if [[ -n "${branch}" && "${branch}" == "${PR_LOOKUP_BRANCH}" ]]; then
         return 0
@@ -273,10 +276,11 @@ RESOLVED_BASE_DEGRADED=""
 # merge target and auto-retargets when a parent merges), then a recorded
 # stack parent (Graphite), then the default branch. Sets
 # RESOLVED_BASE_BRANCH, RESOLVED_BASE_SOURCE (pr-base|stack-parent|default),
-# and RESOLVED_BASE_DEGRADED ("true" only when the PR lookup failed AND the
-# base consequently fell back to the default branch — a stacked branch may
-# have been misresolved to trunk; a lookup failure rescued by a stack parent
-# needs no warning). Call directly, never via $(...).
+# and RESOLVED_BASE_DEGRADED ("true" only when the open PR's base could not
+# be used — lookup failure, base ref not available locally, or unrelated
+# history — AND the base consequently fell back to the default branch: a
+# stacked branch may have been misresolved to trunk. A failure rescued by a
+# stack parent needs no warning). Call directly, never via $(...).
 # Args: $1 (optional) = target ref (default: HEAD)
 detect_base_info() {
     local target_ref="${1:-HEAD}"
@@ -304,14 +308,22 @@ detect_base_info() {
             pr_base=$(jq -r '.[0].baseRefName // empty' <<< "${PR_LOOKUP_JSON}" 2> /dev/null) || pr_base=""
             # A PR based on trunk resolves through the default-branch logic.
             if [[ -n "${pr_base}" && "${pr_base}" != "${default_branch_name}" ]]; then
+                local pr_count
+                pr_count=$(jq -r 'length' <<< "${PR_LOOKUP_JSON}" 2> /dev/null) || pr_count=1
+                if [[ "${pr_count}" -gt 1 ]]; then
+                    echo "Warning: branch '${branch}' has ${pr_count} open PRs; scoping the review to the newest one's base '${pr_base}'." >&2
+                fi
                 local pr_base_ref=""
                 pr_base_ref=$(prefer_remote_ref "${pr_base}") || pr_base_ref=""
                 if [[ -z "${pr_base_ref}" ]]; then
                     echo "Warning: the open PR for '${branch}' targets '${pr_base}', but no such ref exists locally (try: git fetch origin ${pr_base}). Falling back." >&2
+                    lookup_failed="true"
                 elif base_shares_history "${pr_base_ref}" "${target_ref}" "PR base"; then
                     RESOLVED_BASE_BRANCH="${pr_base_ref}"
                     RESOLVED_BASE_SOURCE="pr-base"
                     return 0
+                else
+                    lookup_failed="true"
                 fi
             fi
         fi
@@ -333,8 +345,8 @@ detect_base_info() {
     return 0
 }
 
-# Helper: Get base branch with smart fallback (stdout contract preserved for
-# existing callers and tests; provenance lives in the RESOLVED_BASE_* globals).
+# Helper: Stdout wrapper over detect_base_info, kept for the test suite;
+# production callers use resolve_base_fields to get provenance as well.
 # Args: $1 (optional) = target ref (default: HEAD)
 get_base_branch() {
     detect_base_info "$@"

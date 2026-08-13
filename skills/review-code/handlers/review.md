@@ -68,7 +68,7 @@ From the session file JSON, extract these fields for building agent context:
 
 Mode-specific fields:
 - **PR mode:** `pr`: PR details (number, title, author, body, comments, etc.); `file_ref`: git ref for file access (present when reviewing from a different branch or via a provisioned worktree). When the review runs outside the PR's repo and a local clone is mapped in `repos.conf`, `git.working_dir` points at a detached worktree checked out to the PR. Otherwise (no mapping, provisioning failed, or the PR ref could not be fetched into an in-repo clone), `working_dir` is null and only the diff is available.
-- **Branch/commit/range modes:** `branch`, `base_branch`, `commit`, `range`. Branch mode also carries `base_source` (how the base was chosen: `parent-flag`, `pr-base`, `stack-parent`, or `default`) and `base_lookup_degraded: "true"`, present only when the PR-base lookup failed and the base consequently fell back to the default branch.
+- **Branch/commit/range modes:** `branch`, `base_branch`, `commit`, `range`. Branch mode also carries `base_source` (how the base was chosen: `parent-flag`, `pr-base`, `stack-parent`, or `default`) and `base_lookup_degraded: "true"`, present only when the open PR's base could not be used (lookup failed, base not fetched locally, or unrelated history) and the base consequently fell back to the default branch.
 - **Area-specific reviews:** `area`
 
 ### Load Conditional Instructions

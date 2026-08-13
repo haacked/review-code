@@ -18,7 +18,7 @@ The goal: act like a principal engineer doing a careful local cleanup pass. Fix 
    | `pr`                                 | yes             | no                     | no           | user's working tree is on a different branch; edits would silently corrupt unrelated branch state |
 
 3. The working tree directory exists and is writable.
-4. For branch-family reviews (`mode` is `branch`, including no-arg current-branch reviews): the session must NOT have `base_lookup_degraded`. That flag means the PR-base lookup failed (gh offline, unauthenticated, or timed out) and the review consequently fell back to the default branch, so on a stacked branch the diff may include a parent PR's commits and applying fixes could edit code this branch doesn't own. Skip with reason "base detection was degraded (gh lookup failed); not auto-editing against the default branch".
+4. For branch-family reviews (`mode` is `branch`, including no-arg current-branch reviews): the session must NOT have `base_lookup_degraded`. That flag means the open PR's base could not be used (gh offline, unauthenticated, or timed out; base ref not fetched locally; or unrelated history) and the review consequently fell back to the default branch, so on a stacked branch the diff may include a parent PR's commits and applying fixes could edit code this branch doesn't own. Skip with reason "base detection was degraded (the open PR's base could not be used); not auto-editing against the default branch".
 
 If any precondition fails, skip applying fixes but still produce the Fix Summary section with a one-line reason.
 

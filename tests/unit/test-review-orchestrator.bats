@@ -7,6 +7,7 @@ setup() {
 
     source "$PROJECT_ROOT/tests/helpers/gh-stub.bash"
     install_default_gh_stub
+    source "$PROJECT_ROOT/tests/helpers/parent-child-fixture.bash"
 
     # Create a temporary git repository for testing
     TEST_REPO=$(mktemp -d)
@@ -344,14 +345,7 @@ teardown() {
 # =============================================================================
 
 @test "review-orchestrator.sh: branch mode carries pr-base provenance end-to-end" {
-    git checkout -q -b parent-branch
-    echo "p" > p.txt && git add p.txt && git commit -q -m "P"
-    git update-ref refs/remotes/origin/parent-branch HEAD
-
-    git checkout -q -b child-branch
-    echo "c" > c.txt && git add c.txt && git commit -q -m "C"
-
-    git checkout -q main
+    make_parent_child_branches
 
     stub_gh_pr_list '[{"number":7,"baseRefName":"parent-branch"}]'
 

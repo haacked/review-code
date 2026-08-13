@@ -11,8 +11,10 @@ SKILL_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # Parse arguments to determine mode by running parse-review-arg.sh.
 # Discard stderr so that warnings (branch divergence, multiple PRs) don't
 # corrupt the JSON on stdout. Errors are detected via exit code instead.
+# Handler selection only reads mode/find_mode, which never depend on the
+# base branch, so the gh PR-base lookup is skipped to keep this hook fast.
 parse_exit=0
-parse_result=$("${SCRIPT_DIR}/parse-review-arg.sh" "$@" 2> /dev/null) || parse_exit=$?
+parse_result=$(REVIEW_CODE_SKIP_PR_LOOKUP=1 "${SCRIPT_DIR}/parse-review-arg.sh" "$@" 2> /dev/null) || parse_exit=$?
 
 # Determine which handler to load based on the parsed mode.
 # Error mode (non-zero exit) gets no handler since SKILL.md handles errors via PARSE_RESULT.

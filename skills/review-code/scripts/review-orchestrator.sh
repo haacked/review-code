@@ -616,7 +616,7 @@ Comparison: ${comparison}
 "
             fi
             if [[ "${base_lookup_degraded}" == "true" ]]; then
-                output="${output}Note: PR base lookup failed (gh offline or unauthenticated); reviewing against the default branch.
+                output="${output}Note: the open PR's base branch could not be used (gh offline or unauthenticated, base not fetched locally, or unrelated history); reviewing against the default branch.
 "
             fi
 
