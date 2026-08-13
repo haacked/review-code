@@ -18,6 +18,7 @@ The goal: act like a principal engineer doing a careful local cleanup pass. Fix 
    | `pr`                                 | yes             | no                     | no           | user's working tree is on a different branch; edits would silently corrupt unrelated branch state |
 
 3. The working tree directory exists and is writable.
+4. For branch-family reviews (`mode` is `branch`, including no-arg current-branch reviews): the session must NOT have `base_lookup_degraded`. That flag means the PR-base lookup failed (gh offline, unauthenticated, or timed out) and the review consequently fell back to the default branch, so on a stacked branch the diff may include a parent PR's commits and applying fixes could edit code this branch doesn't own. Skip with reason "base detection was degraded (gh lookup failed); not auto-editing against the default branch".
 
 If any precondition fails, skip applying fixes but still produce the Fix Summary section with a one-line reason.
 
@@ -72,7 +73,7 @@ Build a `## Fix Summary` section. The "Compose the Review Document" step places 
 
 The summary's opening line is one of two forms:
 
-- When fixes ran: `_Applied via `--fix`. <N> findings reviewed: <H> auto-fixed, <J> fixed with judgment calls below, <S> skipped._`
+- When fixes ran: `_Applied via `--fix`. <N> findings reviewed: <H> auto-fixed, <J> fixed with judgment calls below, <S> skipped._` When the session's `base_source` is not `"default"`, name the base so the scope is visible: `_Applied via `--fix` (reviewed against `<base_branch>`). <N> findings reviewed: …_`
 - When preconditions failed: `_`--fix` was requested but no fixes were applied: <one-line reason>._`
 
 After the opening line, render the two subsections below. Omit each subsection entirely when its list would be empty.

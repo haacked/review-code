@@ -86,7 +86,7 @@ This creates a virtuous cycle where reviews get better as you identify new patte
   - **Supporting Agents**: Context Explorer (pre-review), Finding Validator (adversarial pass), Comprehension Gate (cold-reader check), Voice (final rewrite)
 - **Hierarchical Context Loading**: Automatically loads language, framework, org, and repo-specific guidelines
 - **PR and Local Review Modes**: Review pull requests, branches, commits, ranges, or uncommitted changes
-- **Stack-Aware Branch Reviews**: Detects Graphite parents (or `branch.<name>.parent` in git config) so stacked branches review against the right base
+- **Stack-Aware Branch Reviews**: Branch and current-branch reviews resolve their base in order: explicit `--parent`, the open PR's base branch (via `gh pr list`), a recorded Graphite parent (`gt parent` or `branch.<name>.parent`), then the repo default branch — so PRs stacked on other PRs review only their own commits. A failed `gh` lookup (offline, unauthenticated) falls through gracefully and is flagged in the review summary
 - **Draft GitHub Reviews**: `--draft` posts inline comments as a pending review, with automatic comment-drift detection when new commits land between generation and submission
 - **Adversary Meta-Review** (opt-in): `--adversary:copilot` or `--adversary:codex` runs a second-opinion pass through the Copilot or Codex CLI that validates findings and scans for anything obvious that was missed. Copilot no longer runs automatically when installed; pass `--adversary:copilot` to restore the previous behavior.
 - **Learning Loop**: `learn` subcommand analyzes PR outcomes and folds patterns back into context files
@@ -258,7 +258,7 @@ The `learn` subcommand analyzes outcomes of past PR reviews (what was acted on, 
 
 - `--draft` / `-d` — Post a pending GitHub review with inline comments (PR mode only). Auto-detects and adjusts for comment drift when new commits land between review generation and submission.
 - `--self` — Allow draft reviews on your own PR (for testing).
-- `--parent <ref>` — Override the base branch for branch/current-branch reviews. By default, branches with a recorded stack parent (Graphite or `branch.<name>.parent`) review against that parent.
+- `--parent <ref>` — Override the base branch for branch/current-branch reviews. By default the base is detected from the branch's open PR (its base branch on GitHub), then a recorded stack parent (Graphite or `branch.<name>.parent`), then the default branch; `--parent` beats all of these.
 - `--force` / `-f` — Skip the pre-flight context clear prompt.
 - `--overwrite` — Replace an existing review file without prompting.
 - `--append` — Append to an existing review file without prompting.

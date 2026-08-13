@@ -122,6 +122,17 @@ prefer_remote_ref() {
     fi
 }
 
+# Helper: Echo the checked-out branch name, or nothing when HEAD is detached.
+get_checked_out_branch() {
+    git symbolic-ref --quiet --short HEAD 2> /dev/null || true
+}
+
+# Helper: Echo the default branch name recorded in origin/HEAD, or nothing
+# when that symref is unset.
+get_default_branch_name() {
+    git symbolic-ref refs/remotes/origin/HEAD 2> /dev/null | sed 's@^refs/remotes/origin/@@' || true
+}
+
 # Helper: Detect a stacked-branch parent for the given branch.
 # Echoes a usable ref (preferring origin/) or nothing when no stack parent is
 # recorded. Tries `gt parent` (current checkout only), then `git config
@@ -130,7 +141,7 @@ prefer_remote_ref() {
 get_stack_parent() {
     local branch="${1:-HEAD}"
     local current
-    current=$(git symbolic-ref --quiet --short HEAD 2> /dev/null) || current=""
+    current=$(get_checked_out_branch)
     [[ "${branch}" == "HEAD" ]] && branch="${current}"
     [[ -z "${branch}" ]] && return 0
 
@@ -146,31 +157,77 @@ get_stack_parent() {
 
     # Trunk should resolve through the default-branch logic, not through here.
     local default_branch_name
-    default_branch_name=$(git symbolic-ref refs/remotes/origin/HEAD 2> /dev/null | sed 's@^refs/remotes/origin/@@')
+    default_branch_name=$(get_default_branch_name)
     [[ -n "${default_branch_name}" && "${parent}" == "${default_branch_name}" ]] && return 0
 
     prefer_remote_ref "${parent}"
 }
 
-# Helper: Get base branch with smart fallback.
-# When the target branch sits on a stack, prefers its recorded parent so the
-# review diff matches the eventual PR. Otherwise prefers origin/ refs (updated
-# by fetch) over potentially-stale local branches, and when origin/HEAD is
-# unavailable picks the closest trunk candidate by commit distance.
-# Args: $1 (optional) = target ref for distance calculation (default: HEAD)
-get_base_branch() {
-    local target_ref="${1:-HEAD}"
+# Memoized open-PR lookup state for fetch_open_prs_for_branch. One bounded gh
+# call per branch per process; detect_no_arg reuses it for associated-PR
+# detection.
+PR_LOOKUP_BRANCH=""
+PR_LOOKUP_JSON=""
+PR_LOOKUP_FAILED=""
 
-    # Stack-aware: prefer a recorded parent over trunk.
-    local stack_parent
-    stack_parent=$(get_stack_parent "${target_ref}")
-    if [[ -n "${stack_parent}" ]]; then
-        echo "${stack_parent}"
+# Helper: Fetch open PRs for a branch (number + baseRefName), memoized.
+# Sets PR_LOOKUP_JSON (JSON array; "[]" when no open PRs) and
+# PR_LOOKUP_FAILED ("true" when gh could not answer: nonzero exit, timeout,
+# or garbage output). Always returns 0. Call directly, never via $(...) —
+# globals assigned in a command substitution are lost with the subshell.
+fetch_open_prs_for_branch() {
+    local branch="${1:-}"
+    if [[ -n "${branch}" && "${branch}" == "${PR_LOOKUP_BRANCH}" ]]; then
         return 0
     fi
+    PR_LOOKUP_BRANCH="${branch}"
+    PR_LOOKUP_JSON=""
+    PR_LOOKUP_FAILED=""
+    [[ -z "${branch}" ]] && return 0
+    command -v gh > /dev/null 2>&1 || return 0
+
+    local timeout_secs="${REVIEW_CODE_GH_TIMEOUT_SECS:-5}"
+    [[ "${timeout_secs}" =~ ^[0-9]+$ ]] || timeout_secs=5
+
+    local output="" gh_exit=0
+    output=$(gh_with_timeout "${timeout_secs}" pr list \
+        --head "${branch}" --state open --json number,baseRefName 2> /dev/null) || gh_exit=$?
+
+    if [[ "${gh_exit}" -ne 0 ]] || ! jq -e 'type == "array"' <<< "${output}" > /dev/null 2>&1; then
+        PR_LOOKUP_FAILED="true"
+        return 0
+    fi
+    PR_LOOKUP_JSON="${output}"
+    return 0
+}
+
+# Helper: Guard a detected base against producing a nonsense diff range.
+# Returns 1 (reject) only when the base shares no history with the target.
+# A base that has advanced past the fork point is still usable: the diff
+# scopes from the merge-base, matching GitHub's own PR-diff semantics.
+# Args: $1 = base ref, $2 = target ref, $3 = label for stderr messages
+base_shares_history() {
+    local base="$1" target="$2" label="$3"
+    if ! git merge-base "${base}" "${target}" > /dev/null 2>&1; then
+        echo "Warning: ignoring ${label} '${base}': no common history with '${target}'." >&2
+        return 1
+    fi
+    if ! git merge-base --is-ancestor "${base}" "${target}" 2> /dev/null; then
+        echo "Note: ${label} '${base}' has commits not on '${target}'; the diff scopes from their merge-base." >&2
+    fi
+    return 0
+}
+
+# Helper: Resolve the default (trunk) base branch. Prefers origin/ refs
+# (updated by fetch) over potentially-stale local branches, and when
+# origin/HEAD is unavailable picks the closest trunk candidate by commit
+# distance.
+# Args: $1 (optional) = target ref for distance calculation (default: HEAD)
+get_default_base_branch() {
+    local target_ref="${1:-HEAD}"
 
     local default_branch_name
-    default_branch_name=$(git symbolic-ref refs/remotes/origin/HEAD 2> /dev/null | sed 's@^refs/remotes/origin/@@')
+    default_branch_name=$(get_default_branch_name)
 
     if [[ -n "${default_branch_name}" ]]; then
         local resolved
@@ -206,14 +263,114 @@ get_base_branch() {
     echo "main"
 }
 
-# Helper: Resolve the base branch, honoring an explicit --parent override.
-# Args: $1 (optional) = target ref forwarded to get_base_branch
-resolve_base_branch() {
-    if [[ -n "${PARENT_OVERRIDE:-}" ]]; then
-        echo "${PARENT_OVERRIDE}"
+# Detected-base globals set by detect_base_info / resolve_base_info.
+RESOLVED_BASE_BRANCH=""
+RESOLVED_BASE_SOURCE=""
+RESOLVED_BASE_DEGRADED=""
+
+# Helper: Resolve the detected base for a target ref, with provenance.
+# Precedence: the open PR's base branch (GitHub is authoritative for a PR's
+# merge target and auto-retargets when a parent merges), then a recorded
+# stack parent (Graphite), then the default branch. Sets
+# RESOLVED_BASE_BRANCH, RESOLVED_BASE_SOURCE (pr-base|stack-parent|default),
+# and RESOLVED_BASE_DEGRADED ("true" only when the PR lookup failed AND the
+# base consequently fell back to the default branch — a stacked branch may
+# have been misresolved to trunk; a lookup failure rescued by a stack parent
+# needs no warning). Call directly, never via $(...).
+# Args: $1 (optional) = target ref (default: HEAD)
+detect_base_info() {
+    local target_ref="${1:-HEAD}"
+    RESOLVED_BASE_BRANCH=""
+    RESOLVED_BASE_SOURCE="default"
+    RESOLVED_BASE_DEGRADED=""
+    local lookup_failed=""
+
+    local branch="${target_ref}"
+    local current
+    current=$(get_checked_out_branch)
+    [[ "${branch}" == "HEAD" ]] && branch="${current}"
+
+    local default_branch_name
+    default_branch_name=$(get_default_branch_name)
+
+    # 1. The open PR's base branch, when the target is a local non-trunk branch.
+    if [[ -n "${branch}" && "${branch}" != "${default_branch_name}" ]] \
+        && git show-ref --verify --quiet "refs/heads/${branch}" 2> /dev/null; then
+        fetch_open_prs_for_branch "${branch}"
+        if [[ "${PR_LOOKUP_FAILED}" == "true" ]]; then
+            lookup_failed="true"
+        elif [[ -n "${PR_LOOKUP_JSON}" ]]; then
+            local pr_base=""
+            pr_base=$(jq -r '.[0].baseRefName // empty' <<< "${PR_LOOKUP_JSON}" 2> /dev/null) || pr_base=""
+            # A PR based on trunk resolves through the default-branch logic.
+            if [[ -n "${pr_base}" && "${pr_base}" != "${default_branch_name}" ]]; then
+                local pr_base_ref=""
+                pr_base_ref=$(prefer_remote_ref "${pr_base}") || pr_base_ref=""
+                if [[ -z "${pr_base_ref}" ]]; then
+                    echo "Warning: the open PR for '${branch}' targets '${pr_base}', but no such ref exists locally (try: git fetch origin ${pr_base}). Falling back." >&2
+                elif base_shares_history "${pr_base_ref}" "${target_ref}" "PR base"; then
+                    RESOLVED_BASE_BRANCH="${pr_base_ref}"
+                    RESOLVED_BASE_SOURCE="pr-base"
+                    return 0
+                fi
+            fi
+        fi
+    fi
+
+    # 2. A recorded stack parent (Graphite).
+    local stack_parent
+    stack_parent=$(get_stack_parent "${target_ref}") || stack_parent=""
+    if [[ -n "${stack_parent}" ]] && base_shares_history "${stack_parent}" "${target_ref}" "stack parent"; then
+        RESOLVED_BASE_BRANCH="${stack_parent}"
+        RESOLVED_BASE_SOURCE="stack-parent"
         return 0
     fi
-    get_base_branch "$@"
+
+    # 3. Default-branch logic.
+    RESOLVED_BASE_BRANCH=$(get_default_base_branch "${target_ref}")
+    RESOLVED_BASE_SOURCE="default"
+    RESOLVED_BASE_DEGRADED="${lookup_failed}"
+    return 0
+}
+
+# Helper: Get base branch with smart fallback (stdout contract preserved for
+# existing callers and tests; provenance lives in the RESOLVED_BASE_* globals).
+# Args: $1 (optional) = target ref (default: HEAD)
+get_base_branch() {
+    detect_base_info "$@"
+    echo "${RESOLVED_BASE_BRANCH}"
+}
+
+# Helper: Resolve the base branch with provenance, honoring an explicit
+# --parent override. The override is the user's choice: it is never rejected,
+# at most warned about. Sets the RESOLVED_BASE_* globals; call directly,
+# never via $(...).
+# Args: $1 (optional) = target ref forwarded to detect_base_info
+resolve_base_info() {
+    if [[ -n "${PARENT_OVERRIDE:-}" ]]; then
+        RESOLVED_BASE_BRANCH="${PARENT_OVERRIDE}"
+        RESOLVED_BASE_SOURCE="parent-flag"
+        RESOLVED_BASE_DEGRADED=""
+        if ref_exists "${PARENT_OVERRIDE}"; then
+            base_shares_history "${PARENT_OVERRIDE}" "${1:-HEAD}" "--parent override" || true
+        fi
+        return 0
+    fi
+    detect_base_info "$@"
+}
+
+# Base provenance key/value pairs shared by every branch-family JSON emission.
+BASE_FIELDS=()
+
+# Helper: Resolve the base and populate BASE_FIELDS for build_json_output.
+# Call directly, never via $(...).
+# Args: forwarded to resolve_base_info
+resolve_base_fields() {
+    resolve_base_info "$@"
+    BASE_FIELDS=("base_branch" "${RESOLVED_BASE_BRANCH}" "base_source" "${RESOLVED_BASE_SOURCE}")
+    if [[ -n "${RESOLVED_BASE_DEGRADED}" ]]; then
+        BASE_FIELDS+=("base_lookup_degraded" "true")
+    fi
 }
 
 # Helper: Build JSON output for a parsed invocation. Always emits `mode` plus
@@ -512,13 +669,12 @@ detect_git_ref() {
         is_current="true"
     fi
 
-    local base_branch
-    base_branch=$(resolve_base_branch "${arg}")
+    resolve_base_fields "${arg}"
 
     # Handle non-ambiguous cases first
     if [[ "${is_branch}" == "true" ]] && [[ "${is_current}" == "false" ]]; then
         # Branch (not current) - review branch vs base
-        build_json_output "branch" "branch" "${arg}" "base_branch" "${base_branch}" "ref_type" "${ref_type}"
+        build_json_output "branch" "branch" "${arg}" "${BASE_FIELDS[@]}" "ref_type" "${ref_type}"
         return 0
     fi
 
@@ -535,7 +691,7 @@ detect_git_ref() {
     # Output ambiguous result
     build_json_output "ambiguous" "arg" "${arg}" "ref_type" "${ref_type}" \
         "is_branch" "${is_branch}" "is_current" "${is_current}" \
-        "base_branch" "${base_branch}" "reason" "${ambiguous_reason}"
+        "${BASE_FIELDS[@]}" "reason" "${ambiguous_reason}"
     return 0
 }
 
@@ -548,9 +704,6 @@ detect_no_arg() {
     if [[ -z "${current_branch}" ]]; then
         current_branch=$(git rev-parse --short HEAD 2> /dev/null || echo "unknown")
     fi
-    local base_branch
-    base_branch=$(resolve_base_branch)
-
     # Check for uncommitted changes
     local has_uncommitted=false
     # shellcheck disable=SC2312  # git status failure will result in empty string (correct behavior)
@@ -558,10 +711,19 @@ detect_no_arg() {
         has_uncommitted=true
     fi
 
+    # With --force and a dirty tree the answer is a local review regardless
+    # of branch; skip base resolution (and its gh lookup) entirely.
+    if [[ "${FORCE_MODE}" == "true" ]] && [[ "${has_uncommitted}" == true ]]; then
+        build_json_output "local" "scope" "uncommitted"
+        return 0
+    fi
+
+    resolve_base_fields
+
     # Check if on a non-base branch (strip origin/ prefix for comparison since
-    # get_base_branch may return origin/master while current_branch is master)
+    # the resolved base may be origin/master while current_branch is master)
     local is_feature_branch=false
-    local base_branch_name="${base_branch#origin/}"
+    local base_branch_name="${RESOLVED_BASE_BRANCH#origin/}"
     if [[ "${current_branch}" != "${base_branch_name}" ]]; then
         is_feature_branch=true
     fi
@@ -576,7 +738,7 @@ detect_no_arg() {
     if [[ "${is_feature_branch}" == false ]] && [[ "${has_uncommitted}" == false ]]; then
         # In find mode, return branch mode so user can check if review exists
         if [[ "${FIND_MODE}" == "true" ]]; then
-            build_json_output "branch" "branch" "${current_branch}" "base_branch" "${base_branch}" "scope" "find"
+            build_json_output "branch" "branch" "${current_branch}" "${BASE_FIELDS[@]}" "scope" "find"
             return 0
         fi
         # For regular review, error - nothing to review
@@ -584,15 +746,11 @@ detect_no_arg() {
         exit 1
     fi
 
-    # On feature branch with uncommitted changes - prompt (unless --force)
+    # On feature branch with uncommitted changes - prompt (--force was
+    # short-circuited to a local review above)
     if [[ "${is_feature_branch}" == true ]] && [[ "${has_uncommitted}" == true ]]; then
-        if [[ "${FORCE_MODE}" == "true" ]]; then
-            # With --force, default to reviewing uncommitted local changes
-            build_json_output "local" "scope" "uncommitted"
-        else
-            build_json_output "prompt" "current_branch" "${current_branch}" \
-                "base_branch" "${base_branch}" "has_uncommitted" "true"
-        fi
+        build_json_output "prompt" "current_branch" "${current_branch}" \
+            "${BASE_FIELDS[@]}" "has_uncommitted" "true"
         return 0
     fi
 
@@ -626,31 +784,32 @@ detect_no_arg() {
         fi
     fi
 
-    # Check for associated PR using gh CLI
-    if command -v gh > /dev/null 2>&1; then
-        # Get all open PRs for this branch
-        local pr_numbers
-        pr_numbers=$(gh pr list --head "${current_branch}" --state open --json number --jq '.[].number' 2> /dev/null || echo "")
+    # Check for associated PR (reuses the memoized lookup from base resolution;
+    # only --parent runs skip that lookup and fetch here)
+    fetch_open_prs_for_branch "${current_branch}"
+    local pr_numbers=""
+    if [[ -n "${PR_LOOKUP_JSON}" ]]; then
+        pr_numbers=$(jq -r '.[].number' <<< "${PR_LOOKUP_JSON}" 2> /dev/null) || pr_numbers=""
+    fi
 
-        if [[ -n "${pr_numbers}" ]]; then
-            local pr_array
-            mapfile -t pr_array <<< "${pr_numbers}"
-            local pr_count="${#pr_array[@]}"
+    if [[ -n "${pr_numbers}" ]]; then
+        local pr_array
+        mapfile -t pr_array <<< "${pr_numbers}"
+        local pr_count="${#pr_array[@]}"
 
-            if [[ "${pr_count}" -eq 1 ]]; then
-                # Single open PR - use it
-                associated_pr="${pr_array[0]}"
-            elif [[ "${pr_count}" -gt 1 ]]; then
-                # Multiple open PRs - pick first and warn
-                associated_pr="${pr_array[0]}"
-                echo "Warning: Multiple open PRs found for branch '${current_branch}': ${pr_array[*]}" >&2
-                echo "Using PR #${associated_pr}. To review a different PR, specify it explicitly." >&2
-            fi
+        if [[ "${pr_count}" -eq 1 ]]; then
+            # Single open PR - use it
+            associated_pr="${pr_array[0]}"
+        elif [[ "${pr_count}" -gt 1 ]]; then
+            # Multiple open PRs - pick first and warn
+            associated_pr="${pr_array[0]}"
+            echo "Warning: Multiple open PRs found for branch '${current_branch}': ${pr_array[*]}" >&2
+            echo "Using PR #${associated_pr}. To review a different PR, specify it explicitly." >&2
         fi
     fi
 
     # Build output with optional PR and remote status
-    local -a output_args=("branch" "branch" "${current_branch}" "base_branch" "${base_branch}" "scope" "auto")
+    local -a output_args=("branch" "branch" "${current_branch}" "${BASE_FIELDS[@]}" "scope" "auto")
 
     if [[ -n "${associated_pr}" ]]; then
         output_args+=("associated_pr" "${associated_pr}")

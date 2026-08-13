@@ -9,6 +9,9 @@ setup() {
     SCRIPT="$PROJECT_ROOT/skills/review-code/scripts/inject-handler.sh"
     HANDLER_DIR="$PROJECT_ROOT/skills/review-code/handlers"
 
+    source "$PROJECT_ROOT/tests/helpers/gh-stub.bash"
+    install_default_gh_stub
+
     # Create a temporary git repository so parse-review-arg.sh works
     TEST_REPO=$(mktemp -d)
     cd "$TEST_REPO"
@@ -24,6 +27,7 @@ setup() {
 
 teardown() {
     rm -rf "$TEST_REPO"
+    remove_gh_stub_dir
 }
 
 # =============================================================================

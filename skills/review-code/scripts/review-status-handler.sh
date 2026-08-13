@@ -108,8 +108,10 @@ case "${ACTION}" in
             is_branch,
             is_current,
             base_branch,
+            base_source,
             reason
-        }'
+        }
+        + (if .base_lookup_degraded then {base_lookup_degraded} else {} end)'
         ;;
 
     "get-prompt-data")
@@ -129,8 +131,10 @@ case "${ACTION}" in
         session_get_all "${SESSION_ID}" | jq '{
             current_branch,
             base_branch,
+            base_source,
             has_uncommitted
-        }'
+        }
+        + (if .base_lookup_degraded then {base_lookup_degraded} else {} end)'
         ;;
 
     "get-prompt-pull-data")

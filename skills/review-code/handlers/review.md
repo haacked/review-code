@@ -68,7 +68,7 @@ From the session file JSON, extract these fields for building agent context:
 
 Mode-specific fields:
 - **PR mode:** `pr`: PR details (number, title, author, body, comments, etc.); `file_ref`: git ref for file access (present when reviewing from a different branch or via a provisioned worktree). When the review runs outside the PR's repo and a local clone is mapped in `repos.conf`, `git.working_dir` points at a detached worktree checked out to the PR. Otherwise (no mapping, provisioning failed, or the PR ref could not be fetched into an in-repo clone), `working_dir` is null and only the diff is available.
-- **Branch/commit/range modes:** `branch`, `base_branch`, `commit`, `range`
+- **Branch/commit/range modes:** `branch`, `base_branch`, `commit`, `range`. Branch mode also carries `base_source` (how the base was chosen: `parent-flag`, `pr-base`, `stack-parent`, or `default`) and `base_lookup_degraded: "true"`, present only when the PR-base lookup failed and the base consequently fell back to the default branch.
 - **Area-specific reviews:** `area`
 
 ### Load Conditional Instructions
@@ -641,6 +641,8 @@ mode: <mode>
 pr_number: <pr_number if applicable>
 org: <org>
 repo: <repo>
+base_branch: <base_branch if branch mode, omit otherwise>
+base_source: <base_source if branch mode, omit otherwise>
 review_commit: <pr.head_sha if PR mode, omit otherwise>
 scope:
   exploration_depth: <exploration_depth>
@@ -658,6 +660,10 @@ diff_tokens: <diff_tokens from session data>
 The `token_usage` block records per-step token consumption (agents, context explorer, validators, and other steps) and the aggregate total. Always include the `total` field as the sum of all steps in `$token_usage`.
 
 This metadata is used by the learning system to determine when the review was created. The `review_commit` field records the PR's HEAD SHA at review time, enabling drift detection when creating draft reviews later. The `diff_tokens` field is an estimated token count of the diff (~4 chars per token).
+
+If `mode` is `branch` and `base_source` is not `"default"`, add a scope note directly under the metadata header (before the Fix Summary and any chunked "Review Scope" note) so the reader can tell at a glance what the diff was compared against:
+
+> **Review Scope:** Reviewed against base `$base_branch` (<phrase matching `base_source`: "the open PR's base branch" / "the recorded stack parent" / "the `--parent` override">), not the repository default branch.
 
 **Narrative voice.** The Inline Comment Voice rules govern the comment bodies; the narrative you compose here (Overview, findings prose, per-agent sections, the metadata `reasoning` field) needs the same register. The voice agent rewrites finding bodies only and never sees this prose, so it is yours to get right. Write it the way you'd write a Slack summary to a colleague who has not read the diff and shouldn't have to decode anything: plain verbs, short sentences, one idea per sentence, no ceremony. Four tells to avoid outright: em dashes (restructure with a comma, colon, parentheses, or two sentences), bold inside a prose sentence (lead with the point instead), inflation vocabulary ("critical", "robust", "comprehensive", "leverage", "ensure", "It's not just X, it's Y"), and naming a category where the behavior belongs, whether that's a coined label ("the staleness window"), logic vocabulary ("vacuously true"), test-theory jargon ("weak positive assertion"), or pipeline vocabulary the author never sees ("corroborated", "sibling").
 

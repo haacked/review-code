@@ -5,6 +5,9 @@ setup() {
     PROJECT_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
     export PROJECT_ROOT
 
+    source "$PROJECT_ROOT/tests/helpers/gh-stub.bash"
+    install_default_gh_stub
+
     # Create a temporary git repository for testing
     TEST_REPO=$(mktemp -d)
     cd "$TEST_REPO"
@@ -23,6 +26,7 @@ setup() {
 teardown() {
     # Clean up test repository
     rm -rf "$TEST_REPO"
+    remove_gh_stub_dir
 }
 
 # =============================================================================
@@ -333,6 +337,61 @@ teardown() {
     base=$(echo "$output" | jq -r '.base_branch')
     [ "$branch" = "feature" ]
     [ "$base" = "main" ]
+}
+
+# =============================================================================
+# Base provenance tests (PR-base vs stack-parent vs default resolution)
+# =============================================================================
+
+@test "review-orchestrator.sh: branch mode carries pr-base provenance end-to-end" {
+    git checkout -q -b parent-branch
+    echo "p" > p.txt && git add p.txt && git commit -q -m "P"
+    git update-ref refs/remotes/origin/parent-branch HEAD
+
+    git checkout -q -b child-branch
+    echo "c" > c.txt && git add c.txt && git commit -q -m "C"
+
+    git checkout -q main
+
+    stub_gh_pr_list '[{"number":7,"baseRefName":"parent-branch"}]'
+
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" child-branch
+    [ "$status" -eq 0 ]
+
+    echo "$output" | jq -e '.base_source == "pr-base"' > /dev/null
+    echo "$output" | jq -e '.base_branch == "origin/parent-branch"' > /dev/null
+    echo "$output" | jq -e '.summary.base_source == "pr-base"' > /dev/null
+    display_summary=$(echo "$output" | jq -r '.display_summary')
+    [[ "$display_summary" == *"from PR base"* ]]
+}
+
+@test "review-orchestrator.sh: clean gh lookup omits base_lookup_degraded" {
+    git checkout -b feature
+    echo "feature" > feature.txt
+    git add feature.txt
+    git commit -m "Feature"
+    git checkout main
+
+    # Default stub: gh pr list returns "[]", exit 0 (clean, no PRs).
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" feature
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'has("base_lookup_degraded") | not' > /dev/null
+}
+
+@test "review-orchestrator.sh: gh lookup failure sets base_lookup_degraded" {
+    git checkout -b feature
+    echo "feature" > feature.txt
+    git add feature.txt
+    git commit -m "Feature"
+    git checkout main
+
+    stub_gh_pr_list --fail
+
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" feature
+    [ "$status" -eq 0 ]
+    degraded=$(echo "$output" | jq -r '.base_lookup_degraded')
+    [ "$degraded" = "true" ]
+    echo "$output" | jq -e '.base_source == "default"' > /dev/null
 }
 
 # =============================================================================
