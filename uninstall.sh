@@ -23,7 +23,11 @@ CLAUDE_DIR="${HOME}/.claude"
 SKILL_DIR="${CLAUDE_DIR}/skills/review-code"
 REVIEWS_DIR="${SKILL_DIR}/.reviews"
 # Installs that predate the dot-dir migration keep reviews in a visible dir.
-[[ -d "${REVIEWS_DIR}" ]] || REVIEWS_DIR="${SKILL_DIR}/reviews"
+# Prefer the legacy dir when it has content and the dot dir doesn't, so
+# preserve_reviews never skips real reviews behind an empty .reviews.
+if [[ -z "$(ls -A "${REVIEWS_DIR}" 2> /dev/null || true)" ]] && [[ -n "$(ls -A "${SKILL_DIR}/reviews" 2> /dev/null || true)" ]]; then
+    REVIEWS_DIR="${SKILL_DIR}/reviews"
+fi
 
 # PostHog Desktop agent directories remove_agents cleaned, reported in the
 # closing message.
