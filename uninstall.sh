@@ -22,12 +22,18 @@ NC='\033[0m'
 CLAUDE_DIR="${HOME}/.claude"
 SKILL_DIR="${CLAUDE_DIR}/skills/review-code"
 REVIEWS_DIR="${SKILL_DIR}/.reviews"
-# Installs that predate the dot-dir migration keep reviews in a visible dir.
-# Prefer the legacy dir when it has content and the dot dir doesn't, so
-# preserve_reviews never skips real reviews behind an empty .reviews.
-if [[ -z "$(ls -A "${REVIEWS_DIR}" 2> /dev/null || true)" ]] && [[ -n "$(ls -A "${SKILL_DIR}/reviews" 2> /dev/null || true)" ]]; then
-    REVIEWS_DIR="${SKILL_DIR}/reviews"
-fi
+# Installs that predate the dot-dir migration keep reviews in a visible dir,
+# and both can hold content at once: a stale session running the old SKILL.md
+# recreates reviews/ after bin/setup migrated to .reviews/. Back up every
+# directory that has content so the rm -rf in remove_skill never destroys
+# reviews the user asked to preserve. Legacy first so .reviews wins
+# collisions, matching the "keep the new copy" rule in migrate_state_dirs.
+REVIEW_DIRS=()
+for review_candidate in "${SKILL_DIR}/reviews" "${REVIEWS_DIR}"; do
+    if [[ -n "$(ls -A "${review_candidate}" 2> /dev/null || true)" ]]; then
+        REVIEW_DIRS+=("${review_candidate}")
+    fi
+done
 
 # PostHog Desktop agent directories remove_agents cleaned, reported in the
 # closing message.
@@ -141,18 +147,15 @@ remove_agents() {
 }
 
 preserve_reviews() {
-    # Check if there are reviews to preserve
-    if [[ ! -d "${REVIEWS_DIR}" ]]; then
-        return
-    fi
-    local dir_contents
-    dir_contents=$(ls -A "${REVIEWS_DIR}" 2> /dev/null) || true
-    if [[ -z "${dir_contents}" ]]; then
+    if [[ ${#REVIEW_DIRS[@]} -eq 0 ]]; then
         return
     fi
 
     echo ""
-    echo "Reviews found at: ${REVIEWS_DIR}"
+    local dir
+    for dir in "${REVIEW_DIRS[@]}"; do
+        echo "Reviews found at: ${dir}"
+    done
     read -p "Preserve reviews before uninstalling? [Y/n] " -n 1 -r
     echo ""
 
@@ -162,7 +165,9 @@ preserve_reviews() {
         # Copy contents into a visible reviews/ dir so the backup isn't a
         # hidden .reviews directory.
         mkdir -p "${backup_dir}/reviews"
-        cp -R "${REVIEWS_DIR}/." "${backup_dir}/reviews/"
+        for dir in "${REVIEW_DIRS[@]}"; do
+            cp -R "${dir}/." "${backup_dir}/reviews/"
+        done
         info "Reviews backed up to: ${backup_dir}/reviews"
     else
         warn "Reviews will be removed with skill directory"

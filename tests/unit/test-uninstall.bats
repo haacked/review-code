@@ -179,10 +179,12 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
-@test "uninstall.sh: falls back to legacy reviews dir when .reviews is absent" {
-    # Pre-migration installs keep reviews at ${SKILL_DIR}/reviews; the
-    # uninstaller must still find them there when .reviews doesn't exist.
-    run bash -c "grep -q 'REVIEWS_DIR=\"\${SKILL_DIR}/reviews\"' '$PROJECT_ROOT/uninstall.sh'"
+@test "uninstall.sh: backs up every review dir that has content" {
+    # reviews/ (pre-migration installs or stale-session strays) and .reviews/
+    # can both hold content at once; each populated dir must feed the backup.
+    run bash -c "grep -qF 'for review_candidate in \"\${SKILL_DIR}/reviews\" \"\${REVIEWS_DIR}\"' '$PROJECT_ROOT/uninstall.sh'"
+    [ "$status" -eq 0 ]
+    run bash -c "grep -qF 'REVIEW_DIRS+=(\"\${review_candidate}\")' '$PROJECT_ROOT/uninstall.sh'"
     [ "$status" -eq 0 ]
 }
 
