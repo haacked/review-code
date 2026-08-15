@@ -20,7 +20,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=helpers/date-helpers.sh
 source "${SCRIPT_DIR}/helpers/date-helpers.sh"
 
-MARKER_DIR="${REVIEW_CODE_MARKER_DIR:-${HOME}/.claude/skills/review-code/sessions}"
+MARKER_DIR="${REVIEW_CODE_MARKER_DIR:-${HOME}/.claude/skills/review-code/.sessions}"
 PENDING_RESUME_FILE="${MARKER_DIR}/.pending-resume"
 
 # 10-minute TTL matches the clear-marker so a stale resume can't auto-fire

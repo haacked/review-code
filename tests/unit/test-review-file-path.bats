@@ -12,13 +12,13 @@ setup() {
     TEST_TEMP_DIR=$(cd "$TEST_TEMP_DIR" && pwd -P)
     export HOME="$TEST_TEMP_DIR"
 
-    # Setup skill directory structure (reviews path is now fixed at ~/.claude/skills/review-code/reviews)
-    mkdir -p "$TEST_TEMP_DIR/.claude/skills/review-code/reviews"
+    # Setup skill directory structure (reviews path is now fixed at ~/.claude/skills/review-code/.reviews)
+    mkdir -p "$TEST_TEMP_DIR/.claude/skills/review-code/.reviews"
     mkdir -p "$TEST_TEMP_DIR/.claude/skills/review-code/context"
-    mkdir -p "$TEST_TEMP_DIR/.claude/skills/review-code/learnings"
+    mkdir -p "$TEST_TEMP_DIR/.claude/skills/review-code/.learnings"
 
     # Set expected review root path for tests
-    EXPECTED_REVIEW_ROOT="$TEST_TEMP_DIR/.claude/skills/review-code/reviews"
+    EXPECTED_REVIEW_ROOT="$TEST_TEMP_DIR/.claude/skills/review-code/.reviews"
 }
 
 teardown() {
@@ -149,8 +149,8 @@ teardown() {
     result=$("$SCRIPT" --org "myorg" --repo "myrepo" "test")
     file_path=$(echo "$result" | jq -r '.file_path')
 
-    # Check directory structure
-    [[ "$file_path" =~ reviews/myorg/myrepo/ ]]
+    # Check directory structure (dot-prefixed review root)
+    [[ "$file_path" =~ \.reviews/myorg/myrepo/ ]]
 }
 
 @test "path safety: directory is created" {
@@ -233,8 +233,8 @@ teardown() {
     result=$("$SCRIPT" --org "myorg" --repo "myrepo" "test")
     file_path=$(echo "$result" | jq -r '.file_path')
 
-    # Should use fixed path: ~/.claude/skills/review-code/reviews
-    [[ "$file_path" == "$TEST_TEMP_DIR/.claude/skills/review-code/reviews"* ]]
+    # Should use fixed path: ~/.claude/skills/review-code/.reviews
+    [[ "$file_path" == "$TEST_TEMP_DIR/.claude/skills/review-code/.reviews"* ]]
 }
 
 @test "path: review root is consistent" {

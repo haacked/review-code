@@ -24,7 +24,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLEAR_MARKER_SH="${SCRIPT_DIR}/clear-marker.sh"
 PENDING_RESUME_SH="${SCRIPT_DIR}/pending-resume.sh"
-LOG_FILE="${REVIEW_CODE_HOOK_LOG:-${HOME}/.claude/skills/review-code/sessions/.session-clear-hook.log}"
+LOG_FILE="${REVIEW_CODE_HOOK_LOG:-${HOME}/.claude/skills/review-code/.sessions/.session-clear-hook.log}"
 
 # Append one line per invocation so we can confirm the hook actually fires
 # on /clear and inspect what it emitted. Bounded to ~50 entries.

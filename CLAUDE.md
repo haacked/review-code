@@ -50,16 +50,18 @@ agents/                               # Review agent definitions
         languages/
         frameworks/
         orgs/
-    reviews/                          # Review outputs (org/repo/pr.md)
+    .reviews/                         # Review outputs (org/repo/pr.md)
         posthog/
             posthog/
                 pr-123.md
-    learnings/                        # Learning index
+    .learnings/                       # Learning index
         index.jsonl
         analyzed.json
+    .sessions/                        # Session state and pre-flight markers
+    .worktrees/                       # PR checkout worktrees (org/repo/pr-N)
 ```
 
-**Key insight:** The repo structure mirrors the installed structure. During setup, `skills/review-code/` is copied to `~/.claude/skills/review-code/`. User learnings applied to installed context are preserved through smart merge - new sections from base are added, but existing sections (which may contain learned patterns) are kept.
+**Key insight:** The repo structure mirrors the installed structure, except that runtime state (reviews, learnings, sessions, worktrees) is installed into dot-prefixed directories so skill scanners that ignore dot-directories don't count it against the skill's file budget (source `learnings/README.md` installs to `.learnings/README.md`). During setup, `skills/review-code/` is copied to `~/.claude/skills/review-code/`. User learnings applied to installed context are preserved through smart merge - new sections from base are added, but existing sections (which may contain learned patterns) are kept.
 
 ## Important: Edit Source Files Only
 

@@ -48,6 +48,11 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
+@test "setup: has migrate_state_dirs function" {
+    run bash -c "grep -q '^migrate_state_dirs()' '$PROJECT_ROOT/bin/setup'"
+    [ "$status" -eq 0 ]
+}
+
 @test "setup: has smart merge functions" {
     run bash -c "grep -q '^merge_markdown_sections()' '$PROJECT_ROOT/bin/setup'"
     [ "$status" -eq 0 ]
@@ -192,8 +197,14 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
+# Print the body of a top-level bin/setup function: its definition line
+# through the first closing brace at column zero.
+setup_function_body() {
+    awk -v fn="$1" 'index($0, fn "()") == 1 {f=1} f {print} /^}/ {if (f) exit}' "$PROJECT_ROOT/bin/setup"
+}
+
 @test "setup: install_skill copies uninstall script" {
-    run bash -c "awk '/^install_skill\(\)/{f=1} f{print} /^}/{if(f)exit}' '$PROJECT_ROOT/bin/setup' | grep -q 'uninstall.sh'"
+    run grep -q 'uninstall.sh' <<< "$(setup_function_body install_skill)"
     [ "$status" -eq 0 ]
 }
 
@@ -202,18 +213,27 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
-@test "setup: install_skill creates reviews directory" {
-    run bash -c "grep -A80 'install_skill()' '$PROJECT_ROOT/bin/setup' | grep -q 'reviews'"
+@test "setup: install_skill creates .reviews directory (not reviews)" {
+    body="$(setup_function_body install_skill)"
+    run grep -q 'dst_dir}/\.reviews' <<< "$body"
     [ "$status" -eq 0 ]
+    # Regression guard: the old non-dot directory must not come back
+    run grep -q 'dst_dir}/reviews' <<< "$body"
+    [ "$status" -ne 0 ]
 }
 
-@test "setup: install_skill creates learnings directory" {
-    run bash -c "grep -A80 'install_skill()' '$PROJECT_ROOT/bin/setup' | grep -q 'learnings'"
+@test "setup: install_skill creates .learnings directory (not learnings)" {
+    body="$(setup_function_body install_skill)"
+    run grep -q 'dst_dir}/\.learnings' <<< "$body"
     [ "$status" -eq 0 ]
+    # Regression guard: no destination path may use the old non-dot name.
+    # (Source paths like src_dir/learnings are fine - the repo layout is unchanged.)
+    run grep -q 'dst_dir}/learnings' <<< "$body"
+    [ "$status" -ne 0 ]
 }
 
 @test "setup: install_skill copies session hooks" {
-    run bash -c "awk '/^install_skill\(\)/{f=1} f{print} /^}/{if(f)exit}' '$PROJECT_ROOT/bin/setup' | grep -q 'session-hooks'"
+    run grep -q 'session-hooks' <<< "$(setup_function_body install_skill)"
     [ "$status" -eq 0 ]
 }
 
@@ -307,6 +327,144 @@ setup() {
 }
 
 # =============================================================================
+# State directory migration tests (reviews/ -> .reviews/, sessions/ ->
+# .sessions/, learnings/ -> .learnings/)
+# =============================================================================
+
+# Extract and run migrate_state_dirs from bin/setup against a temp skill dir.
+# Mirrors the executable-extraction pattern used for install_skill above.
+run_migrate_state_dirs() {
+    local skill_dir="$1"
+    run bash -c "
+        set -euo pipefail
+        info() { :; }
+        debug() { :; }
+        warn() { :; }
+        error() { :; }
+        SKILL_DIR='${skill_dir}'
+        source <(sed -n '/^migrate_state_dirs()/,/^}/p' '$PROJECT_ROOT/bin/setup')
+        migrate_state_dirs
+    "
+}
+
+@test "setup: migrate_state_dirs renames all three state dirs with nested content intact" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    skill_dir="${TEST_TEMP_DIR}/skill"
+    mkdir -p "${skill_dir}/reviews/org/repo"
+    echo "review body" > "${skill_dir}/reviews/org/repo/pr-1.md"
+    mkdir -p "${skill_dir}/sessions/review-code"
+    echo '{"session":1}' > "${skill_dir}/sessions/review-code/abc.json"
+    mkdir -p "${skill_dir}/learnings"
+    echo '{"id":1}' > "${skill_dir}/learnings/index.jsonl"
+
+    run_migrate_state_dirs "${skill_dir}"
+
+    [ "$status" -eq 0 ]
+    [ ! -e "${skill_dir}/reviews" ]
+    [ ! -e "${skill_dir}/sessions" ]
+    [ ! -e "${skill_dir}/learnings" ]
+    [ "$(cat "${skill_dir}/.reviews/org/repo/pr-1.md")" = "review body" ]
+    [ "$(cat "${skill_dir}/.sessions/review-code/abc.json")" = '{"session":1}' ]
+    [ "$(cat "${skill_dir}/.learnings/index.jsonl")" = '{"id":1}' ]
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
+@test "setup: migrate_state_dirs is a no-op on a fresh install" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    skill_dir="${TEST_TEMP_DIR}/skill"
+    mkdir -p "${skill_dir}"
+
+    run_migrate_state_dirs "${skill_dir}"
+
+    [ "$status" -eq 0 ]
+    [ ! -e "${skill_dir}/.reviews" ]
+    [ ! -e "${skill_dir}/.sessions" ]
+    [ ! -e "${skill_dir}/.learnings" ]
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
+@test "setup: migrate_state_dirs is idempotent" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    skill_dir="${TEST_TEMP_DIR}/skill"
+    mkdir -p "${skill_dir}/reviews/org/repo"
+    echo "review body" > "${skill_dir}/reviews/org/repo/pr-1.md"
+
+    run_migrate_state_dirs "${skill_dir}"
+    [ "$status" -eq 0 ]
+
+    run_migrate_state_dirs "${skill_dir}"
+    [ "$status" -eq 0 ]
+
+    [ ! -e "${skill_dir}/reviews" ]
+    [ "$(cat "${skill_dir}/.reviews/org/repo/pr-1.md")" = "review body" ]
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
+@test "setup: migrate_state_dirs merges old dir into existing new dir" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    skill_dir="${TEST_TEMP_DIR}/skill"
+    mkdir -p "${skill_dir}/reviews" "${skill_dir}/.reviews"
+    # Unique old file: must move into the new dir
+    echo "only in old" > "${skill_dir}/reviews/unique.md"
+    # Colliding *.jsonl: old must be appended to new (2 + 3 = 5 lines)
+    printf 'old line 1\nold line 2\n' > "${skill_dir}/reviews/token-usage.jsonl"
+    printf 'new line 1\nnew line 2\nnew line 3\n' > "${skill_dir}/.reviews/token-usage.jsonl"
+    # Colliding non-jsonl: the new dir's copy wins
+    echo "old copy" > "${skill_dir}/reviews/collision.md"
+    echo "new copy" > "${skill_dir}/.reviews/collision.md"
+
+    run_migrate_state_dirs "${skill_dir}"
+
+    [ "$status" -eq 0 ]
+    [ "$(cat "${skill_dir}/.reviews/unique.md")" = "only in old" ]
+    [ "$(wc -l < "${skill_dir}/.reviews/token-usage.jsonl")" -eq 5 ]
+    grep -q "old line 2" "${skill_dir}/.reviews/token-usage.jsonl"
+    grep -q "new line 3" "${skill_dir}/.reviews/token-usage.jsonl"
+    [ "$(cat "${skill_dir}/.reviews/collision.md")" = "new copy" ]
+    [ ! -e "${skill_dir}/reviews" ]
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
+@test "setup: migrate_state_dirs carries dot-files when merging sessions" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    skill_dir="${TEST_TEMP_DIR}/skill"
+    # Pre-existing .sessions forces the merge path, where a bare glob
+    # (as opposed to find) would silently drop dot-files like .pending-clear.
+    mkdir -p "${skill_dir}/sessions" "${skill_dir}/.sessions"
+    touch "${skill_dir}/sessions/.pending-clear"
+
+    run_migrate_state_dirs "${skill_dir}"
+
+    [ "$status" -eq 0 ]
+    [ -f "${skill_dir}/.sessions/.pending-clear" ]
+    [ ! -e "${skill_dir}/sessions" ]
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
+@test "setup: migrate_state_dirs folds stale root token-usage.jsonl into .reviews" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    skill_dir="${TEST_TEMP_DIR}/skill"
+    mkdir -p "${skill_dir}/.reviews"
+    printf 'live line 1\n' > "${skill_dir}/.reviews/token-usage.jsonl"
+    printf 'stale line 1\nstale line 2\n' > "${skill_dir}/token-usage.jsonl"
+
+    run_migrate_state_dirs "${skill_dir}"
+
+    [ "$status" -eq 0 ]
+    [ ! -e "${skill_dir}/token-usage.jsonl" ]
+    [ "$(wc -l < "${skill_dir}/.reviews/token-usage.jsonl")" -eq 3 ]
+    grep -q "live line 1" "${skill_dir}/.reviews/token-usage.jsonl"
+    grep -q "stale line 2" "${skill_dir}/.reviews/token-usage.jsonl"
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
+# =============================================================================
 # Workflow tests
 # =============================================================================
 
@@ -328,6 +486,20 @@ setup() {
 @test "setup: main calls install_skill" {
     run bash -c "grep -A100 '^main()' '$PROJECT_ROOT/bin/setup' | grep -q 'install_skill'"
     [ "$status" -eq 0 ]
+}
+
+@test "setup: main calls migrate_state_dirs before install_skill" {
+    # Order matters: migration must run before install_skill creates the
+    # dot-prefixed directories, or a pre-migration install would merge
+    # instead of taking the cheap whole-directory rename.
+    main_body=$(setup_function_body main)
+    # Anchor to bare invocation lines so comments mentioning the function
+    # names don't count.
+    migrate_line=$(echo "$main_body" | grep -n '^[[:space:]]*migrate_state_dirs$' | head -1 | cut -d: -f1)
+    install_line=$(echo "$main_body" | grep -n '^[[:space:]]*install_skill$' | head -1 | cut -d: -f1)
+    [ -n "$migrate_line" ]
+    [ -n "$install_line" ]
+    [ "$migrate_line" -lt "$install_line" ]
 }
 
 @test "setup: main calls install_agents" {

@@ -167,7 +167,7 @@ Both methods will:
 - Copy agent definitions to `~/.claude/agents/`
 - Install the uninstaller at `~/.claude/bin/uninstall-review-code.sh`
 - Smart-merge context files so user learnings are preserved across updates
-- Prompt you to choose where to save code reviews (default: `~/dev/ai/reviews`)
+- Migrate runtime state (reviews, learnings, sessions) into dot-prefixed directories
 - Show permissions guide for Claude Code
 
 ## Usage
@@ -478,24 +478,18 @@ Loads repo-specific workflows and requirements. Add your own in `context/orgs/{o
 
 ### Review Output Path
 
-Reviews are saved to a configurable location. The default is `~/dev/ai/reviews/{org}/{repo}/{pr-number-or-branch}.md`.
-
-To change the path, edit `~/.claude/skills/review-code/.env`:
-
-```bash
-REVIEW_ROOT_PATH="$HOME/my-custom-path/reviews"
-```
-
-The directory structure will be created automatically:
+Reviews are saved to `~/.claude/skills/review-code/.reviews/{org}/{repo}/{pr-number-or-branch}.md`. The directory structure is created automatically:
 
 ```text
-~/my-custom-path/reviews/
+~/.claude/skills/review-code/.reviews/
 ├── org-name/
 │   ├── repo-name/
 │   │   ├── pr-123.md
 │   │   ├── pr-456.md
 │   │   └── feature-branch.md
 ```
+
+Like the other runtime-state directories (`.learnings/`, `.sessions/`, `.worktrees/`), the reviews directory is dot-prefixed so skill scanners that ignore dot-directories don't count review outputs against the skill's file budget.
 
 ## Testing
 
@@ -602,11 +596,10 @@ Your review files are preserved unless you explicitly choose to remove the conte
 - Check that org name matches directory: `context/orgs/{org-name}/`
 - Org names are case-insensitive and normalized to lowercase
 
-### Config file not being read
+### Reviews not being saved
 
-- Check file exists: `ls -la ~/.claude/skills/review-code/.env`
-- Check syntax: `cat ~/.claude/skills/review-code/.env`
-- Ensure `REVIEW_ROOT_PATH` is set correctly
+- Reviews are written to `~/.claude/skills/review-code/.reviews/{org}/{repo}/`
+- Check the directory exists and is writable: `ls -la ~/.claude/skills/review-code/.reviews`
 
 ## Documentation
 

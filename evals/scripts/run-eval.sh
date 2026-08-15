@@ -34,10 +34,12 @@ REPO_ROOT="$(cd "${EVALS_DIR}/.." && pwd)"
 TARGET_REPO="${EVAL_TARGET_REPO:-${REPO_ROOT}}"
 REGISTRY="${EVALS_DIR}/benchmarks/registry.json"
 RESULTS_DIR="${EVALS_DIR}/results"
-SKILL_REVIEWS_DIR="${HOME}/.claude/skills/review-code/reviews"
 BASELINE_PROMPT="${EVALS_DIR}/prompts/baseline.md"
 
 source "${SCRIPT_DIR}/helpers/eval-helpers.sh"
+# shellcheck source=../../skills/review-code/scripts/helpers/config-helpers.sh
+source "${REPO_ROOT}/skills/review-code/scripts/helpers/config-helpers.sh"
+SKILL_REVIEWS_DIR="$(get_review_root)"
 
 # Build the claude -p prompt that runs the review-code skill.
 # `claude -p` does not register personal skills as slash commands (verified on

@@ -12,9 +12,8 @@ source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 source "${SCRIPT_DIR}/helpers/config-helpers.sh"
 #
 # Configuration:
-#   Reads review root path from ~/.claude/skills/review-code/.env
-#   Falls back to ~/.claude/review-code.env for backward compatibility
-#   Defaults to ~/dev/ai/reviews if no config file exists
+#   Reviews live under the fixed root from get_review_root() in
+#   helpers/config-helpers.sh (~/.claude/skills/review-code/.reviews)
 #
 # Arguments:
 #   --org ORG: GitHub organization (optional, extracts from git if not provided)
@@ -32,12 +31,12 @@ source "${SCRIPT_DIR}/helpers/config-helpers.sh"
 #     "repo": "posthog",
 #     "branch": "main",
 #     "pr_number": "123",
-#     "file_path": "{REVIEW_ROOT_PATH}/posthog/posthog/pr-123.md",
+#     "file_path": "{review_root}/posthog/posthog/pr-123.md",
 #     "file_exists": true,
 #     "needs_rename": false,
 #     "old_path": null,
 #     "has_branch_review": true,
-#     "branch_review_path": "{REVIEW_ROOT_PATH}/posthog/posthog/my-feature.md"
+#     "branch_review_path": "{review_root}/posthog/posthog/my-feature.md"
 #   }
 
 set -euo pipefail

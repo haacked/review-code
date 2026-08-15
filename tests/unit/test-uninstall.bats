@@ -174,8 +174,17 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
-@test "uninstall.sh: uses fixed REVIEWS_DIR path" {
-    run bash -c "grep -q 'REVIEWS_DIR=\"\${SKILL_DIR}/reviews\"' '$PROJECT_ROOT/uninstall.sh'"
+@test "uninstall.sh: uses fixed dot-prefixed REVIEWS_DIR path" {
+    run bash -c "grep -q 'REVIEWS_DIR=\"\${SKILL_DIR}/\.reviews\"' '$PROJECT_ROOT/uninstall.sh'"
+    [ "$status" -eq 0 ]
+}
+
+@test "uninstall.sh: backs up every review dir that has content" {
+    # reviews/ (pre-migration installs or stale-session strays) and .reviews/
+    # can both hold content at once; each populated dir must feed the backup.
+    run bash -c "grep -qF 'for review_candidate in \"\${SKILL_DIR}/reviews\" \"\${REVIEWS_DIR}\"' '$PROJECT_ROOT/uninstall.sh'"
+    [ "$status" -eq 0 ]
+    run bash -c "grep -qF 'REVIEW_DIRS+=(\"\${review_candidate}\")' '$PROJECT_ROOT/uninstall.sh'"
     [ "$status" -eq 0 ]
 }
 

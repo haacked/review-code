@@ -48,7 +48,7 @@ For **"missed" findings** (other reviewer found, Claude missed), show file, line
   2. "No, too specific": One-off case, not worth generalizing
   3. "Skip": Don't record this learning
 
-**3. Record learnings.** For each response other than "Skip", append a record to `~/.claude/skills/review-code/learnings/index.jsonl`:
+**3. Record learnings.** For each response other than "Skip", append a record to `~/.claude/skills/review-code/.learnings/index.jsonl`:
 
 ```json
 {
@@ -72,7 +72,7 @@ For **"missed" findings** (other reviewer found, Claude missed), show file, line
 }
 ```
 
-**4. Mark the PR as analyzed.** Read `~/.claude/skills/review-code/learnings/analyzed.json` (create `{}` if missing). Extract `org` and `repo` from `learn_data`. Merge `{"<org>/<repo>": {"<pr_number>": "<timestamp>"}}` into the existing data and write it back.
+**4. Mark the PR as analyzed.** Read `~/.claude/skills/review-code/.learnings/analyzed.json` (create `{}` if missing). Extract `org` and `repo` from `learn_data`. Merge `{"<org>/<repo>": {"<pr_number>": "<timestamp>"}}` into the existing data and write it back.
 
 **5. Wrap up.** Report the counts of learnings recorded by type, and point at `/review-code learn --apply` for updating context files once patterns accumulate.
 

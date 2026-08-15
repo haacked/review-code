@@ -2,12 +2,16 @@
 # Configuration helpers
 # Provides path resolution for the review-code skill
 #
-# All paths are now relative to the skill directory:
+# All paths are relative to the skill directory:
 #   ~/.claude/skills/review-code/
 #     context/     - Language, framework, and org context files
-#     reviews/     - Review output files (org/repo/pr.md)
-#     learnings/   - Learning index
+#     .reviews/    - Review output files (org/repo/pr.md)
+#     .learnings/  - Learning index
 #     scripts/     - Helper scripts
+#
+# Runtime state (reviews, learnings, sessions, worktrees) lives in
+# dot-prefixed directories so skill scanners that ignore dot-directories
+# don't count it against the skill's file budget.
 
 # Get the skill installation directory
 # Uses HOME at call time to support testing with alternate HOME values
@@ -23,7 +27,7 @@ get_skill_dir() {
 # Returns:
 #   The review root path on stdout
 get_review_root() {
-    echo "$(get_skill_dir)/reviews"
+    echo "$(get_skill_dir)/.reviews"
 }
 
 # Get the context path (where context files are stored)
@@ -47,5 +51,5 @@ get_context_path() {
 # Returns:
 #   The learnings directory path on stdout
 get_learnings_dir() {
-    echo "$(get_skill_dir)/learnings"
+    echo "$(get_skill_dir)/.learnings"
 }
