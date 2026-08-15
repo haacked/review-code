@@ -7,7 +7,7 @@
 #
 # Description:
 #   Analyzes a PR's final state to learn from review outcomes:
-#   1. Loads Claude's review notes from ~/dev/ai/reviews/{org}/{repo}/pr-{number}.md
+#   1. Loads Claude's review notes from ~/.claude/skills/review-code/.reviews/{org}/{repo}/pr-{number}.md
 #   2. Fetches GitHub review comments (changes requested / resolved threads)
 #   3. Gets commit history after reviews were posted
 #   4. Cross-references to determine outcomes

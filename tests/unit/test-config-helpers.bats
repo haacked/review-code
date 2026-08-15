@@ -2,11 +2,13 @@
 # Tests for lib/helpers/config-helpers.sh
 #
 # Note: The config-helpers module no longer uses config files.
-# Paths are now fixed relative to the skill directory:
+# Paths are now fixed relative to the skill directory. Runtime state lives
+# in dot-prefixed directories so skill scanners that skip dot-directories
+# ignore it:
 #   ~/.claude/skills/review-code/
 #     context/     - Language, framework, and org context files
-#     reviews/     - Review output files (org/repo/pr.md)
-#     learnings/   - Learning index
+#     .reviews/    - Review output files (org/repo/pr.md)
+#     .learnings/  - Learning index
 
 setup() {
     # Get paths
@@ -36,7 +38,7 @@ teardown() {
     HOME="$FAKE_HOME" run get_review_root
 
     [ "$status" -eq 0 ]
-    [ "$output" = "$FAKE_HOME/.claude/skills/review-code/reviews" ]
+    [ "$output" = "$FAKE_HOME/.claude/skills/review-code/.reviews" ]
 }
 
 @test "get_review_root: path is consistent across calls" {
@@ -64,7 +66,7 @@ EOF
 
     [ "$status" -eq 0 ]
     # Should return fixed path, not config value
-    [ "$output" = "$FAKE_HOME/.claude/skills/review-code/reviews" ]
+    [ "$output" = "$FAKE_HOME/.claude/skills/review-code/.reviews" ]
 }
 
 # === get_context_path ===
@@ -100,7 +102,7 @@ EOF
     HOME="$FAKE_HOME" run get_learnings_dir
 
     [ "$status" -eq 0 ]
-    [ "$output" = "$FAKE_HOME/.claude/skills/review-code/learnings" ]
+    [ "$output" = "$FAKE_HOME/.claude/skills/review-code/.learnings" ]
 }
 
 @test "get_learnings_dir: path is consistent across calls" {

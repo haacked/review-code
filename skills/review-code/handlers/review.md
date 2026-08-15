@@ -708,7 +708,7 @@ In debug mode, save the stage `12-token-usage` artifacts (see `review-debug.md`)
 
 After saving the review, append a line to a central token usage log. This tracks token counts across reviews over time.
 
-Derive the log path from the review file's directory: take the parent of the `org/repo/` directory (i.e., the review root) and append `token-usage.jsonl`. For example, if `$review_file` is `~/dev/ai/reviews/posthog/posthog/pr-123.md`, the log path is `~/dev/ai/reviews/token-usage.jsonl`.
+Derive the log path from the review file's directory: take the parent of the `org/repo/` directory (i.e., the review root) and append `token-usage.jsonl`. For example, if `$review_file` is `~/.claude/skills/review-code/.reviews/posthog/posthog/pr-123.md`, the log path is `~/.claude/skills/review-code/.reviews/token-usage.jsonl`.
 
 In practice, this is the great-grandparent directory of `$review_file` (three directories up):
 

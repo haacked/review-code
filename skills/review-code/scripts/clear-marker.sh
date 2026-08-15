@@ -18,7 +18,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=helpers/date-helpers.sh
 source "${SCRIPT_DIR}/helpers/date-helpers.sh"
 
-MARKER_DIR="${REVIEW_CODE_MARKER_DIR:-${HOME}/.claude/skills/review-code/sessions}"
+MARKER_DIR="${REVIEW_CODE_MARKER_DIR:-${HOME}/.claude/skills/review-code/.sessions}"
 MARKER_FILE="${MARKER_DIR}/.pending-clear"
 MARKER_TTL_SECONDS=600
 

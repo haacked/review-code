@@ -145,11 +145,13 @@ install_skill() {
     local src_dir="${SCRIPT_DIR}/skills/review-code"
     local dst_dir="${SKILL_DIR}"
 
-    # Create skill directory structure
+    # Create skill directory structure. Runtime-state dirs are dot-prefixed
+    # so skill scanners that ignore dot-directories don't count their
+    # contents against the skill's file budget.
     mkdir -p "${dst_dir}/scripts/helpers"
     mkdir -p "${dst_dir}/scripts/session-hooks"
-    mkdir -p "${dst_dir}/reviews"
-    mkdir -p "${dst_dir}/learnings"
+    mkdir -p "${dst_dir}/.reviews"
+    mkdir -p "${dst_dir}/.learnings"
 
     # Copy SKILL.md
     local skill_src="${src_dir}/SKILL.md"
@@ -198,8 +200,8 @@ install_skill() {
     fi
 
     # Copy learnings README if not exists
-    if [[ -f "${src_dir}/learnings/README.md" ]] && [[ ! -f "${dst_dir}/learnings/README.md" ]]; then
-        cp "${src_dir}/learnings/README.md" "${dst_dir}/learnings/README.md"
+    if [[ -f "${src_dir}/learnings/README.md" ]] && [[ ! -f "${dst_dir}/.learnings/README.md" ]]; then
+        cp "${src_dir}/learnings/README.md" "${dst_dir}/.learnings/README.md"
     fi
 
     # Copy uninstall script to main bin (not in skill folder)
@@ -601,6 +603,57 @@ cleanup_old_config() {
     done
 }
 
+# Migrate pre-dot runtime-state directories (reviews/, sessions/, learnings/)
+# to their dot-prefixed names so skill scanners that ignore dot-directories
+# skip runtime state. Idempotent: no-op when the old directories are absent.
+# When both old and new exist (a re-run, or a stale session that loaded the
+# old SKILL.md recreated an old directory), merge old into new: move
+# non-colliding files, append colliding *.jsonl files (concatenation-safe),
+# and keep the new copy for other collisions.
+migrate_state_dirs() {
+    local name old_dir new_dir
+    for name in reviews sessions learnings; do
+        old_dir="${SKILL_DIR}/${name}"
+        new_dir="${SKILL_DIR}/.${name}"
+        [[ -d "${old_dir}" ]] || continue
+
+        if [[ ! -e "${new_dir}" ]]; then
+            mv "${old_dir}" "${new_dir}"
+            info "Migrated ${name}/ → .${name}/"
+            continue
+        fi
+
+        # Merge file by file with find: sessions/ holds dot-files
+        # (.pending-clear, .pending-resume) that bare globs would miss.
+        local src dst rel
+        while IFS= read -r -d '' src; do
+            rel="${src#"${old_dir}"/}"
+            dst="${new_dir}/${rel}"
+            if [[ ! -e "${dst}" ]]; then
+                mkdir -p "$(dirname "${dst}")"
+                mv "${src}" "${dst}"
+            elif [[ "${src}" == *.jsonl ]]; then
+                cat "${src}" >> "${dst}"
+                rm "${src}"
+            else
+                rm "${src}"
+            fi
+        done < <(find "${old_dir}" -type f -print0 || true)
+        rm -rf "${old_dir}"
+        info "Merged ${name}/ into existing .${name}/"
+    done
+
+    # Fold a legacy token-usage.jsonl at the skill root into the live log
+    # inside .reviews/.
+    local stale_log="${SKILL_DIR}/token-usage.jsonl"
+    if [[ -f "${stale_log}" ]]; then
+        mkdir -p "${SKILL_DIR}/.reviews"
+        cat "${stale_log}" >> "${SKILL_DIR}/.reviews/token-usage.jsonl"
+        rm "${stale_log}"
+        info "Merged legacy token-usage.jsonl into .reviews/token-usage.jsonl"
+    fi
+}
+
 # Report PR review worktrees present under the skill's worktree root.
 # Includes both active (in-flight reviews) and orphan (crashed reviews) entries
 # — distinguishing them reliably would require cross-referencing live sessions.
@@ -728,6 +781,11 @@ main() {
     # content lives in react.md and kea.md.
     rm -f "${SKILL_DIR}/context/frameworks/react-kea.md"
 
+    # Move pre-dot runtime state to the dot-prefixed names install_skill
+    # expects. Must run before install_skill so a first migration is a plain
+    # rename rather than a merge into freshly created empty dirs.
+    migrate_state_dirs
+
     # Install components
     echo ""
     info "Installing review-code components…"
@@ -764,7 +822,7 @@ main() {
         echo "  - Agents (PostHog Desktop): ${posthog_agent_dir}/"
     done
     echo "  - Context: ${SKILL_DIR}/context/"
-    echo "  - Reviews: ${SKILL_DIR}/reviews/"
+    echo "  - Reviews: ${SKILL_DIR}/.reviews/"
     echo ""
     echo "To update: Run bin/setup again"
     echo "To uninstall: Run uninstall.sh"

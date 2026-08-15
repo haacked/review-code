@@ -174,7 +174,14 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
-@test "uninstall.sh: uses fixed REVIEWS_DIR path" {
+@test "uninstall.sh: uses fixed dot-prefixed REVIEWS_DIR path" {
+    run bash -c "grep -q 'REVIEWS_DIR=\"\${SKILL_DIR}/\.reviews\"' '$PROJECT_ROOT/uninstall.sh'"
+    [ "$status" -eq 0 ]
+}
+
+@test "uninstall.sh: falls back to legacy reviews dir when .reviews is absent" {
+    # Pre-migration installs keep reviews at ${SKILL_DIR}/reviews; the
+    # uninstaller must still find them there when .reviews doesn't exist.
     run bash -c "grep -q 'REVIEWS_DIR=\"\${SKILL_DIR}/reviews\"' '$PROJECT_ROOT/uninstall.sh'"
     [ "$status" -eq 0 ]
 }

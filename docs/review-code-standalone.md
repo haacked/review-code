@@ -55,7 +55,7 @@ cd ~/.review-code
 
 Both methods will:
 
-- Prompt you to choose where to save code reviews (default: `~/dev/ai/reviews`)
+- Store review outputs at `~/.claude/skills/review-code/.reviews/`
 - Complete installation in seconds
 
 ### Usage
@@ -190,18 +190,10 @@ Loads repo-specific workflows and requirements:
 
 ### Review Output Path
 
-Reviews are saved to a configurable location. The default is `~/dev/ai/reviews/{org}/{repo}/{pr-number-or-branch}.md`.
-
-To change the path, edit `~/.claude/skills/review-code/.env`:
-
-```bash
-REVIEW_ROOT_PATH="$HOME/my-custom-path/reviews"
-```
-
-The directory structure will be created automatically:
+Reviews are saved to `~/.claude/skills/review-code/.reviews/{org}/{repo}/{pr-number-or-branch}.md`. The directory structure is created automatically:
 
 ```text
-~/my-custom-path/reviews/
+~/.claude/skills/review-code/.reviews/
 ├── org-name/
 │   ├── repo-name/
 │   │   ├── pr-123.md
@@ -271,11 +263,10 @@ Helper scripts and context files remain in `~/.dotfiles` for future use.
 - Check that org name matches directory: `~/.review-code/context/orgs/{org-name}/`
 - Org names are case-insensitive and normalized to lowercase
 
-### Config file not being read
+### Reviews not being saved
 
-- Check file exists: `ls -la ~/.claude/skills/review-code/.env`
-- Check syntax: `cat ~/.claude/skills/review-code/.env`
-- Ensure `REVIEW_ROOT_PATH` is set correctly
+- Reviews are written to `~/.claude/skills/review-code/.reviews/{org}/{repo}/`
+- Check the directory exists and is writable: `ls -la ~/.claude/skills/review-code/.reviews`
 
 ## Next Steps
 
