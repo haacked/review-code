@@ -12,11 +12,15 @@
 #     exit 1 on fetch or worktree failure (caller falls back to diff-only)
 #
 #   pr-worktree.sh teardown <org> <repo> <pr_number> <local_clone>
-#     Removes the worktree, including one an external tool has locked. Keeps
-#     the ref (trivially small; speeds up re-reviews of the same PR). No error
-#     if the worktree is already gone. Leaves the worktree untouched if it has
-#     modified or untracked files, so in-progress edits are never destroyed;
-#     a checkout that only reports deletions is removed.
+#     Removes the worktree whatever state it is in, including one an external
+#     tool has locked and one with uncommitted edits. Keeps the ref (trivially
+#     small; speeds up re-reviews of the same PR). No error if the worktree is
+#     already gone.
+#
+#     These worktrees are orchestrator-owned scratch, not a place to work: only
+#     provision creates them, always at <org>/<repo>/pr-<N> under the skill's
+#     worktree root, and always as a detached checkout of a PR head. See
+#     teardown for why removal is unconditional.
 #
 # Both commands serialize on a per-org/repo mkdir-based lock before touching
 # the local clone, since concurrent `git fetch`/`git worktree add|remove`
@@ -239,29 +243,11 @@ teardown() {
         return 0
     fi
 
-    # force_remove_worktree discards state and overrides locks, so this check is
-    # the only guard for in-progress edits: leave the worktree alone when it has
-    # modified or untracked files.
-    local status_output
-    if ! status_output=$(git -C "${path}" status --porcelain --untracked-files=normal 2>&1); then
-        log "Leaving worktree ${path} in place (couldn't check for uncommitted changes)."
-        return 0
-    fi
-    # Deleted tracked files are recoverable from the ref we checked out;
-    # modified and untracked ones aren't, so only those block removal. A
-    # checkout whose files were deleted out from under it (an interrupted
-    # teardown, an external cleaner) reports every tracked path as deleted, and
-    # nothing would clear it short of re-reviewing that same PR.
-    # `|| true` because grep exits 1 once everything filters out. Don't switch
-    # to `grep -qv`: an empty status still feeds the herestring one blank line,
-    # which reads as unsaved work.
-    local unsaved_work
-    unsaved_work=$(grep -vE '^( D|D )' <<< "${status_output}" || true)
-    if [[ -n "${unsaved_work}" ]]; then
-        log "Leaving worktree ${path} in place (has uncommitted changes)."
-        return 0
-    fi
-
+    # Removal is unconditional, dirty checkout or not. Provision owns this
+    # directory and its reuse path already force-removes and recreates the
+    # worktree as soon as the checkout is too dirty to check out over, so
+    # declining here would only postpone the same discard until the next review
+    # of the same PR, and leave an orphan on disk until then.
     log "Removing worktree ${path}…"
     force_remove_worktree "${local_clone}" "${path}"
     # Best-effort cleanup of empty ancestor directories.

@@ -20,7 +20,10 @@ setup() {
     git -C "$seed" config user.email "test@example.com"
     git -C "$seed" config user.name "Test User"
     echo "hello" > "$seed/file.txt"
-    git -C "$seed" add file.txt
+    # A second tracked file so a test can stage a deletion on one file while
+    # leaving another modified; one file can only be in one porcelain state.
+    echo "second" > "$seed/second.txt"
+    git -C "$seed" add file.txt second.txt
     git -C "$seed" commit --quiet -m "initial"
     git -C "$seed" branch -M main
     git -C "$seed" remote add origin "$BARE_ORIGIN"
@@ -341,33 +344,19 @@ EOF
     [[ "$output" != *"$wt_path"* ]]
 }
 
-@test "pr-worktree teardown: leaves a worktree with uncommitted changes in place" {
+@test "pr-worktree teardown: removes a worktree that is modified, deleted and untracked all at once" {
     run bash -c "'$SCRIPT' provision \"\$@\" 2>/dev/null" _ myorg myrepo 42 "$CLONE_DIR"
     [ "$status" -eq 0 ]
     local wt_path
     wt_path=$(echo "$output" | jq -r '.worktree_path')
 
-    # Simulate in-progress edits, e.g. a reviewer applying a suggested fix.
+    # Three dirty states in one checkout, each of which used to stop removal on
+    # its own: a modified tracked file (` M`), a staged deletion (`D `, the form
+    # a checkout that lost its index reports for every path), and an untracked
+    # file (`??`). None may stop removal, or the worktree becomes an orphan.
     echo "uncommitted edit" >> "$wt_path/file.txt"
-
-    run "$SCRIPT" teardown myorg myrepo 42 "$CLONE_DIR"
-    [ "$status" -eq 0 ]
-    [ -d "$wt_path" ]
-
-    run git -C "$CLONE_DIR" worktree list --porcelain
-    [[ "$output" == *"$wt_path"* ]]
-}
-
-@test "pr-worktree teardown: removes a worktree whose tracked files were deleted" {
-    run bash -c "'$SCRIPT' provision \"\$@\" 2>/dev/null" _ myorg myrepo 42 "$CLONE_DIR"
-    [ "$status" -eq 0 ]
-    local wt_path
-    wt_path=$(echo "$output" | jq -r '.worktree_path')
-
-    # An interrupted teardown (or an external cleaner) can delete the checkout
-    # while leaving the registration behind. Every tracked path then reports as
-    # deleted, which is not work anyone wants preserved.
-    rm -f "$wt_path/file.txt"
+    git -C "$wt_path" rm --quiet second.txt
+    echo "scratch notes" > "$wt_path/untracked.txt"
 
     run "$SCRIPT" teardown myorg myrepo 42 "$CLONE_DIR"
     [ "$status" -eq 0 ]
@@ -375,52 +364,6 @@ EOF
 
     run git -C "$CLONE_DIR" worktree list --porcelain
     [[ "$output" != *"$wt_path"* ]]
-}
-
-@test "pr-worktree teardown: removes a worktree whose deletions are staged" {
-    run bash -c "'$SCRIPT' provision \"\$@\" 2>/dev/null" _ myorg myrepo 42 "$CLONE_DIR"
-    [ "$status" -eq 0 ]
-    local wt_path
-    wt_path=$(echo "$output" | jq -r '.worktree_path')
-
-    # Losing the index reports every path as staged-deleted (`D `) rather than
-    # `` D``, so the filter has to cover both forms.
-    git -C "$wt_path" rm --quiet file.txt
-
-    run "$SCRIPT" teardown myorg myrepo 42 "$CLONE_DIR"
-    [ "$status" -eq 0 ]
-    [ ! -d "$wt_path" ]
-}
-
-@test "pr-worktree teardown: leaves a worktree with deletions plus an untracked file in place" {
-    run bash -c "'$SCRIPT' provision \"\$@\" 2>/dev/null" _ myorg myrepo 42 "$CLONE_DIR"
-    [ "$status" -eq 0 ]
-    local wt_path
-    wt_path=$(echo "$output" | jq -r '.worktree_path')
-
-    rm -f "$wt_path/file.txt"
-    echo "scratch notes" > "$wt_path/untracked.txt"
-
-    run "$SCRIPT" teardown myorg myrepo 42 "$CLONE_DIR"
-    [ "$status" -eq 0 ]
-    [ -d "$wt_path" ]
-    [ -f "$wt_path/untracked.txt" ]
-}
-
-@test "pr-worktree teardown: leaves a worktree with untracked files in place" {
-    run bash -c "'$SCRIPT' provision \"\$@\" 2>/dev/null" _ myorg myrepo 42 "$CLONE_DIR"
-    [ "$status" -eq 0 ]
-    local wt_path
-    wt_path=$(echo "$output" | jq -r '.worktree_path')
-
-    echo "scratch notes" > "$wt_path/untracked.txt"
-
-    run "$SCRIPT" teardown myorg myrepo 42 "$CLONE_DIR"
-    [ "$status" -eq 0 ]
-    [ -d "$wt_path" ]
-
-    run git -C "$CLONE_DIR" worktree list --porcelain
-    [[ "$output" == *"$wt_path"* ]]
 }
 
 # =============================================================================
