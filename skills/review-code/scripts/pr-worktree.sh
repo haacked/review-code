@@ -12,10 +12,10 @@
 #     exit 1 on fetch or worktree failure (caller falls back to diff-only)
 #
 #   pr-worktree.sh teardown <org> <repo> <pr_number> <local_clone>
-#     Removes the worktree whatever state it is in, including one an external
-#     tool has locked and one with uncommitted edits. Keeps the ref (trivially
-#     small; speeds up re-reviews of the same PR). No error if the worktree is
-#     already gone.
+#     Removes the worktree no matter what state it is in, including one an
+#     external tool has locked and one with uncommitted edits. Keeps the ref
+#     (trivially small; speeds up re-reviews of the same PR). No error if the
+#     worktree is already gone.
 #
 #     These worktrees are orchestrator-owned scratch, not a place to work: only
 #     provision creates them, always at <org>/<repo>/pr-<N> under the skill's
