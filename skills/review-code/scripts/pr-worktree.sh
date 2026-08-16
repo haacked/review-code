@@ -12,11 +12,12 @@
 #     exit 1 on fetch or worktree failure (caller falls back to diff-only)
 #
 #   pr-worktree.sh teardown <org> <repo> <pr_number> <local_clone>
-#     Unlocks (in case an external tool locked it) and removes the worktree
-#     via `git worktree remove --force`. Keeps the ref (trivially small;
-#     speeds up re-reviews of the same PR). No error if the worktree is
-#     already gone. Leaves the worktree untouched if it has uncommitted or
-#     untracked changes, so in-progress edits are never destroyed.
+#     Removes the worktree via `git worktree remove --force --force`, which
+#     also covers a lock an external tool placed on it. Keeps the ref
+#     (trivially small; speeds up re-reviews of the same PR). No error if the
+#     worktree is already gone. Leaves the worktree untouched if it has
+#     modified or untracked files, so in-progress edits are never destroyed;
+#     a checkout that only reports deletions is removed.
 #
 # Both commands serialize on a per-org/repo mkdir-based lock before touching
 # the local clone, since concurrent `git fetch`/`git worktree add|remove`
@@ -149,6 +150,17 @@ create_worktree() {
     git -C "${local_clone}" worktree add --detach "${path}" "${ref}" > /dev/null
 }
 
+# Drop a worktree registration and its directory. Both --force flags are
+# load-bearing: the first discards uncommitted state, and the second overrides
+# a lock. Some environments (e.g. Supacode's worktree manager) lock any git
+# worktree they discover on disk, including ones we provision for ourselves,
+# and a single --force refuses to touch a locked worktree.
+force_remove_worktree() {
+    local local_clone="$1"
+    local path="$2"
+    git -C "${local_clone}" worktree remove --force --force "${path}" > /dev/null 2>&1 || true
+}
+
 provision() {
     validate_args provision "$@" || return 1
     local org="$1"
@@ -187,16 +199,16 @@ provision() {
             # overwrite. Discarding silently would lose work the user cared
             # about, so recreate the orchestrator-owned worktree instead.
             log "Checkout rejected (dirty worktree?); recreating…"
-            git -C "${local_clone}" worktree remove --force "${path}" > /dev/null 2>&1 || true
+            force_remove_worktree "${local_clone}" "${path}"
             if ! create_worktree "${local_clone}" "${path}" "${ref}"; then
                 error "Failed to recreate worktree at ${path}"
                 return 1
             fi
         fi
     elif [[ -e "${path}" ]]; then
-        local quoted_clone
-        printf -v quoted_clone '%q' "${local_clone}"
-        error "Path exists but is not a registered worktree: ${path}. Remove it manually or run \`git -C ${quoted_clone} worktree prune\` and retry."
+        # No registration to clean up, so `worktree prune` has nothing to do
+        # here; the directory itself is what blocks `worktree add`.
+        error "Path exists but is not a registered worktree: ${path}. Delete it and retry."
         return 1
     else
         log "Creating worktree at ${path}…"
@@ -219,7 +231,7 @@ teardown() {
     # worktree directory was deleted or rendered unusable between provision
     # and teardown, we can't derive the clone from the worktree's .git
     # pointer (which may be gone), but the clone still has a stale
-    # registration that needs `git worktree remove --force` to drop.
+    # registration that needs force_remove_worktree to drop.
     local local_clone="$4"
 
     acquire_lock "$(worktree_lock_for "${org}" "${repo}")" || return 1
@@ -232,31 +244,31 @@ teardown() {
         return 0
     fi
 
-    # An external lock (see below) used to be the only thing standing between
-    # a stray `--force` and an in-progress edit, since a single --force can't
-    # touch a locked worktree. Now that we unlock deliberately, check for
-    # uncommitted/untracked changes ourselves before removing anything -
-    # mirroring the dirty-worktree guard in git-bclean-local.
+    # An external lock used to be the only thing standing between a stray
+    # `--force` and an in-progress edit. Now that force_remove_worktree
+    # overrides locks, check for uncommitted/untracked changes ourselves before
+    # removing anything - mirroring the dirty-worktree guard in
+    # git-bclean-local.
     local status_output
     if ! status_output=$(git -C "${path}" status --porcelain --untracked-files=normal 2>&1); then
         log "Leaving worktree ${path} in place (couldn't check for uncommitted changes)."
         return 0
     fi
+    # Deletions alone don't count. A worktree whose files were removed out from
+    # under it (an interrupted teardown, an external cleaner) reports every
+    # tracked path as deleted; treating that as work worth preserving would
+    # leak the worktree forever, since nothing else ever removes it.
+    local unsaved_work=""
     if [[ -n "${status_output}" ]]; then
+        unsaved_work=$(grep -vE '^( D|D )' <<< "${status_output}" || true)
+    fi
+    if [[ -n "${unsaved_work}" ]]; then
         log "Leaving worktree ${path} in place (has uncommitted changes)."
         return 0
     fi
 
     log "Removing worktree ${path}…"
-    # Some environments (e.g. Supacode's worktree manager) lock any git
-    # worktree they discover on disk, including ones we provision for
-    # ourselves. `git worktree remove` refuses a locked worktree unless
-    # --force is given twice; unlocking first lets a single --force work
-    # regardless of who (or what) placed the lock. `unlock` errors (and is
-    # swallowed) when the worktree isn't locked at all, which is the common
-    # case.
-    git -C "${local_clone}" worktree unlock "${path}" > /dev/null 2>&1 || true
-    git -C "${local_clone}" worktree remove --force "${path}" > /dev/null 2>&1 || true
+    force_remove_worktree "${local_clone}" "${path}"
     # Best-effort cleanup of empty ancestor directories.
     local repo_dir="${path%/*}"
     local org_dir="${repo_dir%/*}"

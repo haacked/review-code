@@ -216,6 +216,35 @@ EOF
     grep -q "post-crash" "$wt_path/file.txt"
 }
 
+@test "pr-worktree provision: recovers when a reused dirty worktree is locked by an external tool" {
+    run bash -c "'$SCRIPT' provision \"\$@\" 2>/dev/null" _ myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    local wt_path
+    wt_path=$(echo "$output" | jq -r '.worktree_path')
+
+    # A crashed review leaves a dirty worktree, and Supacode locks every
+    # worktree it discovers on disk. Recreating has to survive both.
+    echo "stale in-progress edit" > "$wt_path/file.txt"
+    git -C "$CLONE_DIR" worktree lock "$wt_path" --reason "locked by external tool"
+
+    # Push a new commit so reuse must actually do a checkout.
+    local seed4="$TEST_DIR/seed4"
+    git clone --quiet "$BARE_ORIGIN" "$seed4"
+    git -C "$seed4" config commit.gpgsign false
+    git -C "$seed4" config user.email "test@example.com"
+    git -C "$seed4" config user.name "Test User"
+    git -C "$seed4" fetch --quiet origin "refs/pull/42/head:pr42"
+    git -C "$seed4" checkout --quiet pr42
+    echo "post-lock" >> "$seed4/file.txt"
+    git -C "$seed4" commit --quiet -am "fourth pr commit"
+    git -C "$seed4" push --quiet origin "HEAD:refs/pull/42/head"
+    rm -rf "$seed4"
+
+    run bash -c "'$SCRIPT' provision \"\$@\" 2>/dev/null" _ myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    grep -q "post-lock" "$wt_path/file.txt"
+}
+
 @test "pr-worktree provision: serializes concurrent invocations for the same org/repo" {
     # Manually hold the lock provision() would acquire, to verify it actually
     # waits rather than racing a second `git fetch`/`worktree add` against the
@@ -336,6 +365,40 @@ EOF
 
     run git -C "$CLONE_DIR" worktree list --porcelain
     [[ "$output" == *"$wt_path"* ]]
+}
+
+@test "pr-worktree teardown: removes a worktree whose tracked files were deleted" {
+    run bash -c "'$SCRIPT' provision \"\$@\" 2>/dev/null" _ myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    local wt_path
+    wt_path=$(echo "$output" | jq -r '.worktree_path')
+
+    # An interrupted teardown (or an external cleaner) can delete the checkout
+    # while leaving the registration behind. Every tracked path then reports as
+    # deleted, which is not work anyone wants preserved.
+    rm -f "$wt_path/file.txt"
+
+    run "$SCRIPT" teardown myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    [ ! -d "$wt_path" ]
+
+    run git -C "$CLONE_DIR" worktree list --porcelain
+    [[ "$output" != *"$wt_path"* ]]
+}
+
+@test "pr-worktree teardown: leaves a worktree with deletions plus an untracked file in place" {
+    run bash -c "'$SCRIPT' provision \"\$@\" 2>/dev/null" _ myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    local wt_path
+    wt_path=$(echo "$output" | jq -r '.worktree_path')
+
+    rm -f "$wt_path/file.txt"
+    echo "scratch notes" > "$wt_path/untracked.txt"
+
+    run "$SCRIPT" teardown myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    [ -d "$wt_path" ]
+    [ -f "$wt_path/untracked.txt" ]
 }
 
 @test "pr-worktree teardown: leaves a worktree with untracked files in place" {

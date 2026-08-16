@@ -657,8 +657,7 @@ migrate_state_dirs() {
 # Report PR review worktrees present under the skill's worktree root.
 # Includes both active (in-flight reviews) and orphan (crashed reviews) entries
 # — distinguishing them reliably would require cross-referencing live sessions.
-# Doesn't auto-delete; the user decides whether to run `git worktree prune`
-# in the owning clone.
+# Doesn't auto-delete; the user decides whether to remove one.
 check_orphan_worktrees() {
     # Source the layout helper for the one-place-only definition of the
     # worktree root and directory depth.
@@ -694,7 +693,13 @@ check_orphan_worktrees() {
             echo "    ${wt}  (clone: ${clone})"
         done
         echo "  To inspect:  git -C <clone> worktree list"
-        echo "  To clean up: git -C <clone> worktree prune"
+        # `worktree prune` can't help here: it only drops registrations whose
+        # directory is gone, and everything listed above was found by walking
+        # the directories that are still on disk. The doubled --force discards
+        # uncommitted work in the worktree and overrides a lock another tool
+        # (e.g. Supacode) placed on it.
+        echo "  To clean up: git -C <clone> worktree remove --force --force <path>"
+        echo "               (discards uncommitted work in that worktree)"
     fi
 }
 
