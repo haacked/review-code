@@ -232,6 +232,7 @@ EOF
     [ "$status" -eq 0 ]
     # Pins the recreate branch: without it a plain checkout would also pass.
     [[ "$output" == *"recreating"* ]]
+    [ ! "$(cat "$wt_path/file.txt")" = "stale in-progress edit" ]
     grep -q "world" "$wt_path/file.txt"
 }
 
@@ -374,6 +375,21 @@ EOF
 
     run git -C "$CLONE_DIR" worktree list --porcelain
     [[ "$output" != *"$wt_path"* ]]
+}
+
+@test "pr-worktree teardown: removes a worktree whose deletions are staged" {
+    run bash -c "'$SCRIPT' provision \"\$@\" 2>/dev/null" _ myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    local wt_path
+    wt_path=$(echo "$output" | jq -r '.worktree_path')
+
+    # Losing the index reports every path as staged-deleted (`D `) rather than
+    # `` D``, so the filter has to cover both forms.
+    git -C "$wt_path" rm --quiet file.txt
+
+    run "$SCRIPT" teardown myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    [ ! -d "$wt_path" ]
 }
 
 @test "pr-worktree teardown: leaves a worktree with deletions plus an untracked file in place" {

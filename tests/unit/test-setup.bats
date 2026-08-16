@@ -521,6 +521,10 @@ run_check_orphan_worktrees() {
     local cmd
     cmd=$(grep -m1 -o 'git -C .* worktree remove .*' <<< "$output" || true)
     [ -n "${cmd}" ]
+    # Never hand bash a command that escaped the fixture: if the worktree root
+    # ever stopped honoring REVIEW_CODE_WORKTREE_DIR, this would force-remove a
+    # real review worktree of the developer running the suite.
+    [[ "${cmd}" == *"${TEST_TEMP_DIR}"* ]]
 
     run bash -c "${cmd}"
     [ "$status" -eq 0 ]
@@ -534,7 +538,9 @@ run_check_orphan_worktrees() {
 
 @test "setup: check_orphan_worktrees offers rm -rf for a directory git never registered" {
     TEST_TEMP_DIR=$(mktemp -d)
-    local root="${TEST_TEMP_DIR}/worktrees"
+    # The space is the point: the printed command is only safe to paste because
+    # the paths are shell-quoted, and swapping %q for %s has to fail here.
+    local root="${TEST_TEMP_DIR}/work trees"
     local wt="${root}/myorg/myrepo/pr-9"
     # Provisioning died before `git worktree add`, so there is no .git pointer
     # and no registration for any git command to drop.
@@ -548,6 +554,7 @@ run_check_orphan_worktrees() {
     local cmd
     cmd=$(grep -m1 -o 'rm -rf .*' <<< "$output" || true)
     [ -n "${cmd}" ]
+    [[ "${cmd}" == *"${TEST_TEMP_DIR}"* ]]
 
     run bash -c "${cmd}"
     [ "$status" -eq 0 ]

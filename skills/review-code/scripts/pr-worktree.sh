@@ -149,11 +149,12 @@ create_worktree() {
     git -C "${local_clone}" worktree add --detach "${path}" "${ref}" > /dev/null
 }
 
-# Drop a worktree registration and its directory. Both --force flags are
-# load-bearing: the first discards uncommitted state, and the second overrides
-# a lock. Some environments (e.g. Supacode's worktree manager) lock any git
-# worktree they discover on disk, including ones we provision for ourselves,
-# and a single --force refuses to touch a locked worktree.
+# Drop a worktree registration and its directory. Best effort: git's output is
+# discarded and failures are swallowed, so callers can't branch on the result.
+# Both --force flags are load-bearing: the first discards uncommitted state, and
+# the second overrides a lock. Some environments (e.g. Supacode's worktree
+# manager) lock any git worktree they discover on disk, including ones we
+# provision for ourselves, and a single --force refuses to touch a locked one.
 force_remove_worktree() {
     local local_clone="$1"
     local path="$2"
@@ -238,11 +239,9 @@ teardown() {
         return 0
     fi
 
-    # An external lock used to be the only thing standing between a stray
-    # `--force` and an in-progress edit. Now that force_remove_worktree
-    # overrides locks, check for uncommitted/untracked changes ourselves before
-    # removing anything - mirroring the dirty-worktree guard in
-    # git-bclean-local.
+    # force_remove_worktree discards state and overrides locks, so this check is
+    # the only guard for in-progress edits: leave the worktree alone when it has
+    # modified or untracked files.
     local status_output
     if ! status_output=$(git -C "${path}" status --porcelain --untracked-files=normal 2>&1); then
         log "Leaving worktree ${path} in place (couldn't check for uncommitted changes)."

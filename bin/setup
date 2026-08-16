@@ -671,10 +671,12 @@ check_orphan_worktrees() {
     local depth
     depth="$(worktree_layout_depth)"
 
+    # NUL-delimited: these paths end up inside printed `rm -rf` commands, and a
+    # newline in a directory name would otherwise split one into two.
     local -a worktrees=()
-    while IFS= read -r wt; do
+    while IFS= read -r -d '' wt; do
         worktrees+=("${wt}")
-    done < <(find "${worktree_root_dir}" -mindepth "${depth}" -maxdepth "${depth}" -type d -name 'pr-*' 2> /dev/null || true)
+    done < <(find "${worktree_root_dir}" -mindepth "${depth}" -maxdepth "${depth}" -type d -name 'pr-*' -print0 2> /dev/null || true)
 
     local count="${#worktrees[@]}"
     if [[ "${count}" -gt 0 ]]; then
@@ -685,14 +687,16 @@ check_orphan_worktrees() {
         local -a removals=()
         for wt in "${worktrees[@]}"; do
             clone=""
+            gitdir_line=""
             if [[ -f "${wt}/.git" ]]; then
                 # The .git file contains: gitdir: <clone>/.git/worktrees/<name>
-                read -r gitdir_line < "${wt}/.git" || gitdir_line=""
+                # `|| true` keeps the line when the file has no trailing newline;
+                # read assigns it and still returns 1 at EOF.
+                read -r gitdir_line < "${wt}/.git" || true
                 gitdir_line="${gitdir_line#gitdir: }"
                 clone="${gitdir_line%/.git/worktrees/*}"
             fi
             if [[ -n "${clone}" ]]; then
-                # The owning clone shows up in this entry's removal command below.
                 echo "    ${wt}"
                 # `worktree prune` can't help: it only drops registrations whose
                 # directory is gone, and everything here is still on disk.
@@ -703,8 +707,7 @@ check_orphan_worktrees() {
                 removals+=("$(printf 'rm -rf %q' "${wt}")")
             fi
         done
-        echo "  To inspect:  git -C <clone> worktree list"
-        echo "  To clean up (discards uncommitted work in that worktree):"
+        echo "  To clean up (discards uncommitted work; an entry may belong to a review running right now):"
         printf '    %s\n' "${removals[@]}"
     fi
 }
