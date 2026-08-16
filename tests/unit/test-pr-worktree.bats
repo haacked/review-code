@@ -216,6 +216,26 @@ EOF
     grep -q "post-crash" "$wt_path/file.txt"
 }
 
+@test "pr-worktree provision: recovers when a reused dirty worktree is locked by an external tool" {
+    run bash -c "'$SCRIPT' provision \"\$@\" 2>/dev/null" _ myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    local wt_path
+    wt_path=$(echo "$output" | jq -r '.worktree_path')
+
+    # A crashed review leaves a dirty worktree behind the PR head, and Supacode
+    # locks every worktree it discovers on disk. Recreating has to survive both.
+    git -C "$wt_path" checkout --quiet --detach HEAD~1
+    echo "stale in-progress edit" > "$wt_path/file.txt"
+    git -C "$CLONE_DIR" worktree lock "$wt_path" --reason "locked by external tool"
+
+    run bash -c "'$SCRIPT' provision \"\$@\" 2>&1" _ myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    # Pins the recreate branch: without it a plain checkout would also pass.
+    [[ "$output" == *"recreating"* ]]
+    [ ! "$(cat "$wt_path/file.txt")" = "stale in-progress edit" ]
+    grep -q "world" "$wt_path/file.txt"
+}
+
 @test "pr-worktree provision: serializes concurrent invocations for the same org/repo" {
     # Manually hold the lock provision() would acquire, to verify it actually
     # waits rather than racing a second `git fetch`/`worktree add` against the
@@ -336,6 +356,55 @@ EOF
 
     run git -C "$CLONE_DIR" worktree list --porcelain
     [[ "$output" == *"$wt_path"* ]]
+}
+
+@test "pr-worktree teardown: removes a worktree whose tracked files were deleted" {
+    run bash -c "'$SCRIPT' provision \"\$@\" 2>/dev/null" _ myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    local wt_path
+    wt_path=$(echo "$output" | jq -r '.worktree_path')
+
+    # An interrupted teardown (or an external cleaner) can delete the checkout
+    # while leaving the registration behind. Every tracked path then reports as
+    # deleted, which is not work anyone wants preserved.
+    rm -f "$wt_path/file.txt"
+
+    run "$SCRIPT" teardown myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    [ ! -d "$wt_path" ]
+
+    run git -C "$CLONE_DIR" worktree list --porcelain
+    [[ "$output" != *"$wt_path"* ]]
+}
+
+@test "pr-worktree teardown: removes a worktree whose deletions are staged" {
+    run bash -c "'$SCRIPT' provision \"\$@\" 2>/dev/null" _ myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    local wt_path
+    wt_path=$(echo "$output" | jq -r '.worktree_path')
+
+    # Losing the index reports every path as staged-deleted (`D `) rather than
+    # `` D``, so the filter has to cover both forms.
+    git -C "$wt_path" rm --quiet file.txt
+
+    run "$SCRIPT" teardown myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    [ ! -d "$wt_path" ]
+}
+
+@test "pr-worktree teardown: leaves a worktree with deletions plus an untracked file in place" {
+    run bash -c "'$SCRIPT' provision \"\$@\" 2>/dev/null" _ myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    local wt_path
+    wt_path=$(echo "$output" | jq -r '.worktree_path')
+
+    rm -f "$wt_path/file.txt"
+    echo "scratch notes" > "$wt_path/untracked.txt"
+
+    run "$SCRIPT" teardown myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    [ -d "$wt_path" ]
+    [ -f "$wt_path/untracked.txt" ]
 }
 
 @test "pr-worktree teardown: leaves a worktree with untracked files in place" {

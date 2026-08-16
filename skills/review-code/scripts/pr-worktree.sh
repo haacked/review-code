@@ -12,11 +12,11 @@
 #     exit 1 on fetch or worktree failure (caller falls back to diff-only)
 #
 #   pr-worktree.sh teardown <org> <repo> <pr_number> <local_clone>
-#     Unlocks (in case an external tool locked it) and removes the worktree
-#     via `git worktree remove --force`. Keeps the ref (trivially small;
-#     speeds up re-reviews of the same PR). No error if the worktree is
-#     already gone. Leaves the worktree untouched if it has uncommitted or
-#     untracked changes, so in-progress edits are never destroyed.
+#     Removes the worktree, including one an external tool has locked. Keeps
+#     the ref (trivially small; speeds up re-reviews of the same PR). No error
+#     if the worktree is already gone. Leaves the worktree untouched if it has
+#     modified or untracked files, so in-progress edits are never destroyed;
+#     a checkout that only reports deletions is removed.
 #
 # Both commands serialize on a per-org/repo mkdir-based lock before touching
 # the local clone, since concurrent `git fetch`/`git worktree add|remove`
@@ -149,6 +149,18 @@ create_worktree() {
     git -C "${local_clone}" worktree add --detach "${path}" "${ref}" > /dev/null
 }
 
+# Drop a worktree registration and its directory. Best effort: git's output is
+# discarded and failures are swallowed, so callers can't branch on the result.
+# Both --force flags are load-bearing: the first discards uncommitted state, and
+# the second overrides a lock. Some environments (e.g. Supacode's worktree
+# manager) lock any git worktree they discover on disk, including ones we
+# provision for ourselves, and a single --force refuses to touch a locked one.
+force_remove_worktree() {
+    local local_clone="$1"
+    local path="$2"
+    git -C "${local_clone}" worktree remove --force --force "${path}" > /dev/null 2>&1 || true
+}
+
 provision() {
     validate_args provision "$@" || return 1
     local org="$1"
@@ -187,16 +199,14 @@ provision() {
             # overwrite. Discarding silently would lose work the user cared
             # about, so recreate the orchestrator-owned worktree instead.
             log "Checkout rejected (dirty worktree?); recreating…"
-            git -C "${local_clone}" worktree remove --force "${path}" > /dev/null 2>&1 || true
+            force_remove_worktree "${local_clone}" "${path}"
             if ! create_worktree "${local_clone}" "${path}" "${ref}"; then
                 error "Failed to recreate worktree at ${path}"
                 return 1
             fi
         fi
     elif [[ -e "${path}" ]]; then
-        local quoted_clone
-        printf -v quoted_clone '%q' "${local_clone}"
-        error "Path exists but is not a registered worktree: ${path}. Remove it manually or run \`git -C ${quoted_clone} worktree prune\` and retry."
+        error "Path exists but is not a registered worktree: ${path}. Delete it and retry."
         return 1
     else
         log "Creating worktree at ${path}…"
@@ -215,11 +225,8 @@ teardown() {
     local org="$1"
     local repo="$2"
     local pr_number="$3"
-    # local_clone is load-bearing for the crashed-session case: if the
-    # worktree directory was deleted or rendered unusable between provision
-    # and teardown, we can't derive the clone from the worktree's .git
-    # pointer (which may be gone), but the clone still has a stale
-    # registration that needs `git worktree remove --force` to drop.
+    # local_clone can't be derived from the worktree's .git pointer, which may
+    # be gone by teardown time, so the caller passes it.
     local local_clone="$4"
 
     acquire_lock "$(worktree_lock_for "${org}" "${repo}")" || return 1
@@ -232,31 +239,31 @@ teardown() {
         return 0
     fi
 
-    # An external lock (see below) used to be the only thing standing between
-    # a stray `--force` and an in-progress edit, since a single --force can't
-    # touch a locked worktree. Now that we unlock deliberately, check for
-    # uncommitted/untracked changes ourselves before removing anything -
-    # mirroring the dirty-worktree guard in git-bclean-local.
+    # force_remove_worktree discards state and overrides locks, so this check is
+    # the only guard for in-progress edits: leave the worktree alone when it has
+    # modified or untracked files.
     local status_output
     if ! status_output=$(git -C "${path}" status --porcelain --untracked-files=normal 2>&1); then
         log "Leaving worktree ${path} in place (couldn't check for uncommitted changes)."
         return 0
     fi
-    if [[ -n "${status_output}" ]]; then
+    # Deleted tracked files are recoverable from the ref we checked out;
+    # modified and untracked ones aren't, so only those block removal. A
+    # checkout whose files were deleted out from under it (an interrupted
+    # teardown, an external cleaner) reports every tracked path as deleted, and
+    # nothing would clear it short of re-reviewing that same PR.
+    # `|| true` because grep exits 1 once everything filters out. Don't switch
+    # to `grep -qv`: an empty status still feeds the herestring one blank line,
+    # which reads as unsaved work.
+    local unsaved_work
+    unsaved_work=$(grep -vE '^( D|D )' <<< "${status_output}" || true)
+    if [[ -n "${unsaved_work}" ]]; then
         log "Leaving worktree ${path} in place (has uncommitted changes)."
         return 0
     fi
 
     log "Removing worktree ${path}…"
-    # Some environments (e.g. Supacode's worktree manager) lock any git
-    # worktree they discover on disk, including ones we provision for
-    # ourselves. `git worktree remove` refuses a locked worktree unless
-    # --force is given twice; unlocking first lets a single --force work
-    # regardless of who (or what) placed the lock. `unlock` errors (and is
-    # swallowed) when the worktree isn't locked at all, which is the common
-    # case.
-    git -C "${local_clone}" worktree unlock "${path}" > /dev/null 2>&1 || true
-    git -C "${local_clone}" worktree remove --force "${path}" > /dev/null 2>&1 || true
+    force_remove_worktree "${local_clone}" "${path}"
     # Best-effort cleanup of empty ancestor directories.
     local repo_dir="${path%/*}"
     local org_dir="${repo_dir%/*}"

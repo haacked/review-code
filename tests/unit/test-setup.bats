@@ -465,6 +465,118 @@ run_migrate_state_dirs() {
 }
 
 # =============================================================================
+# Orphan worktree reporting
+# =============================================================================
+
+# Extract and run check_orphan_worktrees from bin/setup against a temp worktree
+# root. SCRIPT_DIR points at the repo so the function finds worktree-layout.sh.
+run_check_orphan_worktrees() {
+    local root="$1"
+    run bash -c "
+        set -euo pipefail
+        info() { :; }
+        debug() { :; }
+        warn() { echo \"\$*\"; }
+        error() { echo \"\$*\"; }
+        SCRIPT_DIR='${PROJECT_ROOT}'
+        REVIEW_CODE_WORKTREE_DIR='${root}'
+        source <(sed -n '/^check_orphan_worktrees()/,/^}/p' '$PROJECT_ROOT/bin/setup')
+        check_orphan_worktrees
+    "
+}
+
+@test "setup: check_orphan_worktrees suggests a command that removes a locked, dirty worktree" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    local clone="${TEST_TEMP_DIR}/clone"
+    git init --quiet "${clone}"
+    git -C "${clone}" config commit.gpgsign false
+    git -C "${clone}" config user.email "test@example.com"
+    git -C "${clone}" config user.name "Test User"
+    echo "hello" > "${clone}/file.txt"
+    git -C "${clone}" add file.txt
+    git -C "${clone}" commit --quiet -m "initial"
+
+    local root="${TEST_TEMP_DIR}/worktrees"
+    local wt="${root}/myorg/myrepo/pr-7"
+    mkdir -p "$(dirname "${wt}")"
+    git -C "${clone}" worktree add --detach --quiet "${wt}" HEAD
+
+    # The state a crashed review leaves behind: an external tool (Supacode)
+    # locks the worktree, and its tracked files are gone from disk.
+    git -C "${clone}" worktree lock "${wt}" --reason "locked by external tool"
+    rm -f "${wt}/file.txt"
+
+    # The command names the clone as the worktree's .git pointer records it,
+    # which is the resolved path (mktemp -d hands out a symlinked /var/… path
+    # on macOS).
+    local clone_real
+    clone_real=$(cd "${clone}" && pwd -P)
+
+    run_check_orphan_worktrees "${root}"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"${wt}"* ]]
+    [[ "$output" == *"git -C ${clone_real} "* ]]
+
+    # The advice has to work as printed, so run the printed line verbatim.
+    local cmd
+    cmd=$(grep -m1 -o 'git -C .* worktree remove .*' <<< "$output" || true)
+    [ -n "${cmd}" ]
+    # Never hand bash a command that escaped the fixture: if the worktree root
+    # ever stopped honoring REVIEW_CODE_WORKTREE_DIR, this would force-remove a
+    # real review worktree of the developer running the suite.
+    [[ "${cmd}" == *"${TEST_TEMP_DIR}"* ]]
+
+    run bash -c "${cmd}"
+    [ "$status" -eq 0 ]
+    [ ! -d "${wt}" ]
+
+    run git -C "${clone}" worktree list --porcelain
+    [[ "$output" != *"${wt}"* ]]
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
+@test "setup: check_orphan_worktrees offers rm -rf for a directory git never registered" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    # The space is the point: the printed command is only safe to paste because
+    # the paths are shell-quoted, and swapping %q for %s has to fail here.
+    local root="${TEST_TEMP_DIR}/work trees"
+    local wt="${root}/myorg/myrepo/pr-9"
+    # Provisioning died before `git worktree add`, so there is no .git pointer
+    # and no registration for any git command to drop.
+    mkdir -p "${wt}"
+    echo "leftover" > "${wt}/stale-artifact"
+
+    run_check_orphan_worktrees "${root}"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"not a registered worktree"* ]]
+
+    local cmd
+    cmd=$(grep -m1 -o 'rm -rf .*' <<< "$output" || true)
+    [ -n "${cmd}" ]
+    [[ "${cmd}" == *"${TEST_TEMP_DIR}"* ]]
+
+    run bash -c "${cmd}"
+    [ "$status" -eq 0 ]
+    [ ! -d "${wt}" ]
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
+@test "setup: check_orphan_worktrees is silent when the worktree root is empty" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    local root="${TEST_TEMP_DIR}/worktrees"
+    mkdir -p "${root}"
+
+    run_check_orphan_worktrees "${root}"
+
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
+# =============================================================================
 # Workflow tests
 # =============================================================================
 
