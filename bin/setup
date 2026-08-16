@@ -696,14 +696,22 @@ check_orphan_worktrees() {
                 gitdir_line="${gitdir_line#gitdir: }"
                 clone="${gitdir_line%/.git/worktrees/*}"
             fi
-            if [[ -n "${clone}" ]]; then
+            if [[ -n "${clone}" && -d "${clone}" ]]; then
                 echo "    ${wt}"
                 # `worktree prune` can't help: it only drops registrations whose
                 # directory is gone, and everything here is still on disk.
                 removals+=("$(printf 'git -C %q worktree remove --force --force %q' "${clone}" "${wt}")")
             else
-                # No .git pointer, so git doesn't know about this one at all.
-                echo "    ${wt}  (not a registered worktree)"
+                if [[ -n "${clone}" ]]; then
+                    # The pointer parses but names a clone that has since been
+                    # moved or deleted, so `git -C "${clone}"` would exit 128.
+                    # git still holds a registration, which is why this doesn't
+                    # claim the worktree is unregistered.
+                    echo "    ${wt}  (owning clone ${clone} is gone)"
+                else
+                    # No .git pointer, so git doesn't know about this one at all.
+                    echo "    ${wt}  (not a registered worktree)"
+                fi
                 removals+=("$(printf 'rm -rf %q' "${wt}")")
             fi
         done

@@ -563,6 +563,52 @@ run_check_orphan_worktrees() {
     rm -rf "${TEST_TEMP_DIR}"
 }
 
+@test "setup: check_orphan_worktrees offers rm -rf when the owning clone is gone" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    local clone="${TEST_TEMP_DIR}/clone"
+    git init --quiet "${clone}"
+    git -C "${clone}" config commit.gpgsign false
+    git -C "${clone}" config user.email "test@example.com"
+    git -C "${clone}" config user.name "Test User"
+    echo "hello" > "${clone}/file.txt"
+    git -C "${clone}" add file.txt
+    git -C "${clone}" commit --quiet -m "initial"
+
+    local root="${TEST_TEMP_DIR}/worktrees"
+    local wt="${root}/myorg/myrepo/pr-11"
+    mkdir -p "$(dirname "${wt}")"
+    git -C "${clone}" worktree add --detach --quiet "${wt}" HEAD
+
+    # Resolve the clone before moving it: the .git pointer records the resolved
+    # path, and `pwd -P` can't run on a directory that no longer exists.
+    local clone_real
+    clone_real=$(cd "${clone}" && pwd -P)
+
+    # The clone is deleted or moved after provisioning, so the worktree's .git
+    # pointer still names a path no git command can chdir into.
+    mv "${clone}" "${TEST_TEMP_DIR}/clone-moved"
+
+    run_check_orphan_worktrees "${root}"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"owning clone ${clone_real} is gone"* ]]
+    # git does still hold a registration here, so the other label would lie.
+    [[ "$output" != *"not a registered worktree"* ]]
+    # The bug: `git -C <clone that is gone>` exits 128, so advising it hands the
+    # user a command that cannot run.
+    [[ "$output" != *"git -C ${clone_real}"* ]]
+
+    local cmd
+    cmd=$(grep -m1 -o 'rm -rf .*' <<< "$output" || true)
+    [ -n "${cmd}" ]
+    [[ "${cmd}" == *"${TEST_TEMP_DIR}"* ]]
+
+    run bash -c "${cmd}"
+    [ "$status" -eq 0 ]
+    [ ! -d "${wt}" ]
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
 @test "setup: check_orphan_worktrees is silent when the worktree root is empty" {
     TEST_TEMP_DIR=$(mktemp -d)
     local root="${TEST_TEMP_DIR}/worktrees"
