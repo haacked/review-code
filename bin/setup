@@ -682,24 +682,30 @@ check_orphan_worktrees() {
         warn "Found ${count} review worktree(s) under ${worktree_root_dir}."
         echo "  These are reused on subsequent reviews of the same PR; crashed reviews may leave behind entries."
         local wt gitdir_line clone
+        local -a removals=()
         for wt in "${worktrees[@]}"; do
-            clone="unknown"
+            clone=""
             if [[ -f "${wt}/.git" ]]; then
                 # The .git file contains: gitdir: <clone>/.git/worktrees/<name>
-                gitdir_line=$(cat "${wt}/.git" 2> /dev/null || echo "")
+                read -r gitdir_line < "${wt}/.git" || gitdir_line=""
                 gitdir_line="${gitdir_line#gitdir: }"
                 clone="${gitdir_line%/.git/worktrees/*}"
             fi
-            echo "    ${wt}  (clone: ${clone})"
+            if [[ -n "${clone}" ]]; then
+                # The owning clone shows up in this entry's removal command below.
+                echo "    ${wt}"
+                # `worktree prune` can't help: it only drops registrations whose
+                # directory is gone, and everything here is still on disk.
+                removals+=("$(printf 'git -C %q worktree remove --force --force %q' "${clone}" "${wt}")")
+            else
+                # No .git pointer, so git doesn't know about this one at all.
+                echo "    ${wt}  (not a registered worktree)"
+                removals+=("$(printf 'rm -rf %q' "${wt}")")
+            fi
         done
         echo "  To inspect:  git -C <clone> worktree list"
-        # `worktree prune` can't help here: it only drops registrations whose
-        # directory is gone, and everything listed above was found by walking
-        # the directories that are still on disk. The doubled --force discards
-        # uncommitted work in the worktree and overrides a lock another tool
-        # (e.g. Supacode) placed on it.
-        echo "  To clean up: git -C <clone> worktree remove --force --force <path>"
-        echo "               (discards uncommitted work in that worktree)"
+        echo "  To clean up (discards uncommitted work in that worktree):"
+        printf '    %s\n' "${removals[@]}"
     fi
 }
 

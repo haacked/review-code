@@ -12,10 +12,9 @@
 #     exit 1 on fetch or worktree failure (caller falls back to diff-only)
 #
 #   pr-worktree.sh teardown <org> <repo> <pr_number> <local_clone>
-#     Removes the worktree via `git worktree remove --force --force`, which
-#     also covers a lock an external tool placed on it. Keeps the ref
-#     (trivially small; speeds up re-reviews of the same PR). No error if the
-#     worktree is already gone. Leaves the worktree untouched if it has
+#     Removes the worktree, including one an external tool has locked. Keeps
+#     the ref (trivially small; speeds up re-reviews of the same PR). No error
+#     if the worktree is already gone. Leaves the worktree untouched if it has
 #     modified or untracked files, so in-progress edits are never destroyed;
 #     a checkout that only reports deletions is removed.
 #
@@ -206,8 +205,6 @@ provision() {
             fi
         fi
     elif [[ -e "${path}" ]]; then
-        # No registration to clean up, so `worktree prune` has nothing to do
-        # here; the directory itself is what blocks `worktree add`.
         error "Path exists but is not a registered worktree: ${path}. Delete it and retry."
         return 1
     else
@@ -227,11 +224,8 @@ teardown() {
     local org="$1"
     local repo="$2"
     local pr_number="$3"
-    # local_clone is load-bearing for the crashed-session case: if the
-    # worktree directory was deleted or rendered unusable between provision
-    # and teardown, we can't derive the clone from the worktree's .git
-    # pointer (which may be gone), but the clone still has a stale
-    # registration that needs force_remove_worktree to drop.
+    # local_clone can't be derived from the worktree's .git pointer, which may
+    # be gone by teardown time, so the caller passes it.
     local local_clone="$4"
 
     acquire_lock "$(worktree_lock_for "${org}" "${repo}")" || return 1
@@ -254,14 +248,16 @@ teardown() {
         log "Leaving worktree ${path} in place (couldn't check for uncommitted changes)."
         return 0
     fi
-    # Deletions alone don't count. A worktree whose files were removed out from
-    # under it (an interrupted teardown, an external cleaner) reports every
-    # tracked path as deleted; treating that as work worth preserving would
-    # leak the worktree forever, since nothing else ever removes it.
-    local unsaved_work=""
-    if [[ -n "${status_output}" ]]; then
-        unsaved_work=$(grep -vE '^( D|D )' <<< "${status_output}" || true)
-    fi
+    # Deleted tracked files are recoverable from the ref we checked out;
+    # modified and untracked ones aren't, so only those block removal. A
+    # checkout whose files were deleted out from under it (an interrupted
+    # teardown, an external cleaner) reports every tracked path as deleted, and
+    # nothing would clear it short of re-reviewing that same PR.
+    # `|| true` because grep exits 1 once everything filters out. Don't switch
+    # to `grep -qv`: an empty status still feeds the herestring one blank line,
+    # which reads as unsaved work.
+    local unsaved_work
+    unsaved_work=$(grep -vE '^( D|D )' <<< "${status_output}" || true)
     if [[ -n "${unsaved_work}" ]]; then
         log "Leaving worktree ${path} in place (has uncommitted changes)."
         return 0

@@ -506,24 +506,21 @@ run_check_orphan_worktrees() {
     git -C "${clone}" worktree lock "${wt}" --reason "locked by external tool"
     rm -f "${wt}/file.txt"
 
-    # The clone is reported as the worktree's .git pointer records it, which is
-    # the resolved path (mktemp -d hands out a symlinked /var/… path on macOS).
+    # The command names the clone as the worktree's .git pointer records it,
+    # which is the resolved path (mktemp -d hands out a symlinked /var/… path
+    # on macOS).
     local clone_real
     clone_real=$(cd "${clone}" && pwd -P)
 
     run_check_orphan_worktrees "${root}"
     [ "$status" -eq 0 ]
     [[ "$output" == *"${wt}"* ]]
-    [[ "$output" == *"(clone: ${clone_real})"* ]]
+    [[ "$output" == *"git -C ${clone_real} "* ]]
 
-    # The advice has to work as printed: substitute the reported clone and path
-    # into the suggested removal command and run it.
-    local line cmd
-    line=$(printf '%s\n' "$output" | grep -m1 'worktree remove' || true)
-    [ -n "${line}" ]
-    cmd="git -C${line#*git -C}"
-    cmd=${cmd//<clone>/${clone}}
-    cmd=${cmd//<path>/${wt}}
+    # The advice has to work as printed, so run the printed line verbatim.
+    local cmd
+    cmd=$(grep -m1 -o 'git -C .* worktree remove .*' <<< "$output" || true)
+    [ -n "${cmd}" ]
 
     run bash -c "${cmd}"
     [ "$status" -eq 0 ]
@@ -531,6 +528,30 @@ run_check_orphan_worktrees() {
 
     run git -C "${clone}" worktree list --porcelain
     [[ "$output" != *"${wt}"* ]]
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
+@test "setup: check_orphan_worktrees offers rm -rf for a directory git never registered" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    local root="${TEST_TEMP_DIR}/worktrees"
+    local wt="${root}/myorg/myrepo/pr-9"
+    # Provisioning died before `git worktree add`, so there is no .git pointer
+    # and no registration for any git command to drop.
+    mkdir -p "${wt}"
+    echo "leftover" > "${wt}/stale-artifact"
+
+    run_check_orphan_worktrees "${root}"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"not a registered worktree"* ]]
+
+    local cmd
+    cmd=$(grep -m1 -o 'rm -rf .*' <<< "$output" || true)
+    [ -n "${cmd}" ]
+
+    run bash -c "${cmd}"
+    [ "$status" -eq 0 ]
+    [ ! -d "${wt}" ]
 
     rm -rf "${TEST_TEMP_DIR}"
 }

@@ -222,27 +222,17 @@ EOF
     local wt_path
     wt_path=$(echo "$output" | jq -r '.worktree_path')
 
-    # A crashed review leaves a dirty worktree, and Supacode locks every
-    # worktree it discovers on disk. Recreating has to survive both.
+    # A crashed review leaves a dirty worktree behind the PR head, and Supacode
+    # locks every worktree it discovers on disk. Recreating has to survive both.
+    git -C "$wt_path" checkout --quiet --detach HEAD~1
     echo "stale in-progress edit" > "$wt_path/file.txt"
     git -C "$CLONE_DIR" worktree lock "$wt_path" --reason "locked by external tool"
 
-    # Push a new commit so reuse must actually do a checkout.
-    local seed4="$TEST_DIR/seed4"
-    git clone --quiet "$BARE_ORIGIN" "$seed4"
-    git -C "$seed4" config commit.gpgsign false
-    git -C "$seed4" config user.email "test@example.com"
-    git -C "$seed4" config user.name "Test User"
-    git -C "$seed4" fetch --quiet origin "refs/pull/42/head:pr42"
-    git -C "$seed4" checkout --quiet pr42
-    echo "post-lock" >> "$seed4/file.txt"
-    git -C "$seed4" commit --quiet -am "fourth pr commit"
-    git -C "$seed4" push --quiet origin "HEAD:refs/pull/42/head"
-    rm -rf "$seed4"
-
-    run bash -c "'$SCRIPT' provision \"\$@\" 2>/dev/null" _ myorg myrepo 42 "$CLONE_DIR"
+    run bash -c "'$SCRIPT' provision \"\$@\" 2>&1" _ myorg myrepo 42 "$CLONE_DIR"
     [ "$status" -eq 0 ]
-    grep -q "post-lock" "$wt_path/file.txt"
+    # Pins the recreate branch: without it a plain checkout would also pass.
+    [[ "$output" == *"recreating"* ]]
+    grep -q "world" "$wt_path/file.txt"
 }
 
 @test "pr-worktree provision: serializes concurrent invocations for the same org/repo" {
