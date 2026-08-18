@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# token-report - Measure what reviews actually cost.
+#
+# The skill's own token log (.reviews/token-usage.jsonl) only sees subagents.
+# The orchestrating conversation is roughly half the bill and is invisible from
+# inside a review, so it has to be measured from the session transcripts.
+#
+# Usage:
+#   bin/token-report [options]
+#
+# Options:
+#   --dir <path>      Transcript root (default: ~/.claude/projects)
+#   --match <substr>  Only sessions whose project directory contains this
+#                     (default: review, which picks up review worktrees)
+#   --since <date>    ISO date; skip sessions whose first entry predates it
+#   --limit <n>       Show at most n sessions in the per-session table
+#   --json            Emit machine-readable JSON instead of a table
+
+DIR="${HOME}/.claude/projects"
+MATCH="review"
+SINCE=""
+LIMIT=15
+AS_JSON="false"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --dir)
+            DIR="${2:-}"
+            shift 2
+            ;;
+        --match)
+            MATCH="${2:-}"
+            shift 2
+            ;;
+        --since)
+            SINCE="${2:-}"
+            shift 2
+            ;;
+        --limit)
+            LIMIT="${2:-15}"
+            shift 2
+            ;;
+        --json)
+            AS_JSON="true"
+            shift
+            ;;
+        -h | --help)
+            sed -n '3,20p' "$0"
+            exit 0
+            ;;
+        *)
+            echo "ERROR: Unknown argument: $1" >&2
+            exit 1
+            ;;
+    esac
+done
+
+if [[ ! -d "${DIR}" ]]; then
+    echo "ERROR: Transcript directory not found: ${DIR}" >&2
+    exit 1
+fi
+
+DIR="${DIR}" MATCH="${MATCH}" SINCE="${SINCE}" LIMIT="${LIMIT}" AS_JSON="${AS_JSON}" python3 - << 'PYTHON'
+import collections, datetime, glob, json, os, sys
+
+ROOT = os.environ["DIR"]
+MATCH = os.environ["MATCH"]
+SINCE = os.environ["SINCE"]
+LIMIT = int(os.environ["LIMIT"])
+AS_JSON = os.environ["AS_JSON"] == "true"
+
+# Per-million-token rates. Reviews run mostly on the top tier; subagents pinned
+# to cheaper models are priced by the model recorded in their own transcript.
+RATES = {
+    "opus":   (15.0, 18.75, 1.5, 75.0),
+    "sonnet": (3.0, 3.75, 0.3, 15.0),
+    "haiku":  (1.0, 1.25, 0.1, 5.0),
+}
+
+def tier(model):
+    m = (model or "").lower()
+    for name in ("haiku", "sonnet", "opus"):
+        if name in m:
+            return name
+    return "opus"
+
+def scan(path):
+    """Sum usage for one transcript.
+
+    Claude Code writes one line per content block, and every line of a single
+    API response repeats that response's usage object. Summing naively
+    multiplies the real cost several times over, so entries are deduplicated by
+    message id first.
+    """
+    totals = collections.Counter()
+    cost = 0.0
+    seen = set()
+    first_ts = None
+    for line in open(path, errors="ignore"):
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if first_ts is None and rec.get("timestamp"):
+            first_ts = rec["timestamp"]
+        msg = rec.get("message") or {}
+        usage = msg.get("usage")
+        if not usage:
+            continue
+        key = msg.get("id") or rec.get("requestId") or rec.get("uuid")
+        if key in seen:
+            continue
+        seen.add(key)
+        i = usage.get("input_tokens", 0)
+        o = usage.get("output_tokens", 0)
+        cw = usage.get("cache_creation_input_tokens", 0)
+        cr = usage.get("cache_read_input_tokens", 0)
+        totals["in"] += i; totals["out"] += o
+        totals["cache_write"] += cw; totals["cache_read"] += cr
+        totals["context"] += i + cw + cr
+        r = RATES[tier(msg.get("model"))]
+        cost += (i * r[0] + cw * r[1] + cr * r[2] + o * r[3]) / 1e6
+    return totals, len(seen), cost, first_ts
+
+cutoff = None
+if SINCE:
+    try:
+        cutoff = datetime.datetime.fromisoformat(SINCE).replace(tzinfo=datetime.timezone.utc)
+    except ValueError:
+        print(f"ERROR: --since must be an ISO date, got: {SINCE}", file=sys.stderr)
+        sys.exit(1)
+
+sessions = []
+agg_o, agg_s = collections.Counter(), collections.Counter()
+for project in sorted(glob.glob(os.path.join(ROOT, "*"))):
+    if MATCH and MATCH not in os.path.basename(project):
+        continue
+    for main in glob.glob(os.path.join(project, "*.jsonl")):
+        ot, turns, ocost, ts = scan(main)
+        if turns < 3:
+            continue
+        if cutoff and ts:
+            try:
+                if datetime.datetime.fromisoformat(ts.replace("Z", "+00:00")) < cutoff:
+                    continue
+            except ValueError:
+                pass
+        sid = os.path.basename(main)[:-6]
+        st, scost, nsub = collections.Counter(), 0.0, 0
+        for sub in glob.glob(os.path.join(project, sid, "subagents", "*.jsonl")):
+            t, _, c, _ = scan(sub)
+            st += t; scost += c; nsub += 1
+        agg_o += ot; agg_s += st
+        sessions.append({
+            "project": os.path.basename(project), "session": sid, "started": ts,
+            "orchestrator_usd": round(ocost, 2), "subagent_usd": round(scost, 2),
+            "total_usd": round(ocost + scost, 2), "turns": turns, "subagents": nsub,
+            "avg_context_per_turn": int(ot["context"] / turns) if turns else 0,
+            "orchestrator_output_tokens": ot["out"],
+        })
+
+if not sessions:
+    print(f"No sessions matched '{MATCH}' under {ROOT}")
+    sys.exit(0)
+
+sessions.sort(key=lambda s: -s["total_usd"])
+totals = [s["total_usd"] for s in sessions]
+median = sorted(totals)[len(totals) // 2]
+
+def mix(c):
+    tot = c["in"] * 15 + c["cache_write"] * 18.75 + c["cache_read"] * 1.5 + c["out"] * 75
+    if not tot:
+        return {}
+    return {"cache_read_pct": round(100 * c["cache_read"] * 1.5 / tot),
+            "output_pct": round(100 * c["out"] * 75 / tot),
+            "cache_write_pct": round(100 * c["cache_write"] * 18.75 / tot)}
+
+summary = {
+    "sessions": len(sessions),
+    "median_usd": median,
+    "mean_usd": round(sum(totals) / len(totals), 2),
+    "total_usd": round(sum(totals), 2),
+    "median_turns": sorted(s["turns"] for s in sessions)[len(sessions) // 2],
+    "median_context_per_turn": sorted(s["avg_context_per_turn"] for s in sessions)[len(sessions) // 2],
+    "orchestrator_cost_mix": mix(agg_o),
+    "subagent_cost_mix": mix(agg_s),
+}
+
+if AS_JSON:
+    print(json.dumps({"summary": summary, "sessions": sessions[:LIMIT]}, indent=2))
+    sys.exit(0)
+
+print(f"Review token report - {len(sessions)} sessions under {ROOT} matching '{MATCH}'")
+if SINCE:
+    print(f"  since {SINCE}")
+print()
+print(f"{'PROJECT':<42}{'$orch':>9}{'$subs':>9}{'$total':>9}{'turns':>7}{'ctx/turn':>10}{'subs':>6}")
+for s in sessions[:LIMIT]:
+    print(f"{s['project'][-42:]:<42}{s['orchestrator_usd']:>9.2f}{s['subagent_usd']:>9.2f}"
+          f"{s['total_usd']:>9.2f}{s['turns']:>7}{s['avg_context_per_turn']:>10,}{s['subagents']:>6}")
+if len(sessions) > LIMIT:
+    print(f"… and {len(sessions) - LIMIT} more (raise --limit to see them)")
+print()
+print(f"  median ${summary['median_usd']:.2f}/review   mean ${summary['mean_usd']:.2f}   total ${summary['total_usd']:,.2f}")
+print(f"  median {summary['median_turns']} orchestrator turns at {summary['median_context_per_turn']:,} tokens of context each")
+om, sm = summary["orchestrator_cost_mix"], summary["subagent_cost_mix"]
+if om:
+    print(f"  orchestrator: cache-read {om['cache_read_pct']}%  output {om['output_pct']}%  cache-write {om['cache_write_pct']}%")
+if sm:
+    print(f"  subagents:    cache-read {sm['cache_read_pct']}%  output {sm['output_pct']}%  cache-write {sm['cache_write_pct']}%")
+o = sum(s["orchestrator_usd"] for s in sessions)
+t = sum(totals)
+if t:
+    print(f"  split: orchestrator {100 * o / t:.0f}% / subagents {100 * (t - o) / t:.0f}%")
+PYTHON

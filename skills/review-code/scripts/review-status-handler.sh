@@ -11,6 +11,7 @@ set -euo pipefail
 #   init <args>                - Initialize session, run orchestrator, return session ID
 #   get-status <session-id>    - Get status from cached session
 #   get-ready-data <session-id> - Get all data for "ready" status from cache
+#   get-review-fields <session-id> - Get only the small orchestrator-facing fields (no diff/context/PR body)
 #   get-error-data <session-id> - Get error message from cache
 #   get-ambiguous-data <session-id> - Get disambiguation fields from cache
 #   get-prompt-data <session-id> - Get prompt fields from cache
@@ -24,7 +25,7 @@ shift || true
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Source session manager
-# shellcheck source=lib/session-manager.sh
+# shellcheck source=session-manager.sh
 source "${SCRIPT_DIR}/session-manager.sh"
 
 # Find the orchestrator script
@@ -49,6 +50,13 @@ case "${ACTION}" in
         # Sweep sessions (and worktrees) from a crashed/abandoned prior review.
         # 24h threshold avoids reaping one still paused on a prompt elsewhere.
         session_cleanup_old "review-code" 1440 2> /dev/null || true
+
+        # Large payloads (the diff, the agent briefing) live in this directory as
+        # files rather than inside the session JSON, so the orchestrating model
+        # never pulls them into its context just to hand them to a subagent.
+        REVIEW_CODE_ARTIFACTS_DIR=$(session_artifacts_dir_new "review-code")
+        export REVIEW_CODE_ARTIFACTS_DIR
+
         # Initialize session - run orchestrator and cache result
         # Pass arguments separately to preserve word splitting
         review_data=$("${ORCHESTRATOR}" "$@")
@@ -175,6 +183,52 @@ case "${ACTION}" in
         session_get_all "${SESSION_ID}"
         ;;
 
+    "get-review-fields")
+        # Narrow accessor for the review handler. Returns only the small fields the
+        # orchestrating model actually reasons about. The diff, review_context, PR
+        # body and PR comments are deliberately excluded: they are large, they are
+        # already written to files for the subagents, and pulling them into the
+        # orchestrator's context costs their size on every subsequent turn.
+        SESSION_ID="${1:-}"
+        if [[ -z "${SESSION_ID}" ]]; then
+            echo "ERROR: Session ID required" >&2
+            exit 1
+        fi
+
+        session_get_all "${SESSION_ID}" | jq -c '{
+            mode,
+            status,
+            diff_tokens,
+            languages,
+            file_info,
+            file_metadata,
+            display_summary,
+            summary,
+            git: (.git // null),
+            diff_path: (.diff_path // null),
+            artifacts_dir: (.artifacts_dir // null),
+            file_ref: (.file_ref // null),
+            chunk_metadata: (.chunk_metadata // null),
+            commit_messages_present: (has("commit_messages")),
+            adversary: (.adversary // null)
+        }
+        + (if .force then {force: true} else {} end)
+        + (if .draft then {draft: true} else {} end)
+        + (if .self then {self: true} else {} end)
+        + (if .overwrite then {overwrite: true} else {} end)
+        + (if .append then {append: true} else {} end)
+        + (if .full then {full: true} else {} end)
+        + (if .fix then {fix: true} else {} end)
+        + (if .debug_session_dir then {debug_session_dir} else {} end)
+        + (if .pr then {pr: {number: .pr.number, title: .pr.title, author: .pr.author, url: .pr.url, base: .pr.base, head: .pr.head, head_sha: .pr.head_sha}, reviewer_username, is_own_pr} else {} end)
+        + (if .branch then {branch} else {} end)
+        + (if .base_branch then {base_branch} else {} end)
+        + (if .base_source then {base_source} else {} end)
+        + (if .commit then {commit} else {} end)
+        + (if .range then {range} else {} end)
+        + (if .area then {area} else {} end)'
+        ;;
+
     "get-find-data")
         # Get find mode data from cached session
         SESSION_ID="${1:-}"
@@ -225,7 +279,7 @@ case "${ACTION}" in
 
     *)
         echo "ERROR: Unknown action: ${ACTION}" >&2
-        echo "Valid actions: init, get-status, get-ready-data, get-find-data, get-error-data, get-ambiguous-data, get-prompt-data, get-prompt-pull-data, get-session-file, cleanup, cleanup-old" >&2
+        echo "Valid actions: init, get-status, get-ready-data, get-review-fields, get-find-data, get-error-data, get-ambiguous-data, get-prompt-data, get-prompt-pull-data, get-session-file, cleanup, cleanup-old" >&2
         exit 1
         ;;
 esac

@@ -146,11 +146,14 @@ teardown() {
     echo "$output" | jq -e '.git.repo'
 }
 
-@test "review-orchestrator.sh: local mode includes diff" {
+@test "review-orchestrator.sh: local mode includes the diff path" {
     echo "change" > file.txt
     run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
-    echo "$output" | jq -e '.diff'
+    # The diff is written to a file and referenced by path, so the orchestrating
+    # model never carries its bytes.
+    diff_path=$(echo "$output" | jq -r '.diff_path')
+    [ -s "$diff_path" ]
 }
 
 @test "review-orchestrator.sh: local mode includes languages" {
@@ -294,14 +297,17 @@ teardown() {
     [ "$range" = "HEAD~1..HEAD" ]
 }
 
-@test "review-orchestrator.sh: range mode includes diff" {
+@test "review-orchestrator.sh: range mode includes the diff path" {
     echo "second" > file2.txt
     git add file2.txt
     git commit -m "Second commit"
 
     run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" "HEAD~1..HEAD"
     [ "$status" -eq 0 ]
-    echo "$output" | jq -e '.diff'
+    # The diff is written to a file and referenced by path, so the orchestrating
+    # model never carries its bytes.
+    diff_path=$(echo "$output" | jq -r '.diff_path')
+    [ -s "$diff_path" ]
 }
 
 # =============================================================================
@@ -506,7 +512,7 @@ teardown() {
 
     run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" "HEAD~1..HEAD"
     [ "$status" -eq 0 ]
-    diff=$(echo "$output" | jq -r '.diff')
+    diff=$(cat "$(echo "$output" | jq -r '.diff_path')")
     [[ "$diff" == *"DIFF_TYPE:"* ]]
 }
 
@@ -521,7 +527,7 @@ teardown() {
 
     run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" feature
     [ "$status" -eq 0 ]
-    diff=$(echo "$output" | jq -r '.diff')
+    diff=$(cat "$(echo "$output" | jq -r '.diff_path')")
     [[ "$diff" == *"DIFF_TYPE:"* ]]
 }
 
@@ -529,7 +535,7 @@ teardown() {
     echo "change" > file.txt
     run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
-    diff=$(echo "$output" | jq -r '.diff')
+    diff=$(cat "$(echo "$output" | jq -r '.diff_path')")
     [[ "$diff" == *"DIFF_TYPE:"* ]]
 }
 
@@ -907,11 +913,13 @@ teardown() {
     [ "$has_meta" = "false" ]
 }
 
-@test "review-orchestrator.sh: diff field always present regardless of chunking" {
+@test "review-orchestrator.sh: diff path always present regardless of chunking" {
     echo "change" > file.txt
     run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
-    echo "$output" | jq -e 'has("diff")'
+    echo "$output" | jq -e 'has("diff_path")'
+    # The bytes must NOT be inline: keeping them out is the point of the path.
+    echo "$output" | jq -e 'has("diff") | not'
 }
 
 @test "review-orchestrator.sh: chunk threshold env vars are respected" {
@@ -935,6 +943,7 @@ teardown() {
     echo "$output" | jq -e '.chunk_metadata.chunked == true'
     echo "$output" | jq -e '.chunk_metadata.chunk_count > 1'
 
-    # The full diff must still be present
-    echo "$output" | jq -e 'has("diff")'
+    # The full diff must still be reachable, as a path
+    echo "$output" | jq -e 'has("diff_path")'
+    [ -s "$(echo "$output" | jq -r '.diff_path')" ]
 }

@@ -56,15 +56,17 @@ This isn't premature abstraction - it's solving proven problems with a domain-ap
 
 ### 2. Token Efficiency
 
-Review-code achieves 40-60% token savings through multiple optimization strategies:
+A review's cost is dominated by the orchestrating conversation, not by the size of the diff. Two things drive it: how much the orchestrator carries in context, multiplied by how many turns it takes, and how much it has to write out to brief its agents. The optimizations target both:
 
+- **Briefing by reference**: The shared payload (PR context, commit messages, architectural context, language guidelines, review instructions) is written to a file once by `build-agent-briefing.sh`. Agent prompts point at it rather than repeating it, so the orchestrator writes it once instead of once per agent.
+- **The diff stays on disk**: The session record holds a path, not the diff bytes. The orchestrator never loads the diff into its own context, and agents, the position mapper, and the adversary pass all read it from the file.
 - **Diff Compression**: Minimal context lines (1 vs 3) - agents can read full files when needed
 - **Smart Context Loading**: Only loads guidelines for detected languages/frameworks
-- **Architectural Context Caching**: Caches context exploration results for 24 hours
-- **Incremental Diff Tracking**: Only reviews files changed since last review
+- **Scope classification**: `classify-review-scope.sh` picks exploration depth and which agents run, based on diff size and file types
+- **Incremental re-review**: With `--append`, a re-review covers only what changed since the last one, using the commit recorded in the previous review's metadata. Force-pushes, rebases, a moved base, or a delta covering most of the PR fall back to a full review and say why.
 - **Bash Scripts for Heavy Lifting**: Uses shell scripts for diff generation, file detection, and context preparation instead of consuming tokens
 
-This means you get thorough reviews without burning through your token budget.
+Run `bin/token-report` to measure what your own reviews cost. It reads the session transcripts and separates orchestrator cost from subagent cost, which the skill's own `.reviews/token-usage.jsonl` cannot see.
 
 ### 3. Continuous Improvement via Feedback Loop
 
@@ -90,7 +92,7 @@ This creates a virtuous cycle where reviews get better as you identify new patte
 - **Draft GitHub Reviews**: `--draft` posts inline comments as a pending review, with automatic comment-drift detection when new commits land between generation and submission
 - **Adversary Meta-Review** (opt-in): `--adversary:copilot` or `--adversary:codex` runs a second-opinion pass through the Copilot or Codex CLI that validates findings and scans for anything obvious that was missed. Copilot no longer runs automatically when installed; pass `--adversary:copilot` to restore the previous behavior.
 - **Learning Loop**: `learn` subcommand analyzes PR outcomes and folds patterns back into context files
-- **Token Optimizations**: Diff filtering (excludes lock files, snapshots, generated code), context caching (40-60% savings)
+- **Token Optimizations**: Diff filtering (excludes lock files, snapshots, generated code), briefing by reference, and session caching
 - **Confidence Scoring**: Every finding includes confidence level (20-100%) to help prioritize
 
 ## Quick Start
@@ -513,11 +515,16 @@ See [`tests/README.md`](tests/README.md) for detailed testing documentation.
 
 ## Token Optimizations
 
-The review system includes several optimizations to reduce token usage by 40-60%:
+The review system includes several optimizations to reduce token usage:
 
-1. **Diff Compression**: Uses minimal context lines (1 instead of 3) - agents can read full files if needed
-2. **Smart Context Loading**: Only loads context for detected languages/frameworks
-3. **Bash Heavy Lifting**: Shell scripts handle diff generation, parsing, and context gathering
+1. **Briefing by reference**: The shared agent payload is written to a file once and pointed at, not repeated into every agent prompt
+2. **The diff stays on disk**: The session record carries a path; the orchestrator never holds the diff bytes
+3. **Diff Compression**: Uses minimal context lines (1 instead of 3) - agents can read full files if needed
+4. **Smart Context Loading**: Only loads context for detected languages/frameworks
+5. **Incremental re-review**: `--append` reviews only what changed since the last review, with loud fallbacks
+6. **Bash Heavy Lifting**: Shell scripts handle diff generation, parsing, and context gathering
+
+Measure the effect with `bin/token-report`.
 
 **Environment Variables:**
 

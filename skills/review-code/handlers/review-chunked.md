@@ -45,7 +45,7 @@ Loaded when the session JSON's `chunk_metadata.chunked` is `true`: the diff was 
    Save each chunk's analysis result as `$chunk_analyses[$chunk.id]`. Extract usage metadata from each response and record in `$token_usage` as `chunk-{id}-analysis`.
 
 2. After all per-chunk analyses complete, for each chunk in the `chunks` array, for each applicable agent:
-   - Replace `$diff` in the agent context with the chunk's `diff` field (the subset of changes for this chunk)
+   - Point the agent at the chunk's `diff_path` instead of `diff.patch`; each chunk's hunks are written to their own file
    - Add a chunk context header to each agent prompt:
      ```
      **Chunk Context:**
@@ -59,7 +59,7 @@ Loaded when the session JSON's `chunk_metadata.chunked` is `true`: the diff was 
      **Chunk Analysis:**
      $chunk_analyses[$chunk.id]
      ```
-   - Keep all other context the same: full `file_metadata`, full `architectural_context`, full `review_context`, all PR metadata
+   - Everything else comes from the shared `briefing.md`, exactly as in an unchunked review; only the diff file differs per chunk
    - Dispatch all (chunk x agent) combinations in parallel via the Task tool (if the named reviewer subagent types aren't registered in this environment, apply the general-purpose fallback from review.md's "Subagent Availability" section)
 
 3. After all tasks complete, merge all findings into a single pool for synthesis.

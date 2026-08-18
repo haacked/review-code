@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # create-draft-review.sh - Create a pending GitHub PR review with inline comments
 #
 # Creates a pending (draft) review on GitHub with inline comments. If a pending
@@ -17,6 +18,7 @@
 #     "summary": "Overall review summary...",
 #     "review_commit": "abc123...",           (optional: enables drift detection)
 #     "original_diff": "diff --git ...",      (optional: original diff for content matching)
+#     "original_diff_path": "/path/diff.patch",  (optional: same diff as a file, preferred)
 #     "comments": [
 #       {"path": "src/auth.ts", "line": 42, "side": "RIGHT", "body": "Consider...", "line_content": "    some_code()"},
 #       {"path": "src/utils.ts", "line": 15, "side": "RIGHT", "body": "This could..."}
@@ -36,8 +38,6 @@
 #     "replaced_existing": true,
 #     "drift_detected": false
 #   }
-
-set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/helpers/error-helpers.sh

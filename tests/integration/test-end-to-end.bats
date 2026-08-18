@@ -60,7 +60,7 @@ EOF
     [[ "$languages" =~ "python" ]]
 
     # Should include the diff
-    diff=$(echo "$output" | jq -r '.diff')
+    diff=$(cat "$(echo "$output" | jq -r '.diff_path')")
     [[ "$diff" == *"app.py"* ]]
 
     # Should have mode=local
@@ -127,7 +127,7 @@ EOF
     [ "$mode" = "range" ]
 
     # Should include both files in the diff
-    diff=$(echo "$output" | jq -r '.diff')
+    diff=$(cat "$(echo "$output" | jq -r '.diff_path')")
     [[ "$diff" == *"file2.txt"* ]]
     [[ "$diff" == *"file3.txt"* ]]
 }
@@ -149,7 +149,7 @@ EOF
     [ "$mode" = "range" ]
 
     # Should include the new file
-    diff=$(echo "$output" | jq -r '.diff')
+    diff=$(cat "$(echo "$output" | jq -r '.diff_path')")
     [[ "$diff" == *"file2.txt"* ]]
 }
 
@@ -178,7 +178,7 @@ EOF
     [ "$mode" = "branch" ]
 
     # Should include feature file in diff
-    diff=$(echo "$output" | jq -r '.diff')
+    diff=$(cat "$(echo "$output" | jq -r '.diff_path')")
     [[ "$diff" == *"feature.txt"* ]]
     [[ "$diff" == *"feature code"* ]]
 }
@@ -244,7 +244,7 @@ EOF
     [ "$status" -eq 0 ]
 
     # Diff should include Python file
-    diff=$(echo "$output" | jq -r '.diff')
+    diff=$(cat "$(echo "$output" | jq -r '.diff_path')")
     [[ "$diff" == *"app.py"* ]]
 
     # Diff should NOT include TypeScript or markdown
@@ -325,7 +325,8 @@ EOF
 
     # Validate required fields exist
     echo "$output" | jq -e '.mode' > /dev/null
-    echo "$output" | jq -e '.diff' > /dev/null
+    diff_path=$(echo "$output" | jq -r '.diff_path')
+    [ -s "$diff_path" ]
     # Languages structure can vary - check both possible locations
     echo "$output" | jq -e '.languages' > /dev/null
     # has_frontend should exist somewhere in the output

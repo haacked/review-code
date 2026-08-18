@@ -6,13 +6,19 @@ If STATUS is "ready", get the session file path (replace `<SESSION_ID>` with the
 ~/.claude/skills/review-code/scripts/review-status-handler.sh get-session-file "<SESSION_ID>"
 ```
 
-Save the output as `SESSION_FILE`. Read the session file using the Read tool and extract `display_summary` to show the user what will be reviewed.
+Save the output as `SESSION_FILE`. Then get the orchestrator-facing fields:
 
-**All subsequent data extraction uses the Read tool on the same SESSION_FILE. Do not re-run the orchestrator.**
+```bash
+~/.claude/skills/review-code/scripts/review-status-handler.sh get-review-fields "<SESSION_ID>"
+```
+
+Save that JSON as `REVIEW_FIELDS` and show the user `display_summary`.
+
+**Do not Read the session file itself.** It holds the review context and the full PR body and comments; those are already written to the agent briefing, and pulling them into this conversation costs their size again on every later turn. `get-review-fields` returns everything the orchestration needs and nothing it does not. Do not re-run the orchestrator.
 
 ### Handle Existing Review Files
 
-From the session file JSON, extract `file_info`: `file_exists`, `file_path`, `has_branch_review`, `branch_review_path`, `needs_rename`, and `pr_number`. The merge and migrate procedures below live in `~/.claude/skills/review-code/handlers/existing-review-files.md`; Read it when an option that uses one is selected.
+From `REVIEW_FIELDS`, extract `file_info`: `file_exists`, `file_path`, `has_branch_review`, `branch_review_path`, `needs_rename`, and `pr_number`. The merge and migrate procedures below live in `~/.claude/skills/review-code/handlers/existing-review-files.md`; Read it when an option that uses one is selected.
 
 **If `has_branch_review` is true** (both PR and branch reviews exist):
 
@@ -51,11 +57,11 @@ On "Cancel" in any of the prompts above: clean up the session, then stop. A work
 
 ### Extract Session Data
 
-From the session file JSON, extract these fields for building agent context:
+From `REVIEW_FIELDS`, extract these fields for building agent context:
 - `mode`: review mode (pr, branch, commit, range, local)
-- `diff`: the code changes to review
+- `diff_path`: filesystem path to the diff. The bytes stay on disk; agents read them.
+- `artifacts_dir`: directory holding the diff and the agent briefing
 - `file_metadata`: metadata about changed files
-- `review_context`: language/framework-specific guidelines
 - `git`: git repository context
 - `languages`: detected languages
 - `file_info.file_path`: where to save the review
@@ -73,17 +79,42 @@ Mode-specific fields:
 
 ### Load Conditional Instructions
 
-Some steps apply only to certain sessions, and their instructions live in separate handler files. Check the session JSON now and Read every file whose condition holds, in one pass, before continuing:
+Some steps apply only to certain sessions, and their instructions live in separate handler files. Check `REVIEW_FIELDS` now and Read every file whose condition holds, in one pass, before continuing:
 
-| Condition (session JSON) | Read this file |
+| Condition (`REVIEW_FIELDS`) | Read this file |
 |---|---|
 | `debug_session_dir` is a non-empty string | `~/.claude/skills/review-code/handlers/review-debug.md` |
 | `chunk_metadata.chunked` is `true` | `~/.claude/skills/review-code/handlers/review-chunked.md` |
 | `adversary` is present | `~/.claude/skills/review-code/handlers/review-adversary.md` |
 | `mode` is `"pr"` | `~/.claude/skills/review-code/handlers/review-pr-output.md` |
 | `fix` is `true` | `~/.claude/skills/review-code/handlers/review-fix.md` |
+| always, at the compose step | `~/.claude/skills/review-code/handlers/review-compose.md` (Read it then, not now) |
 
 Each file states where in the flow below its steps run. If no condition holds, read nothing and continue.
+
+### Decide Whether This Is a Re-review
+
+Runs only when `append` is true in `REVIEW_FIELDS` and `file_info.file_exists` is true, meaning a review of this PR already exists on disk. Skip this section when either is false, or when `full` is true (the user asked for a complete pass with `--full`).
+
+A re-review normally pays full freight: every agent reads the whole diff again even when the author pushed a two-line fix. The previous review's metadata header records the SHA it was taken at, so the changes since then are computable:
+
+```bash
+~/.claude/skills/review-code/scripts/review-delta.sh \
+  --review-file "<file_info.file_path>" \
+  --head-sha "<pr.head_sha>" \
+  --repo-dir "<git.working_dir>" \
+  --out "<artifacts_dir>/delta.patch"
+```
+
+Read `mode` from the JSON it prints:
+
+- **`no-change`** — head is where the last review left it. Tell the user, show them the existing review's path, and stop. Do not dispatch agents; there is nothing new to look at.
+- **`delta`** — set `$review_mode` to `delta` and `$delta_from` to the returned `delta_from`. Pass the returned `diff_path` to `build-agent-briefing.sh` as `--diff-file`, along with `--previous-review "<file_info.file_path>"` so agents can see what was already raised; agents then read that diff instead of the full one. Leave the scope classifier on the full diff: classifying the smaller delta would select fewer agents, and a re-review should not be shallower than the first pass.
+- **`full`** — set `$review_mode` to `full` and continue normally with the whole diff.
+
+**Always tell the user which path this took, and for `full`, the `reason` the script gave.** A silent fallback looks identical to a delta review that found nothing, and the difference matters: a full re-review costs what it always did.
+
+**Carrying findings forward.** On the `delta` path, parse the previous review's findings and carry forward only those whose file the delta does not touch. Findings in files the delta changed are dropped and re-derived by the agents against the new code. This is deliberately conservative and it has a known limit worth stating in the review: a change in one file can invalidate a finding about a file the delta never touched. Record `review_mode: delta` and `delta_from: <sha>` in the review's metadata header so every carried-forward finding is traceable to the SHA it was derived at.
 
 ### Classify Review Scope
 
@@ -128,20 +159,20 @@ Maintain a `$token_usage` map throughout the review. After each Agent/Task tool 
 
 ### Prepare File Access Instructions
 
-Build `$file_access_instructions` based on the session data. This block is included in both the context explorer and agent prompts. Substitute the actual `git.working_dir` path into the instructions when `working_dir` is set. Do not emit `$git.working_dir` or similar placeholders verbatim.
+Build `$file_access_instructions` based on `REVIEW_FIELDS`. This block is included in both the context explorer and agent prompts. Substitute the actual `git.working_dir` path into the instructions when `working_dir` is set. Do not emit `$git.working_dir` or similar placeholders verbatim.
 
 `git.local_clone` is set only for cross-repo reviews where a detached worktree was provisioned from a configured clone; when it is set and `working_dir` is set, `working_dir` is that worktree and Read/Grep/Glob read the PR's files directly. In the same-repo cross-branch case, `local_clone` is null and `working_dir` is the user's current checkout (which may be on a different branch), so Read on `working_dir` would read the wrong content for PR files.
 
 **If `working_dir` is set and `file_ref` is set and `local_clone` is set:**
 ```
 **File Access:**
-A detached worktree checked out to this PR is available at the path given by `git.working_dir` in the session data. Use Read, Grep, and Glob normally; they operate on that directory. Do not run `git checkout` or `git switch` anywhere, and do not run other write operations in the worktree; the orchestrator owns its lifetime.
+A detached worktree checked out to this PR is available at the path given by `git.working_dir` in `REVIEW_FIELDS`. Use Read, Grep, and Glob normally; they operate on that directory. Do not run `git checkout` or `git switch` anywhere, and do not run other write operations in the worktree; the orchestrator owns its lifetime.
 ```
 
 **If `working_dir` is set and `file_ref` is set and `local_clone` is null:**
 ```
 **File Access:**
-You are reviewing from a different branch in the same repo. The user's working tree at `git.working_dir` is on a different branch than the PR, so Read/Grep/Glob there see the wrong file contents for the PR. To read files as they appear in the PR, use `git show "$file_ref:<path>"` via the Bash tool (substitute the actual ref from the session data and always quote the argument to handle paths with spaces or special characters). Do NOT use `git checkout` or `git switch`: this would modify the user's working tree. Read, Grep, and Glob are still useful for finding patterns and conventions in the user's working tree, just not for reading the PR's file contents. `git show` works for any file that exists at the ref, including files newly added in the PR. If `git show` fails (e.g., the file was deleted or renamed, the path is wrong, or the ref was not fetched), fall back to the diff content.
+You are reviewing from a different branch in the same repo. The user's working tree at `git.working_dir` is on a different branch than the PR, so Read/Grep/Glob there see the wrong file contents for the PR. To read files as they appear in the PR, use `git show "$file_ref:<path>"` via the Bash tool (substitute the actual ref from `REVIEW_FIELDS` and always quote the argument to handle paths with spaces or special characters). Do NOT use `git checkout` or `git switch`: this would modify the user's working tree. Read, Grep, and Glob are still useful for finding patterns and conventions in the user's working tree, just not for reading the PR's file contents. `git show` works for any file that exists at the ref, including files newly added in the PR. If `git show` fails (e.g., the file was deleted or renamed, the path is wrong, or the ref was not fetched), fall back to the diff content.
 ```
 
 **If `working_dir` is set and `file_ref` is NOT set:**
@@ -206,8 +237,7 @@ $commit_messages
 **File Metadata:**
 $file_metadata
 
-**Diff:**
-$diff
+**Diff:** read it from `$diff_path` — do not expect it inline.
 
 $file_access_instructions
 
@@ -267,178 +297,39 @@ Invoke the agents determined by the scope classification. If an area was specifi
 | infra-config | code-reviewer-infra-config | Cross-env consistency, route/service correctness, operational safety, config validation |
 | *(frontend detected)* | code-reviewer-frontend | React/TS patterns, components, state, a11y |
 
-**Area-scoped diffs for file-type-scoped agents:**
+**Build the shared briefing once, then point every agent at it.**
 
-The frontend and infra-config agents review only their own file types, so don't pay to send them the rest of the diff:
+All agents need the same payload: PR context, commit messages, architectural context, language guidelines, and the shared review instructions. Writing it into each agent's prompt would mean retyping it once per agent and carrying it here for the rest of the run, so a script writes it to disk instead.
 
-- **code-reviewer-frontend**: replace `$diff` with only the hunks for frontend files: `.tsx`/`.jsx`, `.css`/`.scss`, templates, and `.ts`/`.js` files that sit alongside the changed `.tsx`/`.jsx` files or under the repo's UI source root (e.g., `frontend/`, `web/`, `client/`, `src/components/`). A `.ts`/`.js` file matching neither rule is ambiguous; the rule below says to include it.
-- **code-reviewer-infra-config**: replace `$diff` with only the hunks for files where `file_metadata` has `is_infra_config: true`.
+First save the explorer's output to a file so it can go into the briefing:
 
-In both cases, append after the diff:
-
-```
-**Other files changed in this PR (not shown above, outside your review scope):**
-<comma-separated list of the remaining changed file paths>
+```bash
+cat > "<artifacts_dir>/architectural-context.md" <<'ARCHEOF'
+<the explorer's output>
+ARCHEOF
 ```
 
-All other agents receive the full diff. If slicing is ambiguous for a file (e.g., shared types imported by both frontend and backend), include it; only omit hunks that are clearly outside the agent's scope.
+Then build the briefing, passing the agents being dispatched so the area-scoped diffs get written:
 
-**Build the context to pass to each agent:**
+```bash
+~/.claude/skills/review-code/scripts/build-agent-briefing.sh "$SESSION_FILE" \
+  --arch-context-file "<artifacts_dir>/architectural-context.md" \
+  --agents "<space-separated $selected_agents>"
+```
+
+It writes `briefing.md`, `diff.patch`, and — when those agents run — `diff-frontend.patch` and `diff-infra-config.patch`, each holding only that agent's file types plus a list of the paths left out. It exits non-zero if any output is missing or empty. **If it fails, stop and report the failure. Do not dispatch agents at an unreadable briefing**: an agent that cannot read its briefing finds nothing, which looks exactly like clean code.
+
+**The prompt for each agent** is then short. Substitute the agent's own diff file (`diff-frontend.patch` for frontend, `diff-infra-config.patch` for infra-config when those files exist, `diff.patch` for everyone else):
 
 ```markdown
-{For PR mode:}
-You are reviewing Pull Request #$pr_number: "$pr_title"
+Read `<artifacts_dir>/briefing.md` for the review context and shared instructions, then read `<artifacts_dir>/<agent-diff-file>` for the code changes. Apply your domain lens to those changes.
 
-**PR Details:**
-- URL: $pr_url
-- Author: $pr_author
-- Branch: (from pr data) → (to pr data)
-- Status: (from pr data)
-
-**PR Description:**
-$pr_body
-
-{If pr.linked_issues is not empty:}
-**Linked Issues:**
-{For each issue in pr.linked_issues:}
-### Issue #$issue.number: $issue.title
-**Labels:** $issue.labels (comma-separated names)
-**State:** $issue.state
-$issue.body
----
-{End for}
-
-**Existing Review Comments:**
-$pr_comments
-
-{For commit mode:}
-Reviewing commit: $commit
-
-{For branch mode with associated PR:}
-Reviewing branch: $branch vs $base_branch
-
-**Associated Pull Request:**
-- PR #$pr_number: $pr_title
-- Author: $pr_author
-- State: $pr_state
-- URL: $pr_url
-
-**PR Description:**
-$pr_body
-
-**PR Discussion:**
-$pr_comments
-
-{For branch mode without PR:}
-Reviewing branch: $branch vs $base_branch
-
-{For range mode:}
-Reviewing range: $range
-
-{For all modes:}
-{If commit_messages is not empty:}
-**Commit Messages:**
-$commit_messages
-
-**Code Changes:**
-$diff
-
-**Architectural Context:**
-$architectural_context
-
-{If review_context not empty:}
-**Language/Framework-Specific Guidelines:**
-$review_context
+If either file is missing or unreadable, stop immediately and reply with exactly `BRIEFING_UNAVAILABLE` and nothing else. Do not review from memory or partial information.
 
 $file_access_instructions
-
-**Accuracy Requirements:**
-For each finding you report:
-1. Quote the exact code you're referencing in your analysis to verify the claim; the comment body itself describes the behavior in plain English (see Inline Comment Voice)
-2. Verify the line number by reading the actual file (see File Access above)
-3. Only flag code in the diff. Do not flag pre-existing issues in unchanged code.
-4. For bug claims: read surrounding code to confirm the behavior before reporting
-5. For every `blocking:` or `suggestion:` finding, include a **concrete code fix**: show the recommended change as a diff (`- old` / `+ new`) or replacement code block. If you cannot provide a concrete fix, demote the finding to `question:`.
-
-**Comment Prefixes:**
-
-Prefix every finding so the author knows what action is expected. The prefix must be code-formatted in the comment body (e.g., `` `blocking`: This must be fixed ``):
-
-- `blocking`: Must be fixed before merge. Reserve for bugs, security issues, or breakage.
-- `nit`: Minor style or naming suggestion. Take it or leave it.
-- `suggestion`: A different approach worth considering, but the author's call.
-- `question`: You don't understand something. Not necessarily a problem.
-
-If a comment has no prefix, treat it as a suggestion.
-
-**Verify before asking or hedging.**
-
-Before writing a `question:` comment, or hedging a `blocking:`/`suggestion:` finding with "I can't tell from the diff" / "not sure if this is a bug", try to answer it yourself from the source. The author has access to the same files; if the answer is one read away, asking instead of looking is just noise.
-
-When the answer is about file content (does X exist, what does Y do, where is Z defined, which of two calls runs first), try these in cheapest-first order and stop as soon as one works:
-
-1. Grep the diff itself. The change context is already in the session data; many questions are answered there with no extra tool calls.
-2. If `working_dir` is set, use Read/Grep on the PR's files at `git.working_dir`.
-3. If `file_ref` is set, fetch via `git show "$file_ref:<path>"`.
-4. If `pr.head_sha` is available, fetch via `gh api repos/<org>/<repo>/contents/<path>?ref=<sha>` and decode the base64 `content` field.
-
-Only ask the author when the answer genuinely depends on context outside the code: their intent, a future plan, an incident the code is responding to, an external system's behavior. "What do you mean?" / "Does X exist?" / "Where is Y handled?" almost always have an answer in the repo, and asking the author for them wastes their time.
-
-If you exhausted the steps above and still cannot verify a specific fact (the file is outside the diff and not fetchable, the symbol is in a system you don't have access to), you may write a `question:` comment (or note the residual uncertainty in a `blocking:`/`suggestion:` finding), but cite what you checked. "I couldn't find `foo()` in the diff or in `bar.py` at this ref. Is it defined elsewhere, or should this call use `baz()` instead?" beats a bare "Where is `foo` defined?"
-
-**Inline Comment Voice:**
-
-Analyze like a senior engineer; write the comment for a teammate who has not read the diff and shouldn't have to decode anything: direct, specific, conversational. A dedicated voice agent rewrites every surviving comment body before publication, so spend your effort on the technical content in a plain register. The points below are the ones the voice agent cannot fix afterward; get them right when drafting.
-
-- Lead with the consequence, and name it. Sentence 1 says what breaks or what's at risk; the rest gives just enough mechanism to show why. Don't open with a verdict ("this is a real upgrade-window risk") or mid-mechanism. The voice agent can reorder phrasing but never invents a consequence you didn't state.
-- Describe behavior in plain English and cite `path:line` for each claim (in PR mode the linkify step turns citations into permalinks). Reserve inline code for the identifier the author must act on or an exact value that matters ("stays at 22", `TypeError`). If the reader has to mentally execute a quoted expression to follow a sentence, describe what the expression does and cite where it lives; the voice agent isn't allowed to paraphrase quoted code, so this is yours to get right.
-- Anchor in what the code does today ("this branch has no coverage"), not in a hypothetical future ("if someone later swaps the guard…").
-- For `blocking:` and `suggestion:` findings, always include a concrete code fix (see Accuracy Requirements above); use GitHub's `suggestion` syntax for single-line fixes. For `question:` and `nit:`, offer code when it helps.
-- Write about the code, not the author, and match certainty to the label: state findings plainly when they're clear in the diff, use `question:` when the answer depends on callers or config, and defer on judgment calls ("your call", "worth considering").
-- One finding per comment. One idea per sentence: if a sentence carries two claims, split it, and state a claim before the evidence for it. Write as many plain sentences as the finding needs; past about 8, it's probably two findings. `nit:` is at most 2 sentences. Past two or three sentences, put a blank line between the problem and the recommendation.
-- Say the thing, not a label for the thing: no `**Issue**:`/`**Impact**:` headers, no coined jargon ("the staleness window"), no formal-logic vocabulary ("vacuously true"), no filler. Name the concrete behavior instead.
-
-One worked example: lead with the consequence instead of a verdict.
-
-Good:
-```
-`blocking`: On self-hosted, this rename has a stale-cache problem after deploy. `License.update_available_product_features()` only re-syncs on org create, license save, or the hourly Celery beat at `:30`. Existing Enterprise orgs keep the old key and don't pick up the new one for up to an hour, and every gate that switched silently turns off in that window.
 ```
 
-Bad:
-```
-`blocking`: This is the spot that produces a real upgrade-window risk on self-hosted. `License.update_available_product_features()` only re-syncs on org create, license save, or the hourly Celery beat at `:30`. On a code-only deploy, an existing Enterprise org's `available_product_features` still holds the old key until the next tick, ~up to 60 minutes.
-```
-(The bad version opens with a verdict; the author has to clear the framing before reaching what the code is doing.)
-
-**Handling Existing PR Comments:**
-
-When the context includes PR comments (`$pr_comments`):
-1. **Never claim credit** for issues already identified by other reviewers
-2. **Evaluate each finding**: Is it legitimate? Correct? A false positive?
-3. **Attribute with assessment**: `[Found by @username] Issue description` + your analysis
-4. **Track fix status**: `Fixed in <commit>`, `Open`, or `Invalid`
-5. **Summarize at the start** in a table:
-   ```
-   | Issue | Found By | Status | Assessment |
-   |-------|----------|--------|------------|
-   | N+1 query | @bot | Fixed | Valid - good catch |
-   | Missing null check | @reviewer | Open | Valid - needs fix |
-   | Unused import | @linter | Invalid | False positive - used in macro |
-   ```
-6. **Focus on NEW findings** not already raised
-
-Comment structure: `conversation` (discussion), `reviews` (approve/changes), `inline` (line-level with `path`, `line`, `author`, `body`)
-
-{If previous_review exists:}
-**Previous Review:**
-$previous_review
-
-IMPORTANT: Build upon the previous review. Do not duplicate findings. You may:
-- Reference previous findings: "As noted in the previous review..."
-- Add new findings discovered since last review
-- Update status if code changed
-- Mark findings as resolved if fixed
+**If an agent replies `BRIEFING_UNAVAILABLE`:** Read `~/.claude/skills/review-code/handlers/review-inline-fallback.md` and re-dispatch that one agent with the payload inlined. Report in the review that the fallback fired, since it means the briefing path is broken and every later run pays full freight until it is fixed.
 
 ### Collect and Synthesize Results
 
@@ -490,12 +381,12 @@ Before including any finding in the final review, verify it references code actu
 **Step 1: Run the position mapper.** For each agent finding that references a specific file and line, build a targets array and run:
 
 ```bash
-~/.claude/skills/review-code/scripts/diff-position-mapper.sh <<'EOF'
-{"diff": "<diff from session data>", "targets": [<targets array>]}
+~/.claude/skills/review-code/scripts/diff-position-mapper.sh --diff-file "<diff_path>" <<'EOF'
+{"targets": [<targets array>]}
 EOF
 ```
 
-Where `targets` contains `{"path": "<file>", "line": <number>}` objects, and `diff` is the diff string from the session data.
+Where `targets` contains `{"path": "<file>", "line": <number>}` objects. The diff comes from the file, so it never passes through this conversation.
 
 **Step 2: Handle results.** Check the `mappings` array in the output:
 
@@ -611,153 +502,26 @@ If you loaded `review-fix.md` (session has `fix: true`), apply fixes per its ins
 
 ### Compose the Review Document
 
-**Title by mode:**
-
-| Mode | Title format |
-|------|-------------|
-| PR | `Pull Request Review: #$pr_number - $pr_title` |
-| Commit | `Commit Review: $commit` |
-| Branch | `Branch Review: $branch vs $base_branch` |
-| Range | `Range Review: $range` |
-| Local | `Code Review: (org/repo) - (branch) (uncommitted)` |
-
-**For comprehensive reviews**, include a section for each agent that ran (from `$selected_agents`):
-- Security Review (if "security" in `$selected_agents`)
-- Performance Review (if "performance" in `$selected_agents`)
-- Correctness Review (if "correctness" in `$selected_agents`)
-- Maintainability Review (if "maintainability" in `$selected_agents`)
-- Testing Review (if "testing" in `$selected_agents`)
-- Compatibility Review (if "compatibility" in `$selected_agents`)
-- Architecture Review (if "architecture" in `$selected_agents`)
-- Infra-Config Review (if "infra-config" in `$selected_agents`)
-- Frontend Review (if "frontend" in `$selected_agents`)
-
-**For area-specific reviews**, include only that area's findings.
-
-If the session has `fix: true`, place the `## Fix Summary` section (built by the fix pass in `review-fix.md`) directly after the metadata header (and after the chunked "Review Scope" note, when present) and before the per-agent sections.
-
-Include the metadata header at the top of the file:
-
-```html
-<!-- review-metadata
-reviewed_at: <current ISO 8601 timestamp>
-mode: <mode>
-pr_number: <pr_number if applicable>
-org: <org>
-repo: <repo>
-base_branch: <base_branch if branch mode, omit otherwise>
-base_source: <base_source if branch mode, omit otherwise>
-review_commit: <pr.head_sha if PR mode, omit otherwise>
-scope:
-  exploration_depth: <exploration_depth>
-  agents_run: <$selected_agents as comma-separated list>
-  agents_skipped: <$skipped_agents as comma-separated list, or "none">
-  reasoning: <$classification_reasoning>
-token_usage:
-  <agent_name>: <total_tokens>
-  ...
-  total: <sum of all total_tokens>
-diff_tokens: <diff_tokens from session data>
--->
-```
-
-The `token_usage` block records per-step token consumption (agents, context explorer, validators, and other steps) and the aggregate total. Always include the `total` field as the sum of all steps in `$token_usage`.
-
-This metadata is used by the learning system to determine when the review was created. The `review_commit` field records the PR's HEAD SHA at review time, enabling drift detection when creating draft reviews later. The `diff_tokens` field is an estimated token count of the diff (~4 chars per token).
-
-If `mode` is `branch` and `base_source` is not `"default"`, add a scope note directly under the metadata header (before the Fix Summary and any chunked "Review Scope" note) so the reader can tell at a glance what the diff was compared against:
-
-> **Review Scope:** Reviewed against base `$base_branch` (<phrase matching `base_source`: "the open PR's base branch" / "the recorded stack parent" / "the `--parent` override">), not the repository default branch.
-
-**Narrative voice.** The Inline Comment Voice rules govern the comment bodies; the narrative you compose here (Overview, findings prose, per-agent sections, the metadata `reasoning` field) needs the same register. The voice agent rewrites finding bodies only and never sees this prose, so it is yours to get right. Write it the way you'd write a Slack summary to a colleague who has not read the diff and shouldn't have to decode anything: plain verbs, short sentences, one idea per sentence, no ceremony. Four tells to avoid outright: em dashes (restructure with a comma, colon, parentheses, or two sentences), bold inside a prose sentence (lead with the point instead), inflation vocabulary ("critical", "robust", "comprehensive", "leverage", "ensure", "It's not just X, it's Y"), and naming a category where the behavior belongs, whether that's a coined label ("the staleness window"), logic vocabulary ("vacuously true"), test-theory jargon ("weak positive assertion"), or pipeline vocabulary the author never sees ("corroborated", "sibling").
-
-An Overview paragraph in the right register reads like:
-
-> Adds a soft-hide for stale suggestion names. The new boolean ships in an additive migration, the GET returns hidden names separately, and hide/restore is admin-gated. The hidden row and any flags using it are preserved, so hiding is reversible.
-
-**Gate the Overview.** The voice agent never sees narrative prose, so after drafting the Overview paragraph, send it through the comprehension gate as a one-item batch: invoke the Task tool with subagent_type `comprehension-gate` and the array `[{"id": 1, "severity": "overview", "location": null, "description": "<overview text>", "proposed_fix": null, "kind": "prose"}]` in a four-backtick `json` fence. On `REWRITE`, you wrote this paragraph, so apply the notes yourself: lead with what the change does, one idea per sentence. Re-check the rewritten paragraph at most once, then proceed with your best version regardless of the second verdict. On any error or malformed response, keep the drafted Overview (fail open). Record usage in `$token_usage["comprehension-gate-overview"]`. In debug mode, save the stage `11e-overview-gate` artifacts (see `review-debug.md`).
-
-Save the complete review to `$review_file` and inform the user with a clickable file link:
-
-```
-Review complete!
-
-{If PR mode:}
-Pull Request: $pr_url
-
-Review saved to: $review_file
-
-{If session has fix: true and fixes were applied:}
-Fixes applied: $H high-confidence, $J judgment calls, $S skipped. See "Fix Summary" in the review for details.
-
-{If session has fix: true and preconditions failed:}
-Fixes were requested but not applied: $reason. See "Fix Summary" in the review.
-
-You can open it directly: file://$review_file
-
-Token usage: ~$total_tokens tokens across $step_count steps ($exploration_depth exploration)
-```
-
-Where `$total_tokens` is the sum of all `total_tokens` from `$token_usage` and `$step_count` is the number of entries (includes agents, context explorer, validators, and other steps).
-
-In debug mode, save the stage `12-token-usage` artifacts (see `review-debug.md`).
-
-**Do NOT post the full review to GitHub.** The detailed review is saved to the markdown file only. If `--draft` mode is enabled, a separate draft review with inline comments will be created in the next step. That draft contains only brief inline comments, not the full review summary.
+Read `~/.claude/skills/review-code/handlers/review-compose.md` and follow it to build and save the review document.
 
 ### Log Token Usage
 
-After saving the review, append a line to a central token usage log. This tracks token counts across reviews over time.
-
-Derive the log path from the review file's directory: take the parent of the `org/repo/` directory (i.e., the review root) and append `token-usage.jsonl`. For example, if `$review_file` is `~/.claude/skills/review-code/.reviews/posthog/posthog/pr-123.md`, the log path is `~/.claude/skills/review-code/.reviews/token-usage.jsonl`.
-
-In practice, this is the great-grandparent directory of `$review_file` (three directories up):
+After saving the review, append a record to the central token-usage log. Pass the raw `$token_usage` map; the script computes the sums, which is what keeps `agents_run` and `total_tokens` honest:
 
 ```bash
-token_usage_log="$(dirname "$(dirname "$(dirname "$review_file")")")/token-usage.jsonl"
+~/.claude/skills/review-code/scripts/log-token-usage.sh \
+  --review-file "$review_file" \
+  --usage '<$token_usage as a JSON object, agent key to total_tokens>' \
+  --org "<org>" --repo "<repo>" --mode "<mode>" --identifier "<pr number or branch>" \
+  --diff-tokens <diff_tokens> \
+  --files-changed <n> --lines-added <n> --lines-removed <n> \
+  --exploration-depth "<exploration_depth>" \
+  --agents-skipped <n>
 ```
 
-Each line is a JSON object:
+Pass `--review-mode delta --delta-from <sha>` as well when the run took the incremental path.
 
-```json
-{"reviewed_at": "<ISO 8601 timestamp>", "org": "<org>", "repo": "<repo>", "mode": "<mode>", "identifier": "<pr_number or branch name>", "diff_tokens": <diff_tokens>, "files_changed": <number>, "lines_added": <number>, "lines_removed": <number>, "exploration_depth": "<exploration_depth>", "agents_run": <number of agents run>, "agents_skipped": <number of agents skipped>, "total_tokens": <sum of total_tokens across $token_usage>, "total_tool_uses": <sum of tool_uses across $token_usage>, "agents": {"<agent key>": <that agent's total_tokens>, ...}}
-```
-
-Extract these values from the session data:
-- `reviewed_at`: the current ISO 8601 timestamp (same as the review metadata)
-- `org`, `repo`: from `summary.repository` (split on `/`)
-- `mode`: from `summary.mode`
-- `identifier`: PR number if PR mode, branch name if branch mode, commit hash for commit mode, etc.
-- `diff_tokens`: from the top-level `diff_tokens` field
-- `files_changed`, `lines_added`, `lines_removed`: from `summary.stats`
-
-Compute the token fields from the `$token_usage` map (see "Track Token Usage"):
-- `total_tokens`: sum of `total_tokens` over all entries
-- `total_tool_uses`: sum of `tool_uses` over all entries
-- `agents`: an object with one key per `$token_usage` entry (e.g., `context_explorer`, `code-reviewer-security`, `validator-1`) mapping to that entry's `total_tokens`
-
-These cover subagent consumption only; the orchestrating conversation's own tokens are not measurable from here. If `$token_usage` is empty (e.g., every usage block was absent), log `total_tokens: 0`, `total_tool_uses: 0`, and `agents: {}` rather than omitting the fields. This log is the baseline for measuring cost optimizations, so never skip the token fields.
-
-Use `Bash` with `jq` to append the JSON line (ensures correct escaping and consistent format):
-
-```bash
-jq -nc \
-  --arg reviewed_at "<timestamp>" \
-  --arg org "<org>" \
-  --arg repo "<repo>" \
-  --arg mode "<mode>" \
-  --arg identifier "<identifier>" \
-  --argjson diff_tokens <diff_tokens> \
-  --argjson files_changed <files_changed> \
-  --argjson lines_added <lines_added> \
-  --argjson lines_removed <lines_removed> \
-  --arg exploration_depth "<exploration_depth>" \
-  --argjson agents_run <number of agents run> \
-  --argjson agents_skipped <number of agents skipped> \
-  --argjson total_tokens <total_tokens> \
-  --argjson total_tool_uses <total_tool_uses> \
-  --argjson agents '<per-agent JSON object, e.g. {"context_explorer": 42000, "code-reviewer-security": 88000}>' \
-  '$ARGS.named' >> "$token_usage_log"
-```
+This covers subagent consumption only; the orchestrating conversation's own tokens are not measurable from here. Use `bin/token-report` for the full picture, including this conversation.
 
 ### PR Outputs: Suggested Comments, Draft Review, Thread Resolution
 

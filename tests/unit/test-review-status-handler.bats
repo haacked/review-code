@@ -154,7 +154,7 @@ setup() {
 # =============================================================================
 
 @test "review-status-handler: init uses session_init" {
-    run bash -c "grep -A10 '\"init\")' '$HANDLER_SCRIPT' | grep -q 'session_init'"
+    run bash -c "grep -A25 '\"init\")' '$HANDLER_SCRIPT' | grep -q 'session_init'"
     [ "$status" -eq 0 ]
 }
 
@@ -214,4 +214,140 @@ setup() {
 @test "review-status-handler: cleanup outputs confirmation message" {
     run bash -c "grep -A10 '\"cleanup\")' '$HANDLER_SCRIPT' | grep -q 'Session cleaned up'"
     [ "$status" -eq 0 ]
+}
+
+# =============================================================================
+# get-review-fields: the narrow accessor that keeps the diff out of context
+# =============================================================================
+
+# A session in the layout session-manager.sh uses, carrying every field the
+# accessor must exclude as well as the ones it must return.
+make_session() {
+    export CLAUDE_SESSION_DIR="$BATS_TEST_TMPDIR/sessions"
+    local cmd_dir="$CLAUDE_SESSION_DIR/review-code"
+    mkdir -p "$cmd_dir"
+    local id="review-code-4242-1234567890"
+    jq -n '{
+        status: "ready",
+        mode: "pr",
+        diff_tokens: 938,
+        diff_path: "/tmp/artifacts/diff.patch",
+        artifacts_dir: "/tmp/artifacts",
+        languages: {has_frontend: true},
+        file_info: {file_path: "/tmp/pr-1.md", file_exists: false},
+        file_metadata: {modified_files: [{path: "a.ts"}]},
+        display_summary: "Reviewing PR #1",
+        summary: {repository: "org/repo", mode: "pr"},
+        git: {working_dir: "/tmp/wt"},
+        file_ref: "abc123",
+        chunk_metadata: null,
+        append: true,
+        reviewer_username: "me",
+        is_own_pr: false,
+        diff: "diff --git a/a.ts b/a.ts\n+SECRET_DIFF_BYTES",
+        review_context: "LARGE_CONTEXT_FILE_BODY",
+        commit_messages: "msg",
+        pr: {
+            number: 1, title: "T", author: "a", url: "u", base: "main", head: "f",
+            head_sha: "deadbeef",
+            body: "LARGE_PR_BODY_TEXT",
+            comments: {conversation: [{author: "x", body: "LARGE_COMMENT_TEXT"}], reviews: [], inline: []}
+        }
+    }' > "$cmd_dir/$id.json"
+    echo "$id"
+}
+
+fields_of() {
+    CLAUDE_SESSION_DIR="$BATS_TEST_TMPDIR/sessions" "$HANDLER_SCRIPT" get-review-fields "$1"
+}
+
+@test "review-status-handler: supports get-review-fields action" {
+    run bash -c "grep -q '\"get-review-fields\")' '$HANDLER_SCRIPT'"
+    [ "$status" -eq 0 ]
+}
+
+@test "get-review-fields: requires a session ID" {
+    run "$HANDLER_SCRIPT" get-review-fields
+    [ "$status" -ne 0 ]
+}
+
+@test "get-review-fields: emits valid JSON" {
+    local id; id=$(make_session)
+    run fields_of "$id"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e . > /dev/null
+}
+
+@test "get-review-fields: returns the orchestration fields" {
+    local id; id=$(make_session)
+    run fields_of "$id"
+    [ "$(echo "$output" | jq -r '.mode')" = "pr" ]
+    [ "$(echo "$output" | jq -r '.diff_path')" = "/tmp/artifacts/diff.patch" ]
+    [ "$(echo "$output" | jq -r '.artifacts_dir')" = "/tmp/artifacts" ]
+    [ "$(echo "$output" | jq -r '.file_info.file_path')" = "/tmp/pr-1.md" ]
+    [ "$(echo "$output" | jq -r '.display_summary')" = "Reviewing PR #1" ]
+    [ "$(echo "$output" | jq -r '.file_ref')" = "abc123" ]
+    [ "$(echo "$output" | jq -r '.git.working_dir')" = "/tmp/wt" ]
+    [ "$(echo "$output" | jq -r '.languages.has_frontend')" = "true" ]
+}
+
+@test "get-review-fields: preserves mode flags" {
+    local id; id=$(make_session)
+    run fields_of "$id"
+    [ "$(echo "$output" | jq -r '.append')" = "true" ]
+}
+
+@test "get-review-fields: returns PR identity without the PR body" {
+    local id; id=$(make_session)
+    run fields_of "$id"
+    [ "$(echo "$output" | jq -r '.pr.number')" = "1" ]
+    [ "$(echo "$output" | jq -r '.pr.head_sha')" = "deadbeef" ]
+    [ "$(echo "$output" | jq -r '.pr.body // "absent"')" = "absent" ]
+}
+
+# The four exclusions below are the entire point of this accessor: each is a
+# large payload already written to a file for the agents, and returning it here
+# would put it back in the orchestrator's context for the rest of the run.
+
+@test "get-review-fields: never returns the diff" {
+    local id; id=$(make_session)
+    run fields_of "$id"
+    [ "$(echo "$output" | jq -r 'has("diff")')" = "false" ]
+    ! echo "$output" | grep -q "SECRET_DIFF_BYTES"
+}
+
+@test "get-review-fields: never returns review_context" {
+    local id; id=$(make_session)
+    run fields_of "$id"
+    [ "$(echo "$output" | jq -r 'has("review_context")')" = "false" ]
+    ! echo "$output" | grep -q "LARGE_CONTEXT_FILE_BODY"
+}
+
+@test "get-review-fields: never returns the PR body" {
+    local id; id=$(make_session)
+    run fields_of "$id"
+    ! echo "$output" | grep -q "LARGE_PR_BODY_TEXT"
+}
+
+@test "get-review-fields: never returns PR comments" {
+    local id; id=$(make_session)
+    run fields_of "$id"
+    [ "$(echo "$output" | jq -r '.pr | has("comments")')" = "false" ]
+    ! echo "$output" | grep -q "LARGE_COMMENT_TEXT"
+}
+
+@test "get-review-fields: output stays small relative to the session file" {
+    local id; id=$(make_session)
+    run fields_of "$id"
+    local session_size fields_size
+    session_size=$(wc -c < "$BATS_TEST_TMPDIR/sessions/review-code/$id.json")
+    fields_size=${#output}
+    [ "$fields_size" -lt "$session_size" ]
+}
+
+@test "get-review-fields: rejects a nonexistent session ID" {
+    export CLAUDE_SESSION_DIR="$BATS_TEST_TMPDIR/sessions"
+    mkdir -p "$CLAUDE_SESSION_DIR/review-code"
+    run fields_of "review-code-0-0"
+    [ "$status" -ne 0 ]
 }

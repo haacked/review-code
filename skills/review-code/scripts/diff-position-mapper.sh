@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # diff-position-mapper.sh - Map file line numbers to diff line/side for GitHub API
 #
 # GitHub's PR review comment API accepts either deprecated "position" or the
@@ -7,6 +8,7 @@
 #
 # Usage:
 #   echo '<json_input>' | diff-position-mapper.sh
+#   echo '<json_input>' | diff-position-mapper.sh --diff-file <path>
 #
 # Input JSON:
 #   {
@@ -17,6 +19,10 @@
 #     ]
 #   }
 #
+# With --diff-file the diff is read from that file and the input JSON carries
+# only "targets". Callers that already have the diff on disk use this so the
+# bytes never pass through a caller's context on the way here.
+#
 # Output JSON:
 #   {
 #     "mappings": [
@@ -24,8 +30,6 @@
 #       {"path": "src/utils.ts", "line": 15, "error": "line not in diff"}
 #     ]
 #   }
-
-set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/helpers/error-helpers.sh
@@ -170,6 +174,24 @@ lookup_position() {
 }
 
 main() {
+    local diff_file=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --diff-file)
+                diff_file="${2:-}"
+                if [[ -z "${diff_file}" ]]; then
+                    error "--diff-file requires a path"
+                    exit 1
+                fi
+                shift 2
+                ;;
+            *)
+                error "Unknown argument: $1"
+                exit 1
+                ;;
+        esac
+    done
+
     # Read input JSON from stdin
     local input
     input=$(cat)
@@ -179,7 +201,15 @@ main() {
 
     # Extract diff and targets
     local diff targets
-    diff=$(echo "${input}" | jq -r '.diff // ""')
+    if [[ -n "${diff_file}" ]]; then
+        if [[ ! -f "${diff_file}" ]]; then
+            error "Diff file not found: ${diff_file}"
+            exit 1
+        fi
+        diff=$(cat "${diff_file}")
+    else
+        diff=$(echo "${input}" | jq -r '.diff // ""')
+    fi
     targets=$(echo "${input}" | jq -c '.targets // []')
 
     if [[ -z "${diff}" ]]; then

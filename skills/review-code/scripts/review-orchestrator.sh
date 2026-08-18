@@ -57,6 +57,8 @@ main() {
     overwrite_mode=$(echo "${parse_result}" | jq -r '.overwrite_mode // "false"')
     local append_mode
     append_mode=$(echo "${parse_result}" | jq -r '.append_mode // "false"')
+    local full_mode
+    full_mode=$(echo "${parse_result}" | jq -r '.full_mode // "false"')
     local fix_mode
     fix_mode=$(echo "${parse_result}" | jq -r '.fix_mode // "false"')
     local adversary_mode
@@ -406,6 +408,22 @@ build_review_data() {
     trap 'rm -f "${_ORCH_DIFF_TMPFILE}"' EXIT
     printf '%s' "${diff_content}" > "${chunk_diff_tmpfile}"
 
+    # The diff also lands in the session's artifacts directory as a durable file.
+    # Agents read it from there; the session JSON carries only the path, so the
+    # orchestrating model never holds the diff bytes in its own context.
+    local artifacts_dir diff_path
+    artifacts_dir="${REVIEW_CODE_ARTIFACTS_DIR:-}"
+    if [[ -z "${artifacts_dir}" ]]; then
+        # Standalone runs (tests, evals) get their own directory under the same
+        # session root, so the normal session sweep reclaims it.
+        local session_root="${CLAUDE_SESSION_DIR:-${HOME}/.claude/skills/review-code/.sessions}/review-code"
+        mkdir -p "${session_root}"
+        artifacts_dir=$(mktemp -d "${session_root}/artifacts-XXXXXX")
+    fi
+    mkdir -p "${artifacts_dir}"
+    diff_path="${artifacts_dir}/diff.patch"
+    printf '%s' "${diff_content}" > "${diff_path}"
+
     chunk_result=$(jq -n \
         --rawfile diff "${chunk_diff_tmpfile}" \
         --argjson file_metadata "${file_metadata}" \
@@ -483,16 +501,31 @@ build_review_data() {
     trap 'rm -f "${_ORCH_DIFF_TMPFILE}"; rm -rf "${_ORCH_LARGE_ARGS_TMPDIR}"' EXIT
     echo "null" > "${large_args_tmpdir}/chunks.json"
     if [[ -n "${chunk_result}" ]] && echo "${chunk_result}" | jq -e '.chunked == true' > /dev/null 2>&1; then
-        echo "${chunk_result}" | jq '.chunks' > "${large_args_tmpdir}/chunks.json"
+        # Each chunk's diff goes to its own file for the same reason as the full
+        # diff: chunk bodies sum to the whole diff, so keeping them in the session
+        # JSON would put a third copy in the orchestrator's context.
+        local chunk_count idx chunk_file
+        chunk_count=$(echo "${chunk_result}" | jq '.chunks | length')
+        for ((idx = 0; idx < chunk_count; idx++)); do
+            chunk_file="${artifacts_dir}/chunk-${idx}.patch"
+            echo "${chunk_result}" | jq -r --argjson i "${idx}" '.chunks[$i].diff // ""' > "${chunk_file}"
+        done
+        echo "${chunk_result}" | jq --arg dir "${artifacts_dir}" \
+            '[.chunks | to_entries[] | .value + {diff_path: ($dir + "/chunk-" + (.key | tostring) + ".patch")} | del(.diff)]' \
+            > "${large_args_tmpdir}/chunks.json"
         chunk_meta_json=$(echo "${chunk_result}" | jq '{chunked: .chunked, reason: .reason, chunk_count: .chunk_count}')
     fi
-    printf '%s' "${pr_json}" > "${large_args_tmpdir}/pr.json"
+    # Drop the PR object's own copy of the diff. It is the same bytes already
+    # written to diff.patch, and leaving it here would put a second copy in
+    # every context that reads the session file.
+    printf '%s' "${pr_json}" | jq 'if type == "object" then del(.diff) else . end' > "${large_args_tmpdir}/pr.json"
 
     local -a jq_args=(
         -n
         --arg mode "${mode}"
         --argjson git "${git_context}"
-        --rawfile diff "${chunk_diff_tmpfile}"
+        --arg diff_path "${diff_path}"
+        --arg artifacts_dir "${artifacts_dir}"
         --argjson lang "${lang_info}"
         --argjson meta "${file_metadata}"
         --argjson file "${file_info}"
@@ -514,6 +547,7 @@ build_review_data() {
     jq_args+=(--arg self_mode "${self_mode}")
     jq_args+=(--arg overwrite_mode "${overwrite_mode}")
     jq_args+=(--arg append_mode "${append_mode}")
+    jq_args+=(--arg full_mode "${full_mode}")
     jq_args+=(--arg fix_mode "${fix_mode}")
     jq_args+=(--arg debug_session_dir "${DEBUG_SESSION_DIR:-}")
     jq_args+=(--argjson diff_tokens "${diff_tokens}")
@@ -532,12 +566,13 @@ build_review_data() {
     jq_args+=(--arg adversary_available "${adversary_is_available}")
 
     # Single jq invocation with conditional pr field and chunk data
-    final_output=$(jq "${jq_args[@]}" \
+    final_output=$(jq -c "${jq_args[@]}" \
         '{
             status: "ready",
             mode: $mode,
             git: $git,
-            diff: $diff,
+            diff_path: $diff_path,
+            artifacts_dir: $artifacts_dir,
             diff_tokens: $diff_tokens,
             languages: $lang,
             file_metadata: $meta,
@@ -552,6 +587,7 @@ build_review_data() {
         + (if $self_mode == "true" then {self: true} else {} end)
         + (if $overwrite_mode == "true" then {overwrite: true} else {} end)
         + (if $append_mode == "true" then {append: true} else {} end)
+        + (if $full_mode == "true" then {full: true} else {} end)
         + (if $fix_mode == "true" then {fix: true} else {} end)
         + (if $pr[0] != null then {pr: $pr[0], reviewer_username: $reviewer_username, is_own_pr: ($is_own_pr == "true")} else {} end)
         + (if $chunks[0] != null then {chunks: $chunks[0], chunk_metadata: $chunk_metadata} else {} end)
