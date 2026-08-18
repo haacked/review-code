@@ -40,7 +40,7 @@ Use AskUserQuestion:
 
 **If `file_info.file_exists` is true** (a review file exists but neither of the above conditions apply):
 
-First, check the session JSON for `overwrite` and `append` flags:
+First, check `REVIEW_FIELDS` for `overwrite` and `append` flags:
 - If `overwrite` is true: proceed as "Overwrite" (replace the existing review) without prompting.
 - If `append` is true: proceed as "Append" (add new findings to the existing review) without prompting.
 - Otherwise, use AskUserQuestion to ask what to do with the existing review:
@@ -66,14 +66,13 @@ From `REVIEW_FIELDS`, extract these fields for building agent context:
 - `languages`: detected languages
 - `file_info.file_path`: where to save the review
 - `file_ref`: (optional) git ref for reading PR files when on a different branch or via a provisioned worktree
-- `commit_messages`: (optional) commit messages for the reviewed changes (subject + body, truncated to 8KB)
-- `chunks`: (optional) array of chunk objects when the diff was split
-- `chunk_metadata`: (optional) object with `chunked`, `reason`, `chunk_count`
+- `commit_messages_present`: boolean. The messages themselves are in `briefing.md`, not here.
+- `chunk_metadata`: (optional) object with `chunked`, `reason`, `chunk_count`. The chunk array and its `diff_path` entries stay in the session file; the briefing step reads them.
 - `debug_session_dir`: (optional) path to debug session directory when debug mode is enabled
 - `adversary`: (optional) object `{engine: "copilot"|"codex", available: boolean}`, present only when `--adversary:copilot` or `--adversary:codex` was specified. `available` reflects whether that engine's CLI is actually installed.
 
 Mode-specific fields:
-- **PR mode:** `pr`: PR details (number, title, author, body, comments, etc.); `file_ref`: git ref for file access (present when reviewing from a different branch or via a provisioned worktree). When the review runs outside the PR's repo and a local clone is mapped in `repos.conf`, `git.working_dir` points at a detached worktree checked out to the PR. Otherwise (no mapping, provisioning failed, or the PR ref could not be fetched into an in-repo clone), `working_dir` is null and only the diff is available.
+- **PR mode:** `pr`: identity only — `number`, `title`, `author`, `url`, `base`, `head`, `head_sha`. The body and comments are deliberately absent; they are in `briefing.md`. `head_sha` is what the re-review step below needs. `file_ref`: git ref for file access (present when reviewing from a different branch or via a provisioned worktree). When the review runs outside the PR's repo and a local clone is mapped in `repos.conf`, `git.working_dir` points at a detached worktree checked out to the PR. Otherwise (no mapping, provisioning failed, or the PR ref could not be fetched into an in-repo clone), `working_dir` is null and only the diff is available.
 - **Branch/commit/range modes:** `branch`, `base_branch`, `commit`, `range`. Branch mode also carries `base_source` (how the base was chosen: `parent-flag`, `pr-base`, `stack-parent`, or `default`) and `base_lookup_degraded: "true"`, present only when the open PR's base could not be used (lookup failed, base not fetched locally, or unrelated history) and the base consequently fell back to the default branch.
 - **Area-specific reviews:** `area`
 
@@ -102,9 +101,12 @@ A re-review normally pays full freight: every agent reads the whole diff again e
 ~/.claude/skills/review-code/scripts/review-delta.sh \
   --review-file "<file_info.file_path>" \
   --head-sha "<pr.head_sha>" \
+  --base "<pr.base>" \
   --repo-dir "<git.working_dir>" \
   --out "<artifacts_dir>/delta.patch"
 ```
+
+Pass `--base` explicitly. Without it the script falls back to the repository's default branch, which is not the base of a stacked PR, and the moved-base guard then forces a full review on exactly the PRs that get re-reviewed most.
 
 Read `mode` from the JSON it prints:
 
@@ -204,8 +206,7 @@ Gather architectural context for this code review.
 
 {For PR mode:}
 **PR:** #$pr_number - $pr_title
-**Description:**
-$pr_body
+**Description:** read `<artifacts_dir>/pr-body.md`.
 
 {If pr.linked_issues is not empty:}
 **Linked Issues:**
@@ -216,8 +217,7 @@ $pr_body
 {For branch mode with associated PR:}
 **Branch:** $branch vs $base_branch
 **Associated PR:** #$pr_number - $pr_title
-**Description:**
-$pr_body
+**Description:** read `<artifacts_dir>/pr-body.md`.
 
 {For branch mode without PR:}
 **Branch:** $branch vs $base_branch
@@ -232,9 +232,8 @@ $pr_body
 **Local changes** (unstaged/staged)
 
 {For all modes:}
-{If commit_messages is not empty:}
-**Commit Messages:**
-$commit_messages
+{If commit_messages_present:}
+**Commit Messages:** in `<artifacts_dir>/briefing.md`.
 
 **File Metadata:**
 $file_metadata

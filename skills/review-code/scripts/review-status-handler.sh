@@ -212,13 +212,7 @@ case "${ACTION}" in
             commit_messages_present: (has("commit_messages")),
             adversary: (.adversary // null)
         }
-        + (if .force then {force: true} else {} end)
-        + (if .draft then {draft: true} else {} end)
-        + (if .self then {self: true} else {} end)
-        + (if .overwrite then {overwrite: true} else {} end)
-        + (if .append then {append: true} else {} end)
-        + (if .full then {full: true} else {} end)
-        + (if .fix then {fix: true} else {} end)
+        + ({force, draft, self, overwrite, append, full, fix} | with_entries(select(.value)))
         + (if .debug_session_dir then {debug_session_dir} else {} end)
         + (if .pr then {pr: {number: .pr.number, title: .pr.title, author: .pr.author, url: .pr.url, base: .pr.base, head: .pr.head, head_sha: .pr.head_sha}, reviewer_username, is_own_pr} else {} end)
         + (if .branch then {branch} else {} end)

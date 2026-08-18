@@ -47,7 +47,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -h | --help)
-            sed -n '3,20p' "$0"
+            sed -n '/^# token-report/,/^$/p' "$0" | sed -E 's/^# ?//'
             exit 0
             ;;
         *)
@@ -167,23 +167,29 @@ if not sessions:
 
 sessions.sort(key=lambda s: -s["total_usd"])
 totals = [s["total_usd"] for s in sessions]
-median = sorted(totals)[len(totals) // 2]
+
+def median(xs):
+    # Lower median on even-length input. statistics.median averages the two
+    # middle values, which would invent a figure no session actually cost.
+    xs = sorted(xs)
+    return xs[len(xs) // 2]
 
 def mix(c):
-    tot = c["in"] * 15 + c["cache_write"] * 18.75 + c["cache_read"] * 1.5 + c["out"] * 75
+    ri, rw, rr, ro = RATES["opus"]
+    tot = c["in"] * ri + c["cache_write"] * rw + c["cache_read"] * rr + c["out"] * ro
     if not tot:
         return {}
-    return {"cache_read_pct": round(100 * c["cache_read"] * 1.5 / tot),
-            "output_pct": round(100 * c["out"] * 75 / tot),
-            "cache_write_pct": round(100 * c["cache_write"] * 18.75 / tot)}
+    return {"cache_read_pct": round(100 * c["cache_read"] * rr / tot),
+            "output_pct": round(100 * c["out"] * ro / tot),
+            "cache_write_pct": round(100 * c["cache_write"] * rw / tot)}
 
 summary = {
     "sessions": len(sessions),
-    "median_usd": median,
+    "median_usd": median(totals),
     "mean_usd": round(sum(totals) / len(totals), 2),
     "total_usd": round(sum(totals), 2),
-    "median_turns": sorted(s["turns"] for s in sessions)[len(sessions) // 2],
-    "median_context_per_turn": sorted(s["avg_context_per_turn"] for s in sessions)[len(sessions) // 2],
+    "median_turns": median([s["turns"] for s in sessions]),
+    "median_context_per_turn": median([s["avg_context_per_turn"] for s in sessions]),
     "orchestrator_cost_mix": mix(agg_o),
     "subagent_cost_mix": mix(agg_s),
 }

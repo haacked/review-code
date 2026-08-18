@@ -111,7 +111,11 @@ fi
 # Recover the last-reviewed SHA from the review document when not given directly.
 if [[ -z "${REVIEW_COMMIT}" && -n "${REVIEW_FILE}" ]]; then
     if [[ -f "${REVIEW_FILE}" ]]; then
-        REVIEW_COMMIT=$(sed -n 's/^review_commit: *//p' "${REVIEW_FILE}" | head -1 | tr -d '[:space:]')
+        # Scoped to the metadata comment block, matching learn-from-pr.sh, so a
+        # later mention of "review_commit:" in the review body cannot be read as
+        # the header value.
+        REVIEW_COMMIT=$(sed -n '/review-metadata/,/-->/{ /review_commit:/{ s/.*review_commit: *//; p; q; }; }' \
+            "${REVIEW_FILE}" | tr -d '[:space:]')
     fi
 fi
 

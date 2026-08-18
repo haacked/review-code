@@ -401,31 +401,34 @@ build_review_data() {
     local chunk_threshold_files="${REVIEW_CODE_CHUNK_THRESHOLD_FILES:-50}"
     [[ "${chunk_threshold_files}" =~ ^[0-9]+$ ]] || chunk_threshold_files=50
 
-    # Write diff to a temp file to avoid ARG_MAX limits with --arg on large diffs
-    local chunk_diff_tmpfile
-    _ORCH_DIFF_TMPFILE=$(mktemp)
-    chunk_diff_tmpfile="${_ORCH_DIFF_TMPFILE}"
-    trap 'rm -f "${_ORCH_DIFF_TMPFILE}"' EXIT
-    printf '%s' "${diff_content}" > "${chunk_diff_tmpfile}"
-
-    # The diff also lands in the session's artifacts directory as a durable file.
+    # The diff lands in the session's artifacts directory as a durable file.
     # Agents read it from there; the session JSON carries only the path, so the
-    # orchestrating model never holds the diff bytes in its own context.
+    # orchestrating model never holds the diff bytes in its own context. jq reads
+    # it with --rawfile, which also keeps large diffs clear of ARG_MAX.
     local artifacts_dir diff_path
     artifacts_dir="${REVIEW_CODE_ARTIFACTS_DIR:-}"
     if [[ -z "${artifacts_dir}" ]]; then
-        # Standalone runs (tests, evals) get their own directory under the same
-        # session root, so the normal session sweep reclaims it.
-        local session_root="${CLAUDE_SESSION_DIR:-${HOME}/.claude/skills/review-code/.sessions}/review-code"
-        mkdir -p "${session_root}"
-        artifacts_dir=$(mktemp -d "${session_root}/artifacts-XXXXXX")
+        # Standalone runs (tests, evals) get their own directory from the session
+        # manager, so it matches the prefix the cleanup sweep looks for. Deriving
+        # the path here instead would leak a full diff copy per run the first time
+        # that prefix changed.
+        # shellcheck source=session-manager.sh
+        source "${SCRIPT_DIR}/session-manager.sh"
+        artifacts_dir=$(session_artifacts_dir_new "review-code")
     fi
     mkdir -p "${artifacts_dir}"
     diff_path="${artifacts_dir}/diff.patch"
     printf '%s' "${diff_content}" > "${diff_path}"
 
+    # The context explorer runs before the briefing is built but still needs the
+    # PR description. Write it out here so it reaches the explorer as a file
+    # rather than through the orchestrating conversation.
+    if [[ -n "${pr_context}" && "${pr_context}" != "null" ]]; then
+        printf '%s' "${pr_context}" | jq -r '.body // ""' > "${artifacts_dir}/pr-body.md" 2> /dev/null || true
+    fi
+
     chunk_result=$(jq -n \
-        --rawfile diff "${chunk_diff_tmpfile}" \
+        --rawfile diff "${diff_path}" \
         --argjson file_metadata "${file_metadata}" \
         --argjson max_size "${chunk_max_size_kb}" \
         --argjson max_files "${chunk_max_files}" \
@@ -498,18 +501,18 @@ build_review_data() {
     local chunk_meta_json="null"
     _ORCH_LARGE_ARGS_TMPDIR=$(mktemp -d)
     local large_args_tmpdir="${_ORCH_LARGE_ARGS_TMPDIR}"
-    trap 'rm -f "${_ORCH_DIFF_TMPFILE}"; rm -rf "${_ORCH_LARGE_ARGS_TMPDIR}"' EXIT
+    trap 'rm -rf "${_ORCH_LARGE_ARGS_TMPDIR}"' EXIT
     echo "null" > "${large_args_tmpdir}/chunks.json"
     if [[ -n "${chunk_result}" ]] && echo "${chunk_result}" | jq -e '.chunked == true' > /dev/null 2>&1; then
         # Each chunk's diff goes to its own file for the same reason as the full
         # diff: chunk bodies sum to the whole diff, so keeping them in the session
         # JSON would put a third copy in the orchestrator's context.
-        local chunk_count idx chunk_file
-        chunk_count=$(echo "${chunk_result}" | jq '.chunks | length')
-        for ((idx = 0; idx < chunk_count; idx++)); do
-            chunk_file="${artifacts_dir}/chunk-${idx}.patch"
-            echo "${chunk_result}" | jq -r --argjson i "${idx}" '.chunks[$i].diff // ""' > "${chunk_file}"
-        done
+        # One pass: chunk bodies sum to the whole diff, so re-parsing the blob
+        # per chunk would be quadratic in the diff size.
+        local idx encoded
+        while IFS=$'\t' read -r idx encoded; do
+            printf '%s' "${encoded}" | base64 --decode > "${artifacts_dir}/chunk-${idx}.patch"
+        done < <(echo "${chunk_result}" | jq -r '.chunks | to_entries[] | "\(.key)\t\(.value.diff // "" | @base64)"')
         echo "${chunk_result}" | jq --arg dir "${artifacts_dir}" \
             '[.chunks | to_entries[] | .value + {diff_path: ($dir + "/chunk-" + (.key | tostring) + ".patch")} | del(.diff)]' \
             > "${large_args_tmpdir}/chunks.json"

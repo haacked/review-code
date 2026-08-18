@@ -32,38 +32,31 @@ if [[ -z "${WANTED}" ]]; then
     exit 1
 fi
 
-printf '%s\n' "${WANTED}" | awk -v diff="${INPUT}" -v out="${OUTPUT}" '
-    { wanted[$0] = 1 }
+printf '%s\n' "${WANTED}" | awk -v out="${OUTPUT}" '
+    NR == FNR { wanted[$0] = 1; next }
+
+    /^diff --git / {
+        # Match on " b/" (with leading space) rather than taking the last field:
+        # a path containing spaces would otherwise be truncated to its last word
+        # and silently dropped. Same idiom as chunk-diff.sh.
+        match($0, / b\/(.+)$/)
+        path = (RSTART > 0) ? substr($0, RSTART + 3) : "unknown"
+        keep = (path in wanted)
+        if (keep) {
+            matched++
+        } else {
+            others = others (others == "" ? "" : ", ") path
+        }
+    }
+
+    keep { print > out }
+
     END {
-        keep = 0
-        matched = 0
-        while ((getline line < diff) > 0) {
-            if (line ~ /^diff --git /) {
-                # "diff --git a/path b/path" - take the b-side, which survives renames.
-                path = $0
-                n = split(line, parts, " ")
-                path = parts[n]
-                sub(/^b\//, "", path)
-                keep = (path in wanted)
-                if (keep) { matched++ } else { omitted[path] = 1 }
-            }
-            if (keep) { print line > out }
-        }
-        close(diff)
-
         if (matched == 0) { exit 1 }
-
-        first = 1
-        others = ""
-        for (p in omitted) {
-            others = others (first ? "" : ", ") p
-            first = 0
-        }
         if (others != "") {
             print "" > out
             print "**Other files changed in this PR (not shown above, outside your review scope):**" > out
             print others > out
         }
-        close(out)
     }
-'
+' - "${INPUT}"

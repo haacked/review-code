@@ -109,7 +109,6 @@ BRIEFING="${ARTIFACTS_DIR}/briefing.md"
 : > "${BRIEFING}"
 
 emit() { printf '%s\n' "$*" >> "${BRIEFING}"; }
-emit_raw() { cat >> "${BRIEFING}"; }
 sget() { jq -r "$1 // empty" "${SESSION_FILE}"; }
 
 MODE=$(sget '.mode')
@@ -235,26 +234,36 @@ write_scoped_diff() {
     local paths
     paths=$(jq -r "${filter}" "${SESSION_FILE}" | sort -u)
     if [[ -z "${paths}" ]]; then
+        echo "NOTE: no ${name} files matched; ${name} agent gets the full diff" >&2
         return 1
     fi
     "${SCRIPT_DIR}/split-diff-by-path.sh" "${DIFF_PATH}" "${out}" <<< "${paths}"
 }
 
 if [[ " ${AGENTS} " == *" frontend "* ]]; then
+    # Markup and styles are always frontend. A bare .ts/.js file is not: matching
+    # those unconditionally would sweep a TypeScript backend into the "scoped"
+    # diff, which defeats the point of scoping it. They count only when they sit
+    # under a UI source root or in a directory that also holds changed .tsx/.jsx.
     write_scoped_diff frontend '
-        .file_metadata.modified_files[]?
-        | select(.path | test("\\.(tsx|jsx|css|scss|sass|less|vue|svelte)$")
-            or test("^(frontend|web|client|ui)/")
-            or test("/(components|pages|views)/")
-            or test("\\.(ts|js|mjs|cjs)$"))
-        | .path' || echo "NOTE: no frontend files matched; frontend agent gets the full diff" >&2
+        (.file_metadata.modified_files // []) as $files
+        | ([$files[] | select(.path | test("\\.(tsx|jsx|vue|svelte)$")) | .path
+            | split("/")[:-1] | join("/")] | unique) as $ui_dirs
+        | $files[]
+        | select(
+            (.path | test("\\.(tsx|jsx|vue|svelte|css|scss|sass|less)$"))
+            or ((.path | test("\\.(ts|js|mjs|cjs)$"))
+                and ((.path | test("^(frontend|web|client|ui)/") or test("/(components|pages|views)/"))
+                     or ((.path | split("/")[:-1] | join("/")) as $d | $ui_dirs | index($d) != null)))
+          )
+        | .path' || true
 fi
 
 if [[ " ${AGENTS} " == *" infra-config "* ]]; then
     write_scoped_diff infra-config '
         .file_metadata.modified_files[]?
         | select(.is_infra_config == true)
-        | .path' || echo "NOTE: no infra-config files matched; infra-config agent gets the full diff" >&2
+        | .path' || true
 fi
 
 # ------------------------------------------------------------------- validate
@@ -279,8 +288,7 @@ jq -nc \
     --argjson scoped "$(
         for f in "${ARTIFACTS_DIR}"/diff-*.patch; do
             [[ -e "${f}" ]] || continue
-            printf '%s\n' "$(basename "${f}")" "$(wc -l < "${f}" | tr -d ' ')"
-        done | jq -Rn '[inputs] | [., [range(0; length; 2)]] | .[1] as $i | .[0] as $a
-            | reduce $i[] as $k ({}; . + {($a[$k]): ($a[$k+1] | tonumber)})'
+            printf '%s %s\n' "$(basename "${f}")" "$(wc -l < "${f}" | tr -d ' ')"
+        done | jq -Rn '[inputs | split(" ") | {(.[0]): (.[1] | tonumber)}] | add // {}'
     )" \
     '{artifacts_dir: $dir, briefing_lines: $briefing_lines, diff_lines: $diff_lines, scoped_diffs: $scoped}'
