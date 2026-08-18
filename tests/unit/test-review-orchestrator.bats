@@ -922,6 +922,52 @@ teardown() {
     echo "$output" | jq -e 'has("diff") | not'
 }
 
+@test "review-orchestrator.sh: chunks carry a diff path, not inline diff bytes" {
+    for i in $(seq 1 15); do
+        echo "content $i" > "file${i}.txt"
+    done
+    git add .
+
+    export REVIEW_CODE_CHUNK_THRESHOLD_FILES=5
+    export REVIEW_CODE_CHUNK_THRESHOLD_KB=0
+    export REVIEW_CODE_CHUNK_MAX_FILES=4
+
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.chunk_metadata.chunked == true'
+
+    # Chunk bodies sum to the whole diff, so keeping them inline would put a
+    # third copy of it in the orchestrator's context.
+    echo "$output" | jq -e '[.chunks[] | has("diff")] | any | not'
+    echo "$output" | jq -e '[.chunks[] | has("diff_path")] | all'
+
+    # Every referenced chunk file must actually exist and be non-empty.
+    while read -r path; do
+        [ -s "$path" ]
+    done < <(echo "$output" | jq -r '.chunks[].diff_path')
+}
+
+@test "review-orchestrator.sh: chunk files together cover the full diff" {
+    for i in $(seq 1 15); do
+        echo "content $i" > "file${i}.txt"
+    done
+    git add .
+
+    export REVIEW_CODE_CHUNK_THRESHOLD_FILES=5
+    export REVIEW_CODE_CHUNK_THRESHOLD_KB=0
+    export REVIEW_CODE_CHUNK_MAX_FILES=4
+
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+    [ "$status" -eq 0 ]
+
+    full_files=$(grep -c '^diff --git' "$(echo "$output" | jq -r '.diff_path')")
+    chunk_files=0
+    while read -r path; do
+        chunk_files=$((chunk_files + $(grep -c '^diff --git' "$path")))
+    done < <(echo "$output" | jq -r '.chunks[].diff_path')
+    [ "$chunk_files" -eq "$full_files" ]
+}
+
 @test "review-orchestrator.sh: chunk threshold env vars are respected" {
     # Generate many files and stage them to trigger chunking with low threshold.
     # Files must be staged so they appear in the diff for local mode.

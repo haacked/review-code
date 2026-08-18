@@ -72,6 +72,16 @@ create_test_session() {
     echo "$session_id"
 }
 
+
+# The script prints JSON; every assertion below wants the directory, so unwrap it
+# once here and leave $output holding the path.
+run_briefing() {
+    run "$SCRIPT" "$@"
+    if [ "$status" -eq 0 ]; then
+        output=$(echo "$output" | jq -r '.artifacts_dir')
+    fi
+}
+
 # =============================================================================
 # Script structure
 # =============================================================================
@@ -106,45 +116,45 @@ create_test_session() {
 
 @test "build-agent-briefing: creates briefing.md" {
     local id; id=$(create_test_session)
-    run "$SCRIPT" "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
     [ "$status" -eq 0 ]
     [ -f "$output/briefing.md" ]
 }
 
 @test "build-agent-briefing: diff.patch is present for agents to read" {
     local id; id=$(create_test_session)
-    run "$SCRIPT" "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
     [ "$status" -eq 0 ]
     [ -s "$output/diff.patch" ]
 }
 
 @test "build-agent-briefing: briefing.md contains PR title" {
     local id; id=$(create_test_session)
-    run "$SCRIPT" "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
     grep -q "Test PR Title" "$output/briefing.md"
 }
 
 @test "build-agent-briefing: briefing.md contains architectural context" {
     local id; id=$(create_test_session)
-    run "$SCRIPT" "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
     grep -q "This is test architectural context" "$output/briefing.md"
 }
 
 @test "build-agent-briefing: briefing.md contains review context" {
     local id; id=$(create_test_session)
-    run "$SCRIPT" "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
     grep -q "This is test review context" "$output/briefing.md"
 }
 
 @test "build-agent-briefing: briefing.md carries the shared review instructions" {
     local id; id=$(create_test_session)
-    run "$SCRIPT" "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
     grep -q "Accuracy Requirements" "$output/briefing.md"
 }
 
 @test "build-agent-briefing: briefing.md does NOT inline the diff" {
     local id; id=$(create_test_session)
-    run "$SCRIPT" "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
     # The diff is a separate file on purpose; duplicating it here would undo the saving.
     run grep -c '^diff --git' "$output/briefing.md"
     [ "$output" -eq 0 ]
@@ -152,7 +162,7 @@ create_test_session() {
 
 @test "build-agent-briefing: diff.patch contains the changed file" {
     local id; id=$(create_test_session)
-    run "$SCRIPT" "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
     grep -q "test.ts" "$output/diff.patch"
 }
 
@@ -162,27 +172,27 @@ create_test_session() {
 
 @test "build-agent-briefing: creates diff-infra-config.patch when infra files present" {
     local id; id=$(create_test_session)
-    run "$SCRIPT" "$id" --arch-context-file "$ARCH_FILE" --agents "correctness infra-config"
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness infra-config"
     [ -f "$output/diff-infra-config.patch" ]
     grep -q "terraform/main.tf" "$output/diff-infra-config.patch"
 }
 
 @test "build-agent-briefing: infra-config diff omits non-infra hunks but names them" {
     local id; id=$(create_test_session)
-    run "$SCRIPT" "$id" --arch-context-file "$ARCH_FILE" --agents "infra-config"
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "infra-config"
     run grep -c '^diff --git' "$output/diff-infra-config.patch"
     [ "$output" -eq 1 ]
 }
 
 @test "build-agent-briefing: lists out-of-scope paths in the scoped diff" {
     local id; id=$(create_test_session)
-    run "$SCRIPT" "$id" --arch-context-file "$ARCH_FILE" --agents "infra-config"
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "infra-config"
     grep -q "Other files changed in this PR" "$output/diff-infra-config.patch"
 }
 
 @test "build-agent-briefing: does not create scoped diffs for agents not running" {
     local id; id=$(create_test_session)
-    run "$SCRIPT" "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
     [ ! -f "$output/diff-infra-config.patch" ]
     [ ! -f "$output/diff-frontend.patch" ]
 }
@@ -193,14 +203,14 @@ create_test_session() {
 
 @test "build-agent-briefing: prints the artifacts directory to stdout" {
     local id; id=$(create_test_session)
-    run "$SCRIPT" "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
     [ "$status" -eq 0 ]
     [ -d "$output" ]
 }
 
 @test "build-agent-briefing: accepts a session file path as well as an id" {
     local id; id=$(create_test_session)
-    run "$SCRIPT" "$CLAUDE_SESSION_DIR/review-code/$id.json" --arch-context-file "$ARCH_FILE" --agents "correctness"
+    run_briefing "$CLAUDE_SESSION_DIR/review-code/$id.json" --arch-context-file "$ARCH_FILE" --agents "correctness"
     [ "$status" -eq 0 ]
     [ -f "$output/briefing.md" ]
 }
@@ -208,7 +218,7 @@ create_test_session() {
 @test "build-agent-briefing: fails when the diff file is missing" {
     local id; id=$(create_test_session)
     rm -f "$CLAUDE_SESSION_DIR/review-code/artifacts-test/diff.patch"
-    run "$SCRIPT" "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
     # A silently empty briefing would make agents report no findings, which reads
     # exactly like clean code. It has to fail loudly instead.
     [ "$status" -ne 0 ]
@@ -217,7 +227,7 @@ create_test_session() {
 @test "build-agent-briefing: fails when the diff file is empty" {
     local id; id=$(create_test_session)
     : > "$CLAUDE_SESSION_DIR/review-code/artifacts-test/diff.patch"
-    run "$SCRIPT" "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
     [ "$status" -ne 0 ]
 }
 
@@ -230,7 +240,7 @@ create_test_session() {
 
 @test "build-agent-briefing: works without an architectural context file" {
     local id; id=$(create_test_session)
-    run "$SCRIPT" "$id" --agents "correctness"
+    run_briefing "$id" --agents "correctness"
     [ "$status" -eq 0 ]
     [ -s "$output/briefing.md" ]
 }
@@ -246,7 +256,7 @@ create_test_session() {
         '-a' \
         '+b' \
         > "$delta"
-    run "$SCRIPT" "$id" --agents "correctness" --diff-file "$delta"
+    run_briefing "$id" --agents "correctness" --diff-file "$delta"
     [ "$status" -eq 0 ]
     # The incremental re-review path hands agents the delta, not the whole PR.
     grep -q "only.txt" "$delta"
@@ -255,6 +265,6 @@ create_test_session() {
 
 @test "build-agent-briefing: fails when --diff-file points nowhere" {
     local id; id=$(create_test_session)
-    run "$SCRIPT" "$id" --agents "correctness" --diff-file "$BATS_TEST_TMPDIR/absent.patch"
+    run_briefing "$id" --agents "correctness" --diff-file "$BATS_TEST_TMPDIR/absent.patch"
     [ "$status" -ne 0 ]
 }

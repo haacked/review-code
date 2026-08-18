@@ -114,6 +114,8 @@ Read `mode` from the JSON it prints:
 
 **Always tell the user which path this took, and for `full`, the `reason` the script gave.** A silent fallback looks identical to a delta review that found nothing, and the difference matters: a full re-review costs what it always did.
 
+**Advance the recorded SHA.** When composing the review, `review_commit` in the metadata header must be set to the head this run actually reviewed. If it keeps the old value, the next re-review computes its delta from the original SHA and the saving disappears after one round. On `--append`, update the existing header rather than adding a second one.
+
 **Carrying findings forward.** On the `delta` path, parse the previous review's findings and carry forward only those whose file the delta does not touch. Findings in files the delta changed are dropped and re-derived by the agents against the new code. This is deliberately conservative and it has a known limit worth stating in the review: a change in one file can invalidate a finding about a file the delta never touched. Record `review_mode: delta` and `delta_from: <sha>` in the review's metadata header so every carried-forward finding is traceable to the SHA it was derived at.
 
 ### Classify Review Scope
@@ -319,10 +321,14 @@ Then build the briefing, passing the agents being dispatched so the area-scoped 
 
 It writes `briefing.md`, `diff.patch`, and — when those agents run — `diff-frontend.patch` and `diff-infra-config.patch`, each holding only that agent's file types plus a list of the paths left out. It exits non-zero if any output is missing or empty. **If it fails, stop and report the failure. Do not dispatch agents at an unreadable briefing**: an agent that cannot read its briefing finds nothing, which looks exactly like clean code.
 
+It prints JSON: `artifacts_dir`, `briefing_lines`, `diff_lines`, and a `scoped_diffs` map of line counts. Keep those counts — the agent prompt needs them.
+
 **The prompt for each agent** is then short. Substitute the agent's own diff file (`diff-frontend.patch` for frontend, `diff-infra-config.patch` for infra-config when those files exist, `diff.patch` for everyone else):
 
 ```markdown
 Read `<artifacts_dir>/briefing.md` for the review context and shared instructions, then read `<artifacts_dir>/<agent-diff-file>` for the code changes. Apply your domain lens to those changes.
+
+`briefing.md` is <briefing_lines> lines and your diff is <diff_lines> lines. The Read tool truncates long files, so check that you received every line of both. If you got fewer, read the rest with the `offset` parameter before reviewing. Reviewing a truncated diff means silently skipping the code you did not see.
 
 If either file is missing or unreadable, stop immediately and reply with exactly `BRIEFING_UNAVAILABLE` and nothing else. Do not review from memory or partial information.
 

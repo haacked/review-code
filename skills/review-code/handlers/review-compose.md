@@ -57,7 +57,7 @@ diff_tokens: <diff_tokens from session data>
 
 The `token_usage` block records per-step token consumption (agents, context explorer, validators, and other steps) and the aggregate total. Always include the `total` field as the sum of all steps in `$token_usage`.
 
-This metadata is used by the learning system to determine when the review was created. The `review_commit` field records the PR's HEAD SHA at review time, enabling drift detection when creating draft reviews later. The `diff_tokens` field is an estimated token count of the diff (~4 chars per token).
+This metadata is used by the learning system to determine when the review was created. The `review_commit` field records the PR's HEAD SHA at review time, enabling drift detection when creating draft reviews later and giving the next re-review the point to compute its delta from. On `--append`, update the existing header in place; a second header would leave the stale SHA first in the file, where `review-delta.sh` reads it. The `diff_tokens` field is an estimated token count of the diff (~4 chars per token).
 
 If `mode` is `branch` and `base_source` is not `"default"`, add a scope note directly under the metadata header (before the Fix Summary and any chunked "Review Scope" note) so the reader can tell at a glance what the diff was compared against:
 

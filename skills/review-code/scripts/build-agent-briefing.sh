@@ -30,8 +30,9 @@ set -euo pipefail
 #   diff-frontend.patch      frontend hunks only, when that agent runs
 #   diff-infra-config.patch  infra-config hunks only, when that agent runs
 #
-# Prints the artifacts directory path. Exits non-zero when a required output is
-# missing or empty, so a caller never dispatches agents at an unreadable briefing.
+# Prints a JSON object: the artifacts directory plus the line count of every
+# file written. Exits non-zero when a required output is missing or empty, so a
+# caller never dispatches agents at an unreadable briefing.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -266,4 +267,20 @@ for required in "${BRIEFING}" "${DIFF_PATH}"; do
     fi
 done
 
-echo "${ARTIFACTS_DIR}"
+# Report the sizes. The Read tool truncates long files by default, and a
+# reviewer that silently saw only the first slice of a large diff reports
+# nothing about the rest, which is indistinguishable from clean code. The
+# caller puts these counts in the agent prompt so each agent can check what it
+# actually got.
+jq -nc \
+    --arg dir "${ARTIFACTS_DIR}" \
+    --argjson briefing_lines "$(wc -l < "${BRIEFING}" | tr -d ' ')" \
+    --argjson diff_lines "$(wc -l < "${DIFF_PATH}" | tr -d ' ')" \
+    --argjson scoped "$(
+        for f in "${ARTIFACTS_DIR}"/diff-*.patch; do
+            [[ -e "${f}" ]] || continue
+            printf '%s\n' "$(basename "${f}")" "$(wc -l < "${f}" | tr -d ' ')"
+        done | jq -Rn '[inputs] | [., [range(0; length; 2)]] | .[1] as $i | .[0] as $a
+            | reduce $i[] as $k ({}; . + {($a[$k]): ($a[$k+1] | tonumber)})'
+    )" \
+    '{artifacts_dir: $dir, briefing_lines: $briefing_lines, diff_lines: $diff_lines, scoped_diffs: $scoped}'

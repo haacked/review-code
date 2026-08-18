@@ -24,8 +24,7 @@ Loaded when the session JSON's `chunk_metadata.chunked` is `true`: the diff was 
    **File Metadata:**
    $file_metadata
 
-   **Diff for this chunk:**
-   $chunk.diff
+   **Diff for this chunk:** read it from `$chunk.diff_path` — it is a file, not inline text.
 
    $file_access_instructions
 
