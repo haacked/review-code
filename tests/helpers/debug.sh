@@ -12,12 +12,12 @@ debug_test_env() {
     echo "OSTYPE: $OSTYPE" >&2
 
     # Check new config location
-    if [ -f "$HOME/.claude/skills/review-code/.env" ]; then
+    if [[ -f "$HOME/.claude/skills/review-code/.env" ]]; then
         echo "Config file exists at: $HOME/.claude/skills/review-code/.env" >&2
         echo "Config contents:" >&2
         cat "$HOME/.claude/skills/review-code/.env" >&2
     # Check old config location (for backward compatibility)
-    elif [ -f "$HOME/.claude/review-code.env" ]; then
+    elif [[ -f "$HOME/.claude/review-code.env" ]]; then
         echo "Config file exists at (old location): $HOME/.claude/review-code.env" >&2
         echo "Config contents:" >&2
         cat "$HOME/.claude/review-code.env" >&2
@@ -25,9 +25,9 @@ debug_test_env() {
         echo "No config file found" >&2
     fi
 
-    if [ -n "${CANONICAL_REVIEW_PATH:-}" ]; then
+    if [[ -n "${CANONICAL_REVIEW_PATH:-}" ]]; then
         echo "CANONICAL_REVIEW_PATH: $CANONICAL_REVIEW_PATH" >&2
-        echo "CANONICAL_REVIEW_PATH exists: $([ -d "$CANONICAL_REVIEW_PATH" ] && echo "yes" || echo "no")" >&2
+        echo "CANONICAL_REVIEW_PATH exists: $([[ -d "$CANONICAL_REVIEW_PATH" ]] && echo "yes" || echo "no")" >&2
     fi
 
     echo "Git config:" >&2

@@ -29,7 +29,7 @@ set_source_and_root_dir() {
     { set +x; } 2>/dev/null
     source_dir="$(cd -P "$(dirname "$0")" >/dev/null 2>&1 && pwd)"
     root_dir=$(cd "$source_dir" && cd ../ && pwd)
-    cd "$root_dir"
+    cd "$root_dir" || fatal "Could not change to root directory: $root_dir"
 }
 
 # Check if command exists
@@ -52,7 +52,7 @@ run_command() {
     local cmd="$1"
     local desc="${2:-Running command}"
     echo "→ $desc"
-    [ "$VERBOSE" ] && echo "  $cmd"
+    [[ -n "${VERBOSE:-}" ]] && echo "  $cmd"
     if ! eval "$cmd"; then
         error "Command failed: $cmd"
         return 1
@@ -65,7 +65,7 @@ require_commands() {
     for cmd in "$@"; do
         command_exists "$cmd" || missing+=("$cmd")
     done
-    [ ${#missing[@]} -eq 0 ] || fatal "Missing commands: ${missing[*]}"
+    [[ ${#missing[@]} -eq 0 ]] || fatal "Missing commands: ${missing[*]}"
 }
 
 # Show help from script comments

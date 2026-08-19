@@ -78,6 +78,7 @@ parse_structured_response() {
     fi
 
     # If wrapped in markdown fences, strip them and try again
+    # shellcheck disable=SC2016  # sed scripts, not shell strings
     json_text=$(printf '%s' "${text}" | sed -n '/^```/,/^```/p' | sed '1d;$d')
     if [[ -n "${json_text}" ]] && printf '%s' "${json_text}" | jq -e '.validations and .missed_issues' > /dev/null 2>&1; then
         printf '%s' "${json_text}"

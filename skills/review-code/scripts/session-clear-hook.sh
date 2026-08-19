@@ -33,7 +33,9 @@ log_line() {
     mkdir -p "$(dirname "${LOG_FILE}")"
     printf '%s | %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${msg}" >> "${LOG_FILE}"
     if [[ -f "${LOG_FILE}" ]]; then
-        tail -50 "${LOG_FILE}" > "${LOG_FILE}.tmp" 2> /dev/null && mv "${LOG_FILE}.tmp" "${LOG_FILE}" || true
+        if tail -50 "${LOG_FILE}" > "${LOG_FILE}.tmp" 2> /dev/null; then
+            mv "${LOG_FILE}.tmp" "${LOG_FILE}" 2> /dev/null || true
+        fi
     fi
 }
 

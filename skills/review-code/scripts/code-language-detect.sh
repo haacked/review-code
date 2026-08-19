@@ -108,6 +108,7 @@ while IFS= read -r file; do
     # even when the hunk touches only a reducer or listener body. The content
     # patterns below miss that case: the kea import sits outside the hunk, and
     # useValues/useActions live in the component, not the logic file.
+    # shellcheck disable=SC2249  # a filename filter: most files match no arm, which is correct
     case "${file##*/}" in
         *Logic.ts | *Logic.tsx | logic.ts | logic.tsx)
             seen_frameworks[kea]=1
@@ -122,7 +123,6 @@ extensions=("${!seen_extensions[@]}")
 
 # Detect frameworks from file content in single pass
 # Use awk for single-pass pattern matching instead of 6 grep invocations
-# shellcheck disable=SC2312  # awk and sort failures are non-critical for framework detection
 while IFS= read -r framework; do
     case "${framework}" in
         react | kea)

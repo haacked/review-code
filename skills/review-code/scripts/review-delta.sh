@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2312  # git probes are checked via explicit if/else, not exit-status chaining
 set -euo pipefail
 
 # review-delta.sh - Decide whether a re-review can look at only what changed.

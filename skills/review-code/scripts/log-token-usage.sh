@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2312  # date failure here would be a broken system, not a case to branch on
 set -euo pipefail
 
 # log-token-usage.sh - Append one token-usage record to the central log.

@@ -464,7 +464,7 @@ run_with_approach() {
         echo "${failed} benchmark(s) failed" >&2
     fi
 
-    return ${failed}
+    return "${failed}"
 }
 
 main() {
@@ -561,6 +561,10 @@ main() {
             benchmarks=("${all_ids[${idx}]}")
             echo "Sampled benchmark: ${benchmarks[0]}"
             echo ""
+            ;;
+        *)
+            echo "Error: unhandled mode '${mode}'." >&2
+            exit 1
             ;;
     esac
 

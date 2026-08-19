@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016  # GraphQL documents; $var are GraphQL variables bound via --arg
 # resolve-review-threads.sh - List and resolve GitHub PR review threads
 #
 # Self-contained vendoring of the gh-resolve-threads utility so the
@@ -399,6 +400,10 @@ main() {
             id_array=$(printf '%s\n' "${COMMENT_IDS[@]}" | jq -s 'map(tonumber)')
             filtered=$(echo "$unresolved" | jq --argjson ids "$id_array" '[.[] | select(.commentId as $c | $ids | index($c) != null)]')
             label="matching"
+            ;;
+        *)
+            log_error "Unhandled filter mode '${FILTER_MODE}'."
+            exit 1
             ;;
     esac
 

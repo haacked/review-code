@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016  # jq filters and sed scripts, evaluated by those tools
 # score-eval.sh - Score eval results against answer keys
 #
 # Usage:

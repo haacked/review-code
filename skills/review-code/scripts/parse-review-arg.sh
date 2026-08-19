@@ -2,7 +2,6 @@
 # Parse and validate /review-code command arguments
 # Returns JSON with mode and validated parameters
 
-# shellcheck disable=SC2310  # Functions in conditionals intentionally check return values
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,6 +32,10 @@ for arg_item in "$@"; do
     if [[ -n "${expect_value}" ]]; then
         case "${expect_value}" in
             parent) PARENT_OVERRIDE="${arg_item}" ;;
+            *)
+                echo "Error: no handler for value-taking flag '${expect_value}'." >&2
+                exit 1
+                ;;
         esac
         expect_value=""
         continue
@@ -600,7 +603,6 @@ detect_learn_mode() {
 # Returns: 0 if detected (outputs JSON), 1 if not detected
 detect_area_keyword() {
     [[ -z "${arg}" ]] && return 1
-    # shellcheck disable=SC2312  # contains function failure is handled by return check
     [[ "$(contains "${arg}" "${AREA_KEYWORDS[@]}")" -eq 0 ]] && return 1
 
     build_json_output "area" "area" "${arg}"
@@ -726,7 +728,6 @@ detect_no_arg() {
     fi
     # Check for uncommitted changes
     local has_uncommitted=false
-    # shellcheck disable=SC2312  # git status failure will result in empty string (correct behavior)
     if [[ -n "$(git status --porcelain)" ]]; then
         has_uncommitted=true
     fi
