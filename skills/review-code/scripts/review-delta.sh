@@ -14,13 +14,14 @@ set -euo pipefail
 # to a full review and says why. Nothing here fails quietly.
 #
 # Usage:
-#   review-delta.sh --org <org> --repo <repo> --pr <number> \
-#                   --head-sha <sha> --review-commit <sha> [options]
-#   review-delta.sh --review-file <path> --head-sha <sha> [options]
+#   review-delta.sh --review-file <path> --head-sha <sha> --base <ref> [options]
+#   review-delta.sh --review-commit <sha> --head-sha <sha> --base <ref> [options]
 #
 # Options:
 #   --repo-dir <path>   Git repository to inspect (default: cwd)
-#   --base <ref>        PR base branch (default: the repo's default branch)
+#   --base <ref>        PR base branch. Required: the repository default is not
+#                       the base of a stacked PR, and guessing it wrong reports
+#                       a moved base and falls back to a full review.
 #   --out <path>        Where to write the delta diff (default: alongside cwd)
 #   --max-fraction <n>  Fall back to full when the delta touches more than this
 #                       fraction of the PR's files (default: 0.5)
@@ -29,9 +30,6 @@ set -euo pipefail
 #   {"mode": "no-change"|"delta"|"full", "reason": "...", "diff_path": "...",
 #    "delta_from": "<sha>", "changed_files": <n>, "pr_files": <n>}
 
-ORG=""
-REPO=""
-PR_NUMBER=""
 HEAD_SHA=""
 REVIEW_COMMIT=""
 REVIEW_FILE=""
@@ -42,18 +40,6 @@ MAX_FRACTION="0.5"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --org)
-            ORG="${2:-}"
-            shift 2
-            ;;
-        --repo)
-            REPO="${2:-}"
-            shift 2
-            ;;
-        --pr)
-            PR_NUMBER="${2:-}"
-            shift 2
-            ;;
         --head-sha)
             HEAD_SHA="${2:-}"
             shift 2
@@ -105,6 +91,14 @@ emit() {
 
 if [[ -z "${HEAD_SHA}" ]]; then
     echo "ERROR: --head-sha is required" >&2
+    exit 1
+fi
+
+# Deriving the base here would be worse than refusing: a wrong guess on a
+# stacked PR looks like a moved base, which falls back to a full review with a
+# reason that reads plausible. The caller knows the base; make it say so.
+if [[ -z "${BASE_REF}" ]]; then
+    echo "ERROR: --base is required" >&2
     exit 1
 fi
 
@@ -163,21 +157,16 @@ if ! git_in merge-base --is-ancestor "${RESOLVED_REVIEW}" "${RESOLVED_HEAD}" 2> 
     exit 0
 fi
 
-# Resolve the PR base so the delta can be sized against the whole PR.
-if [[ -z "${BASE_REF}" ]]; then
-    if [[ -n "${ORG}" && -n "${REPO}" && -n "${PR_NUMBER}" ]]; then
-        BASE_REF=$(gh pr view "${PR_NUMBER}" --repo "${ORG}/${REPO}" --json baseRefName -q .baseRefName 2> /dev/null || echo "")
-    fi
-    if [[ -z "${BASE_REF}" ]]; then
-        BASE_REF=$(git_in symbolic-ref --quiet --short refs/remotes/origin/HEAD 2> /dev/null || echo "")
-        BASE_REF="${BASE_REF#origin/}"
-    fi
-    [[ -n "${BASE_REF}" ]] || BASE_REF="main"
-fi
-
+# A PR stacked on someone else's branch, or based on a release branch the user
+# never checked out, has the base only as a remote-tracking ref. Falling back to
+# a full review in that case would cost the saving on exactly those PRs.
 if ! git_in rev-parse --verify --quiet "${BASE_REF}" > /dev/null 2>&1; then
-    emit full "PR base '${BASE_REF}' could not be resolved locally; reviewing the full diff."
-    exit 0
+    if git_in rev-parse --verify --quiet "origin/${BASE_REF}" > /dev/null 2>&1; then
+        BASE_REF="origin/${BASE_REF}"
+    else
+        emit full "PR base '${BASE_REF}' could not be resolved locally; reviewing the full diff."
+        exit 0
+    fi
 fi
 
 # If the base moved under the PR, the earlier review was taken against different

@@ -72,6 +72,45 @@ create_test_session() {
     echo "$session_id"
 }
 
+# A session whose files exercise all three arms of the frontend rule: an
+# extension match, a UI-root match, and a same-directory-as-.tsx match, plus a
+# backend .ts that must not match any of them.
+create_frontend_session() {
+    local session_id="review-code-54321-1234567890"
+    local cmd_dir="$CLAUDE_SESSION_DIR/review-code"
+    local artifacts="$cmd_dir/artifacts-frontend"
+    mkdir -p "$artifacts"
+
+    local p
+    for p in frontend/App.tsx app/Widget.tsx app/helper.ts app/hooks/useThing.ts server/api.ts; do
+        printf '%s\n' \
+            "diff --git a/$p b/$p" \
+            "index abc..def 100644" \
+            "--- a/$p" \
+            "+++ b/$p" \
+            '@@ -1 +1,2 @@' \
+            ' existing' \
+            '+added'
+    done > "$artifacts/diff.patch"
+
+    jq -n --arg dir "$artifacts" '{
+        status: "ready",
+        mode: "pr",
+        artifacts_dir: $dir,
+        diff_path: ($dir + "/diff.patch"),
+        review_context: "This is test review context",
+        file_metadata: {modified_files: [
+            {path: "frontend/App.tsx", is_infra_config: false},
+            {path: "app/Widget.tsx", is_infra_config: false},
+            {path: "app/helper.ts", is_infra_config: false},
+            {path: "app/hooks/useThing.ts", is_infra_config: false},
+            {path: "server/api.ts", is_infra_config: false}
+        ]},
+        pr: {number: 2, title: "Frontend PR", url: "https://example.com/2", author: "testuser", base: "main", head: "feature", state: "OPEN", body: "body", comments: {conversation: [], reviews: [], inline: []}}
+    }' > "$cmd_dir/$session_id.json"
+
+    echo "$session_id"
+}
 
 # The script prints JSON; every assertion below wants the directory, so unwrap it
 # once here and leave $output holding the path.
@@ -197,6 +236,51 @@ run_briefing() {
     [ ! -f "$output/diff-frontend.patch" ]
 }
 
+@test "build-agent-briefing: frontend diff keeps .tsx under a UI source root" {
+    local id; id=$(create_frontend_session)
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "frontend"
+    grep -q "frontend/App.tsx" "$output/diff-frontend.patch"
+}
+
+@test "build-agent-briefing: frontend diff drops a bare .ts in a backend directory" {
+    local id; id=$(create_frontend_session)
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "frontend"
+    # server/api.ts sits outside every UI root and shares no directory with a
+    # changed .tsx, so matching it would sweep a TypeScript backend into the
+    # frontend agent's diff.
+    run grep -c '^diff --git.*server/api\.ts' "$output/diff-frontend.patch"
+    [ "$output" -eq 0 ]
+}
+
+@test "build-agent-briefing: frontend diff keeps a bare .ts beside a changed .tsx" {
+    local id; id=$(create_frontend_session)
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "frontend"
+    # app/ is not a UI root; helper.ts qualifies only because app/Widget.tsx
+    # changed in the same directory.
+    grep -q "app/helper.ts" "$output/diff-frontend.patch"
+}
+
+@test "build-agent-briefing: frontend diff keeps a .ts under a UI-concern directory" {
+    local id; id=$(create_frontend_session)
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "frontend"
+    # Hooks, stores, and contexts change alongside components; useThing.ts has
+    # no sibling .tsx, so only the directory-name arm can reach it.
+    grep -q "app/hooks/useThing.ts" "$output/diff-frontend.patch"
+}
+
+@test "build-agent-briefing: writes no frontend diff when nothing matches" {
+    local id; id=$(create_test_session)
+    # The no-match NOTE goes to stderr, which bats' `run` would fold into the
+    # JSON on stdout, so read the two streams apart here.
+    run bash -c "'$SCRIPT' '$id' --arch-context-file '$ARCH_FILE' --agents frontend 2>/dev/null"
+    [ "$status" -eq 0 ]
+    local dir; dir=$(echo "$output" | jq -r '.artifacts_dir')
+    [ ! -f "$dir/diff-frontend.patch" ]
+    # No entry means the caller has nothing to point the frontend agent at, so
+    # it drops out of the dispatch rather than getting the unscoped diff.
+    [ "$(echo "$output" | jq -r '.scoped_diffs["diff-frontend.patch"] // "absent"')" = "absent" ]
+}
+
 # =============================================================================
 # Contract with the caller
 # =============================================================================
@@ -256,11 +340,30 @@ run_briefing() {
         '-a' \
         '+b' \
         > "$delta"
-    run_briefing "$id" --agents "correctness" --diff-file "$delta"
+    # Assert on the script's own JSON, not on the delta file this test wrote:
+    # grepping the input can't tell whether --diff-file had any effect.
+    run "$SCRIPT" "$id" --agents "correctness" --diff-file "$delta"
     [ "$status" -eq 0 ]
     # The incremental re-review path hands agents the delta, not the whole PR.
-    grep -q "only.txt" "$delta"
-    [ -s "$output/briefing.md" ]
+    [ "$(echo "$output" | jq -r '.diff_path')" = "$delta" ]
+    [ "$(echo "$output" | jq -r '.diff_lines')" -eq 6 ]
+    [ -s "$(echo "$output" | jq -r '.artifacts_dir')/briefing.md" ]
+}
+
+@test "build-agent-briefing: reports the line counts the agent prompt quotes" {
+    local id; id=$(create_test_session)
+    run "$SCRIPT" "$id" --arch-context-file "$ARCH_FILE" --agents "correctness infra-config"
+    [ "$status" -eq 0 ]
+    local dir; dir=$(echo "$output" | jq -r '.artifacts_dir')
+    # These counts are the whole truncation guard: an agent compares them
+    # against what Read actually returned. wc -l counts newlines and the
+    # orchestrator writes the diff with printf '%s', so a diff with no trailing
+    # newline reports one line short. That errs toward an agent seeing more than
+    # it was promised, which is the harmless direction.
+    [ "$(echo "$output" | jq -r '.briefing_lines')" -eq "$(wc -l < "$dir/briefing.md" | tr -d ' ')" ]
+    [ "$(echo "$output" | jq -r '.diff_lines')" -eq "$(wc -l < "$dir/diff.patch" | tr -d ' ')" ]
+    [ "$(echo "$output" | jq -r '.scoped_diffs["diff-infra-config.patch"]')" \
+        -eq "$(wc -l < "$dir/diff-infra-config.patch" | tr -d ' ')" ]
 }
 
 @test "build-agent-briefing: fails when --diff-file points nowhere" {

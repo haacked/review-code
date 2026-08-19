@@ -5,6 +5,11 @@ setup() {
     PROJECT_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
     export PROJECT_ROOT
 
+    # Keep session artifacts out of the developer's real ~/.claude. The
+    # orchestrator writes each run's diff to a durable artifacts directory, so
+    # without this every test run leaves one behind.
+    export CLAUDE_SESSION_DIR="$BATS_TEST_TMPDIR/sessions"
+
     source "$PROJECT_ROOT/tests/helpers/gh-stub.bash"
     install_default_gh_stub
     source "$PROJECT_ROOT/tests/helpers/parent-child-fixture.bash"

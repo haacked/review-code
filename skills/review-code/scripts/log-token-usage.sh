@@ -47,7 +47,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --usage)
-            USAGE_JSON="${2:-{\}}"
+            USAGE_JSON="${2:-}"
             shift 2
             ;;
         --org)

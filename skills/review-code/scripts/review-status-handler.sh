@@ -209,12 +209,13 @@ case "${ACTION}" in
             artifacts_dir: (.artifacts_dir // null),
             file_ref: (.file_ref // null),
             chunk_metadata: (.chunk_metadata // null),
+            chunks: (if .chunks then [.chunks[] | {id, label, files, size_kb, diff_path}] else null end),
             commit_messages_present: (has("commit_messages")),
             adversary: (.adversary // null)
         }
         + ({force, draft, self, overwrite, append, full, fix} | with_entries(select(.value)))
         + (if .debug_session_dir then {debug_session_dir} else {} end)
-        + (if .pr then {pr: {number: .pr.number, title: .pr.title, author: .pr.author, url: .pr.url, base: .pr.base, head: .pr.head, head_sha: .pr.head_sha}, reviewer_username, is_own_pr} else {} end)
+        + (if .pr then {pr: {number: .pr.number, title: .pr.title, author: .pr.author, url: .pr.url, base: .pr.base, head: .pr.head, head_sha: .pr.head_sha, linked_issues: [.pr.linked_issues[]? | {number, title}]}, reviewer_username, is_own_pr} else {} end)
         + (if .branch then {branch} else {} end)
         + (if .base_branch then {base_branch} else {} end)
         + (if .base_source then {base_source} else {} end)

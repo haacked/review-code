@@ -66,7 +66,7 @@ Loaded when the session JSON's `chunk_metadata.chunked` is `true`: the diff was 
 **Notes that apply at later steps:**
 
 - **Track Token Usage**: key each agent's usage by `chunk-{id}-{agent-type}`. In the review metadata header and the token usage log, sum tokens by agent type across chunks (e.g., all `chunk-*-code-reviewer-security` entries become a single `code-reviewer-security` total).
-- **Validate Findings Against the Diff**: always use the FULL diff from the session data (not chunk diffs) for position mapping. The position mapper needs the complete diff to map findings to correct GitHub inline comment positions.
+- **Validate Findings Against the Diff**: always pass the full diff at `diff_path` (not a chunk diff) to the position mapper's `--diff-file`. It needs the complete diff to map findings to correct GitHub inline comment positions.
 - **Compose the Review Document**: the final review does NOT separate findings by chunk. Present a unified review organized by the standard priority ordering, the same as for non-chunked reviews. Add a "Review Scope" note at the top of the review document (after the metadata header):
 
   ```markdown

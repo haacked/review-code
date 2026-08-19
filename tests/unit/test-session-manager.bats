@@ -269,6 +269,41 @@ teardown() {
     [ ! -f "$session_path" ]
 }
 
+@test "session_cleanup: removes the artifacts directory named in the session" {
+    artifacts=$(session_artifacts_dir_new "test-cmd")
+    echo "diff" > "$artifacts/diff.patch"
+    session_id=$(session_init "test-cmd" "$(jq -n --arg d "$artifacts" '{artifacts_dir: $d}')")
+
+    session_cleanup "$session_id"
+
+    # Left behind, this holds a full copy of every reviewed diff.
+    [ ! -d "$artifacts" ]
+}
+
+@test "session_cleanup: leaves an artifacts_dir outside the command directory alone" {
+    outsider="$BATS_TEST_TMPDIR/not-ours"
+    mkdir -p "$outsider"
+    session_id=$(session_init "test-cmd" "$(jq -n --arg d "$outsider" '{artifacts_dir: $d}')")
+
+    session_cleanup "$session_id"
+
+    # A malformed or tampered session value must not steer rm -rf off the
+    # command directory.
+    [ -d "$outsider" ]
+}
+
+@test "session_cleanup_old: sweeps an artifacts directory no session points at" {
+    orphan=$(session_artifacts_dir_new "review-code")
+    echo "diff" > "$orphan/diff.patch"
+    touch -t 200001010000 "$orphan"
+
+    session_cleanup_old "review-code" 1
+
+    # An orchestrator that dies before writing its session JSON leaves one of
+    # these with nothing referencing it, so per-session cleanup can't reach it.
+    [ ! -d "$orphan" ]
+}
+
 @test "session_cleanup: leaves directory (doesn't auto-remove)" {
     session_id=$(session_init "cleanup-test" '{"test":true}')
 

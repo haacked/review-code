@@ -66,8 +66,9 @@ From `REVIEW_FIELDS`, extract these fields for building agent context:
 - `languages`: detected languages
 - `file_info.file_path`: where to save the review
 - `file_ref`: (optional) git ref for reading PR files when on a different branch or via a provisioned worktree
-- `commit_messages_present`: boolean. The messages themselves are in `briefing.md`, not here.
-- `chunk_metadata`: (optional) object with `chunked`, `reason`, `chunk_count`. The chunk array and its `diff_path` entries stay in the session file; the briefing step reads them.
+- `commit_messages_present`: boolean. The messages themselves are in `<artifacts_dir>/commit-messages.md`, not here.
+- `chunk_metadata`: (optional) object with `chunked`, `reason`, `chunk_count`.
+- `chunks`: (optional) array of `{id, label, files, size_kb, diff_path}`, present only when the diff was split. Each chunk's diff is on disk, so the array itself is small.
 - `debug_session_dir`: (optional) path to debug session directory when debug mode is enabled
 - `adversary`: (optional) object `{engine: "copilot"|"codex", available: boolean}`, present only when `--adversary:copilot` or `--adversary:codex` was specified. `available` reflects whether that engine's CLI is actually installed.
 
@@ -106,7 +107,7 @@ A re-review normally pays full freight: every agent reads the whole diff again e
   --out "<artifacts_dir>/delta.patch"
 ```
 
-Pass `--base` explicitly. Without it the script falls back to the repository's default branch, which is not the base of a stacked PR, and the moved-base guard then forces a full review on exactly the PRs that get re-reviewed most.
+`--base` is required and the script errors without it. Deriving it would mean guessing the repository default, which is not the base of a stacked PR; the moved-base guard would then force a full review on exactly the PRs that get re-reviewed most, with a reason that reads plausible.
 
 Read `mode` from the JSON it prints:
 
@@ -233,7 +234,7 @@ Gather architectural context for this code review.
 
 {For all modes:}
 {If commit_messages_present:}
-**Commit Messages:** in `<artifacts_dir>/briefing.md`.
+**Commit Messages:** read `<artifacts_dir>/commit-messages.md`.
 
 **File Metadata:**
 $file_metadata
@@ -302,13 +303,9 @@ Invoke the agents determined by the scope classification. If an area was specifi
 
 All agents need the same payload: PR context, commit messages, architectural context, language guidelines, and the shared review instructions. Writing it into each agent's prompt would mean retyping it once per agent and carrying it here for the rest of the run, so a script writes it to disk instead.
 
-First save the explorer's output to a file so it can go into the briefing:
+First save the explorer's output to a file so it can go into the briefing. Use the Write tool, with `<artifacts_dir>/architectural-context.md` as the path and the explorer's output as the content.
 
-```bash
-cat > "<artifacts_dir>/architectural-context.md" <<'ARCHEOF'
-<the explorer's output>
-ARCHEOF
-```
+Do not write it with a shell heredoc. The explorer quotes code from the PR verbatim, so a file in the diff can carry a line matching the delimiter; bash ends the heredoc there and runs the rest of the explorer's output as commands. Write takes the path and the content as separate parameters, so nothing in the text can terminate it.
 
 Then build the briefing, passing the agents being dispatched so the area-scoped diffs get written:
 
@@ -318,16 +315,20 @@ Then build the briefing, passing the agents being dispatched so the area-scoped 
   --agents "<space-separated $selected_agents>"
 ```
 
-It writes `briefing.md`, `diff.patch`, and — when those agents run — `diff-frontend.patch` and `diff-infra-config.patch`, each holding only that agent's file types plus a list of the paths left out. It exits non-zero if any output is missing or empty. **If it fails, stop and report the failure. Do not dispatch agents at an unreadable briefing**: an agent that cannot read its briefing finds nothing, which looks exactly like clean code.
+It writes `briefing.md` and — when those agents run — `diff-frontend.patch` and `diff-infra-config.patch`, each holding only that agent's file types plus a list of the paths left out. It exits non-zero if any output is missing or empty. **If it fails, stop and report the failure. Do not dispatch agents at an unreadable briefing**: an agent that cannot read its briefing finds nothing, which looks exactly like clean code.
 
-It prints JSON: `artifacts_dir`, `briefing_lines`, `diff_lines`, and a `scoped_diffs` map of line counts. Keep those counts — the agent prompt needs them.
+It prints JSON: `artifacts_dir`, `diff_path`, `briefing_lines`, `diff_lines`, and a `scoped_diffs` map of line counts. Keep those — the agent prompt needs them.
 
-**The prompt for each agent** is then short. Substitute the agent's own diff file (`diff-frontend.patch` for frontend, `diff-infra-config.patch` for infra-config when those files exist, `diff.patch` for everyone else):
+**The prompt for each agent** is then short. Substitute the agent's own diff file: `diff-frontend.patch` for frontend and `diff-infra-config.patch` for infra-config when `scoped_diffs` lists them, otherwise the `diff_path` the script returned. Use the returned `diff_path` rather than the literal `diff.patch`: on a delta re-review it points at the delta, and naming `diff.patch` there would hand every unscoped agent the whole PR while the run reports itself as incremental.
+
+If `scoped_diffs` has no entry for a scoped agent, no file matched that agent's rule. Drop it from `$selected_agents` and add it to `$skipped_agents` so the compose step reports it as skipped. Do not dispatch it against the unscoped diff; that spends a full reviewer's tokens on files it was just filtered out of.
+
+The line count in the prompt is that agent's own file: its `scoped_diffs` entry when it has one, otherwise `diff_lines`. Quoting the unscoped count to a scoped agent sends it paging for lines that do not exist, and an agent that receives a fraction of what it was promised may decide the briefing is broken and reply `BRIEFING_UNAVAILABLE`.
 
 ```markdown
 Read `<artifacts_dir>/briefing.md` for the review context and shared instructions, then read `<artifacts_dir>/<agent-diff-file>` for the code changes. Apply your domain lens to those changes.
 
-`briefing.md` is <briefing_lines> lines and your diff is <diff_lines> lines. The Read tool truncates long files, so check that you received every line of both. If you got fewer, read the rest with the `offset` parameter before reviewing. Reviewing a truncated diff means silently skipping the code you did not see.
+`briefing.md` is <briefing_lines> lines and your diff is <this agent's line count> lines. The Read tool truncates long files, so check that you received every line of both. If you got fewer, read the rest with the `offset` parameter before reviewing. Reviewing a truncated diff means silently skipping the code you did not see.
 
 If either file is missing or unreadable, stop immediately and reply with exactly `BRIEFING_UNAVAILABLE` and nothing else. Do not review from memory or partial information.
 
@@ -335,6 +336,28 @@ $file_access_instructions
 ```
 
 **If an agent replies `BRIEFING_UNAVAILABLE`:** Read `~/.claude/skills/review-code/handlers/review-inline-fallback.md` and re-dispatch that one agent with the payload inlined. Report in the review that the fallback fired, since it means the briefing path is broken and every later run pays full freight until it is fixed.
+
+### Check What Each Agent Actually Read
+
+The line counts in the agent prompt are advisory. They only help an agent that reads with the Read tool and compares; agents that page the diff with `sed` through Bash never hit a truncation to notice, and an agent that simply stops early reports nothing either. On the review of the PR that introduced this guard, three of seven agents read between 51% and 92% of their diff and none of them said so.
+
+After the agents return, check what they read:
+
+```bash
+~/.claude/skills/review-code/scripts/check-diff-coverage.sh --diff-lines <diff_lines> --json
+```
+
+It reads this session's subagent transcripts (`--session` defaults to `$CLAUDE_CODE_SESSION_ID`) and returns per-agent coverage plus a `below_threshold` array. It exits 0 whenever it can read the transcripts; short coverage is a result, not a failure.
+
+For each agent in `below_threshold`, resume it (using its agent ID from the Task tool) and give it the `unread_ranges` the script reported:
+
+```
+You did not read all of `<artifacts_dir>/<agent-diff-file>`. These line ranges are still unread: <ranges>. Read them now with `sed -n '<start>,<end>p' <path>` and report any findings they contain, in the same format. Reply `NO_ADDITIONAL_FINDINGS` if there are none.
+```
+
+Merge whatever comes back into the finding pool. One re-dispatch per agent; take what you get. Record each resume's usage in `$token_usage` as `coverage-bounce-{N}`.
+
+If the script errors (no transcripts yet, unreadable directory), say so in the review and continue. A missing coverage check is worth a line in the output; it is not worth blocking a completed review.
 
 ### Collect and Synthesize Results
 

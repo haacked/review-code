@@ -59,6 +59,14 @@ mode_of() { echo "$1" | jq -r '.mode'; }
     [ "$status" -ne 0 ]
 }
 
+@test "review-delta: requires --base" {
+    # Deriving the base would silently produce a full review on a stacked PR,
+    # which is the failure this script exists to avoid.
+    run "$SCRIPT" --head-sha "$HEAD_SHA" --review-commit "$REVIEWED_SHA" --repo-dir "$REPO"
+    [ "$status" -ne 0 ]
+    echo "$output" | grep -q -- "--base is required"
+}
+
 @test "review-delta: emits valid JSON" {
     run "$SCRIPT" --head-sha "$HEAD_SHA" --review-commit "$REVIEWED_SHA" --repo-dir "$REPO" --base main
     echo "$output" | jq -e . > /dev/null
@@ -128,6 +136,38 @@ mode_of() { echo "$1" | jq -r '.mode'; }
     run "$SCRIPT" --head-sha "$HEAD_SHA" --review-commit "$other" --repo-dir "$REPO" --base main
     [ "$(mode_of "$output")" = "full" ]
     echo "$output" | jq -r '.reason' | grep -qi "ancestor"
+}
+
+@test "review-delta: falls back to full when the base moved under the PR" {
+    # Merging main into the branch between reviews keeps ancestry intact, so
+    # this reaches the merge-base guard rather than exiting at the ancestor
+    # check one branch earlier.
+    git -C "$REPO" checkout -q main
+    echo newer > "$REPO/newer.txt"
+    git -C "$REPO" add -A && git -C "$REPO" commit -qm "base advances"
+    git -C "$REPO" checkout -q feature
+    git -C "$REPO" merge -q --no-ff -m "merge main" main
+    echo more >> "$REPO/f2.txt"
+    git -C "$REPO" add -A && git -C "$REPO" commit -qm "after merge"
+    local merged_head; merged_head=$(git -C "$REPO" rev-parse HEAD)
+
+    run "$SCRIPT" --head-sha "$merged_head" --review-commit "$REVIEWED_SHA" --repo-dir "$REPO" --base main
+    [ "$(mode_of "$output")" = "full" ]
+    echo "$output" | jq -r '.reason' | grep -qi "base moved"
+}
+
+@test "review-delta: resolves a base that exists only as a remote-tracking ref" {
+    # A PR stacked on someone else's branch, or based on a release branch the
+    # user never checked out, has the base only under refs/remotes.
+    git -C "$REPO" update-ref refs/remotes/origin/release main
+    run "$SCRIPT" --head-sha "$HEAD_SHA" --review-commit "$REVIEWED_SHA" --repo-dir "$REPO" --base release
+    [ "$(mode_of "$output")" = "delta" ]
+}
+
+@test "review-delta: falls back to full when the base is nowhere in the repo" {
+    run "$SCRIPT" --head-sha "$HEAD_SHA" --review-commit "$REVIEWED_SHA" --repo-dir "$REPO" --base no-such-branch
+    [ "$(mode_of "$output")" = "full" ]
+    echo "$output" | jq -r '.reason' | grep -qi "could not be resolved"
 }
 
 @test "review-delta: falls back to full when a rebase rewrote the reviewed commit" {

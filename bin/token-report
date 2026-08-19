@@ -17,12 +17,16 @@ set -euo pipefail
 #   --since <date>    ISO date; skip sessions whose first entry predates it
 #   --limit <n>       Show at most n sessions in the per-session table
 #   --json            Emit machine-readable JSON instead of a table
+#   --prompts         Report how reviewer subagents received their payload
+#                     (inlined in the prompt, or by a path to a file) instead
+#                     of the cost tables
 
 DIR="${HOME}/.claude/projects"
 MATCH="review"
 SINCE=""
 LIMIT=15
 AS_JSON="false"
+PROMPTS="false"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -46,6 +50,10 @@ while [[ $# -gt 0 ]]; do
             AS_JSON="true"
             shift
             ;;
+        --prompts)
+            PROMPTS="true"
+            shift
+            ;;
         -h | --help)
             sed -n '/^# token-report/,/^$/p' "$0" | sed -E 's/^# ?//'
             exit 0
@@ -62,6 +70,105 @@ if [[ ! -d "${DIR}" ]]; then
     exit 1
 fi
 
+if [[ "${PROMPTS}" == "true" ]]; then
+    DIR="${DIR}" MATCH="${MATCH}" AS_JSON="${AS_JSON}" python3 - << 'PROMPTPY'
+import collections, glob, json, os, re, sys
+
+ROOT = os.environ["DIR"]
+MATCH = os.environ["MATCH"]
+AS_JSON = os.environ["AS_JSON"] == "true"
+
+# Before build-agent-briefing.sh standardized one filename, the orchestrator
+# invented its own each run: /tmp/rc-<n>-agent-context.md, shared_context.md,
+# briefing.md, pr<n>-arch.md. Matching any absolute path to a text-ish file
+# catches the whole family instead of guessing at the names.
+PATH_HINT = re.compile(r"(/[\w.\-]+){2,}\.(md|diff|patch|txt)\b")
+
+def first_user_prompt(path):
+    for line in open(path, errors="ignore"):
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        msg = rec.get("message") or {}
+        if msg.get("role") != "user":
+            continue
+        c = msg.get("content")
+        if isinstance(c, str):
+            return c
+        if isinstance(c, list):
+            t = "".join(b.get("text", "") for b in c
+                        if isinstance(b, dict) and b.get("type") == "text")
+            if t:
+                return t
+    return None
+
+def shape(text):
+    if text.strip() == "FILE_PROMPT_PLACEHOLDER":
+        return None                      # harness artifact, not a real prompt
+    if "diff --git" in text:
+        return "inlined"
+    if PATH_HINT.search(text):
+        return "by-reference"
+    return "no-payload"
+
+rows = []
+for project in sorted(glob.glob(os.path.join(ROOT, "*"))):
+    if MATCH and MATCH not in os.path.basename(project):
+        continue
+    for subdir in glob.glob(os.path.join(project, "*", "subagents")):
+        for f in sorted(glob.glob(os.path.join(subdir, "*.jsonl"))):
+            meta = f[:-6] + ".meta.json"
+            if not os.path.exists(meta):
+                continue
+            try:
+                atype = json.load(open(meta)).get("agentType") or ""
+            except ValueError:
+                continue
+            if not atype.startswith("code-reviewer-"):
+                continue
+            text = first_user_prompt(f)
+            if not text:
+                continue
+            k = shape(text)
+            if k:
+                rows.append({"agent": atype, "shape": k, "tokens": len(text) // 4})
+
+if not rows:
+    print(f"No reviewer subagents matched '{MATCH}' under {ROOT}")
+    sys.exit(0)
+
+def median(xs):
+    xs = sorted(xs)
+    return xs[len(xs) // 2] if xs else 0
+
+by_shape = collections.defaultdict(list)
+for r in rows:
+    by_shape[r["shape"]].append(r["tokens"])
+
+if AS_JSON:
+    print(json.dumps({"reviewer_dispatches": len(rows),
+                      "by_shape": {k: {"n": len(v), "median_tokens": median(v)}
+                                   for k, v in by_shape.items()},
+                      "rows": rows}, indent=2))
+    sys.exit(0)
+
+print(f"{len(rows)} reviewer-agent dispatches under {ROOT} matching '{MATCH}'\n")
+print(f"{'prompt shape':<16} {'n':>5} {'pct':>6} {'median tok':>11} {'p90':>8}")
+for k in ("inlined", "by-reference", "no-payload"):
+    v = by_shape.get(k) or []
+    if not v:
+        continue
+    p90 = sorted(v)[int(len(v) * 0.9)]
+    print(f"{k:<16} {len(v):>5} {100 * len(v) / len(rows):>5.0f}% {median(v):>11,} {p90:>8,}")
+
+print("\n  inlined      the diff is in the prompt text")
+print("  by-reference the prompt names a file holding the payload")
+print("  no-payload   neither; the agent was told to fetch the diff itself")
+PROMPTPY
+    exit 0
+fi
+
 DIR="${DIR}" MATCH="${MATCH}" SINCE="${SINCE}" LIMIT="${LIMIT}" AS_JSON="${AS_JSON}" python3 - << 'PYTHON'
 import collections, datetime, glob, json, os, sys
 
@@ -73,10 +180,11 @@ AS_JSON = os.environ["AS_JSON"] == "true"
 
 # Per-million-token rates. Reviews run mostly on the top tier; subagents pinned
 # to cheaper models are priced by the model recorded in their own transcript.
+Rate = collections.namedtuple("Rate", "input cache_write cache_read output")
 RATES = {
-    "opus":   (15.0, 18.75, 1.5, 75.0),
-    "sonnet": (3.0, 3.75, 0.3, 15.0),
-    "haiku":  (1.0, 1.25, 0.1, 5.0),
+    "opus":   Rate(15.0, 18.75, 1.5, 75.0),
+    "sonnet": Rate(3.0, 3.75, 0.3, 15.0),
+    "haiku":  Rate(1.0, 1.25, 0.1, 5.0),
 }
 
 def tier(model):
@@ -121,7 +229,7 @@ def scan(path):
         totals["cache_write"] += cw; totals["cache_read"] += cr
         totals["context"] += i + cw + cr
         r = RATES[tier(msg.get("model"))]
-        cost += (i * r[0] + cw * r[1] + cr * r[2] + o * r[3]) / 1e6
+        cost += (i * r.input + cw * r.cache_write + cr * r.cache_read + o * r.output) / 1e6
     return totals, len(seen), cost, first_ts
 
 cutoff = None
@@ -175,13 +283,14 @@ def median(xs):
     return xs[len(xs) // 2]
 
 def mix(c):
-    ri, rw, rr, ro = RATES["opus"]
-    tot = c["in"] * ri + c["cache_write"] * rw + c["cache_read"] * rr + c["out"] * ro
+    r = RATES["opus"]
+    tot = (c["in"] * r.input + c["cache_write"] * r.cache_write
+           + c["cache_read"] * r.cache_read + c["out"] * r.output)
     if not tot:
         return {}
-    return {"cache_read_pct": round(100 * c["cache_read"] * rr / tot),
-            "output_pct": round(100 * c["out"] * ro / tot),
-            "cache_write_pct": round(100 * c["cache_write"] * rw / tot)}
+    return {"cache_read_pct": round(100 * c["cache_read"] * r.cache_read / tot),
+            "output_pct": round(100 * c["out"] * r.output / tot),
+            "cache_write_pct": round(100 * c["cache_write"] * r.cache_write / tot)}
 
 summary = {
     "sessions": len(sessions),

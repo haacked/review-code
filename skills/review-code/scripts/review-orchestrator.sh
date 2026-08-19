@@ -421,10 +421,13 @@ build_review_data() {
     printf '%s' "${diff_content}" > "${diff_path}"
 
     # The context explorer runs before the briefing is built but still needs the
-    # PR description. Write it out here so it reaches the explorer as a file
-    # rather than through the orchestrating conversation.
+    # PR description and the commit messages. Write them out here so they reach
+    # the explorer as files rather than through the orchestrating conversation.
     if [[ -n "${pr_context}" && "${pr_context}" != "null" ]]; then
         printf '%s' "${pr_context}" | jq -r '.body // ""' > "${artifacts_dir}/pr-body.md" 2> /dev/null || true
+    fi
+    if [[ -n "${commit_messages}" ]]; then
+        printf '%s' "${commit_messages}" > "${artifacts_dir}/commit-messages.md"
     fi
 
     chunk_result=$(jq -n \
@@ -507,8 +510,8 @@ build_review_data() {
         # Each chunk's diff goes to its own file for the same reason as the full
         # diff: chunk bodies sum to the whole diff, so keeping them in the session
         # JSON would put a third copy in the orchestrator's context.
-        # One pass: chunk bodies sum to the whole diff, so re-parsing the blob
-        # per chunk would be quadratic in the diff size.
+        # Single pass: re-parsing the blob per chunk would be quadratic in the
+        # diff size.
         local idx encoded
         while IFS=$'\t' read -r idx encoded; do
             printf '%s' "${encoded}" | base64 --decode > "${artifacts_dir}/chunk-${idx}.patch"

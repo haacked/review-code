@@ -337,6 +337,41 @@ teardown() {
     run bash -c "cat '$log_file' | jq '.total_tokens'"
     [ "$status" -eq 0 ]
     [ "$output" -eq 45000 ]
+
+    run bash -c "cat '$log_file' | jq '.total_tool_uses'"
+    [ "$status" -eq 0 ]
+    [ "$output" -eq 5 ]
+}
+
+@test "log-token-usage: records the incremental path when given --review-mode" {
+    local log_file="$REVIEWS_DIR/token-usage.jsonl"
+
+    "$SCRIPT" \
+        --review-file "$REVIEW_FILE" \
+        --usage '{"code-reviewer-security": 45000}' \
+        --org "org" --repo "repo" --mode "pr" --identifier "123" \
+        --review-mode "delta" --delta-from "abc123"
+
+    # Without these two fields a delta re-review is indistinguishable from a
+    # full one in the log, which is the comparison the log exists to support.
+    run bash -c "cat '$log_file' | jq -r '.review_mode'"
+    [ "$output" = "delta" ]
+    run bash -c "cat '$log_file' | jq -r '.delta_from'"
+    [ "$output" = "abc123" ]
+}
+
+@test "log-token-usage: omits the delta fields on a full review" {
+    local log_file="$REVIEWS_DIR/token-usage.jsonl"
+
+    "$SCRIPT" \
+        --review-file "$REVIEW_FILE" \
+        --usage '{"code-reviewer-security": 45000}' \
+        --org "org" --repo "repo" --mode "pr" --identifier "123"
+
+    run bash -c "cat '$log_file' | jq -r 'has(\"review_mode\")'"
+    [ "$output" = "false" ]
+    run bash -c "cat '$log_file' | jq -r 'has(\"delta_from\")'"
+    [ "$output" = "false" ]
 }
 
 # =============================================================================

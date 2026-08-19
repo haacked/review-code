@@ -244,6 +244,13 @@ This renders as an "Apply suggestion" button the PR author can click to commit t
 
 5. **Create the pending review**:
 
+The heredoc is safe here because the payload is JSON. Comment bodies quote code
+from the PR, so a body can contain the delimiter, but a JSON string cannot hold
+a literal newline: it arrives as `\nEOF\n` on one line rather than as a bare
+`EOF` at column zero. Keep the payload valid JSON and that stays true. Free-form
+text would not be safe this way, which is why the architectural context is
+written with the Write tool instead.
+
 ```bash
 ~/.claude/skills/review-code/scripts/create-draft-review.sh <<'EOF'
 <draft_input JSON here>

@@ -8,6 +8,11 @@ setup() {
     PROJECT_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
     export PROJECT_ROOT
 
+    # Keep session artifacts out of the developer's real ~/.claude. The
+    # orchestrator writes each run's diff to a durable artifacts directory, so
+    # without this every test run leaves one behind.
+    export CLAUDE_SESSION_DIR="$BATS_TEST_TMPDIR/sessions"
+
     # Create a temporary git repository for tests that need consistent git state
     # This ensures tests work both locally and in CI (where we're in detached HEAD)
     TEST_GIT_DIR="$(mktemp -d)"
