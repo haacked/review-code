@@ -37,11 +37,11 @@ report() { run "$SCRIPT" --dir "$ROOT" --match review "$@"; }
 
 @test "token-report: has correct shebang" {
     run head -1 "$SCRIPT"
-    [ "$output" = "#!/usr/bin/env bash" ]
+    [ "$output" = "#!/usr/bin/env python3" ]
 }
 
-@test "token-report: uses set -euo pipefail" {
-    run grep -q 'set -euo pipefail' "$SCRIPT"
+@test "token-report: is valid Python" {
+    run python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' "$SCRIPT"
     [ "$status" -eq 0 ]
 }
 
