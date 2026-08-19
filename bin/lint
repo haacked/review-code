@@ -36,20 +36,7 @@ shell_files=(
     *.sh
 )
 
-actual_files=()
-for pattern in "${shell_files[@]}"; do
-    for file in ${pattern}; do
-        if [[ -f "${file}" ]] && [[ ! "${file}" =~ \.md$ ]]; then
-            # A .sh or .bash extension is enough on its own; the bats helpers
-            # under tests/ use .bash and are sourced, so they are never
-            # executable. Anything else has to declare a bash shebang, which is
-            # what keeps non-shell entries in bin/ out.
-            if [[ "${file}" == *.sh || "${file}" == *.bash ]] || { [[ -x "${file}" ]] && head -1 "${file}" | grep -q '^#!/.*bash'; }; then
-                actual_files+=("${file}")
-            fi
-        fi
-    done
-done
+mapfile -t actual_files < <(collect_shell_files "${shell_files[@]}")
 
 if [[ ${#actual_files[@]} -eq 0 ]]; then
     warning "No shell scripts found to lint"

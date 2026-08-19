@@ -68,6 +68,31 @@ require_commands() {
     [[ ${#missing[@]} -eq 0 ]] || fatal "Missing commands: ${missing[*]}"
 }
 
+# True when the path is a shell script that bin/fmt and bin/lint should process.
+# A .sh or .bash extension is enough on its own; the bats helpers under tests/
+# use .bash and are sourced, so they are never executable. Anything else has to
+# declare a bash shebang, which is what keeps non-shell entries in bin/ out.
+is_shell_script() {
+    local file="$1"
+    [[ -f "${file}" ]] || return 1
+    [[ "${file}" == *.sh || "${file}" == *.bash ]] && return 0
+    [[ -x "${file}" ]] && head -1 "${file}" | grep -q '^#!/.*bash'
+}
+
+# Expand glob patterns and print the shell scripts among them, one per line.
+#
+# Usage:
+#   mapfile -t files < <(collect_shell_files "${patterns[@]}")
+collect_shell_files() {
+    local pattern file
+    for pattern in "$@"; do
+        for file in ${pattern}; do
+            is_shell_script "${file}" && echo "${file}"
+        done
+    done
+    return 0
+}
+
 # Show help from script comments
 show_help() {
     sed -n 's/^#\/ \?//p' "$0"

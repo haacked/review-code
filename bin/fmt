@@ -58,20 +58,7 @@ if command_exists shfmt; then
         cmd="${cmd} -w"
     fi
 
-    # Find all shell scripts (excluding markdown)
-    shell_files=()
-    for pattern in "${files_to_format[@]}"; do
-        for file in ${pattern}; do
-            if [[ -f "${file}" ]] && [[ ! "${file}" =~ \.md$ ]]; then
-                # bin/ holds non-shell entries that shfmt cannot parse. A .sh or
-                # .bash extension is enough on its own; anything else has to
-                # declare a bash shebang. Same rule as bin/lint's.
-                if [[ "${file}" == *.sh || "${file}" == *.bash ]] || { [[ -x "${file}" ]] && head -1 "${file}" | grep -q '^#!/.*bash'; }; then
-                    shell_files+=("${file}")
-                fi
-            fi
-        done
-    done
+    mapfile -t shell_files < <(collect_shell_files "${files_to_format[@]}")
 
     if [[ ${#shell_files[@]} -gt 0 ]]; then
         if ! run_command "${cmd} ${shell_files[*]}" "Formatting shell scripts with shfmt"; then
