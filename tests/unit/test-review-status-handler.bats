@@ -244,12 +244,14 @@ make_session() {
         append: true,
         reviewer_username: "me",
         is_own_pr: false,
+        chunks: [{id: 1, label: "backend", files: ["a.ts"], size_kb: 12, diff_path: "/tmp/artifacts/chunk-1.patch", diff: "SECRET_CHUNK_BYTES"}],
         diff: "diff --git a/a.ts b/a.ts\n+SECRET_DIFF_BYTES",
         review_context: "LARGE_CONTEXT_FILE_BODY",
-        commit_messages: "msg",
+        commit_messages: "LARGE_COMMIT_MESSAGE_BODY",
         pr: {
             number: 1, title: "T", author: "a", url: "u", base: "main", head: "f",
             head_sha: "deadbeef",
+            linked_issues: [{number: 7, title: "Linked issue", body: "LARGE_ISSUE_BODY"}],
             body: "LARGE_PR_BODY_TEXT",
             comments: {conversation: [{author: "x", body: "LARGE_COMMENT_TEXT"}], reviews: [], inline: []}
         }
@@ -309,6 +311,25 @@ fields_of() {
 # large payload already written to a file for the agents, and returning it here
 # would put it back in the orchestrator's context for the rest of the run.
 
+@test "get-review-fields: returns chunk dispatch data without chunk bodies" {
+    local id; id=$(make_session)
+    run fields_of "$id"
+    # review-chunked.md dispatches from these; without them a chunked review has
+    # to read the whole session file, which is what this accessor exists to stop.
+    [ "$(echo "$output" | jq -r '.chunks[0].diff_path')" = "/tmp/artifacts/chunk-1.patch" ]
+    [ "$(echo "$output" | jq -r '.chunks[0].label')" = "backend" ]
+    ! echo "$output" | grep -q "SECRET_CHUNK_BYTES"
+}
+
+@test "get-review-fields: returns linked issue identity without issue bodies" {
+    local id; id=$(make_session)
+    run fields_of "$id"
+    # The context explorer's linked-issues block reads these.
+    [ "$(echo "$output" | jq -r '.pr.linked_issues[0].number')" = "7" ]
+    [ "$(echo "$output" | jq -r '.pr.linked_issues[0].title')" = "Linked issue" ]
+    ! echo "$output" | grep -q "LARGE_ISSUE_BODY"
+}
+
 @test "get-review-fields: never returns the diff" {
     local id; id=$(make_session)
     run fields_of "$id"
@@ -334,6 +355,13 @@ fields_of() {
     run fields_of "$id"
     [ "$(echo "$output" | jq -r '.pr | has("comments")')" = "false" ]
     ! echo "$output" | grep -q "LARGE_COMMENT_TEXT"
+}
+
+@test "get-review-fields: reduces commit messages to a presence flag" {
+    local id; id=$(make_session)
+    run fields_of "$id"
+    [ "$(echo "$output" | jq -r '.commit_messages_present')" = "true" ]
+    ! echo "$output" | grep -q "LARGE_COMMIT_MESSAGE_BODY"
 }
 
 @test "get-review-fields: output stays small relative to the session file" {
