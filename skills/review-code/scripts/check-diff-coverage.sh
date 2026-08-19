@@ -57,7 +57,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -h | --help)
-            sed -n '/^# review-coverage/,/^$/p' "$0" | sed -E 's/^# ?//'
+            sed -n '4,29p' "$0" | sed -E 's/^# ?//'
             exit 0
             ;;
         *)

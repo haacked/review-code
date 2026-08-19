@@ -240,7 +240,7 @@ write_scoped_diff() {
     local paths
     paths=$(jq -r "${filter}" "${SESSION_FILE}" | sort -u)
     if [[ -z "${paths}" ]]; then
-        echo "NOTE: no ${name} files matched; ${name} agent gets the full diff" >&2
+        echo "NOTE: no ${name} files matched; ${name} agent is skipped" >&2
         return 1
     fi
     "${SCRIPT_DIR}/split-diff-by-path.sh" "${DIFF_PATH}" "${out}" <<< "${paths}"

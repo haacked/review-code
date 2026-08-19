@@ -22,7 +22,10 @@ set -euo pipefail
 #   --base <ref>        PR base branch. Required: the repository default is not
 #                       the base of a stacked PR, and guessing it wrong reports
 #                       a moved base and falls back to a full review.
-#   --out <path>        Where to write the delta diff (default: alongside cwd)
+#   --out <path>        Where to write the delta diff. Defaults to a fresh
+#                       mktemp -d, which the caller owns: the diff outlives this
+#                       script so the review can read it. Callers with a session
+#                       pass their artifacts dir, which is swept with the session.
 #   --max-fraction <n>  Fall back to full when the delta touches more than this
 #                       fraction of the PR's files (default: 0.5)
 #
