@@ -3,7 +3,7 @@
 # parse-review-findings.sh - Extract structured findings from review markdown files
 #
 # Usage:
-#   parse-review-findings.sh <review-file-path>
+#   parse-review-findings.sh [--with-spans] <review-file-path>
 #
 # Description:
 #   Parses a code review markdown file and extracts structured findings.
@@ -11,6 +11,12 @@
 #   - File:line references in headers: #### `path/to/file.py:123`
 #   - Confidence markers: [Security 85%], (75% confidence)
 #   - Agent section headers: ## Security Review, ## Performance Review
+#
+# Options:
+#   --with-spans  Add the line range each finding occupies in the file, plus
+#                 whether that range is safe to cut. carry-forward-findings.sh
+#                 uses it to prune a review in place without the document
+#                 entering a conversation.
 #
 # Output:
 #   JSON array of findings:
@@ -23,6 +29,13 @@
 #       "description": "SQL injection risk"
 #     }
 #   ]
+#
+#   With --with-spans, each finding also carries:
+#     "start_line": 12, "end_line": 30, "deletable": true
+#   `start_line` is the finding's opening line and `end_line` the last non-blank
+#   line before the next heading or thematic break. `deletable` is false when the
+#   opener is not a heading (a `**Location**:` line, say), where the extent is a
+#   guess and cutting on it could take a sibling's text along.
 
 set -euo pipefail
 
@@ -31,8 +44,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Source error helpers
 source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 
+WITH_SPANS=false
+
 # Append a finding as a single JSONL line.
-# Args: $1=agent, $2=confidence, $3=file, $4=line, $5=description
+# Args: $1=agent, $2=confidence, $3=file, $4=line, $5=description,
+#       $6=start_line, $7=end_line, $8=deletable
 # Uses: findings_jsonl variable (must be in scope)
 # Modifies: findings_jsonl variable
 save_finding() {
@@ -41,6 +57,9 @@ save_finding() {
     local file="$3"
     local line="$4"
     local desc="$5"
+    local start="${6:-0}"
+    local end="${7:-0}"
+    local deletable="${8:-false}"
 
     desc=$(echo "${desc}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | head -c 500)
     local entry
@@ -49,13 +68,22 @@ save_finding() {
         --arg file "${file}" \
         --arg line "${line}" \
         --arg desc "${desc}" \
+        --arg start "${start}" \
+        --arg end "${end}" \
+        --arg deletable "${deletable}" \
+        --arg spans "${WITH_SPANS}" \
         '{
             agent: $agent,
             confidence: ($conf | tonumber),
             file: $file,
             line: ($line | tonumber),
             description: $desc
-        }')
+        }
+        + (if $spans == "true" then {
+            start_line: ($start | tonumber),
+            end_line: ($end | tonumber),
+            deletable: ($deletable == "true")
+        } else {} end)')
     findings_jsonl+="${entry}"$'\n'
 }
 
@@ -64,15 +92,34 @@ save_finding() {
 #   finding_line, current_agent, current_confidence, findings
 flush_pending_finding() {
     if [[ "${in_finding}" == true ]] && [[ -n "${finding_description}" ]]; then
-        save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file:-}" "${finding_line:-0}" "${finding_description}"
+        local end="${finding_end}"
+        # A finding that never met a heading runs to the last non-blank line seen.
+        if [[ "${end}" -eq 0 ]]; then
+            end="${prev_nonblank}"
+        fi
+        save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file:-}" "${finding_line:-0}" "${finding_description}" \
+            "${finding_start:-0}" "${end}" "${finding_deletable:-false}"
     fi
 }
 
 main() {
-    local review_file="${1:-}"
+    local review_file=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --with-spans)
+                WITH_SPANS=true
+                shift
+                ;;
+            *)
+                review_file="$1"
+                shift
+                ;;
+        esac
+    done
 
     if [[ -z "${review_file}" ]]; then
-        error "Usage: parse-review-findings.sh <review-file-path>"
+        error "Usage: parse-review-findings.sh [--with-spans] <review-file-path>"
         exit 1
     fi
 
@@ -89,6 +136,13 @@ main() {
     local finding_file=""
     local finding_line=""
     local finding_description=""
+    local finding_start=0
+    local finding_end=0
+    local finding_deletable=false
+    local lineno=0
+    local prev_nonblank=0
+    local fence_depth=0
+    local fence_stack=()
 
     # H3/H4 finding header with optional numbering and optional backticks
     # around the path:line token (see Pattern 1 below). Kept in variables
@@ -99,8 +153,61 @@ main() {
     # Standalone location line under a prose-titled finding: `path/file.sh:14`
     # or `path/file.sh:73-74`
     local standalone_loc_re='^`([^:`]+):([0-9]+)(-[0-9]+)?`[[:space:]]*$'
+    # Fenced code block delimiter, with the marker run and whatever follows it
+    # captured separately. Nesting is counted rather than toggled: this repo's
+    # own finding format puts a ```suggestion block inside a ```text body, which
+    # a strict CommonMark toggle reads as a close followed by an open, and every
+    # heading after it then looks like code.
+    local fence_re='^[[:space:]]{0,3}(`{3,}|~{3,})(.*)$'
+    # A heading or thematic break ends the finding block above it.
+    local block_break_re='^(#{1,6}([[:space:]]|$)|-{3,}[[:space:]]*$|\*{3,}[[:space:]]*$)'
 
     while IFS= read -r line || [[ -n "${line}" ]]; do
+        lineno=$((lineno + 1))
+
+        # Track fenced code blocks. A `#` inside one is a comment, not a
+        # heading, and a finding pattern inside one is an example, not a finding.
+        # A delimiter carrying an info string (```suggestion) always opens a
+        # block; a bare delimiter closes the innermost open block, or opens one
+        # when nothing is open.
+        local is_fence_line=false
+        if [[ "${line}" =~ ${fence_re} ]]; then
+            local fence_char="${BASH_REMATCH[1]:0:1}"
+            local fence_rest="${BASH_REMATCH[2]}"
+            is_fence_line=true
+            if [[ "${fence_rest}" =~ ^[[:space:]]*$ ]] && [[ "${fence_depth}" -gt 0 ]] \
+                && [[ "${fence_stack[$((fence_depth - 1))]}" == "${fence_char}" ]]; then
+                unset 'fence_stack[fence_depth-1]'
+                fence_depth=$((fence_depth - 1))
+            else
+                fence_stack[fence_depth]="${fence_char}"
+                fence_depth=$((fence_depth + 1))
+            fi
+        fi
+
+        if [[ "${fence_depth}" -eq 0 ]] && [[ "${is_fence_line}" == false ]] \
+            && [[ "${line}" =~ ${block_break_re} ]] \
+            && [[ "${in_finding}" == true ]] && [[ "${finding_end}" -eq 0 ]]; then
+            finding_end="${prev_nonblank}"
+        fi
+
+        if [[ -n "${line}" ]]; then
+            prev_nonblank="${lineno}"
+        fi
+
+        if [[ "${fence_depth}" -gt 0 ]] || [[ "${is_fence_line}" == true ]]; then
+            # Inside a code block only description accumulation applies, and it
+            # skips lines starting with `#` exactly as it always has.
+            if [[ "${in_finding}" == true ]] && [[ -n "${line}" ]] && [[ ! "${line}" =~ ^# ]]; then
+                if [[ -n "${finding_description}" ]]; then
+                    finding_description="${finding_description} ${line}"
+                else
+                    finding_description="${line}"
+                fi
+            fi
+            continue
+        fi
+
         # Detect agent section headers (## Security Review, ## Performance Review, etc.)
         if [[ "${line}" =~ ^##[[:space:]]+(Security|Performance|Correctness|Maintainability|Testing|Compatibility|Architecture|Frontend)[[:space:]]+Review ]]; then
             flush_pending_finding
@@ -125,6 +232,9 @@ main() {
             finding_description=""
             current_confidence=""
             in_finding=true
+            finding_start="${lineno}"
+            finding_end=0
+            finding_deletable=true
             continue
         fi
 
@@ -139,6 +249,9 @@ main() {
             finding_description="${BASH_REMATCH[1]}"
             current_confidence=""
             in_finding=true
+            finding_start="${lineno}"
+            finding_end=0
+            finding_deletable=true
             continue
         fi
 
@@ -160,6 +273,9 @@ main() {
             finding_file=""
             finding_line="0"
             in_finding=true
+            finding_start="${lineno}"
+            finding_end=0
+            finding_deletable=true
             continue
         fi
 
@@ -193,7 +309,8 @@ main() {
             fi
 
             # This pattern includes the description inline, so save it immediately
-            save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file}" "${finding_line}" "${finding_description}"
+            save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file}" "${finding_line}" "${finding_description}" \
+                "${lineno}" "${lineno}" true
 
             finding_file=""
             finding_line=""
@@ -212,6 +329,11 @@ main() {
             finding_description=""
             current_confidence=""
             in_finding=true
+            finding_start="${lineno}"
+            finding_end=0
+            # The opener is body text rather than a heading, so where this
+            # finding ends is a guess. Report it, never let a caller cut on it.
+            finding_deletable=false
             continue
         fi
 
@@ -227,7 +349,8 @@ main() {
             finding_line="${BASH_REMATCH[5]}"
 
             # Save this finding immediately (inline pattern)
-            save_finding "${agent_name}" "${current_confidence}" "${finding_file}" "${finding_line}" "${finding_description}"
+            save_finding "${agent_name}" "${current_confidence}" "${finding_file}" "${finding_line}" "${finding_description}" \
+                "${lineno}" "${lineno}" true
 
             finding_file=""
             finding_line=""
