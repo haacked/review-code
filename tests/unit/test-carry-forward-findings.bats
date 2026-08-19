@@ -107,11 +107,15 @@ teardown() {
     grep -q "Typo in the heading." "$TEST_DIR/review.md"
 }
 
-@test "carry-forward-findings.sh: reports carried findings by identity, never by body" {
+@test "carry-forward-findings.sh: reports counts, never finding bodies" {
     run "$SCRIPT" --review-file "$TEST_DIR/review.md" --delta-diff "$TEST_DIR/delta.patch"
     [ "$status" -eq 0 ]
-    echo "$output" | jq -e '[.carried_findings[] | keys] | flatten | unique == ["agent", "file", "line"]' > /dev/null
+    # stdout lands in the orchestrator's conversation, so it stays small: counts,
+    # flags, and the cut files, with no per-finding array and no bodies.
     [[ "$output" != *"Missing input validation"* ]]
+    [[ "$output" != *"constant time"* ]]
+    echo "$output" | jq -e 'has("carried_findings") | not' > /dev/null
+    echo "$output" | jq -e '[paths(type == "array") ] | length == 1' > /dev/null
 }
 
 @test "carry-forward-findings.sh: appends the composed sections after a separator" {
@@ -128,25 +132,24 @@ teardown() {
 
 @test "carry-forward-findings.sh: advances the metadata header" {
     run "$SCRIPT" --review-file "$TEST_DIR/review.md" --delta-diff "$TEST_DIR/delta.patch" \
-        --head-sha bbbbbbb --delta-from aaaaaaa --reviewed-at 2026-08-19T12:00:00Z
+        --head-sha bbbbbbb --delta-from aaaaaaa
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.header_updated == true' > /dev/null
     grep -q "^review_commit: bbbbbbb$" "$TEST_DIR/review.md"
-    grep -q "^reviewed_at: 2026-08-19T12:00:00Z$" "$TEST_DIR/review.md"
+    grep -qE '^reviewed_at: [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' "$TEST_DIR/review.md"
     grep -q "^review_mode: delta$" "$TEST_DIR/review.md"
     grep -q "^delta_from: aaaaaaa$" "$TEST_DIR/review.md"
     [ "$(grep -c '^review_commit:' "$TEST_DIR/review.md")" -eq 1 ]
 }
 
 @test "carry-forward-findings.sh: --dry-run leaves the review file alone" {
-    before=$(md5 -q "$TEST_DIR/review.md" 2> /dev/null || md5sum "$TEST_DIR/review.md" | cut -d' ' -f1)
+    cp "$TEST_DIR/review.md" "$TEST_DIR/before.md"
     run "$SCRIPT" --review-file "$TEST_DIR/review.md" --delta-diff "$TEST_DIR/delta.patch" \
         --append-file "$TEST_DIR/append.md" --head-sha bbbbbbb --dry-run
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.dry_run == true' > /dev/null
     echo "$output" | jq -e '.dropped == 1' > /dev/null
-    after=$(md5 -q "$TEST_DIR/review.md" 2> /dev/null || md5sum "$TEST_DIR/review.md" | cut -d' ' -f1)
-    [ "$before" = "$after" ]
+    cmp -s "$TEST_DIR/before.md" "$TEST_DIR/review.md"
 }
 
 @test "carry-forward-findings.sh: keeps findings it cannot tie to a file" {
@@ -240,7 +243,9 @@ EOF
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.pruned == true' > /dev/null
     # the finding round one appended is attributed and carried, not orphaned
-    echo "$output" | jq -e '[.carried_findings[] | select(.file == "src/auth.py" and .line == 47 and .agent == "security")] | length == 1' > /dev/null
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '[.[] | select(.file == "src/auth.py" and .line == 47 and .agent == "security")] | length == 1' > /dev/null
     grep -q "the fallback path still leaks length" "$TEST_DIR/review.md"
     ! grep -q "Missing input validation" "$TEST_DIR/review.md"
     grep -q "^review_commit: ccccccc$" "$TEST_DIR/review.md"
@@ -259,4 +264,23 @@ EOF
     echo "$output" | jq -e '.dropped == 0' > /dev/null
     echo "$output" | jq -e '.carried == 3' > /dev/null
     echo "$output" | jq -e '.prune_reason == "no findings on the delta'"'"'s files"' > /dev/null
+}
+
+@test "carry-forward-findings.sh: a pure rename counts as a touched file" {
+    # git writes no ---/+++ lines for a rename with no content change, so the
+    # delta's files come from the "diff --git a/OLD b/NEW" header, both sides:
+    # a finding recorded before the rename cites the old path.
+    cat > "$TEST_DIR/rename.patch" << 'EOF'
+diff --git a/src/auth.py b/src/authentication.py
+similarity index 100%
+rename from src/auth.py
+rename to src/authentication.py
+EOF
+    run "$SCRIPT" --review-file "$TEST_DIR/review.md" --delta-diff "$TEST_DIR/rename.patch"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.delta_files == 2' > /dev/null
+    echo "$output" | jq -e '.dropped == 1' > /dev/null
+    echo "$output" | jq -e '.dropped_files == ["src/auth.py"]' > /dev/null
+    ! grep -q "constant time" "$TEST_DIR/review.md"
+    grep -q "Missing input validation" "$TEST_DIR/review.md"
 }

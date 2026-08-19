@@ -20,16 +20,15 @@ set -euo pipefail
 #   --append-file <path>  Markdown to append after the carried-forward content
 #   --head-sha <sha>      New review_commit for the metadata header
 #   --delta-from <sha>    Recorded as delta_from in the metadata header
-#   --reviewed-at <iso>   Header timestamp (default: now, UTC)
 #   --dry-run             Report what would happen; change nothing
 #
-# Output: a JSON object on stdout. It carries finding identity (agent, file,
-# line) and never a description, which is the whole point: identity is small,
-# bodies are not.
+# Output: a JSON object on stdout. Counts and flags only, plus the list of files
+# whose findings were cut, which is bounded by the delta. No finding bodies and
+# no per-finding array: this output lands in the orchestrator's conversation and
+# stays there for the rest of the run.
 #   {"review_file": "...", "carried": 7, "dropped": 3, "kept_unattributed": 1,
 #    "kept_undeletable": 0, "delta_files": 2, "pruned": true, "appended": true,
-#    "header_updated": true, "dropped_files": ["a.py"],
-#    "carried_findings": [{"agent": "security", "file": "b.py", "line": 45}]}
+#    "header_updated": true, "dropped_files": ["a.py"]}
 #
 # Safety: after cutting, the pruned document is re-parsed and its findings must
 # match the set that was meant to survive. On any mismatch the cut is abandoned
@@ -47,7 +46,6 @@ DELTA_DIFF=""
 APPEND_FILE=""
 HEAD_SHA=""
 DELTA_FROM=""
-REVIEWED_AT=""
 DRY_RUN=false
 
 while [[ $# -gt 0 ]]; do
@@ -70,10 +68,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --delta-from)
             DELTA_FROM="${2:-}"
-            shift 2
-            ;;
-        --reviewed-at)
-            REVIEWED_AT="${2:-}"
             shift 2
             ;;
         --dry-run)
@@ -108,61 +102,67 @@ if [[ -n "${APPEND_FILE}" && ! -f "${APPEND_FILE}" ]]; then
     exit 1
 fi
 
-REVIEWED_AT="${REVIEWED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+REVIEWED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 WORK_DIR=$(mktemp -d)
 trap 'rm -rf "${WORK_DIR}"' EXIT
 
 # ------------------------------------------------------------- the delta's files
-# Both sides of each header are taken: a rename or a delete names the old path.
+# Read from the "diff --git a/OLD b/NEW" header rather than the ---/+++ lines,
+# which git omits for a pure rename and for a mode-only change. Both sides are
+# taken: a finding recorded before a rename cites the old path. Matching on
+# " b/" with its leading space is the same idiom as chunk-diff.sh and
+# split-diff-by-path.sh, and for the same reason: a last-field split would
+# truncate any path containing a space.
 extract_delta_files() {
-    sed -n -e 's/^--- a\///p' -e 's/^+++ b\///p' "${DELTA_DIFF}" \
-        | grep -v '^/dev/null$' \
-        | sed 's/[[:space:]]*$//' \
-        | grep -v '^$' \
-        | sort -u
+    awk '
+        /^diff --git / {
+            if (match($0, / b\//)) {
+                old = substr($0, 14, RSTART - 14)
+                new = substr($0, RSTART + 3)
+                if (old != "") print old
+                if (new != "") print new
+            }
+        }
+    ' "${DELTA_DIFF}" | sort -u
 }
 
 DELTA_FILES_TXT="${WORK_DIR}/delta-files.txt"
 extract_delta_files > "${DELTA_FILES_TXT}"
 DELTA_FILES_JSON=$(jq -R -s 'split("\n") | map(select(length > 0))' < "${DELTA_FILES_TXT}")
-DELTA_FILE_COUNT=$(jq 'length' <<< "${DELTA_FILES_JSON}")
 
 # ------------------------------------------------------------------- classify
-FINDINGS=$("${SCRIPT_DIR}/parse-review-findings.sh" --with-spans "${REVIEW_FILE}")
-
 # A finding belongs to the delta when the paths match outright, or when the
 # review cited a bare filename that matches a delta file's basename. Nothing
 # looser: a fuzzy match drops a finding no agent will re-derive.
-CLASSIFIED=$(jq -c --argjson touched "${DELTA_FILES_JSON}" '
-    ($touched | map(split("/") | last)) as $bases
-    | [ .[] as $f
-        | $f + { touched: (
-            $f.file != ""
-            and (
-                ($touched | index($f.file)) != null
-                or (($f.file | contains("/") | not) and ($bases | index($f.file)) != null)
-            )
-        ) } ]
-' <<< "${FINDINGS}")
+#
+# One pass emits the three partitions the rest of the script needs; the counts
+# are read off them at output time rather than tallied into variables here.
+CLASSIFIED=$("${SCRIPT_DIR}/parse-review-findings.sh" --with-spans "${REVIEW_FILE}" \
+    | jq -c --argjson touched "${DELTA_FILES_JSON}" '
+        ($touched | map(split("/") | last)) as $bases
+        | [ .[] as $f
+            | $f + { touched: (
+                $f.file != ""
+                and (
+                    ($touched | index($f.file)) != null
+                    or (($f.file | contains("/") | not) and ($bases | index($f.file)) != null)
+                )
+            ) } ]
+        | { dropped: [ .[] | select(.touched and .deletable) ],
+            kept_undeletable: [ .[] | select(.touched and (.deletable | not)) ],
+            carried: [ .[] | select(.touched | not) ] }')
 
-DELETABLE=$(jq -c '[ .[] | select(.touched and .deletable) ]' <<< "${CLASSIFIED}")
-KEPT_UNDELETABLE=$(jq -c '[ .[] | select(.touched and (.deletable | not)) ]' <<< "${CLASSIFIED}")
-CARRIED=$(jq -c '[ .[] | select(.touched | not) ]' <<< "${CLASSIFIED}")
+RANGES=$(jq -r '[ .dropped[] | select(.start_line > 0 and .end_line >= .start_line)
+    | "\(.start_line)-\(.end_line)" ] | join(",")' <<< "${CLASSIFIED}")
 
-DROPPED_COUNT=$(jq 'length' <<< "${DELETABLE}")
-KEPT_UNDELETABLE_COUNT=$(jq 'length' <<< "${KEPT_UNDELETABLE}")
-CARRIED_COUNT=$(jq 'length' <<< "${CARRIED}")
-UNATTRIBUTED_COUNT=$(jq '[ .[] | select(.file == "") ] | length' <<< "${CARRIED}")
-
-RANGES=$(jq -r '[ .[] | select(.start_line > 0 and .end_line >= .start_line)
-    | "\(.start_line)-\(.end_line)" ] | join(",")' <<< "${DELETABLE}")
-
-# Identity of everything that must still be there once the cut is made.
+# What must still be there once the cut is made. The description is part of it:
+# comparing {agent, file, line} alone would pass on a cut that left a dropped
+# finding's trailing prose behind for a surviving finding to absorb, which is
+# the exact failure this check exists to catch.
 identity() {
-    jq -S -c '[ .[] | {agent, file, line} ] | sort'
+    jq -S -c '[ .[] | {agent, file, line, description} ] | sort'
 }
-EXPECTED=$(jq -c -s 'add' <<< "${CARRIED}"$'\n'"${KEPT_UNDELETABLE}" | identity)
 
 # ----------------------------------------------------------------------- prune
 PRUNED_FILE="${WORK_DIR}/pruned.md"
@@ -170,9 +170,11 @@ PRUNE_REASON=""
 PRUNED=false
 
 if [[ -z "${RANGES}" ]]; then
-    cp "${REVIEW_FILE}" "${PRUNED_FILE}"
+    # Nothing to cut, so the original stands as the base the append lands on.
+    PRUNED_FILE="${REVIEW_FILE}"
     PRUNE_REASON="no findings on the delta's files"
 else
+    EXPECTED=$(jq -c '.carried + .kept_undeletable' <<< "${CLASSIFIED}" | identity)
     # Cut each finding's lines, then swallow the blank lines it left behind so
     # exactly one blank separates the neighbours it stood between.
     awk -v ranges="${RANGES}" '
@@ -207,18 +209,18 @@ else
     if [[ "${ACTUAL}" == "${EXPECTED}" ]]; then
         PRUNED=true
     else
-        cp "${REVIEW_FILE}" "${PRUNED_FILE}"
+        PRUNED_FILE="${REVIEW_FILE}"
         PRUNE_REASON="the pruned document did not re-parse to the expected findings; kept every finding instead"
     fi
 fi
 
 # --------------------------------------------------------------- header, append
 OUT_FILE="${WORK_DIR}/out.md"
-HEADER_UPDATED=false
 
-if grep -q 'review-metadata' "${REVIEW_FILE}"; then
-    HEADER_UPDATED=true
-fi
+# The awk below is the only thing that knows whether a header was actually
+# advanced, so it reports that itself rather than having a grep guess at it
+# over a different file.
+HEADER_UPDATED=true
 
 awk -v head_sha="${HEAD_SHA}" -v reviewed_at="${REVIEWED_AT}" \
     -v delta_from="${DELTA_FROM}" '
@@ -263,7 +265,8 @@ awk -v head_sha="${HEAD_SHA}" -v reviewed_at="${REVIEWED_AT}" \
         }
         print
     }
-' "${PRUNED_FILE}" > "${OUT_FILE}"
+    END { exit(done_meta ? 0 : 1) }
+' "${PRUNED_FILE}" > "${OUT_FILE}" || HEADER_UPDATED=false
 
 APPENDED=false
 if [[ -n "${APPEND_FILE}" ]]; then
@@ -283,29 +286,23 @@ fi
 jq -nc \
     --arg review_file "${REVIEW_FILE}" \
     --arg prune_reason "${PRUNE_REASON}" \
-    --argjson carried "${CARRIED_COUNT}" \
-    --argjson dropped "${DROPPED_COUNT}" \
-    --argjson kept_unattributed "${UNATTRIBUTED_COUNT}" \
-    --argjson kept_undeletable "${KEPT_UNDELETABLE_COUNT}" \
-    --argjson delta_files "${DELTA_FILE_COUNT}" \
+    --argjson classified "${CLASSIFIED}" \
+    --argjson delta_files_list "${DELTA_FILES_JSON}" \
     --argjson pruned "${PRUNED}" \
     --argjson appended "${APPENDED}" \
     --argjson header_updated "${HEADER_UPDATED}" \
     --argjson dry_run "${DRY_RUN}" \
-    --argjson dropped_list "${DELETABLE}" \
-    --argjson carried_list "${CARRIED}" \
     '{
         review_file: $review_file,
-        carried: $carried,
-        dropped: $dropped,
-        kept_unattributed: $kept_unattributed,
-        kept_undeletable: $kept_undeletable,
-        delta_files: $delta_files,
+        carried: ($classified.carried | length),
+        dropped: ($classified.dropped | length),
+        kept_unattributed: ([ $classified.carried[] | select(.file == "") ] | length),
+        kept_undeletable: ($classified.kept_undeletable | length),
+        delta_files: ($delta_files_list | length),
         pruned: $pruned,
         appended: $appended,
         header_updated: $header_updated,
         dry_run: $dry_run,
-        dropped_files: ($dropped_list | map(.file) | unique),
-        carried_findings: ($carried_list | map({agent, file, line}))
+        dropped_files: ($classified.dropped | map(.file) | unique)
     }
     + (if $prune_reason != "" then {prune_reason: $prune_reason} else {} end)'

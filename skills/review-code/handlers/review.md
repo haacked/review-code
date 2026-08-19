@@ -119,7 +119,7 @@ Read `mode` from the JSON it prints:
 
 **Advance the recorded SHA.** `review_commit` in the metadata header must end up at the head this run actually reviewed. If it keeps the old value, the next re-review computes its delta from the original SHA and the saving disappears after one round. On `--append`, update the existing header rather than adding a second one.
 
-**Carrying findings forward.** On the `delta` path, Read `~/.claude/skills/review-code/handlers/review-carry-forward.md` at the compose step and follow it. A script merges this run's sections into the existing review, cuts the previous findings on files the delta touched so the agents' fresh ones stand alone, and advances the header. Never Read the previous review document: its bodies are the cost the delta path exists to avoid.
+**Carrying findings forward.** On the `delta` path the compose step loads `review-carry-forward.md`, which merges this run's sections into the existing review on disk, cuts the previous findings on files the delta touched so the agents' fresh ones stand alone, and advances the header. Never Read the previous review document: its bodies are the cost the delta path exists to avoid.
 
 ### Classify Review Scope
 

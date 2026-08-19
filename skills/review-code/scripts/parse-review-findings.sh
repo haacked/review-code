@@ -57,9 +57,9 @@ save_finding() {
     local file="$3"
     local line="$4"
     local desc="$5"
-    local start="${6:-0}"
-    local end="${7:-0}"
-    local deletable="${8:-false}"
+    local start="$6"
+    local end="$7"
+    local deletable="$8"
 
     desc=$(echo "${desc}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | head -c 500)
     local entry
@@ -68,10 +68,10 @@ save_finding() {
         --arg file "${file}" \
         --arg line "${line}" \
         --arg desc "${desc}" \
-        --arg start "${start}" \
-        --arg end "${end}" \
-        --arg deletable "${deletable}" \
-        --arg spans "${WITH_SPANS}" \
+        --argjson start "${start}" \
+        --argjson end "${end}" \
+        --argjson deletable "${deletable}" \
+        --argjson spans "${WITH_SPANS}" \
         '{
             agent: $agent,
             confidence: ($conf | tonumber),
@@ -79,12 +79,30 @@ save_finding() {
             line: ($line | tonumber),
             description: $desc
         }
-        + (if $spans == "true" then {
-            start_line: ($start | tonumber),
-            end_line: ($end | tonumber),
-            deletable: ($deletable == "true")
+        + (if $spans then {
+            start_line: $start,
+            end_line: $end,
+            deletable: $deletable
         } else {} end)')
     findings_jsonl+="${entry}"$'\n'
+}
+
+# Open a finding block at the current line.
+# Args: $1=deletable (default true; false when the opener is body text, where
+#       the finding's extent is a guess no caller may cut on)
+begin_finding() {
+    in_finding=true
+    finding_start="${lineno}"
+    finding_end=0
+    finding_deletable="${1:-true}"
+}
+
+# Append one body line to the pending finding's description. Both the in-fence
+# and the ordinary accumulation path go through here so the two cannot drift.
+# Once the span has ended the finding is over, so nothing more is taken.
+append_description() {
+    [[ "${finding_end}" -eq 0 ]] || return 0
+    finding_description="${finding_description:+${finding_description} }$1"
 }
 
 # Flush any pending finding to the findings array
@@ -98,7 +116,7 @@ flush_pending_finding() {
             end="${prev_nonblank}"
         fi
         save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file:-}" "${finding_line:-0}" "${finding_description}" \
-            "${finding_start:-0}" "${end}" "${finding_deletable:-false}"
+            "${finding_start}" "${end}" "${finding_deletable}"
     fi
 }
 
@@ -185,7 +203,9 @@ main() {
             fi
         fi
 
-        if [[ "${fence_depth}" -eq 0 ]] && [[ "${is_fence_line}" == false ]] \
+        # No fence delimiter can also match block_break_re: one is a run of
+        # backticks or tildes, the other of #, - or *.
+        if [[ "${fence_depth}" -eq 0 ]] \
             && [[ "${line}" =~ ${block_break_re} ]] \
             && [[ "${in_finding}" == true ]] && [[ "${finding_end}" -eq 0 ]]; then
             finding_end="${prev_nonblank}"
@@ -199,11 +219,7 @@ main() {
             # Inside a code block only description accumulation applies, and it
             # skips lines starting with `#` exactly as it always has.
             if [[ "${in_finding}" == true ]] && [[ -n "${line}" ]] && [[ ! "${line}" =~ ^# ]]; then
-                if [[ -n "${finding_description}" ]]; then
-                    finding_description="${finding_description} ${line}"
-                else
-                    finding_description="${line}"
-                fi
+                append_description "${line}"
             fi
             continue
         fi
@@ -231,10 +247,7 @@ main() {
             finding_line="${BASH_REMATCH[3]}"
             finding_description=""
             current_confidence=""
-            in_finding=true
-            finding_start="${lineno}"
-            finding_end=0
-            finding_deletable=true
+            begin_finding
             continue
         fi
 
@@ -248,10 +261,7 @@ main() {
             finding_line=""
             finding_description="${BASH_REMATCH[1]}"
             current_confidence=""
-            in_finding=true
-            finding_start="${lineno}"
-            finding_end=0
-            finding_deletable=true
+            begin_finding
             continue
         fi
 
@@ -272,10 +282,7 @@ main() {
             finding_description="${BASH_REMATCH[2]}"
             finding_file=""
             finding_line="0"
-            in_finding=true
-            finding_start="${lineno}"
-            finding_end=0
-            finding_deletable=true
+            begin_finding
             continue
         fi
 
@@ -328,12 +335,7 @@ main() {
             finding_line="${BASH_REMATCH[2]}"
             finding_description=""
             current_confidence=""
-            in_finding=true
-            finding_start="${lineno}"
-            finding_end=0
-            # The opener is body text rather than a heading, so where this
-            # finding ends is a guess. Report it, never let a caller cut on it.
-            finding_deletable=false
+            begin_finding false
             continue
         fi
 
@@ -371,11 +373,7 @@ main() {
             if [[ "${line}" =~ ^\[([0-9]+)%\]$ ]] || [[ "${line}" =~ ^\(([0-9]+)%[[:space:]]*confidence\)$ ]]; then
                 continue
             fi
-            if [[ -n "${finding_description}" ]]; then
-                finding_description="${finding_description} ${line}"
-            else
-                finding_description="${line}"
-            fi
+            append_description "${line}"
         fi
     done < "${review_file}"
 

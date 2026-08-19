@@ -546,6 +546,121 @@ EOF
     echo "$output" | jq -e '.[0].end_line == 5' > /dev/null
 }
 
+
+@test "parse-review-findings.sh: a Location-line finding is reported as not deletable" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+**Location**: `auth.py:45`
+
+SQL injection vulnerability
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --with-spans "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].deletable == false' > /dev/null
+}
+
+@test "parse-review-findings.sh: a description stops where the span stops" {
+    # The span and the description must end at the same place. When they did
+    # not, cutting a finding's span left the tail of its body in the document
+    # for the finding above it to absorb on the next parse.
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `auth.py:45`
+
+Body of the finding.
+
+---
+
+Prose after the thematic break.
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --with-spans "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].end_line == 5' > /dev/null
+    echo "$output" | jq -e '.[0].description == "Body of the finding."' > /dev/null
+}
+
+# =============================================================================
+# Fenced code blocks
+#
+# Fence tracking decides what counts as a finding at all, so it applies to
+# every caller, not just --with-spans. These run in default mode except where
+# the assertion is itself about a span.
+# =============================================================================
+
+@test "parse-review-findings.sh: headings inside a code block are not findings" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `auth.py:45`
+
+The review format looks like this:
+
+```markdown
+#### `example.py:12`
+
+Example finding
+```
+
+Real body text.
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'length == 1' > /dev/null
+    echo "$output" | jq -e '.[0].file == "auth.py"' > /dev/null
+}
+
+@test "parse-review-findings.sh: a suggestion block nested in a text block does not desync fences" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `auth.py:45`
+
+```text
+suggestion: use a constant-time compare
+
+```suggestion
+hmac.compare_digest(a, b)
+```
+```
+
+#### `auth.py:80`
+
+Second finding, after the nested fences.
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'length == 2' > /dev/null
+    echo "$output" | jq -e '.[1].line == 80' > /dev/null
+}
+
+@test "parse-review-findings.sh: a tilde fence nested in a backtick fence does not close it" {
+    # Only a delimiter of the same marker character closes a block, so the
+    # inner ~~~ must not reopen the document to heading parsing. Tracking depth
+    # alone would end the outer block here and read the example as a finding.
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `auth.py:45`
+
+```text
+~~~
+#### `fake.py:99`
+~~~
+```
+
+#### `auth.py:80`
+
+Second finding.
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'length == 2' > /dev/null
+    echo "$output" | jq -e '[.[].file] == ["auth.py", "auth.py"]' > /dev/null
+    echo "$output" | jq -e '[.[].line] == [45, 80]' > /dev/null
+}
+
 @test "parse-review-findings.sh: a # comment inside a code block does not end a span" {
     cat > "$TEST_DIR/review.md" << 'EOF'
 ## Security Review
@@ -567,63 +682,4 @@ EOF
     [ "$status" -eq 0 ]
     echo "$output" | jq -e 'length == 1' > /dev/null
     echo "$output" | jq -e '.[0].end_line == 12' > /dev/null
-}
-
-@test "parse-review-findings.sh: a suggestion block nested in a text block does not desync fences" {
-    cat > "$TEST_DIR/review.md" << 'EOF'
-## Security Review
-
-#### `auth.py:45`
-
-```text
-suggestion: use a constant-time compare
-
-```suggestion
-hmac.compare_digest(a, b)
-```
-```
-
-#### `auth.py:80`
-
-Second finding, after the nested fences.
-EOF
-    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --with-spans "$TEST_DIR/review.md"
-    [ "$status" -eq 0 ]
-    echo "$output" | jq -e 'length == 2' > /dev/null
-    echo "$output" | jq -e '.[1].line == 80' > /dev/null
-}
-
-@test "parse-review-findings.sh: headings inside a code block are not findings" {
-    cat > "$TEST_DIR/review.md" << 'EOF'
-## Security Review
-
-#### `auth.py:45`
-
-The review format looks like this:
-
-```markdown
-#### `example.py:12`
-
-Example finding
-```
-
-Real body text.
-EOF
-    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --with-spans "$TEST_DIR/review.md"
-    [ "$status" -eq 0 ]
-    echo "$output" | jq -e 'length == 1' > /dev/null
-    echo "$output" | jq -e '.[0].file == "auth.py"' > /dev/null
-}
-
-@test "parse-review-findings.sh: a Location-line finding is reported as not deletable" {
-    cat > "$TEST_DIR/review.md" << 'EOF'
-## Security Review
-
-**Location**: `auth.py:45`
-
-SQL injection vulnerability
-EOF
-    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --with-spans "$TEST_DIR/review.md"
-    [ "$status" -eq 0 ]
-    echo "$output" | jq -e '.[0].deletable == false' > /dev/null
 }
