@@ -91,3 +91,37 @@ parse_common_args() {
         esac
     done
 }
+
+# Collect every shell script in the repo into the shell_files array. Tests under
+# tests/unit and tests/integration are .bats, a dialect that neither shfmt nor
+# our linter parses, so bin/test covers those instead.
+collect_shell_files() {
+    local patterns=(
+        bin/*
+        bin/helpers/*.sh
+        skills/review-code/scripts/*.sh
+        skills/review-code/scripts/helpers/*.sh
+        skills/review-code/scripts/session-hooks/*.sh
+        evals/scripts/*.sh
+        evals/scripts/helpers/*.sh
+        tests/*.sh
+        tests/helpers/*.sh
+        tests/helpers/*.bash
+        *.sh
+    )
+
+    shell_files=()
+    local pattern file
+    for pattern in "${patterns[@]}"; do
+        for file in ${pattern}; do
+            [[ -f "${file}" ]] || continue
+            # A .sh or .bash extension is enough on its own; the bats helpers
+            # under tests/ use .bash and are sourced, so they are never
+            # executable. Anything else has to declare a bash shebang, which is
+            # what keeps non-shell entries like bin/README.md out.
+            if [[ "${file}" == *.sh || "${file}" == *.bash ]] || { [[ -x "${file}" ]] && head -1 "${file}" | grep -q '^#!/.*bash'; }; then
+                shell_files+=("${file}")
+            fi
+        done
+    done
+}
