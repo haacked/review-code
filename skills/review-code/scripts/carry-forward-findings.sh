@@ -226,7 +226,7 @@ awk -v head_sha="${HEAD_SHA}" -v reviewed_at="${REVIEWED_AT}" \
     -v delta_from="${DELTA_FROM}" '
     BEGIN { in_meta = 0; done_meta = 0 }
     {
-        if (!done_meta && !in_meta && $0 ~ /review-metadata/) {
+        if (!done_meta && !in_meta && $0 ~ /^<!-- review-metadata/) {
             in_meta = 1
             print
             next

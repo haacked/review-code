@@ -61,7 +61,14 @@ save_finding() {
     local end="$7"
     local deletable="$8"
 
-    desc=$(echo "${desc}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | head -c 500)
+    # Truncated for the orchestrator, which only needs enough to identify a
+    # finding. Not under --with-spans: carry-forward-findings.sh compares whole
+    # descriptions to catch a cut that spliced one finding's prose onto
+    # another, and a truncated one hides any splice past the cutoff.
+    desc=$(echo "${desc}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    if [[ "${WITH_SPANS}" != "true" ]]; then
+        desc=$(echo "${desc}" | head -c 500)
+    fi
     local entry
     entry=$(jq -nc --arg agent "${agent}" \
         --arg conf "${conf}" \
