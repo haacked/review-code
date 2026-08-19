@@ -17,11 +17,10 @@ if ! command_exists shellcheck; then
     fatal "shellcheck not found - install with: brew install shellcheck"
 fi
 
-# Every shell script in the repo. This is a superset of bin/fmt's
-# files_to_format, which still misses bin/helpers, the session hooks, and
-# tests; aligning fmt means reformatting those files, so it is left for its own
-# change. Tests under tests/unit and tests/integration are .bats, a dialect
-# this tool cannot parse, so bin/test covers those instead.
+# Every shell script in the repo. Keep in sync with bin/fmt's files_to_format;
+# the two tools are meant to cover the same set of scripts. Tests under
+# tests/unit and tests/integration are .bats, a dialect this tool cannot parse,
+# so bin/test covers those instead.
 shell_files=(
     bin/*
     bin/helpers/*.sh

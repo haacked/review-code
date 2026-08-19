@@ -40,15 +40,20 @@ success_status=true
 
 # Format shell scripts with shfmt if available
 if command_exists shfmt; then
+    # Keep in sync with bin/lint's shell_files; the two tools are meant to
+    # cover the same set of scripts.
     files_to_format=(
-        "bin/"*
-        "lib/"*.sh
-        "lib/helpers/"*.sh
-        "evals/scripts/"*.sh
-        "evals/scripts/helpers/"*.sh
-        "skills/review-code/scripts/"*.sh
-        "skills/review-code/scripts/helpers/"*.sh
-        "*.sh"
+        bin/*
+        bin/helpers/*.sh
+        skills/review-code/scripts/*.sh
+        skills/review-code/scripts/helpers/*.sh
+        skills/review-code/scripts/session-hooks/*.sh
+        evals/scripts/*.sh
+        evals/scripts/helpers/*.sh
+        tests/*.sh
+        tests/helpers/*.sh
+        tests/helpers/*.bash
+        *.sh
     )
 
     cmd="shfmt -i 4 -bn -ci -sr"
