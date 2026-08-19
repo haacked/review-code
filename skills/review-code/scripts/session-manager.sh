@@ -34,6 +34,22 @@ sanitize_identifier() {
     echo "${input}"
 }
 
+# Create a fresh artifacts directory for an upcoming session
+# Large payloads (the diff, the agent briefing) live here as files rather than
+# inside the session JSON, so reading the session never pulls them into context.
+# Created before session_init because the orchestrator writes into it.
+# Args: $1 = command name (e.g., "review-code")
+# Returns: absolute path to the new directory
+session_artifacts_dir_new() {
+    local command_name="$1"
+
+    command_name=$(sanitize_identifier "${command_name}") || return 1
+
+    local command_dir="${SESSION_DIR}/${command_name}"
+    mkdir -p "${command_dir}"
+    mktemp -d "${command_dir}/artifacts-XXXXXX"
+}
+
 # Initialize a new session
 # Args: $1 = command name (e.g., "review-code"), $2 = initial JSON data
 # Returns: session ID
@@ -215,6 +231,17 @@ session_cleanup() {
         "${hook}" "${session_file}" > /dev/null 2>&1 || true
     fi
 
+    # Remove the artifacts directory holding this session's large payloads
+    # (diff, agent briefing). The path is recorded in the session JSON; guard
+    # against a malformed or absent value so cleanup can never rm the wrong tree.
+    if [[ -f "${session_file}" ]]; then
+        local artifacts_dir
+        artifacts_dir=$(jq -r '.artifacts_dir // empty' "${session_file}" 2> /dev/null || true)
+        if [[ -n "${artifacts_dir}" && "${artifacts_dir}" == "${command_dir}/artifacts-"* && -d "${artifacts_dir}" ]]; then
+            rm -rf "${artifacts_dir}"
+        fi
+    fi
+
     # Remove session file and metadata
     rm -f "${session_file}"
     rm -f "${command_dir}/${session_id}.meta.json"
@@ -246,6 +273,11 @@ session_cleanup_old() {
     done < <(find "${search_dir}" -name "*.json" -not -name "*.meta.json" -type f -mmin "+${max_age_minutes}" -print0 2> /dev/null)
 
     find "${search_dir}" -name "*.meta.json" -type f -mmin "+${max_age_minutes}" -delete 2> /dev/null || true
+
+    # Sweep orphaned artifact directories. An orchestrator that dies before the
+    # session JSON is written leaves one behind with nothing pointing at it, so
+    # the per-session cleanup above can never reach it.
+    find "${search_dir}" -maxdepth 2 -type d -name "artifacts-*" -mmin "+${max_age_minutes}" -exec rm -rf {} + 2> /dev/null || true
 }
 
 # List active sessions for a command

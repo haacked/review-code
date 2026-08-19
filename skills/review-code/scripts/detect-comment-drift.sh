@@ -18,7 +18,8 @@
 #     "comments": [
 #       {"path": "src/foo.py", "line": 42, "side": "RIGHT", "body": "...", "line_content": "    some_code()"}
 #     ],
-#     "original_diff": "<optional: the diff from review time>"
+#     "original_diff": "<optional: the diff from review time>",
+#     "original_diff_path": "<optional: path to that diff; used when original_diff is absent>"
 #   }
 #
 # Output JSON:
@@ -355,6 +356,15 @@ main() {
     )
     comments=$(echo "${input}" | jq -c '.comments // []')
     original_diff=$(echo "${input}" | jq -r '.original_diff // ""')
+    # Callers that already have the review-time diff on disk pass a path instead,
+    # so the bytes never travel through the caller's context to get here.
+    if [[ -z "${original_diff}" ]]; then
+        local original_diff_path
+        original_diff_path=$(echo "${input}" | jq -r '.original_diff_path // ""')
+        if [[ -n "${original_diff_path}" && -f "${original_diff_path}" ]]; then
+            original_diff=$(cat "${original_diff_path}")
+        fi
+    fi
 
     # If no review_commit provided, skip drift detection entirely
     if [[ -z "${review_commit}" ]] || [[ "${review_commit}" == "null" ]]; then

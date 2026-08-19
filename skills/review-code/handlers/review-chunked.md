@@ -24,8 +24,7 @@ Loaded when the session JSON's `chunk_metadata.chunked` is `true`: the diff was 
    **File Metadata:**
    $file_metadata
 
-   **Diff for this chunk:**
-   $chunk.diff
+   **Diff for this chunk:** read it from `$chunk.diff_path` — it is a file, not inline text.
 
    $file_access_instructions
 
@@ -45,7 +44,7 @@ Loaded when the session JSON's `chunk_metadata.chunked` is `true`: the diff was 
    Save each chunk's analysis result as `$chunk_analyses[$chunk.id]`. Extract usage metadata from each response and record in `$token_usage` as `chunk-{id}-analysis`.
 
 2. After all per-chunk analyses complete, for each chunk in the `chunks` array, for each applicable agent:
-   - Replace `$diff` in the agent context with the chunk's `diff` field (the subset of changes for this chunk)
+   - Point the agent at the chunk's `diff_path` instead of `diff.patch`; each chunk's hunks are written to their own file
    - Add a chunk context header to each agent prompt:
      ```
      **Chunk Context:**
@@ -59,7 +58,7 @@ Loaded when the session JSON's `chunk_metadata.chunked` is `true`: the diff was 
      **Chunk Analysis:**
      $chunk_analyses[$chunk.id]
      ```
-   - Keep all other context the same: full `file_metadata`, full `architectural_context`, full `review_context`, all PR metadata
+   - Everything else comes from the shared `briefing.md`, exactly as in an unchunked review; only the diff file differs per chunk
    - Dispatch all (chunk x agent) combinations in parallel via the Task tool (if the named reviewer subagent types aren't registered in this environment, apply the general-purpose fallback from review.md's "Subagent Availability" section)
 
 3. After all tasks complete, merge all findings into a single pool for synthesis.
@@ -67,7 +66,7 @@ Loaded when the session JSON's `chunk_metadata.chunked` is `true`: the diff was 
 **Notes that apply at later steps:**
 
 - **Track Token Usage**: key each agent's usage by `chunk-{id}-{agent-type}`. In the review metadata header and the token usage log, sum tokens by agent type across chunks (e.g., all `chunk-*-code-reviewer-security` entries become a single `code-reviewer-security` total).
-- **Validate Findings Against the Diff**: always use the FULL diff from the session data (not chunk diffs) for position mapping. The position mapper needs the complete diff to map findings to correct GitHub inline comment positions.
+- **Validate Findings Against the Diff**: always pass the full diff at `diff_path` (not a chunk diff) to the position mapper's `--diff-file`. It needs the complete diff to map findings to correct GitHub inline comment positions.
 - **Compose the Review Document**: the final review does NOT separate findings by chunk. Present a unified review organized by the standard priority ordering, the same as for non-chunked reviews. Add a "Review Scope" note at the top of the review document (after the metadata header):
 
   ```markdown

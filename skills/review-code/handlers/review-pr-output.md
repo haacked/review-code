@@ -179,8 +179,8 @@ If any condition fails, skip draft review creation.
 2. **Map comment locations to diff positions**: Build a targets array and run through the position mapper:
 
 ```bash
-~/.claude/skills/review-code/scripts/diff-position-mapper.sh <<'EOF'
-{"diff": "<diff from session data>", "targets": [<targets array>]}
+~/.claude/skills/review-code/scripts/diff-position-mapper.sh --diff-file "<diff_path>" <<'EOF'
+{"targets": [<targets array>]}
 EOF
 ```
 
@@ -197,7 +197,7 @@ EOF
   "pr_number": <number from session>,
   "reviewer_username": "<reviewer from session>",
   "review_commit": "<pr.head_sha from session, if available>",
-  "original_diff": "<diff from session data>",
+  "original_diff_path": "<diff_path>",
   "summary": "<Short, conversational summary (see guidance below)>",
   "comments": [
     {"path": "file.ts", "line": 42, "side": "RIGHT", "body": "Clean comment text", "line_content": "    the_actual_code()"}
@@ -243,6 +243,13 @@ replacement code here
 This renders as an "Apply suggestion" button the PR author can click to commit the change.
 
 5. **Create the pending review**:
+
+The heredoc is safe here because the payload is JSON. Comment bodies quote code
+from the PR, so a body can contain the delimiter, but a JSON string cannot hold
+a literal newline: it arrives as `\nEOF\n` on one line rather than as a bare
+`EOF` at column zero. Keep the payload valid JSON and that stays true. Free-form
+text would not be safe this way, which is why the architectural context is
+written with the Write tool instead.
 
 ```bash
 ~/.claude/skills/review-code/scripts/create-draft-review.sh <<'EOF'

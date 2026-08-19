@@ -718,6 +718,43 @@ reset_globals() {
     [[ "$output" != *'"append_mode"'* ]]
 }
 
+# --full is the only way out of an incremental re-review. It crosses parse ->
+# orchestrator -> get-review-fields, and a drop anywhere in that chain hands
+# back a delta review to someone who asked for a complete pass.
+
+@test "full mode: FULL_MODE is false by default" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh"
+    [ "$FULL_MODE" = "false" ]
+}
+
+@test "full mode: --full sets FULL_MODE" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "--full" "123"
+    [ "$FULL_MODE" = "true" ]
+    [ "$arg" = "123" ]
+}
+
+@test "full mode: --full as second argument" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "123" "--full"
+    [ "$FULL_MODE" = "true" ]
+    [ "$arg" = "123" ]
+}
+
+@test "full mode: build_json_output includes full_mode when set" {
+    file_pattern=""
+    FULL_MODE="true"
+    run build_json_output "test" "key" "val"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"full_mode":"true"'* ]]
+}
+
+@test "full mode: build_json_output excludes full_mode when false" {
+    file_pattern=""
+    FULL_MODE="false"
+    run build_json_output "test" "key" "val"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *'"full_mode"'* ]]
+}
+
 @test "overwrite + append: mutually exclusive validation fails" {
     OVERWRITE_MODE="true"
     APPEND_MODE="true"

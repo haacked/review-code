@@ -304,3 +304,89 @@ setup() {
     run bash -c "echo '$input' | '$SCRIPT'"
     [ "$status" -eq 0 ]
 }
+
+# =============================================================================
+# --diff-file flag tests (new functionality)
+# =============================================================================
+
+@test "diff-position-mapper: accepts --diff-file flag" {
+    local diff_file="$BATS_TEST_TMPDIR/test.diff"
+    cat "$FIXTURES_DIR/simple-single-file.diff" > "$diff_file"
+
+    local input='{"targets": [{"path": "src/utils.ts", "line": 1}]}'
+    run bash -c "echo '$input' | '$SCRIPT' --diff-file '$diff_file'"
+    [ "$status" -eq 0 ]
+}
+
+@test "diff-position-mapper: --diff-file produces same output as stdin" {
+    local diff_file="$BATS_TEST_TMPDIR/test.diff"
+    cat "$FIXTURES_DIR/simple-single-file.diff" > "$diff_file"
+
+    local input='{"targets": [{"path": "src/utils.ts", "line": 1}]}'
+
+    # Run with stdin (via jq)
+    local stdin_output
+    stdin_output=$(bash -c "cat '$FIXTURES_DIR/simple-single-file.diff' | jq -Rs '{diff: ., targets: [{path: \"src/utils.ts\", line: 1}]}' | '$SCRIPT'")
+
+    # Run with --diff-file
+    local file_output
+    file_output=$(bash -c "echo '$input' | '$SCRIPT' --diff-file '$diff_file'")
+
+    # Should produce identical output
+    [ "$stdin_output" = "$file_output" ]
+}
+
+@test "diff-position-mapper: --diff-file with nonexistent file fails" {
+    local input='{"targets": []}'
+    run bash -c "echo '$input' | '$SCRIPT' --diff-file /nonexistent/path/file.diff"
+    [ "$status" -ne 0 ]
+}
+
+@test "diff-position-mapper: --diff-file reads correct diff content" {
+    local diff_file="$BATS_TEST_TMPDIR/test.diff"
+    cat "$FIXTURES_DIR/simple-single-file.diff" > "$diff_file"
+
+    local input='{"targets": [{"path": "src/utils.ts", "line": 1}]}'
+
+    run bash -c "echo '$input' | '$SCRIPT' --diff-file '$diff_file'"
+    [ "$status" -eq 0 ]
+
+    # Should successfully map the line (no error)
+    local error
+    error=$(echo "$output" | jq -r '.mappings[0].error // "none"')
+    [ "$error" = "none" ]
+}
+
+@test "diff-position-mapper: --diff-file with empty file fails appropriately" {
+    local diff_file="$BATS_TEST_TMPDIR/empty.diff"
+    touch "$diff_file"
+
+    local input='{"targets": []}'
+    run bash -c "echo '$input' | '$SCRIPT' --diff-file '$diff_file'"
+    [ "$status" -ne 0 ]
+}
+
+@test "diff-position-mapper: --diff-file with large diff file" {
+    local diff_file="$BATS_TEST_TMPDIR/large.diff"
+    cat "$FIXTURES_DIR/large-changes.diff" > "$diff_file"
+
+    local input='{"targets": [{"path": "package-lock.json", "line": 1}]}'
+
+    run bash -c "echo '$input' | '$SCRIPT' --diff-file '$diff_file'"
+    [ "$status" -eq 0 ]
+
+    # Should successfully process
+    local error
+    error=$(echo "$output" | jq -r '.mappings[0].error // "none"')
+    [ "$error" = "none" ]
+}
+
+@test "diff-position-mapper: --diff-file with multi-file diff" {
+    local diff_file="$BATS_TEST_TMPDIR/multifile.diff"
+    cat "$FIXTURES_DIR/python-flask.diff" > "$diff_file"
+
+    local input='{"targets": [{"path": "api/app.py", "line": 1}]}'
+
+    run bash -c "echo '$input' | '$SCRIPT' --diff-file '$diff_file'"
+    [ "$status" -eq 0 ]
+}

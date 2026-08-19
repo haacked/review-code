@@ -13,12 +13,12 @@ Otherwise, let `$engine` be `adversary.engine` (`"copilot"` or `"codex"`) and co
 ```bash
 jq -n \
   --argjson findings '<findings JSON array>' \
-  --arg diff "$diff" \
+  --rawfile diff "<diff_path>" \
   --argjson timeout_seconds 300 \
   '$ARGS.named' | ~/.claude/skills/review-code/scripts/$engine-meta-review.sh
 ```
 
-Where `$diff` is the full diff from session data, `<findings JSON array>` is the JSON array of surviving findings, and `$engine` selects `copilot-meta-review.sh` or `codex-meta-review.sh`. Use `jq` to safely encode both as JSON.
+`--rawfile` reads the diff straight off disk, so its bytes never pass through this conversation. `<findings JSON array>` is the JSON array of surviving findings, and `$engine` selects `copilot-meta-review.sh` or `codex-meta-review.sh`.
 
 Save the JSON output as `$adversary_meta_review`. In debug mode, save the stage `11b-adversary-meta-review` artifacts (see `review-debug.md`).
 

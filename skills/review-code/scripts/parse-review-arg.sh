@@ -19,6 +19,7 @@ APPLY_MODE="false"
 LEARN_MODE="false"
 OVERWRITE_MODE="false"
 APPEND_MODE="false"
+FULL_MODE="false"
 FIX_MODE="false"
 ADVERSARY_MODE=""
 ADVERSARY_CONFLICT="false"
@@ -49,6 +50,8 @@ for arg_item in "$@"; do
         OVERWRITE_MODE="true"
     elif [[ "${arg_item}" == "--append" ]]; then
         APPEND_MODE="true"
+    elif [[ "${arg_item}" == "--full" ]]; then
+        FULL_MODE="true"
     elif [[ "${arg_item}" == "--fix" ]]; then
         FIX_MODE="true"
     elif [[ "${arg_item}" == --adversary:* ]]; then
@@ -451,6 +454,11 @@ build_json_output() {
     # Add append_mode if enabled
     if [[ "${APPEND_MODE}" == "true" ]]; then
         jq_args+=("--arg" "append_mode" "true")
+    fi
+
+    # Add full_mode if enabled
+    if [[ "${FULL_MODE}" == "true" ]]; then
+        jq_args+=("--arg" "full_mode" "true")
     fi
 
     # Add fix_mode if enabled

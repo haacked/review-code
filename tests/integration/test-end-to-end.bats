@@ -6,6 +6,11 @@ setup() {
     PROJECT_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
     export PROJECT_ROOT
 
+    # Keep session artifacts out of the developer's real ~/.claude. The
+    # orchestrator writes each run's diff to a durable artifacts directory, so
+    # without this every test run leaves one behind.
+    export CLAUDE_SESSION_DIR="$BATS_TEST_TMPDIR/sessions"
+
     source "$PROJECT_ROOT/tests/helpers/gh-stub.bash"
     install_default_gh_stub
 
@@ -60,7 +65,7 @@ EOF
     [[ "$languages" =~ "python" ]]
 
     # Should include the diff
-    diff=$(echo "$output" | jq -r '.diff')
+    diff=$(cat "$(echo "$output" | jq -r '.diff_path')")
     [[ "$diff" == *"app.py"* ]]
 
     # Should have mode=local
@@ -127,7 +132,7 @@ EOF
     [ "$mode" = "range" ]
 
     # Should include both files in the diff
-    diff=$(echo "$output" | jq -r '.diff')
+    diff=$(cat "$(echo "$output" | jq -r '.diff_path')")
     [[ "$diff" == *"file2.txt"* ]]
     [[ "$diff" == *"file3.txt"* ]]
 }
@@ -149,7 +154,7 @@ EOF
     [ "$mode" = "range" ]
 
     # Should include the new file
-    diff=$(echo "$output" | jq -r '.diff')
+    diff=$(cat "$(echo "$output" | jq -r '.diff_path')")
     [[ "$diff" == *"file2.txt"* ]]
 }
 
@@ -178,7 +183,7 @@ EOF
     [ "$mode" = "branch" ]
 
     # Should include feature file in diff
-    diff=$(echo "$output" | jq -r '.diff')
+    diff=$(cat "$(echo "$output" | jq -r '.diff_path')")
     [[ "$diff" == *"feature.txt"* ]]
     [[ "$diff" == *"feature code"* ]]
 }
@@ -244,7 +249,7 @@ EOF
     [ "$status" -eq 0 ]
 
     # Diff should include Python file
-    diff=$(echo "$output" | jq -r '.diff')
+    diff=$(cat "$(echo "$output" | jq -r '.diff_path')")
     [[ "$diff" == *"app.py"* ]]
 
     # Diff should NOT include TypeScript or markdown
@@ -325,7 +330,8 @@ EOF
 
     # Validate required fields exist
     echo "$output" | jq -e '.mode' > /dev/null
-    echo "$output" | jq -e '.diff' > /dev/null
+    diff_path=$(echo "$output" | jq -r '.diff_path')
+    [ -s "$diff_path" ]
     # Languages structure can vary - check both possible locations
     echo "$output" | jq -e '.languages' > /dev/null
     # has_frontend should exist somewhere in the output

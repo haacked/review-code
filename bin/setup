@@ -6,7 +6,7 @@
 #
 # Description:
 #   Installs review-code by copying files from current directory to:
-#   - ~/.claude/skills/review-code/ - Skill files (SKILL.md + scripts/ + context/ + reviews/)
+#   - ~/.claude/skills/review-code/ - Skill files (SKILL.md + scripts/ + handlers/ + briefing/ + context/ + reviews/)
 #   - ~/.claude/agents/ - Agent files
 #
 #   Context files are installed with smart merge to preserve user learnings.
@@ -106,7 +106,7 @@ check_prerequisites() {
 }
 
 verify_repo_structure() {
-    local required_dirs=("skills/review-code" "skills/review-code/context" "skills/review-code/handlers" "agents")
+    local required_dirs=("skills/review-code" "skills/review-code/context" "skills/review-code/handlers" "skills/review-code/briefing" "agents")
     local missing=()
 
     for dir in "${required_dirs[@]}"; do
@@ -196,6 +196,18 @@ install_skill() {
             local filename
             filename=$(basename "${src}")
             cp "${src}" "${dst_dir}/handlers/${filename}"
+        done
+    fi
+
+    # Copy briefing templates. build-agent-briefing.sh concatenates these into
+    # every agent briefing, so a missing directory breaks every review.
+    if [[ -d "${src_dir}/briefing" ]]; then
+        mkdir -p "${dst_dir}/briefing"
+        for src in "${src_dir}/briefing/"*.md; do
+            [[ -e "${src}" ]] || continue
+            local filename
+            filename=$(basename "${src}")
+            cp "${src}" "${dst_dir}/briefing/${filename}"
         done
     fi
 
