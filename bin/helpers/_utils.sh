@@ -26,15 +26,15 @@ fatal() {
 
 # Set source and root directories, cd to root
 set_source_and_root_dir() {
-    { set +x; } 2>/dev/null
-    source_dir="$(cd -P "$(dirname "$0")" >/dev/null 2>&1 && pwd)"
+    { set +x; } 2> /dev/null
+    source_dir="$(cd -P "$(dirname "$0")" > /dev/null 2>&1 && pwd)"
     root_dir=$(cd "$source_dir" && cd ../ && pwd)
     cd "$root_dir" || fatal "Could not change to root directory: $root_dir"
 }
 
 # Check if command exists
 command_exists() {
-    command -v "$1" >/dev/null 2>&1
+    command -v "$1" > /dev/null 2>&1
 }
 
 # Print warning in yellow
