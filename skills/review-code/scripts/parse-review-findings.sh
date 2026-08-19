@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016  # regex literals; $ and backslashes are ERE syntax, not shell expansions
 # parse-review-findings.sh - Extract structured findings from review markdown files
 #
 # Usage:

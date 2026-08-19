@@ -417,7 +417,6 @@ merge_markdown_sections() {
     while IFS= read -r section; do
         [[ -z "${section}" ]] && continue
 
-        # shellcheck disable=SC2310 # has_section returning non-zero is expected behavior
         if ! has_section "${dst}" "${section}"; then
             # Section doesn't exist in destination - append it
             local section_content
@@ -449,7 +448,6 @@ process_context_file() {
     fi
 
     local was_deduped=false
-    # shellcheck disable=SC2310 # a 1 return (no duplicates found) is expected, not an error
     if dedupe_sections_in_place "${dst}"; then
         was_deduped=true
         debug "Removed duplicate section(s): ${display_name}"

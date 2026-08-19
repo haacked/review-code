@@ -134,6 +134,7 @@ main() {
 
         # Generate proposed content based on type
         local proposed_content=""
+        # shellcheck disable=SC2249  # an unrecognized learning type leaves proposed_content empty by design
         case "${type}" in
             "false_positive")
                 # Collect unique feedback patterns

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2154  # EVALS_DIR and REGISTRY are set by the sourcing script (see header)
 # eval-helpers.sh - Shared helper functions for eval scripts
 #
 # Provides:

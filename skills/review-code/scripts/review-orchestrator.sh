@@ -328,6 +328,7 @@ build_review_data() {
     mode_args_json=$(jq -n "$@" '$ARGS.named' 2> /dev/null || echo '{}')
     local commit_messages=""
     if [[ "${in_git_repo}" == "true" ]]; then
+        # shellcheck disable=SC2249  # modes without commit history leave commit_messages empty, which is correct
         case "${mode}" in
             "branch")
                 local cm_branch cm_base
@@ -648,6 +649,7 @@ Comparison: ${comparison}
 "
 
             local base_label=""
+            # shellcheck disable=SC2249  # an unmatched source leaves base_label empty, which the next if handles
             case "${base_source}" in
                 "pr-base") base_label="from PR base" ;;
                 "stack-parent") base_label="from stack parent" ;;

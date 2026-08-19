@@ -55,7 +55,7 @@ echo ""
 echo "Test 4: Test has_frontend field extraction with null handling"
 mock_data='{"languages":null}'
 result=$(echo "$mock_data" | jq -r ".languages.has_frontend // false")
-if [ "$result" = "false" ]; then
+if [[ "$result" = "false" ]]; then
     echo "✓ PASS: Null languages field handled gracefully"
 else
     echo "✗ FAIL: Expected 'false', got: $result"
@@ -66,7 +66,7 @@ echo ""
 # Test 5: Test has_frontend with valid data
 echo "Test 5: Test has_frontend with valid languages data"
 result=$(echo "" | "$LIB_DIR/code-language-detect.sh" | jq -r ".has_frontend")
-if [ "$result" = "false" ]; then
+if [[ "$result" = "false" ]]; then
     echo "✓ PASS: has_frontend is false for empty diff"
 else
     echo "✗ FAIL: Expected 'false', got: $result"

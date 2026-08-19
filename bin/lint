@@ -17,11 +17,22 @@ if ! command_exists shellcheck; then
     fatal "shellcheck not found - install with: brew install shellcheck"
 fi
 
-# Find all shell scripts
+# Every shell script in the repo. This is a superset of bin/fmt's
+# files_to_format, which still misses bin/helpers, the session hooks, and
+# tests; aligning fmt means reformatting those files, so it is left for its own
+# change. Tests under tests/unit and tests/integration are .bats, a dialect
+# this tool cannot parse, so bin/test covers those instead.
 shell_files=(
     bin/*
-    lib/*.sh
-    lib/helpers/*.sh
+    bin/helpers/*.sh
+    skills/review-code/scripts/*.sh
+    skills/review-code/scripts/helpers/*.sh
+    skills/review-code/scripts/session-hooks/*.sh
+    evals/scripts/*.sh
+    evals/scripts/helpers/*.sh
+    tests/*.sh
+    tests/helpers/*.sh
+    tests/helpers/*.bash
     *.sh
 )
 
@@ -29,9 +40,11 @@ actual_files=()
 for pattern in "${shell_files[@]}"; do
     for file in ${pattern}; do
         if [[ -f "${file}" ]] && [[ ! "${file}" =~ \.md$ ]]; then
-            # Skip non-shell files
-            # shellcheck disable=SC2312  # head/grep failures indicate non-bash file (correct)
-            if [[ "${file}" == *.sh ]] || [[ -x "${file}" ]] && head -1 "${file}" | grep -q '^#!/.*bash'; then
+            # A .sh or .bash extension is enough on its own; the bats helpers
+            # under tests/ use .bash and are sourced, so they are never
+            # executable. Anything else has to declare a bash shebang, which is
+            # what keeps non-shell entries in bin/ out.
+            if [[ "${file}" == *.sh || "${file}" == *.bash ]] || { [[ -x "${file}" ]] && head -1 "${file}" | grep -q '^#!/.*bash'; }; then
                 actual_files+=("${file}")
             fi
         fi
@@ -45,11 +58,21 @@ fi
 
 print_color blue "Found ${#actual_files[@]} shell scripts"
 
-# Run shellcheck with strict settings
+# Run shellcheck with strict settings.
+#
+# -P SCRIPTDIR resolves `# shellcheck source=` directives relative to the script
+# being checked rather than the repo root, so -x actually follows the helpers
+# each script sources instead of silently giving up.
+#
 # Excluded checks:
 # - SC1091: Can't follow sourced files with dynamic paths
 # - SC2250: Optional style preference for universal variable bracing (too verbose)
-if ! run_command "shellcheck -x -o all -e SC1091,SC2250 ${actual_files[*]}" "Running shellcheck"; then
+# - SC2310, SC2312: Both fire on this codebase's ordinary idiom - functions
+#   called as conditionals, and command substitution for values whose failure
+#   yields an empty string the caller already handles. Every occurrence anyone
+#   has reviewed ended in a per-file disable with that same reason, so exclude
+#   them once here rather than repeating the directive in forty files.
+if ! run_command "shellcheck -x -o all -P SCRIPTDIR -e SC1091,SC2250,SC2310,SC2312 ${actual_files[*]}" "Running shellcheck"; then
     success_status=false
 fi
 

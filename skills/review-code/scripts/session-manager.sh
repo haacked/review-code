@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2310  # Functions in conditionals intentionally check return values
-# shellcheck disable=SC2312  # Command substitutions for directory resolution are non-critical
 set -euo pipefail
 
 # Session Manager - Generic session state management for Claude Code slash commands
@@ -226,7 +224,9 @@ session_cleanup() {
     # provisioned worktree). Hooks are optional and keyed by command name; a
     # missing or non-executable hook is silently skipped. The hook must not
     # fail the cleanup, so all errors are swallowed.
-    local hook="$(dirname "${BASH_SOURCE[0]}")/session-hooks/${command_name}-cleanup.sh"
+    local hook_dir
+    hook_dir="$(dirname "${BASH_SOURCE[0]}")"
+    local hook="${hook_dir}/session-hooks/${command_name}-cleanup.sh"
     if [[ -f "${session_file}" && -x "${hook}" ]]; then
         "${hook}" "${session_file}" > /dev/null 2>&1 || true
     fi

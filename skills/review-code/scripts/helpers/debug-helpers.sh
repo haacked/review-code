@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2312  # Command substitutions for debugging/formatting are non-critical
 # Debug helpers for review-code
 # Provides utilities for capturing intermediate artifacts and command logs when DEBUG mode is enabled
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2310  # Functions in conditionals intentionally check return values
 # pr-context.sh - Fetch PR data using gh CLI
 #
 # Usage:
@@ -332,7 +331,6 @@ main() {
     body=$(echo "${body}" | jq -Rs . | jq -r .)
 
     # Output combined JSON
-    # shellcheck disable=SC2312  # jq failures for title/body sanitization are non-critical
     cat << EOF
 {
     "org": "${org}",

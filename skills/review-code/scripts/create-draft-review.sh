@@ -121,6 +121,7 @@ create_pending_review() {
     local result error_output
     local tmpfile
     tmpfile=$(mktemp)
+    # shellcheck disable=SC2064  # expand tmpfile now so the trap removes this call's file
     trap "rm -f '${tmpfile}'" RETURN
 
     # Always use JSON format with comments array for consistency, whether

@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2312  # sget failures yield empty strings, which the templates handle
-# shellcheck disable=SC2310  # sget is intentionally used in conditionals to test for presence
 set -euo pipefail
 
 # build-agent-briefing.sh - Render the shared reviewer briefing to files.
@@ -254,6 +252,7 @@ if [[ " ${AGENTS} " == *" frontend "* ]]; then
     # directory that also holds changed .tsx/.jsx. The directory-name list covers
     # the files that usually change alongside a component; a backend with no such
     # directories still matches nothing.
+    # shellcheck disable=SC2016  # git pathspecs, expanded by git and not the shell
     write_scoped_diff frontend '
         (.file_metadata.modified_files // []) as $files
         | ([$files[] | select(.path | test("\\.(tsx|jsx|vue|svelte)$")) | .path

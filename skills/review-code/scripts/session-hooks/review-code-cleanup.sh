@@ -44,7 +44,7 @@ IFS=$'\t' read -r wt_org wt_repo wt_pr wt_clone wt_path <<< "${jq_out}"
 expected_leaf=$(worktree_leaf_for "${wt_org}" "${wt_repo}" "${wt_pr}")
 [[ "${wt_path}" == /* && "${wt_path}" == *"/${expected_leaf}" ]] || exit 0
 
-wt_root="${wt_path%/${expected_leaf}}"
+wt_root="${wt_path%/"${expected_leaf}"}"
 [[ -n "${wt_root}" ]] || exit 0
 
 wt_script="${SCRIPT_DIR}/../pr-worktree.sh"

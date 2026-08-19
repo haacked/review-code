@@ -14,6 +14,7 @@ source "${_GH_WRAPPER_DIR}/cli-timeout-helpers.sh"
 
 if command -v gh > /dev/null 2>&1; then
     gh() {
+        # shellcheck disable=SC1007  # DEBUG= scrubs the variable for this command only
         DEBUG= command gh "$@"
     }
 fi
