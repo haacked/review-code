@@ -26,9 +26,10 @@ jobs:
         git config --global user.email "ci@github.com"
         git config --global user.name "GitHub CI"
 
-        # Install system dependencies
-        sudo apt-get update
-        sudo apt-get install -y shellcheck
+        # Install shellcheck 0.11.0 (apt has older 0.9.0, which reports different findings under bin/lint's -o all)
+        SHELLCHECK_VERSION="0.11.0"
+        curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" | tar -xJ -C /tmp
+        sudo install -m 755 "/tmp/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
 
         # Install jq 1.7.1 (apt has older 1.6 which has syntax incompatibilities)
         JQ_VERSION="1.7.1"
