@@ -1,82 +1,70 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env python3
+"""token-report - Measure what reviews actually cost.
 
-# token-report - Measure what reviews actually cost.
-#
-# The skill's own token log (.reviews/token-usage.jsonl) only sees subagents.
-# The orchestrating conversation is roughly half the bill and is invisible from
-# inside a review, so it has to be measured from the session transcripts.
-#
-# Usage:
-#   bin/token-report [options]
-#
-# Options:
-#   --dir <path>      Transcript root (default: ~/.claude/projects)
-#   --match <substr>  Only sessions whose project directory contains this
-#                     (default: review, which picks up review worktrees)
-#   --since <date>    ISO date; skip sessions whose first entry predates it
-#   --limit <n>       Show at most n sessions in the per-session table
-#   --json            Emit machine-readable JSON instead of a table
-#   --prompts         Report how reviewer subagents received their payload
-#                     (inlined in the prompt, or by a path to a file) instead
-#                     of the cost tables
+The skill's own token log (.reviews/token-usage.jsonl) only sees subagents.
+The orchestrating conversation is roughly half the bill and is invisible from
+inside a review, so it has to be measured from the session transcripts.
+"""
 
-DIR="${HOME}/.claude/projects"
-MATCH="review"
-SINCE=""
-LIMIT=15
-AS_JSON="false"
-PROMPTS="false"
+import argparse
+import collections
+import datetime
+import glob
+import json
+import os
+import re
+import sys
 
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --dir)
-            DIR="${2:-}"
-            shift 2
-            ;;
-        --match)
-            MATCH="${2:-}"
-            shift 2
-            ;;
-        --since)
-            SINCE="${2:-}"
-            shift 2
-            ;;
-        --limit)
-            LIMIT="${2:-15}"
-            shift 2
-            ;;
-        --json)
-            AS_JSON="true"
-            shift
-            ;;
-        --prompts)
-            PROMPTS="true"
-            shift
-            ;;
-        -h | --help)
-            sed -n '/^# token-report/,/^$/p' "$0" | sed -E 's/^# ?//'
-            exit 0
-            ;;
-        *)
-            echo "ERROR: Unknown argument: $1" >&2
-            exit 1
-            ;;
-    esac
-done
+# Per-million-token rates. Reviews run mostly on the top tier; subagents pinned
+# to cheaper models are priced by the model recorded in their own transcript.
+Rate = collections.namedtuple("Rate", "input cache_write cache_read output")
+RATES = {
+    "opus":   Rate(15.0, 18.75, 1.5, 75.0),
+    "sonnet": Rate(3.0, 3.75, 0.3, 15.0),
+    "haiku":  Rate(1.0, 1.25, 0.1, 5.0),
+}
 
-if [[ ! -d "${DIR}" ]]; then
-    echo "ERROR: Transcript directory not found: ${DIR}" >&2
-    exit 1
-fi
 
-if [[ "${PROMPTS}" == "true" ]]; then
-    DIR="${DIR}" MATCH="${MATCH}" AS_JSON="${AS_JSON}" python3 - << 'PROMPTPY'
-import collections, glob, json, os, re, sys
+def parse_args():
+    parser = argparse.ArgumentParser(
+        prog="bin/token-report",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--dir", metavar="<path>",
+        default=os.path.expanduser("~/.claude/projects"),
+        help="Transcript root (default: ~/.claude/projects)")
+    parser.add_argument(
+        "--match", metavar="<substr>", default="review",
+        help="Only sessions whose project directory contains this "
+             "(default: review, which picks up review worktrees)")
+    parser.add_argument(
+        "--since", metavar="<date>", default="",
+        help="ISO date; skip sessions whose first entry predates it")
+    parser.add_argument(
+        "--limit", metavar="<n>", type=int, default=15,
+        help="Show at most n sessions in the per-session table")
+    parser.add_argument(
+        "--json", action="store_true",
+        help="Emit machine-readable JSON instead of a table")
+    parser.add_argument(
+        "--prompts", action="store_true",
+        help="Report how reviewer subagents received their payload (inlined "
+             "in the prompt, or by a path to a file) instead of the cost tables")
+    return parser.parse_args()
 
-ROOT = os.environ["DIR"]
-MATCH = os.environ["MATCH"]
-AS_JSON = os.environ["AS_JSON"] == "true"
+
+def median(xs):
+    # Lower median on even-length input. statistics.median averages the two
+    # middle values, which would invent a figure no session actually cost.
+    xs = sorted(xs)
+    return xs[len(xs) // 2] if xs else 0
+
+
+# =============================================================================
+# --prompts: how reviewer agents received their payload
+# =============================================================================
 
 # Before build-agent-briefing.sh standardized one filename, the orchestrator
 # invented its own each run: /tmp/rc-<n>-agent-context.md, shared_context.md,
@@ -84,24 +72,27 @@ AS_JSON = os.environ["AS_JSON"] == "true"
 # catches the whole family instead of guessing at the names.
 PATH_HINT = re.compile(r"(/[\w.\-]+){2,}\.(md|diff|patch|txt)\b")
 
+
 def first_user_prompt(path):
-    for line in open(path, errors="ignore"):
-        try:
-            rec = json.loads(line)
-        except ValueError:
-            continue
-        msg = rec.get("message") or {}
-        if msg.get("role") != "user":
-            continue
-        c = msg.get("content")
-        if isinstance(c, str):
-            return c
-        if isinstance(c, list):
-            t = "".join(b.get("text", "") for b in c
-                        if isinstance(b, dict) and b.get("type") == "text")
-            if t:
-                return t
+    with open(path, errors="ignore") as fh:
+        for line in fh:
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            msg = rec.get("message") or {}
+            if msg.get("role") != "user":
+                continue
+            c = msg.get("content")
+            if isinstance(c, str):
+                return c
+            if isinstance(c, list):
+                t = "".join(b.get("text", "") for b in c
+                            if isinstance(b, dict) and b.get("type") == "text")
+                if t:
+                    return t
     return None
+
 
 def shape(text):
     if text.strip() == "FILE_PROMPT_PLACEHOLDER":
@@ -112,17 +103,19 @@ def shape(text):
         return "by-reference"
     return "no-payload"
 
-rows = []
-for project in sorted(glob.glob(os.path.join(ROOT, "*"))):
-    if MATCH and MATCH not in os.path.basename(project):
-        continue
-    for subdir in glob.glob(os.path.join(project, "*", "subagents")):
-        for f in sorted(glob.glob(os.path.join(subdir, "*.jsonl"))):
+
+def report_prompts(root, match, as_json):
+    rows = []
+    for project in sorted(glob.glob(os.path.join(root, "*"))):
+        if match and match not in os.path.basename(project):
+            continue
+        for f in sorted(glob.glob(os.path.join(project, "*", "subagents", "*.jsonl"))):
             meta = f[:-6] + ".meta.json"
             if not os.path.exists(meta):
                 continue
             try:
-                atype = json.load(open(meta)).get("agentType") or ""
+                with open(meta) as fh:
+                    atype = json.load(fh).get("agentType") or ""
             except ValueError:
                 continue
             if not atype.startswith("code-reviewer-"):
@@ -134,58 +127,38 @@ for project in sorted(glob.glob(os.path.join(ROOT, "*"))):
             if k:
                 rows.append({"agent": atype, "shape": k, "tokens": len(text) // 4})
 
-if not rows:
-    print(f"No reviewer subagents matched '{MATCH}' under {ROOT}")
-    sys.exit(0)
+    if not rows:
+        print(f"No reviewer subagents matched '{match}' under {root}")
+        return
 
-def median(xs):
-    xs = sorted(xs)
-    return xs[len(xs) // 2] if xs else 0
+    by_shape = collections.defaultdict(list)
+    for r in rows:
+        by_shape[r["shape"]].append(r["tokens"])
 
-by_shape = collections.defaultdict(list)
-for r in rows:
-    by_shape[r["shape"]].append(r["tokens"])
+    if as_json:
+        print(json.dumps({"reviewer_dispatches": len(rows),
+                          "by_shape": {k: {"n": len(v), "median_tokens": median(v)}
+                                       for k, v in by_shape.items()},
+                          "rows": rows}, indent=2))
+        return
 
-if AS_JSON:
-    print(json.dumps({"reviewer_dispatches": len(rows),
-                      "by_shape": {k: {"n": len(v), "median_tokens": median(v)}
-                                   for k, v in by_shape.items()},
-                      "rows": rows}, indent=2))
-    sys.exit(0)
+    print(f"{len(rows)} reviewer-agent dispatches under {root} matching '{match}'\n")
+    print(f"{'prompt shape':<16} {'n':>5} {'pct':>6} {'median tok':>11} {'p90':>8}")
+    for k in ("inlined", "by-reference", "no-payload"):
+        v = by_shape.get(k) or []
+        if not v:
+            continue
+        p90 = sorted(v)[int(len(v) * 0.9)]
+        print(f"{k:<16} {len(v):>5} {100 * len(v) / len(rows):>5.0f}% {median(v):>11,} {p90:>8,}")
 
-print(f"{len(rows)} reviewer-agent dispatches under {ROOT} matching '{MATCH}'\n")
-print(f"{'prompt shape':<16} {'n':>5} {'pct':>6} {'median tok':>11} {'p90':>8}")
-for k in ("inlined", "by-reference", "no-payload"):
-    v = by_shape.get(k) or []
-    if not v:
-        continue
-    p90 = sorted(v)[int(len(v) * 0.9)]
-    print(f"{k:<16} {len(v):>5} {100 * len(v) / len(rows):>5.0f}% {median(v):>11,} {p90:>8,}")
+    print("\n  inlined      the diff is in the prompt text")
+    print("  by-reference the prompt names a file holding the payload")
+    print("  no-payload   neither; the agent was told to fetch the diff itself")
 
-print("\n  inlined      the diff is in the prompt text")
-print("  by-reference the prompt names a file holding the payload")
-print("  no-payload   neither; the agent was told to fetch the diff itself")
-PROMPTPY
-    exit 0
-fi
 
-DIR="${DIR}" MATCH="${MATCH}" SINCE="${SINCE}" LIMIT="${LIMIT}" AS_JSON="${AS_JSON}" python3 - << 'PYTHON'
-import collections, datetime, glob, json, os, sys
-
-ROOT = os.environ["DIR"]
-MATCH = os.environ["MATCH"]
-SINCE = os.environ["SINCE"]
-LIMIT = int(os.environ["LIMIT"])
-AS_JSON = os.environ["AS_JSON"] == "true"
-
-# Per-million-token rates. Reviews run mostly on the top tier; subagents pinned
-# to cheaper models are priced by the model recorded in their own transcript.
-Rate = collections.namedtuple("Rate", "input cache_write cache_read output")
-RATES = {
-    "opus":   Rate(15.0, 18.75, 1.5, 75.0),
-    "sonnet": Rate(3.0, 3.75, 0.3, 15.0),
-    "haiku":  Rate(1.0, 1.25, 0.1, 5.0),
-}
+# =============================================================================
+# Cost tables
+# =============================================================================
 
 def tier(model):
     m = (model or "").lower()
@@ -193,6 +166,7 @@ def tier(model):
         if name in m:
             return name
     return "opus"
+
 
 def scan(path):
     """Sum usage for one transcript.
@@ -205,82 +179,51 @@ def scan(path):
     totals = collections.Counter()
     cost = 0.0
     seen = set()
-    first_ts = None
-    for line in open(path, errors="ignore"):
-        try:
-            rec = json.loads(line)
-        except ValueError:
-            continue
-        if first_ts is None and rec.get("timestamp"):
-            first_ts = rec["timestamp"]
-        msg = rec.get("message") or {}
-        usage = msg.get("usage")
-        if not usage:
-            continue
-        key = msg.get("id") or rec.get("requestId") or rec.get("uuid")
-        if key in seen:
-            continue
-        seen.add(key)
-        i = usage.get("input_tokens", 0)
-        o = usage.get("output_tokens", 0)
-        cw = usage.get("cache_creation_input_tokens", 0)
-        cr = usage.get("cache_read_input_tokens", 0)
-        totals["in"] += i; totals["out"] += o
-        totals["cache_write"] += cw; totals["cache_read"] += cr
-        totals["context"] += i + cw + cr
-        r = RATES[tier(msg.get("model"))]
-        cost += (i * r.input + cw * r.cache_write + cr * r.cache_read + o * r.output) / 1e6
-    return totals, len(seen), cost, first_ts
-
-cutoff = None
-if SINCE:
-    try:
-        cutoff = datetime.datetime.fromisoformat(SINCE).replace(tzinfo=datetime.timezone.utc)
-    except ValueError:
-        print(f"ERROR: --since must be an ISO date, got: {SINCE}", file=sys.stderr)
-        sys.exit(1)
-
-sessions = []
-agg_o, agg_s = collections.Counter(), collections.Counter()
-for project in sorted(glob.glob(os.path.join(ROOT, "*"))):
-    if MATCH and MATCH not in os.path.basename(project):
-        continue
-    for main in glob.glob(os.path.join(project, "*.jsonl")):
-        ot, turns, ocost, ts = scan(main)
-        if turns < 3:
-            continue
-        if cutoff and ts:
+    with open(path, errors="ignore") as fh:
+        for line in fh:
             try:
-                if datetime.datetime.fromisoformat(ts.replace("Z", "+00:00")) < cutoff:
-                    continue
+                rec = json.loads(line)
             except ValueError:
-                pass
-        sid = os.path.basename(main)[:-6]
-        st, scost, nsub = collections.Counter(), 0.0, 0
-        for sub in glob.glob(os.path.join(project, sid, "subagents", "*.jsonl")):
-            t, _, c, _ = scan(sub)
-            st += t; scost += c; nsub += 1
-        agg_o += ot; agg_s += st
-        sessions.append({
-            "project": os.path.basename(project), "session": sid, "started": ts,
-            "orchestrator_usd": round(ocost, 2), "subagent_usd": round(scost, 2),
-            "total_usd": round(ocost + scost, 2), "turns": turns, "subagents": nsub,
-            "avg_context_per_turn": int(ot["context"] / turns) if turns else 0,
-            "orchestrator_output_tokens": ot["out"],
-        })
+                continue
+            msg = rec.get("message") or {}
+            usage = msg.get("usage")
+            if not usage:
+                continue
+            key = msg.get("id") or rec.get("requestId") or rec.get("uuid")
+            if key in seen:
+                continue
+            seen.add(key)
+            i = usage.get("input_tokens", 0)
+            o = usage.get("output_tokens", 0)
+            cw = usage.get("cache_creation_input_tokens", 0)
+            cr = usage.get("cache_read_input_tokens", 0)
+            totals["in"] += i
+            totals["out"] += o
+            totals["cache_write"] += cw
+            totals["cache_read"] += cr
+            totals["context"] += i + cw + cr
+            r = RATES[tier(msg.get("model"))]
+            cost += (i * r.input + cw * r.cache_write + cr * r.cache_read + o * r.output) / 1e6
+    return totals, len(seen), cost
 
-if not sessions:
-    print(f"No sessions matched '{MATCH}' under {ROOT}")
-    sys.exit(0)
 
-sessions.sort(key=lambda s: -s["total_usd"])
-totals = [s["total_usd"] for s in sessions]
+def first_timestamp(path):
+    """The timestamp of a transcript's first stamped entry.
 
-def median(xs):
-    # Lower median on even-length input. statistics.median averages the two
-    # middle values, which would invent a figure no session actually cost.
-    xs = sorted(xs)
-    return xs[len(xs) // 2]
+    --since discards most of the corpus, and every transcript carries its
+    timestamp within the first handful of lines, so probing for it here keeps
+    scan() off the files that are about to be dropped.
+    """
+    with open(path, errors="ignore") as fh:
+        for line in fh:
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            if rec.get("timestamp"):
+                return rec["timestamp"]
+    return None
+
 
 def mix(c):
     r = RATES["opus"]
@@ -292,41 +235,108 @@ def mix(c):
             "output_pct": round(100 * c["out"] * r.output / tot),
             "cache_write_pct": round(100 * c["cache_write"] * r.cache_write / tot)}
 
-summary = {
-    "sessions": len(sessions),
-    "median_usd": median(totals),
-    "mean_usd": round(sum(totals) / len(totals), 2),
-    "total_usd": round(sum(totals), 2),
-    "median_turns": median([s["turns"] for s in sessions]),
-    "median_context_per_turn": median([s["avg_context_per_turn"] for s in sessions]),
-    "orchestrator_cost_mix": mix(agg_o),
-    "subagent_cost_mix": mix(agg_s),
-}
 
-if AS_JSON:
-    print(json.dumps({"summary": summary, "sessions": sessions[:LIMIT]}, indent=2))
-    sys.exit(0)
+def report_costs(root, match, since, limit, as_json):
+    cutoff = None
+    if since:
+        try:
+            cutoff = datetime.datetime.fromisoformat(since).replace(tzinfo=datetime.timezone.utc)
+        except ValueError:
+            print(f"ERROR: --since must be an ISO date, got: {since}", file=sys.stderr)
+            sys.exit(1)
 
-print(f"Review token report - {len(sessions)} sessions under {ROOT} matching '{MATCH}'")
-if SINCE:
-    print(f"  since {SINCE}")
-print()
-print(f"{'PROJECT':<42}{'$orch':>9}{'$subs':>9}{'$total':>9}{'turns':>7}{'ctx/turn':>10}{'subs':>6}")
-for s in sessions[:LIMIT]:
-    print(f"{s['project'][-42:]:<42}{s['orchestrator_usd']:>9.2f}{s['subagent_usd']:>9.2f}"
-          f"{s['total_usd']:>9.2f}{s['turns']:>7}{s['avg_context_per_turn']:>10,}{s['subagents']:>6}")
-if len(sessions) > LIMIT:
-    print(f"… and {len(sessions) - LIMIT} more (raise --limit to see them)")
-print()
-print(f"  median ${summary['median_usd']:.2f}/review   mean ${summary['mean_usd']:.2f}   total ${summary['total_usd']:,.2f}")
-print(f"  median {summary['median_turns']} orchestrator turns at {summary['median_context_per_turn']:,} tokens of context each")
-om, sm = summary["orchestrator_cost_mix"], summary["subagent_cost_mix"]
-if om:
-    print(f"  orchestrator: cache-read {om['cache_read_pct']}%  output {om['output_pct']}%  cache-write {om['cache_write_pct']}%")
-if sm:
-    print(f"  subagents:    cache-read {sm['cache_read_pct']}%  output {sm['output_pct']}%  cache-write {sm['cache_write_pct']}%")
-o = sum(s["orchestrator_usd"] for s in sessions)
-t = sum(totals)
-if t:
-    print(f"  split: orchestrator {100 * o / t:.0f}% / subagents {100 * (t - o) / t:.0f}%")
-PYTHON
+    sessions = []
+    agg_o, agg_s = collections.Counter(), collections.Counter()
+    for project in sorted(glob.glob(os.path.join(root, "*"))):
+        if match and match not in os.path.basename(project):
+            continue
+        for main in glob.glob(os.path.join(project, "*.jsonl")):
+            ts = first_timestamp(main)
+            if cutoff and ts:
+                try:
+                    if datetime.datetime.fromisoformat(ts.replace("Z", "+00:00")) < cutoff:
+                        continue
+                except ValueError:
+                    pass
+            ot, turns, ocost = scan(main)
+            if turns < 3:
+                continue
+            sid = os.path.basename(main)[:-6]
+            st, scost, nsub = collections.Counter(), 0.0, 0
+            for sub in glob.glob(os.path.join(project, sid, "subagents", "*.jsonl")):
+                t, _, c = scan(sub)
+                st += t
+                scost += c
+                nsub += 1
+            agg_o += ot
+            agg_s += st
+            sessions.append({
+                "project": os.path.basename(project), "session": sid, "started": ts,
+                "orchestrator_usd": round(ocost, 2), "subagent_usd": round(scost, 2),
+                "total_usd": round(ocost + scost, 2), "turns": turns, "subagents": nsub,
+                "avg_context_per_turn": int(ot["context"] / turns),
+                "orchestrator_output_tokens": ot["out"],
+            })
+
+    if not sessions:
+        print(f"No sessions matched '{match}' under {root}")
+        return
+
+    sessions.sort(key=lambda s: -s["total_usd"])
+    totals = [s["total_usd"] for s in sessions]
+    grand_usd = sum(totals)
+    orch_usd = sum(s["orchestrator_usd"] for s in sessions)
+    median_usd = median(totals)
+    mean_usd = round(grand_usd / len(totals), 2)
+    median_turns = median([s["turns"] for s in sessions])
+    median_context = median([s["avg_context_per_turn"] for s in sessions])
+    om, sm = mix(agg_o), mix(agg_s)
+
+    if as_json:
+        summary = {
+            "sessions": len(sessions),
+            "median_usd": median_usd,
+            "mean_usd": mean_usd,
+            "total_usd": round(grand_usd, 2),
+            "median_turns": median_turns,
+            "median_context_per_turn": median_context,
+            "orchestrator_cost_mix": om,
+            "subagent_cost_mix": sm,
+        }
+        print(json.dumps({"summary": summary, "sessions": sessions[:limit]}, indent=2))
+        return
+
+    print(f"Review token report - {len(sessions)} sessions under {root} matching '{match}'")
+    if since:
+        print(f"  since {since}")
+    print()
+    print(f"{'PROJECT':<42}{'$orch':>9}{'$subs':>9}{'$total':>9}{'turns':>7}{'ctx/turn':>10}{'subs':>6}")
+    for s in sessions[:limit]:
+        print(f"{s['project'][-42:]:<42}{s['orchestrator_usd']:>9.2f}{s['subagent_usd']:>9.2f}"
+              f"{s['total_usd']:>9.2f}{s['turns']:>7}{s['avg_context_per_turn']:>10,}{s['subagents']:>6}")
+    if len(sessions) > limit:
+        print(f"… and {len(sessions) - limit} more (raise --limit to see them)")
+    print()
+    print(f"  median ${median_usd:.2f}/review   mean ${mean_usd:.2f}   total ${grand_usd:,.2f}")
+    print(f"  median {median_turns} orchestrator turns at {median_context:,} tokens of context each")
+    for label, m in (("orchestrator:", om), ("subagents:", sm)):
+        if m:
+            print(f"  {label:<13} cache-read {m['cache_read_pct']}%  "
+                  f"output {m['output_pct']}%  cache-write {m['cache_write_pct']}%")
+    if grand_usd:
+        print(f"  split: orchestrator {100 * orch_usd / grand_usd:.0f}%"
+              f" / subagents {100 * (grand_usd - orch_usd) / grand_usd:.0f}%")
+
+
+def main():
+    args = parse_args()
+    if not os.path.isdir(args.dir):
+        sys.exit(f"ERROR: Transcript directory not found: {args.dir}")
+    if args.prompts:
+        report_prompts(args.dir, args.match, args.json)
+    else:
+        report_costs(args.dir, args.match, args.since, args.limit, args.json)
+
+
+if __name__ == "__main__":
+    main()
