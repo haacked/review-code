@@ -129,7 +129,7 @@ List findings where existing comments are sufficient:
 | Already covered | Z |
 ```
 
-5. **Append to review file**: Add the "Suggested Comments" section after the main review content.
+5. **Append to review file**: Add the "Suggested Comments" section after the main review content. On the `delta` path it goes into the append file instead, alongside the rest of what this run composed (see `review-carry-forward.md`).
 
 6. **Display summary to user**: After saving, show:
 
