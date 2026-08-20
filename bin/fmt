@@ -40,16 +40,7 @@ success_status=true
 
 # Format shell scripts with shfmt if available
 if command_exists shfmt; then
-    files_to_format=(
-        "bin/"*
-        "lib/"*.sh
-        "lib/helpers/"*.sh
-        "evals/scripts/"*.sh
-        "evals/scripts/helpers/"*.sh
-        "skills/review-code/scripts/"*.sh
-        "skills/review-code/scripts/helpers/"*.sh
-        "*.sh"
-    )
+    collect_shell_files
 
     cmd="shfmt -i 4 -bn -ci -sr"
     if ${check}; then
@@ -57,16 +48,6 @@ if command_exists shfmt; then
     else
         cmd="${cmd} -w"
     fi
-
-    # Find all shell scripts (excluding markdown)
-    shell_files=()
-    for pattern in "${files_to_format[@]}"; do
-        for file in ${pattern}; do
-            if [[ -f "${file}" ]] && [[ ! "${file}" =~ \.md$ ]]; then
-                shell_files+=("${file}")
-            fi
-        done
-    done
 
     if [[ ${#shell_files[@]} -gt 0 ]]; then
         if ! run_command "${cmd} ${shell_files[*]}" "Formatting shell scripts with shfmt"; then
@@ -76,20 +57,6 @@ if command_exists shfmt; then
 else
     warning "shfmt not found - install with: brew install shfmt"
     success_status=false
-fi
-
-# Check for common shell script issues
-if ${check}; then
-    print_color blue "Checking for shellcheck issues…"
-    if command_exists shellcheck; then
-        if [[ ${#shell_files[@]} -gt 0 ]]; then
-            if ! run_command "shellcheck -x ${shell_files[*]} 2>/dev/null || true" "Running shellcheck"; then
-                warning "Some shellcheck warnings found (non-fatal)"
-            fi
-        fi
-    else
-        warning "shellcheck not found - install with: brew install shellcheck"
-    fi
 fi
 
 if ${success_status}; then
