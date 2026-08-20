@@ -104,8 +104,6 @@ collect_shell_files() {
         skills/review-code/scripts/session-hooks/*.sh
         evals/scripts/*.sh
         evals/scripts/helpers/*.sh
-        tests/*.sh
-        tests/helpers/*.sh
         tests/helpers/*.bash
         *.sh
     )
