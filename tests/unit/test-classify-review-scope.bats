@@ -129,6 +129,29 @@ ENDJSON
     echo "$result" | jq -e '.agents | contains(["infra-config"]) | not'
 }
 
+@test "missing languages block still classifies from the file counts" {
+    # The `// false` default on .languages.has_frontend is what keeps this a false
+    # field. Without it jq emits an empty @tsv field, which read swallows, shifting
+    # every count after it by one. This fixture is test-only, so a shifted read
+    # reports zero test files and falls through to the generic small-diff agents.
+    session_file="$TMPDIR/session.json"
+    cat > "$session_file" <<'ENDJSON'
+{
+    "diff_tokens": 200,
+    "file_metadata": {
+        "modified_files": [
+            {"path":"tests/test_api.py","type":"test","is_test":true,"is_infra_config":false},
+            {"path":"tests/test_web.py","type":"test","is_test":true,"is_infra_config":false}
+        ],
+        "file_count": 2
+    }
+}
+ENDJSON
+
+    result=$("$SCRIPT" "$session_file")
+    echo "$result" | jq -e '.agents == ["testing", "correctness", "maintainability"]'
+}
+
 @test "infra-config + deleted source file does not use infra-config-only shortcut" {
     # Simulates: 2 infra-config files modified + 1 source file deleted.
     # pre-review-context.sh only captures modified files, so deleted_file_count must be

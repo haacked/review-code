@@ -117,9 +117,9 @@ Read `mode` from the JSON it prints:
 
 **Always tell the user which path this took, and for `full`, the `reason` the script gave.** A silent fallback looks identical to a delta review that found nothing, and the difference matters: a full re-review costs what it always did.
 
-**Advance the recorded SHA.** When composing the review, `review_commit` in the metadata header must be set to the head this run actually reviewed. If it keeps the old value, the next re-review computes its delta from the original SHA and the saving disappears after one round. On `--append`, update the existing header rather than adding a second one.
+**Advance the recorded SHA.** `review_commit` in the metadata header must end up at the head this run actually reviewed. If it keeps the old value, the next re-review computes its delta from the original SHA and the saving disappears after one round. On `--append`, update the existing header rather than adding a second one.
 
-**Carrying findings forward.** On the `delta` path, parse the previous review's findings and carry forward only those whose file the delta does not touch. Findings in files the delta changed are dropped and re-derived by the agents against the new code. This is deliberately conservative and it has a known limit worth stating in the review: a change in one file can invalidate a finding about a file the delta never touched. Record `review_mode: delta` and `delta_from: <sha>` in the review's metadata header so every carried-forward finding is traceable to the SHA it was derived at.
+**Carrying findings forward.** On the `delta` path the compose step loads `review-carry-forward.md`, which merges this run's sections into the existing review on disk, cuts the previous findings on files the delta touched so the agents' fresh ones stand alone, and advances the header. Never Read the previous review document: its bodies are the cost the delta path exists to avoid.
 
 ### Classify Review Scope
 

@@ -26,15 +26,15 @@ fatal() {
 
 # Set source and root directories, cd to root
 set_source_and_root_dir() {
-    { set +x; } 2>/dev/null
-    source_dir="$(cd -P "$(dirname "$0")" >/dev/null 2>&1 && pwd)"
+    { set +x; } 2> /dev/null
+    source_dir="$(cd -P "$(dirname "$0")" > /dev/null 2>&1 && pwd)"
     root_dir=$(cd "$source_dir" && cd ../ && pwd)
     cd "$root_dir" || fatal "Could not change to root directory: $root_dir"
 }
 
 # Check if command exists
 command_exists() {
-    command -v "$1" >/dev/null 2>&1
+    command -v "$1" > /dev/null 2>&1
 }
 
 # Print warning in yellow
@@ -68,31 +68,6 @@ require_commands() {
     [[ ${#missing[@]} -eq 0 ]] || fatal "Missing commands: ${missing[*]}"
 }
 
-# True when the path is a shell script that bin/fmt and bin/lint should process.
-# A .sh or .bash extension is enough on its own; the bats helpers under tests/
-# use .bash and are sourced, so they are never executable. Anything else has to
-# declare a bash shebang, which is what keeps non-shell entries in bin/ out.
-is_shell_script() {
-    local file="$1"
-    [[ -f "${file}" ]] || return 1
-    [[ "${file}" == *.sh || "${file}" == *.bash ]] && return 0
-    [[ -x "${file}" ]] && head -1 "${file}" | grep -q '^#!/.*bash'
-}
-
-# Expand glob patterns and print the shell scripts among them, one per line.
-#
-# Usage:
-#   mapfile -t files < <(collect_shell_files "${patterns[@]}")
-collect_shell_files() {
-    local pattern file
-    for pattern in "$@"; do
-        for file in ${pattern}; do
-            is_shell_script "${file}" && echo "${file}"
-        done
-    done
-    return 0
-}
-
 # Show help from script comments
 show_help() {
     sed -n 's/^#\/ \?//p' "$0"
@@ -114,5 +89,37 @@ parse_common_args() {
                 shift
                 ;;
         esac
+    done
+}
+
+# Collect every shell script in the repo into the shell_files array. Tests under
+# tests/unit and tests/integration are .bats, a dialect that neither shfmt nor
+# our linter parses, so bin/test covers those instead.
+collect_shell_files() {
+    local patterns=(
+        bin/*
+        bin/helpers/*.sh
+        skills/review-code/scripts/*.sh
+        skills/review-code/scripts/helpers/*.sh
+        skills/review-code/scripts/session-hooks/*.sh
+        evals/scripts/*.sh
+        evals/scripts/helpers/*.sh
+        tests/helpers/*.bash
+        *.sh
+    )
+
+    shell_files=()
+    local pattern file
+    for pattern in "${patterns[@]}"; do
+        for file in ${pattern}; do
+            [[ -f "${file}" ]] || continue
+            # A .sh or .bash extension is enough on its own; the bats helpers
+            # under tests/ use .bash and are sourced, so they are never
+            # executable. Anything else has to declare a bash shebang, which is
+            # what keeps non-shell entries like bin/README.md out.
+            if [[ "${file}" == *.sh || "${file}" == *.bash ]] || { [[ -x "${file}" ]] && head -1 "${file}" | grep -q '^#!/.*bash'; }; then
+                shell_files+=("${file}")
+            fi
+        done
     done
 }

@@ -34,8 +34,8 @@ IFS=$'\t' read -r wt_org wt_repo wt_pr wt_clone wt_path <<< "${jq_out}"
 
 # Nothing to do if any field is missing (diff-only review, or this review
 # didn't provision a worktree).
-[[ -n "${wt_org}" && -n "${wt_repo}" && -n "${wt_pr}" \
-    && -n "${wt_clone}" && -n "${wt_path}" ]] || exit 0
+[[ -n "${wt_org}" && -n "${wt_repo}" && -n "${wt_pr}" &&
+    -n "${wt_clone}" && -n "${wt_path}" ]] || exit 0
 
 # Validate wt_path before trusting it: the stored path must be absolute and end
 # with the expected <org>/<repo>/pr-<N> segments pr-worktree.sh wrote at
