@@ -217,9 +217,8 @@ make_patch() { # $1 name, $2 lines
 }
 
 @test "check-diff-coverage: sizes each same-type agent against its own chunk" {
-    local chunk0 chunk1
-    chunk0="$(make_patch chunk-0.patch 2029)"
-    chunk1="$(make_patch chunk-1.patch 896)"
+    local chunk0="$(make_patch chunk-0.patch 2029)"
+    local chunk1="$(make_patch chunk-1.patch 896)"
     make_agent code-reviewer-security a1 "$(bash_block "sed -n '1,2029p' $chunk0")"
     make_agent code-reviewer-security a2 "$(bash_block "sed -n '1,896p' $chunk1")"
     # --diff-lines carries chunk-0's count: the wrong denominator for a2.
@@ -235,8 +234,7 @@ make_patch() { # $1 name, $2 lines
 @test "check-diff-coverage: a truncated long-chunk read is not a false clean" {
     # Regression for the dangerous direction: passing the smaller chunk's count
     # as the denominator lets 900/2029 compute as 900/896 and read as covered.
-    local chunk0
-    chunk0="$(make_patch chunk-0.patch 2029)"
+    local chunk0="$(make_patch chunk-0.patch 2029)"
     make_agent code-reviewer-correctness a1 "$(bash_block "sed -n '1,900p' $chunk0")"
     run_cov --diff-lines 896 --min-pct 90 --json
     [ "$status" -eq 0 ]
@@ -246,9 +244,8 @@ make_patch() { # $1 name, $2 lines
 }
 
 @test "check-diff-coverage: a stop-early agent on a long chunk is still caught" {
-    local chunk0 chunk1
-    chunk0="$(make_patch chunk-0.patch 2029)"
-    chunk1="$(make_patch chunk-1.patch 896)"
+    local chunk0="$(make_patch chunk-0.patch 2029)"
+    local chunk1="$(make_patch chunk-1.patch 896)"
     make_agent code-reviewer-security a1 "$(bash_block "sed -n '1,1250p' $chunk0")"
     make_agent code-reviewer-testing a2 "$(bash_block "sed -n '1,896p' $chunk1")"
     run_cov --diff-lines 2029 --min-pct 90 --json
@@ -258,8 +255,7 @@ make_patch() { # $1 name, $2 lines
 }
 
 @test "check-diff-coverage: sizes a Read-truncated agent against its chunk" {
-    local chunk1
-    chunk1="$(make_patch chunk-1.patch 896)"
+    local chunk1="$(make_patch chunk-1.patch 896)"
     make_agent code-reviewer-security a1 "$(read_block "$chunk1" null null)"
     # A default Read would report 2000 lines; the chunk is only 896. Sized
     # against the chunk itself, not the 2000-line default, this is complete.
@@ -279,8 +275,7 @@ make_patch() { # $1 name, $2 lines
 }
 
 @test "check-diff-coverage: a Read agent keeps its real chunk path" {
-    local chunk0
-    chunk0="$(make_patch chunk-0.patch 2029)"
+    local chunk0="$(make_patch chunk-0.patch 2029)"
     make_agent code-reviewer-frontend a1 "$(read_block "$chunk0" 1 2029)"
     run_cov --diff-lines 2029 --json
     [ "$(echo "$output" | jq -r '.agents[0].diff_path')" = "$chunk0" ]

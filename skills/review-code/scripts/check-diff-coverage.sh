@@ -16,10 +16,12 @@ set -euo pipefail
 # A chunked review hands different agents different patch files (chunk-0.patch,
 # chunk-1.patch, ...) with different lengths, and an area-scoped agent gets
 # diff-frontend.patch rather than the full diff.patch. This script sizes each
-# agent against the file it actually read, taken from its own tool calls, so a
-# complete read of a short chunk does not compute as a fraction of a long one
-# and a truncated read of a long chunk cannot wrap past 100%. --diff-lines is
-# the denominator only when no patch path appears in the transcript.
+# agent against the on-disk line count of the patch it actually named in its
+# own tool calls, so a complete read of a short chunk does not compute as a
+# fraction of a long one and a truncated read of a long chunk cannot wrap past
+# 100%. When a transcript names no patch the script can count (a $VAR
+# reference, a swept artifacts dir), there is no way to tell a short chunk from
+# the full diff, so --diff-lines is the denominator there.
 #
 # Usage:
 #   check-diff-coverage.sh --diff-lines <n> [options]
@@ -29,7 +31,7 @@ set -euo pipefail
 #   --session <uuid>  Session whose subagents to inspect
 #                     (default: $CLAUDE_CODE_SESSION_ID)
 #   --diff-lines <n>  Lines in the full diff; the fallback denominator when a
-#                     transcript names no patch file
+#                     transcript names no patch the script can count
 #   --min-pct <n>     Coverage below this lands the agent in `below_threshold`
 #                     (default: 90)
 #   --json            Emit machine-readable JSON instead of a table
@@ -106,13 +108,9 @@ if not subdirs:
 
 
 def merge(intervals):
-    """Union of line ranges, so re-reads are not counted twice.
-
-    Each interval carries [start, end, patch]; only the range is coalesced, so
-    sort on the range alone (the path can be None and must not be compared).
-    """
+    """Union of line ranges, so re-reads are not counted twice."""
     out = []
-    for a, b, _ in sorted(intervals, key=lambda iv: (iv[0], iv[1])):
+    for a, b in sorted(intervals):
         if out and a <= out[-1][1] + 1:
             out[-1][1] = max(out[-1][1], b)
         else:
@@ -136,27 +134,16 @@ def line_count(path):
     return _line_counts[path]
 
 
-def target_path(cmd, sed_match):
-    """The patch file a sed range applied to, or None when it can't be told.
+# The patch path a .patch-containing command or Read points at, when it is a
+# literal path. Anything else (a $VAR, a redirect target, a piped read) returns
+# None, leaving that agent on the --diff-lines fallback.
+PATCH_PATH = re.compile(r"(\S+\.patch)\b")
 
-    Scans the tokens after the range expression for the patch path, skipping a
-    redirect (`sed -n 'A,Bp' in.patch > out`) and flags. The path is almost
-    always the next token; the scan just avoids crediting a redirect target.
-    """
-    tail = cmd[sed_match.end():]
-    skip_next = False
-    for token in tail.split():
-        t = token.strip("\"'")
-        if skip_next:
-            skip_next = False
-            continue
-        if t in (">", ">>"):
-            skip_next = True
-            continue
-        if t.startswith((">", "-")):
-            continue
-        return t if t.endswith(".patch") else None
-    return None
+
+def patch_path(text):
+    """The literal .patch path in a tool call, or None when there isn't one."""
+    m = PATCH_PATH.search(text or "")
+    return m.group(1).strip("\"'") if m else None
 
 
 rows = []
@@ -172,10 +159,7 @@ for subdir in subdirs:
         if not atype.startswith("code-reviewer-"):
             continue
 
-        # Each interval carries the patch it came from, so the denominator can
-        # be settled per agent after the transcript is read; clamping waits
-        # until then.
-        intervals, how = [], set()
+        intervals, how, paths = [], set(), set()
         for line in open(f, errors="ignore"):
             try:
                 rec = json.loads(line)
@@ -189,30 +173,33 @@ for subdir in subdirs:
                     continue
                 inp = block.get("input") or {}
                 if block.get("name") == "Read" and inp.get("file_path", "").endswith(".patch"):
-                    p = inp.get("file_path")
+                    p = patch_path(inp["file_path"])
                     off = inp.get("offset") or 1
                     lim = inp.get("limit") or 2000
-                    intervals.append([off, off + lim - 1, p])
+                    intervals.append([off, off + lim - 1])
+                    paths.add(p)
                     how.add("Read")
                 elif block.get("name") == "Bash":
                     cmd = inp.get("command", "")
                     if ".patch" not in cmd:
                         continue
+                    paths.add(patch_path(cmd))
                     for m in SED.finditer(cmd):
-                        intervals.append([int(m.group(1)), int(m.group(2)), target_path(cmd, m)])
+                        intervals.append([int(m.group(1)), int(m.group(2))])
                         how.add("sed")
 
-        # Denominator: the line count of the patch the agent read most, else
-        # the --diff-lines fallback when no path could be resolved. An agent
-        # with a mixed transcript (read from two patch files) is anomalous;
-        # sizing against its dominant file keeps that case from flipping the
-        # outliers this script exists to catch.
-        lines_by_path = {}
-        for a, b, p in intervals:
-            if p and line_count(p) is not None:
-                lines_by_path[p] = lines_by_path.get(p, 0) + (b - a + 1)
-        diff_path = max(lines_by_path, key=lines_by_path.get, default=None)
-        total = line_count(diff_path) if diff_path else TOTAL
+        # Denominator. Best case, the agent named a patch we can count on disk:
+        # that is its chunk or scoped diff, the whole point of this exercise.
+        # A Read with no explicit limit assumes 2000 lines even when its file
+        # is shorter, so the on-disk count is the truth and coverage is clamped
+        # to it above. With no countable path (a $VAR, a swept artifacts dir),
+        # there is no way to tell a short chunk from the full diff, so fall
+        # back to --diff-lines; that caller-supplied count is the only honest
+        # total left.
+        named = [p for p in paths if p]
+        counts = [c for c in (line_count(p) for p in named) if c is not None]
+        diff_path = max(named) if named else None
+        total = max(counts) if counts else TOTAL
 
         merged = [[a, min(b, total)] for a, b in merge(intervals) if a <= min(b, total)]
         covered = sum(b - a + 1 for a, b in merged)
