@@ -59,6 +59,10 @@ Services follow the naming pattern `posthog-<service-name>`. Examples:
 
 - `SERVICE_MODE` - Controls which routes a service registers (e.g., `"flags"` for flags-only mode)
 
+Pod lifecycle values:
+
+- `terminationGracePeriodSeconds` - `charts/posthog-rust/templates/deployment.yaml` defaults it to 55. Rust services (`posthog-feature-flags`, `posthog-feature-flags-definitions`) inherit it unless their `argocd/posthog-rust/values/<service>/values*.yaml` overrides it; as of this writing none of them does.
+
 ## Cross-Environment Consistency
 
 When reviewing changes:
@@ -66,3 +70,4 @@ When reviewing changes:
 2. Check that service names reference actual deployed services
 3. Confirm environment variable additions are propagated to all relevant deployments
 4. Note any intentional per-environment differences (e.g., staged rollouts)
+5. A `posthog/posthog` change bounded by a deployment value (shutdown timeouts against the grace period, replica counts, resource limits) needs that value read from this repo before asserting what happens when it's exceeded.
