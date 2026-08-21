@@ -197,3 +197,92 @@ run_cov() { run "$SCRIPT" --dir "$ROOT" --session "$SESSION" "$@"; }
     run_cov --diff-lines 600
     echo "$output" | grep -q "Every agent read at least"
 }
+
+# =============================================================================
+# Chunked reviews: size each agent against the patch it actually read
+# =============================================================================
+#
+# A chunked review hands each chunk's agents a different patch file with a
+# different length. Sizing every agent against one --diff-lines count breaks in
+# both directions: the larger count makes complete short-chunk agents look
+# short (false alarms), and the smaller count lets a truncated long-chunk read
+# wrap past 100% (a false clean). These tests pin that each agent is measured
+# against the file it read.
+
+# Write a real patch file of N lines into the tmpdir; print its path.
+make_patch() { # $1 name, $2 lines
+    local f="$BATS_TEST_TMPDIR/$1"
+    seq "$2" | sed 's/^/+line /' > "$f"
+    printf '%s' "$f"
+}
+
+@test "check-diff-coverage: sizes each same-type agent against its own chunk" {
+    local chunk0 chunk1
+    chunk0="$(make_patch chunk-0.patch 2029)"
+    chunk1="$(make_patch chunk-1.patch 896)"
+    make_agent code-reviewer-security a1 "$(bash_block "sed -n '1,2029p' $chunk0")"
+    make_agent code-reviewer-security a2 "$(bash_block "sed -n '1,896p' $chunk1")"
+    # --diff-lines carries chunk-0's count: the wrong denominator for a2.
+    run_cov --diff-lines 2029 --json
+    [ "$status" -eq 0 ]
+    # Both are complete reads of their own chunk; neither is below threshold.
+    [ "$(echo "$output" | jq '[.agents[] | .pct] | unique | .[0]')" -eq 100 ]
+    [ "$(echo "$output" | jq '.below_threshold | length')" -eq 0 ]
+    # The two same-type agents are distinguishable by the patch they read.
+    [ "$(echo "$output" | jq -r '[.agents[] | .diff_path] | unique | length')" -eq 2 ]
+}
+
+@test "check-diff-coverage: a truncated long-chunk read is not a false clean" {
+    # Regression for the dangerous direction: passing the smaller chunk's count
+    # as the denominator lets 900/2029 compute as 900/896 and read as covered.
+    local chunk0
+    chunk0="$(make_patch chunk-0.patch 2029)"
+    make_agent code-reviewer-correctness a1 "$(bash_block "sed -n '1,900p' $chunk0")"
+    run_cov --diff-lines 896 --min-pct 90 --json
+    [ "$status" -eq 0 ]
+    # Sized against chunk-0 (2029 lines), 900 read is 44%, not 100%.
+    [ "$(echo "$output" | jq -r '.agents[0].pct')" -eq 44 ]
+    [ "$(echo "$output" | jq '.below_threshold | length')" -eq 1 ]
+}
+
+@test "check-diff-coverage: a stop-early agent on a long chunk is still caught" {
+    local chunk0 chunk1
+    chunk0="$(make_patch chunk-0.patch 2029)"
+    chunk1="$(make_patch chunk-1.patch 896)"
+    make_agent code-reviewer-security a1 "$(bash_block "sed -n '1,1250p' $chunk0")"
+    make_agent code-reviewer-testing a2 "$(bash_block "sed -n '1,896p' $chunk1")"
+    run_cov --diff-lines 2029 --min-pct 90 --json
+    [ "$(echo "$output" | jq '.below_threshold | length')" -eq 1 ]
+    [ "$(echo "$output" | jq -r '.below_threshold[0].agent')" = "code-reviewer-security" ]
+    [ "$(echo "$output" | jq -r '.below_threshold[0].pct')" -eq 62 ]
+}
+
+@test "check-diff-coverage: sizes a Read-truncated agent against its chunk" {
+    local chunk1
+    chunk1="$(make_patch chunk-1.patch 896)"
+    make_agent code-reviewer-security a1 "$(read_block "$chunk1" null null)"
+    # A default Read would report 2000 lines; the chunk is only 896. Sized
+    # against the chunk itself, not the 2000-line default, this is complete.
+    run_cov --diff-lines 2029 --json
+    [ "$(echo "$output" | jq -r '.agents[0].pct')" -eq 100 ]
+    [ "$(echo "$output" | jq -r '.agents[0].covered')" -eq 896 ]
+}
+
+@test "check-diff-coverage: falls back to --diff-lines when the patch is gone" {
+    # The patch file no longer exists on disk (e.g. the artifacts dir was
+    # swept). The path is in the transcript but unreadable, so the script falls
+    # back to --diff-lines rather than erroring.
+    make_agent code-reviewer-security a1 "$(bash_block "sed -n '1,600p' /tmp/swept/diff.patch")"
+    run_cov --diff-lines 600 --json
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.agents[0].pct')" -eq 100 ]
+}
+
+@test "check-diff-coverage: a Read agent keeps its real chunk path" {
+    local chunk0
+    chunk0="$(make_patch chunk-0.patch 2029)"
+    make_agent code-reviewer-frontend a1 "$(read_block "$chunk0" 1 2029)"
+    run_cov --diff-lines 2029 --json
+    [ "$(echo "$output" | jq -r '.agents[0].diff_path')" = "$chunk0" ]
+    [ "$(echo "$output" | jq -r '.agents[0].pct')" -eq 100 ]
+}
