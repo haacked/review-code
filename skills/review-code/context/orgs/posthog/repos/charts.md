@@ -70,4 +70,5 @@ When reviewing changes:
 2. Check that service names reference actual deployed services
 3. Confirm environment variable additions are propagated to all relevant deployments
 4. Note any intentional per-environment differences (e.g., staged rollouts)
-5. A `posthog/posthog` change bounded by a deployment value (shutdown timeouts against the grace period, replica counts, resource limits) needs that value read from this repo before asserting what happens when it's exceeded.
+
+Deployment values in this repo bound `posthog/posthog` application timeouts (shutdown drains against `terminationGracePeriodSeconds`, connection counts against replica counts, memory use against resource limits), so application changes there assert consequences about values defined here.
