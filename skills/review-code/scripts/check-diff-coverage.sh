@@ -19,9 +19,11 @@ set -euo pipefail
 # agent against the on-disk line count of the patch it actually named in its
 # own tool calls, so a complete read of a short chunk does not compute as a
 # fraction of a long one and a truncated read of a long chunk cannot wrap past
-# 100%. When a transcript names no patch the script can count (a $VAR
-# reference, a swept artifacts dir), there is no way to tell a short chunk from
-# the full diff, so --diff-lines is the denominator there.
+# 100%. A read that names no literal .patch at all (a $VAR reference) is
+# invisible to this audit — the agent reports 0% and lands in below_threshold
+# for re-dispatch, which is the safe direction. When a named patch no longer
+# exists on disk (a swept artifacts dir), there is no way to tell a short
+# chunk from the full diff, so --diff-lines is the denominator there.
 #
 # Usage:
 #   check-diff-coverage.sh --diff-lines <n> [options]
@@ -134,9 +136,10 @@ def line_count(path):
     return _line_counts[path]
 
 
-# The patch path a .patch-containing command or Read points at, when it is a
-# literal path. Anything else (a $VAR, a redirect target, a piped read) returns
-# None, leaving that agent on the --diff-lines fallback.
+# The patch path a .patch-containing command points at, when it is a literal
+# path. Anything else (a $VAR, a redirect target, a piped read) returns None;
+# a Bash command with no literal .patch is skipped entirely upstream, so its
+# sed ranges never count toward coverage.
 PATCH_PATH = re.compile(r"(\S+\.patch)\b")
 
 
@@ -173,11 +176,10 @@ for subdir in subdirs:
                     continue
                 inp = block.get("input") or {}
                 if block.get("name") == "Read" and inp.get("file_path", "").endswith(".patch"):
-                    p = patch_path(inp["file_path"])
                     off = inp.get("offset") or 1
                     lim = inp.get("limit") or 2000
                     intervals.append([off, off + lim - 1])
-                    paths.add(p)
+                    paths.add(inp["file_path"])
                     how.add("Read")
                 elif block.get("name") == "Bash":
                     cmd = inp.get("command", "")
@@ -241,7 +243,7 @@ if below:
         rng = ", ".join(f"{a}-{b}" for a, b in r["unread_ranges"][:5])
         print(f"  {r['agent']} ({patch_label(r)}): unread {rng}")
     print("\nMap those ranges to files with:")
-    print("  grep -n '^diff --git' <diff patch>")
+    print("  grep -n '^diff --git' <diff.patch>")
 else:
     print(f"\nEvery agent read at least {MIN_PCT}% of its diff.")
 PYTHON

@@ -252,6 +252,9 @@ make_patch() { # $1 name, $2 lines
     [ "$(echo "$output" | jq '.below_threshold | length')" -eq 1 ]
     [ "$(echo "$output" | jq -r '.below_threshold[0].agent')" = "code-reviewer-security" ]
     [ "$(echo "$output" | jq -r '.below_threshold[0].pct')" -eq 62 ]
+    # Re-dispatch feeds unread_ranges back to the agent; pin that the gap is
+    # measured against the chunk's own 2029-line total, not the full diff's.
+    [ "$(echo "$output" | jq -r '.below_threshold[0].unread_ranges[0] | join("-")')" = "1251-2029" ]
 }
 
 @test "check-diff-coverage: sizes a Read-truncated agent against its chunk" {
@@ -280,4 +283,28 @@ make_patch() { # $1 name, $2 lines
     run_cov --diff-lines 2029 --json
     [ "$(echo "$output" | jq -r '.agents[0].diff_path')" = "$chunk0" ]
     [ "$(echo "$output" | jq -r '.agents[0].pct')" -eq 100 ]
+}
+
+@test "check-diff-coverage: an explicit-limit Read is clamped to the chunk length" {
+    # A Read with offset 1 limit 2000 overshoots the 896-line chunk; the
+    # min(b, total) clamp above bounds covered at the chunk's own lines. The
+    # Read side of "reads past the diff end do not inflate coverage".
+    local chunk1="$(make_patch chunk-1.patch 896)"
+    make_agent code-reviewer-security a1 "$(read_block "$chunk1" 1 2000)"
+    run_cov --diff-lines 2029 --json
+    [ "$(echo "$output" | jq -r '.agents[0].covered')" -eq 896 ]
+    [ "$(echo "$output" | jq -r '.agents[0].pct')" -eq 100 ]
+}
+
+@test "check-diff-coverage: a \$VAR path reports no coverage" {
+    # A sed through a shell variable names no literal .patch, so the script
+    # collects no interval for it at all — the read is invisible. That is the
+    # conservative outcome: 0% coverage flags the agent for re-dispatch instead
+    # of a false clean, rather than trusting a range it cannot place.
+    make_agent code-reviewer-security a1 "$(bash_block "sed -n '1,900p' \"\$DIFF\"")"
+    run_cov --diff-lines 2029 --json
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.agents[0].pct')" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.agents[0].diff_path')" = "null" ]
+    [ "$(echo "$output" | jq '.below_threshold | length')" -eq 1 ]
 }
