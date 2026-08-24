@@ -349,6 +349,8 @@ After the agents return, check what they read:
 
 It reads this session's subagent transcripts (`--session` defaults to `$CLAUDE_CODE_SESSION_ID`) and returns per-agent coverage plus a `below_threshold` array. It exits 0 whenever it can read the transcripts; short coverage is a result, not a failure.
 
+Each agent is sized against the patch file it actually read — the chunk or scoped diff named in its own tool calls — not against one shared count. `--diff-lines` is only the fallback for an agent whose transcript names no readable patch file, so pass the full diff's line count here even for a chunked or scoped review. Same-type agents are told apart by the `diff_path` field on each row.
+
 For each agent in `below_threshold`, resume it (using its agent ID from the Task tool) and give it the `unread_ranges` the script reported:
 
 ```
