@@ -23,6 +23,10 @@ Desktop.ini
 .settings/
 .classpath
 
+# Agent tool local config
+.claude/
+.codex/
+
 # Logs
 *.log
 npm-debug.log*
