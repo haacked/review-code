@@ -134,18 +134,33 @@ verify_repo_structure() {
     fi
 }
 
-# Copy every *.sh in $1 to $2, marking each executable. No-op if $1 doesn't
-# exist or is empty.
+# Remove __pycache__ from the installed scripts tree. The scripts set
+# sys.dont_write_bytecode, so this is a standing net rather than a one-off
+# migration: a future entry point that imports lint_loader without that line
+# recreates the directory, and this is what removes it. Unlike .reviews and
+# .sessions, __pycache__ is not dot-prefixed, so it counts against the skill's
+# file budget.
+prune_pycache() {
+    local dir="$1"
+    [[ -d "${dir}" ]] || return 0
+    find "${dir}" -type d -name __pycache__ -prune -exec rm -rf {} + 2> /dev/null || true
+}
+
+# Copy every *.sh and *.py in $1 to $2, marking each executable. No-op if $1
+# doesn't exist or is empty. Reports how many it copied in copied_scripts, so
+# the caller never restates the glob to count them.
 copy_scripts_dir() {
     local src_subdir="$1"
     local dst_subdir="$2"
+    copied_scripts=0
     [[ -d "${src_subdir}" ]] || return 0
     local src
-    for src in "${src_subdir}/"*.sh; do
+    for src in "${src_subdir}/"*.sh "${src_subdir}/"*.py; do
         [[ -e "${src}" ]] || continue
         local filename="${src##*/}"
         cp "${src}" "${dst_subdir}/${filename}"
         chmod +x "${dst_subdir}/${filename}"
+        copied_scripts=$((copied_scripts + 1))
     done
 }
 
@@ -176,24 +191,17 @@ install_skill() {
 
     cp "${skill_src}" "${skill_dst}"
 
-    # Copy scripts
-    local script_count=0
-    for src in "${src_dir}/scripts/"*.sh; do
-        [[ -e "${src}" ]] || continue
-        local filename
-        filename=$(basename "${src}")
-        local dst="${dst_dir}/scripts/${filename}"
+    prune_pycache "${dst_dir}/scripts"
 
-        cp "${src}" "${dst}"
-        chmod +x "${dst}"
-        script_count=$((script_count + 1))
-    done
+    # Copy scripts, their helpers, and the session hooks (per-command teardown
+    # invoked by session-manager.sh; e.g. review-code-cleanup.sh removes a
+    # provisioned PR worktree).
+    copy_scripts_dir "${src_dir}/scripts" "${dst_dir}/scripts"
+    local script_count="${copied_scripts}"
 
     # Copy helper scripts
     copy_scripts_dir "${src_dir}/scripts/helpers" "${dst_dir}/scripts/helpers"
 
-    # Copy session hooks (per-command teardown invoked by session-manager.sh;
-    # e.g. review-code-cleanup.sh removes a provisioned PR worktree)
     copy_scripts_dir "${src_dir}/scripts/session-hooks" "${dst_dir}/scripts/session-hooks"
 
     # Copy handlers

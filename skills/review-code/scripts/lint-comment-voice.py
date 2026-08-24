@@ -121,9 +121,7 @@ RAW_PATTERNS: dict[str, tuple[str, ...]] = {
     # them before the voice agent ever sees them. Author-attribution labels that
     # the review itself writes for the reader ("Raised by: … (corroborated)")
     # are structure, not leaks, and stay exempt.
-    "provenance_leak": (
-        r"\*\s*\((?:corroborat\w+|flagged|disputed)[^*]*\)\*",
-    ),
+    "provenance_leak": (r"\*\s*\((?:corroborat\w+|flagged|disputed)[^*]*\)\*",),
     # Verdict-first openers. The voice agent bans opening with a label or
     # adjective stack ("This is a real upgrade-window risk", "Sound and
     # proportionate"); these patterns catch the common shapes.
@@ -197,7 +195,7 @@ HR = re.compile(r"^\s*(?:[-*_]\s*){3,}$")
 LABEL_LINE = re.compile(
     r"^\s*(?:\*\*)?(?:Location|Found by|Raised by|Resolution|Agents?|Severity|"
     r"Confidence|Status|Assessment|Source|Thread|Review scope|Fix summary)\s*"
-    r"(?:\*\*)?\s*:\s*$",
+    r"(?:\*\*)?\s*:(?:\s|$)",
     re.I,
 )
 INLINE_CODE = re.compile(r"`[^`]*`")
@@ -205,23 +203,28 @@ URL = re.compile(r"https?://[^\s)>]+")
 WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9'’/-]*")
 SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 
+SEVERITY_TOKENS = r"blocking|suggestion|question|nit"
+# Bold and backticks nest either way round in real reviews, so accept any
+# run of them on both sides rather than one fixed order.
+SEVERITY_WRAP = r"(?:\*\*|`)*"
+# The separator is a colon or an em/en dash; reviews use both. The ASCII hyphen
+# is deliberately excluded, since it would swallow a sentence opening
+# "Nit-picking aside". Without the dash, the structural dash in a title like
+# **`question` — …** stays in the prose and the dash rule reports on it.
 SEVERITY_PREFIX = re.compile(
-    r"^(?:`\*\*`\s*)?`?(?:blocking|suggestion|question|nit)`?\s*:",
+    rf"^\s*{SEVERITY_WRAP}(?:{SEVERITY_TOKENS}){SEVERITY_WRAP}\s*(?::|\s*[—–])",
     re.I,
 )
-
-# Rules whose findings should not fire when the only matches sit inside a
-# severity prefix at the start of a line. Everything else masks inline code,
-# which already neutralizes the backticked prefix forms; the bare case needed
-# its own guard.
-RULES_RESPECTING_PREFIX = {
-    "pseudo_header",
-    "verdict_opener",
-}
 
 # Categories that are only worth reporting once per line, so a body with three
 # em dashes doesn't triple-report.
 CAPPED_CATEGORIES = {"dash"}
+
+
+# How much of the offending line to quote back. Both pipeline consumers show
+# this excerpt: the gate hands it to the voice agent on a bounce, the narrative
+# linter writes it into the review, and they should agree.
+TEXT_EXCERPT_CHARS = 160
 
 
 class LintWarning(TypedDict):
@@ -231,18 +234,30 @@ class LintWarning(TypedDict):
     text: str
 
 
+def trim_warning(item: LintWarning, **extra) -> dict:
+    """Render one warning for a consumer, with the quoted line bounded."""
+    return {
+        **extra,
+        "line": item["line"],
+        "category": item["category"],
+        "message": item["message"],
+        "text": item["text"][:TEXT_EXCERPT_CHARS],
+    }
+
+
 def prose_lines(text: str) -> Iterable[tuple[int, str, str]]:
     """Yield (line_number, original_line, prose) with code and metadata masked."""
-    # Strip whole-document review-metadata blocks before line iteration. A
+    # Blank whole-document review-metadata blocks before line iteration. A
     # block comment that spans lines would otherwise survive per-line masking.
-    text = METADATA_COMMENT.sub("", text)
+    # Newlines are preserved so reported line numbers still point at the file.
+    text = METADATA_COMMENT.sub(lambda m: "\n" * m.group(0).count("\n"), text)
 
     fence = ""
     for line_number, line in enumerate(text.splitlines(), start=1):
         marker = FENCE.match(line)
         token = marker.group(1) if marker else ""
         if fence:
-            if marker and token.startswith(fence) and not line[marker.end():].strip():
+            if marker and token.startswith(fence) and not line[marker.end() :].strip():
                 fence = ""
             continue
         if token:
@@ -257,7 +272,7 @@ def prose_lines(text: str) -> Iterable[tuple[int, str, str]]:
         ):
             continue
 
-        prose = URL.sub("", INLINE_CODE.sub("", line))
+        prose = URL.sub("", INLINE_CODE.sub("", strip_severity_prefix(line)))
         yield line_number, line, prose
 
 
@@ -284,11 +299,7 @@ def lint(text: str) -> list[LintWarning]:
             continue
 
         for category, patterns in PATTERNS.items():
-            if category in RULES_RESPECTING_PREFIX:
-                subject = strip_severity_prefix(raw_prose)
-            else:
-                subject = raw_prose
-            if any(pattern.search(subject) for pattern in patterns):
+            if any(pattern.search(raw_prose) for pattern in patterns):
                 warnings.append(
                     warning(
                         line_number,

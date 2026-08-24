@@ -19,9 +19,9 @@ import sys
 # to cheaper models are priced by the model recorded in their own transcript.
 Rate = collections.namedtuple("Rate", "input cache_write cache_read output")
 RATES = {
-    "opus":   Rate(15.0, 18.75, 1.5, 75.0),
+    "opus": Rate(15.0, 18.75, 1.5, 75.0),
     "sonnet": Rate(3.0, 3.75, 0.3, 15.0),
-    "haiku":  Rate(1.0, 1.25, 0.1, 5.0),
+    "haiku": Rate(1.0, 1.25, 0.1, 5.0),
 }
 
 
@@ -32,26 +32,42 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--dir", metavar="<path>",
+        "--dir",
+        metavar="<path>",
         default=os.path.expanduser("~/.claude/projects"),
-        help="Transcript root (default: ~/.claude/projects)")
+        help="Transcript root (default: ~/.claude/projects)",
+    )
     parser.add_argument(
-        "--match", metavar="<substr>", default="review",
+        "--match",
+        metavar="<substr>",
+        default="review",
         help="Only sessions whose project directory contains this "
-             "(default: review, which picks up review worktrees)")
+        "(default: review, which picks up review worktrees)",
+    )
     parser.add_argument(
-        "--since", metavar="<date>", default="",
-        help="ISO date; skip sessions whose first entry predates it")
+        "--since",
+        metavar="<date>",
+        default="",
+        help="ISO date; skip sessions whose first entry predates it",
+    )
     parser.add_argument(
-        "--limit", metavar="<n>", type=int, default=15,
-        help="Show at most n sessions in the per-session table")
+        "--limit",
+        metavar="<n>",
+        type=int,
+        default=15,
+        help="Show at most n sessions in the per-session table",
+    )
     parser.add_argument(
-        "--json", action="store_true",
-        help="Emit machine-readable JSON instead of a table")
+        "--json",
+        action="store_true",
+        help="Emit machine-readable JSON instead of a table",
+    )
     parser.add_argument(
-        "--prompts", action="store_true",
+        "--prompts",
+        action="store_true",
         help="Report how reviewer subagents received their payload (inlined "
-             "in the prompt, or by a path to a file) instead of the cost tables")
+        "in the prompt, or by a path to a file) instead of the cost tables",
+    )
     return parser.parse_args()
 
 
@@ -87,8 +103,11 @@ def first_user_prompt(path):
             if isinstance(c, str):
                 return c
             if isinstance(c, list):
-                t = "".join(b.get("text", "") for b in c
-                            if isinstance(b, dict) and b.get("type") == "text")
+                t = "".join(
+                    b.get("text", "")
+                    for b in c
+                    if isinstance(b, dict) and b.get("type") == "text"
+                )
                 if t:
                     return t
     return None
@@ -96,7 +115,7 @@ def first_user_prompt(path):
 
 def shape(text):
     if text.strip() == "FILE_PROMPT_PLACEHOLDER":
-        return None                      # harness artifact, not a real prompt
+        return None  # harness artifact, not a real prompt
     if "diff --git" in text:
         return "inlined"
     if PATH_HINT.search(text):
@@ -136,10 +155,19 @@ def report_prompts(root, match, as_json):
         by_shape[r["shape"]].append(r["tokens"])
 
     if as_json:
-        print(json.dumps({"reviewer_dispatches": len(rows),
-                          "by_shape": {k: {"n": len(v), "median_tokens": median(v)}
-                                       for k, v in by_shape.items()},
-                          "rows": rows}, indent=2))
+        print(
+            json.dumps(
+                {
+                    "reviewer_dispatches": len(rows),
+                    "by_shape": {
+                        k: {"n": len(v), "median_tokens": median(v)}
+                        for k, v in by_shape.items()
+                    },
+                    "rows": rows,
+                },
+                indent=2,
+            )
+        )
         return
 
     print(f"{len(rows)} reviewer-agent dispatches under {root} matching '{match}'\n")
@@ -149,7 +177,9 @@ def report_prompts(root, match, as_json):
         if not v:
             continue
         p90 = sorted(v)[int(len(v) * 0.9)]
-        print(f"{k:<16} {len(v):>5} {100 * len(v) / len(rows):>5.0f}% {median(v):>11,} {p90:>8,}")
+        print(
+            f"{k:<16} {len(v):>5} {100 * len(v) / len(rows):>5.0f}% {median(v):>11,} {p90:>8,}"
+        )
 
     print("\n  inlined      the diff is in the prompt text")
     print("  by-reference the prompt names a file holding the payload")
@@ -159,6 +189,7 @@ def report_prompts(root, match, as_json):
 # =============================================================================
 # Cost tables
 # =============================================================================
+
 
 def tier(model):
     m = (model or "").lower()
@@ -203,7 +234,9 @@ def scan(path):
             totals["cache_read"] += cr
             totals["context"] += i + cw + cr
             r = RATES[tier(msg.get("model"))]
-            cost += (i * r.input + cw * r.cache_write + cr * r.cache_read + o * r.output) / 1e6
+            cost += (
+                i * r.input + cw * r.cache_write + cr * r.cache_read + o * r.output
+            ) / 1e6
     return totals, len(seen), cost
 
 
@@ -227,20 +260,28 @@ def first_timestamp(path):
 
 def mix(c):
     r = RATES["opus"]
-    tot = (c["in"] * r.input + c["cache_write"] * r.cache_write
-           + c["cache_read"] * r.cache_read + c["out"] * r.output)
+    tot = (
+        c["in"] * r.input
+        + c["cache_write"] * r.cache_write
+        + c["cache_read"] * r.cache_read
+        + c["out"] * r.output
+    )
     if not tot:
         return {}
-    return {"cache_read_pct": round(100 * c["cache_read"] * r.cache_read / tot),
-            "output_pct": round(100 * c["out"] * r.output / tot),
-            "cache_write_pct": round(100 * c["cache_write"] * r.cache_write / tot)}
+    return {
+        "cache_read_pct": round(100 * c["cache_read"] * r.cache_read / tot),
+        "output_pct": round(100 * c["out"] * r.output / tot),
+        "cache_write_pct": round(100 * c["cache_write"] * r.cache_write / tot),
+    }
 
 
 def report_costs(root, match, since, limit, as_json):
     cutoff = None
     if since:
         try:
-            cutoff = datetime.datetime.fromisoformat(since).replace(tzinfo=datetime.timezone.utc)
+            cutoff = datetime.datetime.fromisoformat(since).replace(
+                tzinfo=datetime.timezone.utc
+            )
         except ValueError:
             print(f"ERROR: --since must be an ISO date, got: {since}", file=sys.stderr)
             sys.exit(1)
@@ -254,7 +295,10 @@ def report_costs(root, match, since, limit, as_json):
             ts = first_timestamp(main)
             if cutoff and ts:
                 try:
-                    if datetime.datetime.fromisoformat(ts.replace("Z", "+00:00")) < cutoff:
+                    if (
+                        datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                        < cutoff
+                    ):
                         continue
                 except ValueError:
                     pass
@@ -270,13 +314,20 @@ def report_costs(root, match, since, limit, as_json):
                 nsub += 1
             agg_o += ot
             agg_s += st
-            sessions.append({
-                "project": os.path.basename(project), "session": sid, "started": ts,
-                "orchestrator_usd": round(ocost, 2), "subagent_usd": round(scost, 2),
-                "total_usd": round(ocost + scost, 2), "turns": turns, "subagents": nsub,
-                "avg_context_per_turn": int(ot["context"] / turns),
-                "orchestrator_output_tokens": ot["out"],
-            })
+            sessions.append(
+                {
+                    "project": os.path.basename(project),
+                    "session": sid,
+                    "started": ts,
+                    "orchestrator_usd": round(ocost, 2),
+                    "subagent_usd": round(scost, 2),
+                    "total_usd": round(ocost + scost, 2),
+                    "turns": turns,
+                    "subagents": nsub,
+                    "avg_context_per_turn": int(ot["context"] / turns),
+                    "orchestrator_output_tokens": ot["out"],
+                }
+            )
 
     if not sessions:
         print(f"No sessions matched '{match}' under {root}")
@@ -306,26 +357,40 @@ def report_costs(root, match, since, limit, as_json):
         print(json.dumps({"summary": summary, "sessions": sessions[:limit]}, indent=2))
         return
 
-    print(f"Review token report - {len(sessions)} sessions under {root} matching '{match}'")
+    print(
+        f"Review token report - {len(sessions)} sessions under {root} matching '{match}'"
+    )
     if since:
         print(f"  since {since}")
     print()
-    print(f"{'PROJECT':<42}{'$orch':>9}{'$subs':>9}{'$total':>9}{'turns':>7}{'ctx/turn':>10}{'subs':>6}")
+    print(
+        f"{'PROJECT':<42}{'$orch':>9}{'$subs':>9}{'$total':>9}{'turns':>7}{'ctx/turn':>10}{'subs':>6}"
+    )
     for s in sessions[:limit]:
-        print(f"{s['project'][-42:]:<42}{s['orchestrator_usd']:>9.2f}{s['subagent_usd']:>9.2f}"
-              f"{s['total_usd']:>9.2f}{s['turns']:>7}{s['avg_context_per_turn']:>10,}{s['subagents']:>6}")
+        print(
+            f"{s['project'][-42:]:<42}{s['orchestrator_usd']:>9.2f}{s['subagent_usd']:>9.2f}"
+            f"{s['total_usd']:>9.2f}{s['turns']:>7}{s['avg_context_per_turn']:>10,}{s['subagents']:>6}"
+        )
     if len(sessions) > limit:
         print(f"… and {len(sessions) - limit} more (raise --limit to see them)")
     print()
-    print(f"  median ${median_usd:.2f}/review   mean ${mean_usd:.2f}   total ${grand_usd:,.2f}")
-    print(f"  median {median_turns} orchestrator turns at {median_context:,} tokens of context each")
+    print(
+        f"  median ${median_usd:.2f}/review   mean ${mean_usd:.2f}   total ${grand_usd:,.2f}"
+    )
+    print(
+        f"  median {median_turns} orchestrator turns at {median_context:,} tokens of context each"
+    )
     for label, m in (("orchestrator:", om), ("subagents:", sm)):
         if m:
-            print(f"  {label:<13} cache-read {m['cache_read_pct']}%  "
-                  f"output {m['output_pct']}%  cache-write {m['cache_write_pct']}%")
+            print(
+                f"  {label:<13} cache-read {m['cache_read_pct']}%  "
+                f"output {m['output_pct']}%  cache-write {m['cache_write_pct']}%"
+            )
     if grand_usd:
-        print(f"  split: orchestrator {100 * orch_usd / grand_usd:.0f}%"
-              f" / subagents {100 * (grand_usd - orch_usd) / grand_usd:.0f}%")
+        print(
+            f"  split: orchestrator {100 * orch_usd / grand_usd:.0f}%"
+            f" / subagents {100 * (grand_usd - orch_usd) / grand_usd:.0f}%"
+        )
 
 
 def main():

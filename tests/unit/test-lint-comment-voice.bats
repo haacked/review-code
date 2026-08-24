@@ -122,6 +122,114 @@ EOF
     [[ "$output" == "[]" ]]
 }
 
+# The voice agent and the agent briefing name this family phrase by phrase. If a
+# phrase they ban stops firing here, the lint gate silently stops enforcing it.
+@test "lint-comment-voice: flags every pin phrase the voice rules ban" {
+    while IFS= read -r phrase; do
+        run bash -c "printf '%s\n' \"\$1\" | '$LINTER' -" _ "$phrase"
+        [ "$status" -eq 0 ]
+        [[ "$output" == *'"pinning"'* ]] || {
+            echo "no pinning warning for: $phrase"
+            false
+        }
+    done <<'EOF'
+the contract isn't pinned
+the timeout is pinned by a test
+this pins the behavior
+the read is not pinned by any case
+that path is pinned elsewhere in the suite
+pin the actual behavior here
+EOF
+}
+
+@test "lint-comment-voice: flags every verdict opener the voice rules ban" {
+    while IFS= read -r phrase; do
+        run bash -c "printf '%s\n' \"\$1\" | '$LINTER' -" _ "$phrase"
+        [ "$status" -eq 0 ]
+        [[ "$output" == *'"verdict_opener"'* ]] || {
+            echo "no verdict_opener warning for: $phrase"
+            false
+        }
+    done <<'EOF'
+Sound and proportionate.
+The new machinery is in good shape.
+Direct, well-scoped change.
+This is a real upgrade-window risk.
+In good shape overall.
+EOF
+}
+
+# Every body the lint gate receives opens with a severity prefix. Masking
+# deletes the backticked word and leaves a bare ": ", which used to defeat
+# every start-anchored rule, so the whole verdict-opener family passed the gate
+# while the unprefixed test above went on passing.
+@test "lint-comment-voice: flags a verdict opener behind a severity prefix" {
+    while IFS= read -r phrase; do
+        run bash -c "printf '%s\n' \"\$1\" | '$LINTER' -" _ "$phrase"
+        [ "$status" -eq 0 ]
+        [[ "$output" == *'"verdict_opener"'* ]] || {
+            echo "no verdict_opener warning for: $phrase"
+            false
+        }
+    done <<'EOF'
+`blocking`: This is a real upgrade-window risk.
+`suggestion`: Sound and proportionate.
+`nit`: The new machinery is in good shape.
+**blocking**: In good shape overall.
+blocking: Direct, well-scoped change.
+EOF
+}
+
+# Reviews separate the severity token with an em dash as often as with a colon.
+# Treating only the colon as a prefix left the structural dash in the prose,
+# so the dash rule reported on every dash-separated finding title.
+@test "lint-comment-voice: a dash-separated severity prefix is not prose" {
+    run "$LINTER" - <<'EOF'
+**`question` — the doc comment claims a retry the code does not have.**
+EOF
+    [ "$status" -eq 0 ]
+    [[ "$output" == "[]" ]]
+}
+
+@test "lint-comment-voice: a dash inside the body still reports" {
+    run "$LINTER" - <<'EOF'
+`blocking`: the cache stays stale — see client.py — after deploy.
+EOF
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"dash"'* ]]
+}
+
+@test "lint-comment-voice: flags a pseudo-header behind a severity prefix" {
+    run "$LINTER" - <<'EOF'
+`blocking`: **Issue**: the request raises a 500.
+EOF
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"pseudo_header"'* ]]
+}
+
+@test "lint-comment-voice: a clean prefixed body stays clean" {
+    run "$LINTER" - <<'EOF'
+`suggestion`: `users.py:67` fetches each profile inside the loop, so a request for 100 users runs 101 queries.
+EOF
+    [ "$status" -eq 0 ]
+    [[ "$output" == "[]" ]]
+}
+
+@test "lint-comment-voice: leaves the version and SHA pinning the rules exempt" {
+    while IFS= read -r phrase; do
+        run bash -c "printf '%s\n' \"\$1\" | '$LINTER' -" _ "$phrase"
+        [ "$status" -eq 0 ]
+        [[ "$output" == "[]" ]] || {
+            echo "unexpected warning for exempt phrase: $phrase"
+            false
+        }
+    done <<'EOF'
+The dependency is pinned to `v2.4.1` in the lockfile.
+The action is pinned to that SHA.
+`requests` stays pinned at 2.31.0.
+EOF
+}
+
 @test "lint-comment-voice: flags AI vocabulary" {
     run "$LINTER" - <<'EOF'
 This leverages the existing validator to ensure the robust, comprehensive handling of every case.

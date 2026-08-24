@@ -73,7 +73,17 @@ An Overview paragraph in the right register reads like:
 
 **On the `delta` path** (`$review_mode` is `delta`), everything above still governs what you compose, but not where it goes: Read `~/.agents/skills/review-code/handlers/review-carry-forward.md` and follow it instead of saving over `$review_file`. Do not Read the existing review.
 
-Save the complete review to `$review_file` and inform the user with a clickable file link:
+Save the complete review to `$review_file`.
+
+**Lint the narrative.** With the file on disk, run the linter over its narrative prose. It reads the Overview and the per-agent summaries and skips finding bodies, which the voice pass already gated. It records what it finds as a `## Lint notes` section at the end of the file and never edits the prose:
+
+```bash
+~/.claude/skills/review-code/scripts/lint-review-narrative.py --annotate "$review_file"
+```
+
+Re-running is safe: it replaces any section an earlier run left, and drops the section when the prose comes back clean. A nonzero `error` field, or a missing script, leaves the review as composed. On the `delta` path this step runs after the carry-forward merge, against the merged file; `review-carry-forward.md` says where. In debug mode, save the stage `11c2-voice-lint` narrative artifacts (see `review-debug.md`).
+
+Then inform the user with a clickable file link:
 
 ```
 Review complete!

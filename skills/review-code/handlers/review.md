@@ -548,11 +548,23 @@ Save the agent's response. Extract usage metadata and record in `$token_usage["c
 2. Every backtick-quoted path-shaped or line-number token from the original (`auth.py:45`, `src/foo.ts`, `:67`, `line 67`) still appears. Backtick-quoted identifiers (`OverflowError`) are exempt; skip the check when the original has no such tokens.
 3. The body grew to no more than about 2x the original length (unpacking dense sentences into plain ones may grow the body; paragraph breaks and punctuation tweaks never fail this on their own).
 
-**Fail open, never block the review:** on an agent error or timeout, a JSON parse failure, or an array length off by more than 1, continue with the original findings. If more than 50% of rewrites fail validation, discard all rewrites; the voice agent is misbehaving, and verbose comments beat wrong ones.
+**Lint the surviving bodies.** The voice agent's own final scan misses tells it wrote or left in place, so check every body the pass is about to hand on: the rewrites that passed preservation, and the ones the agent returned `unchanged: true`. An unchanged body is the likeliest to still carry a tell, since nothing looked at it. Skip this only when the pool is empty.
+
+Write the array of `{id, description, proposed_fix}` to `<artifacts_dir>/voice-lint-input.json` with the Write tool and pass the path. Finding bodies quote the diff, so the delimiter hazard described at the explorer step above applies here too.
+
+```bash
+~/.claude/skills/review-code/scripts/gate-voice-lint.py "<artifacts_dir>/voice-lint-input.json"
+```
+
+For every id in `warned_ids`, resume the voice agent once with the ids and their warnings, asking it to rewrite the flagged sentence rather than swap the offending word. The resume keeps its context, so it still holds the bodies; sending them again pays for them twice. Re-run preservation checks 1-3 on what comes back, write the re-check array to `<artifacts_dir>/voice-lint-recheck.json`, and run the script on that path. Any id still warned keeps its **original** pre-voice body, which for an `unchanged: true` body is what it already holds. One bounce total; record each resume's usage as `voice-lint-bounce-{N}`.
+
+Record the counts in `$token_usage["voice-lint"]` as `{total_tokens: 0, checked, clean, warned, bounced, reverted}` and report them in the run summary. `log-token-usage.sh` keeps them under `counters`. Lint reverts stay out of the preservation-failure budget below; the two measure different things.
+
+**Fail open, never block the review:** on an agent error or timeout, a JSON parse failure, or an array length off by more than 1, continue with the original findings. If more than 50% of rewrites fail validation, discard all rewrites; the voice agent is misbehaving, and verbose comments beat wrong ones. A nonzero `error` field from the lint script, or a missing script, leaves every accepted rewrite standing.
 
 The Voice Pass step runs in all review modes (quick and comprehensive) when findings exist. There is no mode-based guard.
 
-In debug mode, save the stage `11c-voice-rewrite` artifacts (see `review-debug.md`).
+In debug mode, save the stage `11c-voice-rewrite` and `11c2-voice-lint` artifacts (see `review-debug.md`).
 
 ### Link File References in Comment Bodies
 

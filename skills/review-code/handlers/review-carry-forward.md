@@ -38,6 +38,15 @@ finding with its body untouched, appends what you composed, and advances the
 header. It prints counts and flags only, never finding bodies, which is what
 keeps this step cheap.
 
+## Lint the narrative, after the merge
+
+Run `review-compose.md`'s "Lint the narrative" step now, against `$review_file`
+rather than the append file. The merge has already happened, so the line numbers
+the linter records point at the document the reader opens, and the section it
+replaces is the one the previous re-review left. Linting the append file instead
+would number every warning against a throwaway file and stack up one section per
+re-review.
+
 ## Tell the user what happened
 
 Say how many findings carried forward and how many were re-derived. Four fields
