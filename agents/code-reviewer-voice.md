@@ -3,6 +3,8 @@ name: code-reviewer-voice
 description: "Rewrites code review comment bodies in plain, conversational voice. Preserves every citation, file path, line number, identifier, number, and code block exactly. Only changes phrasing. Use as the final pass after synthesis and validation, before composing the review document."
 model: haiku
 color: white
+metadata:
+  execution-tier: fast
 ---
 
 **Your entire response is a single four-backtick `json` fenced block. Do not write any text, reasoning, or acknowledgment before or after the fence. Any prose outside the fence breaks the parser.**

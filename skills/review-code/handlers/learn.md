@@ -8,15 +8,15 @@ From `PARSE_RESULT`, extract `learn_submode` and `pr_number`. Run the orchestrat
 
 - **If submode is "single":**
   ```bash
-  ~/.claude/skills/review-code/scripts/learn-orchestrator.sh single "<PR_NUMBER>"
+  ~/.agents/skills/review-code/scripts/learn-orchestrator.sh single "<PR_NUMBER>"
   ```
 - **If submode is "batch":**
   ```bash
-  ~/.claude/skills/review-code/scripts/learn-orchestrator.sh batch
+  ~/.agents/skills/review-code/scripts/learn-orchestrator.sh batch
   ```
 - **If submode is "apply":**
   ```bash
-  ~/.claude/skills/review-code/scripts/learn-orchestrator.sh apply
+  ~/.agents/skills/review-code/scripts/learn-orchestrator.sh apply
   ```
 
 Save the JSON output as `LEARN_RESULT`. If the `status` field is "error", display the `error` field and stop.
@@ -48,7 +48,7 @@ For **"missed" findings** (other reviewer found, Claude missed), show file, line
   2. "No, too specific": One-off case, not worth generalizing
   3. "Skip": Don't record this learning
 
-**3. Record learnings.** For each response other than "Skip", append a record to `~/.claude/skills/review-code/.learnings/index.jsonl`:
+**3. Record learnings.** For each response other than "Skip", append a record to `~/.agents/skills/review-code/.learnings/index.jsonl`:
 
 ```json
 {
@@ -72,7 +72,7 @@ For **"missed" findings** (other reviewer found, Claude missed), show file, line
 }
 ```
 
-**4. Mark the PR as analyzed.** Read `~/.claude/skills/review-code/.learnings/analyzed.json` (create `{}` if missing). Extract `org` and `repo` from `learn_data`. Merge `{"<org>/<repo>": {"<pr_number>": "<timestamp>"}}` into the existing data and write it back.
+**4. Mark the PR as analyzed.** Read `~/.agents/skills/review-code/.learnings/analyzed.json` (create `{}` if missing). Extract `org` and `repo` from `learn_data`. Merge `{"<org>/<repo>": {"<pr_number>": "<timestamp>"}}` into the existing data and write it back.
 
 **5. Wrap up.** Report the counts of learnings recorded by type, and point at `/review-code learn --apply` for updating context files once patterns accumulate.
 
@@ -87,7 +87,7 @@ If `count` is 0, tell the user there are no unanalyzed PRs with existing reviews
 For each PR in the batch, run:
 
 ```bash
-~/.claude/skills/review-code/scripts/learn-orchestrator.sh single "<PR_NUM>" --org "<ORG>" --repo "<REPO>"
+~/.agents/skills/review-code/scripts/learn-orchestrator.sh single "<PR_NUM>" --org "<ORG>" --repo "<REPO>"
 ```
 
 Follow the "single" submode flow for each PR (user prompts, record learnings, mark analyzed). After each PR, use AskUserQuestion to ask whether to continue to the next PR or stop; exit the loop on "Stop here".

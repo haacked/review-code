@@ -179,7 +179,7 @@ If any condition fails, skip draft review creation.
 2. **Map comment locations to diff positions**: Build a targets array and run through the position mapper:
 
 ```bash
-~/.claude/skills/review-code/scripts/diff-position-mapper.sh --diff-file "<diff_path>" <<'EOF'
+~/.agents/skills/review-code/scripts/diff-position-mapper.sh --diff-file "<diff_path>" <<'EOF'
 {"targets": [<targets array>]}
 EOF
 ```
@@ -252,7 +252,7 @@ text would not be safe this way, which is why the architectural context is
 written with the Write tool instead.
 
 ```bash
-~/.claude/skills/review-code/scripts/create-draft-review.sh <<'EOF'
+~/.agents/skills/review-code/scripts/create-draft-review.sh <<'EOF'
 <draft_input JSON here>
 EOF
 ```
@@ -287,7 +287,7 @@ If failed, show the error and suggest using the review file manually.
   1. Display the error message to the user
   2. Tell them: "Draft review creation failed. The review has been saved to the markdown file."
   3. Suggest: "You can copy comments from the review file and post them manually on GitHub."
-  4. Clean up the session: `~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"`
+  4. Clean up the session: `~/.agents/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"`
   5. **Stop here.** Do not post the findings any other way: a regular PR comment or a direct `gh pr review` call publishes immediately instead of staying pending (and the PreToolUse hook blocks the direct calls regardless).
 
 ### Resolve Addressed Threads (--append, PR Mode Only)
@@ -307,7 +307,7 @@ Call the result `$reviewer`. If you cannot determine a login, skip this step (wi
 **List your unresolved threads.** Scope strictly to threads whose first comment is yours:
 
 ```bash
-~/.claude/skills/review-code/scripts/resolve-review-threads.sh <pr_number> --author "$reviewer" --json
+~/.agents/skills/review-code/scripts/resolve-review-threads.sh <pr_number> --author "$reviewer" --json
 ```
 
 The output `threads` array holds objects with `commentId`, `path`, `line`, `isOutdated`, `author`, and `body` (the full text of your original comment, used for the re-flag comparison below). If the array is empty, there is nothing to resolve; skip the rest of this step.
@@ -324,7 +324,7 @@ Build `$resolve_ids` as the list of `commentId` values that pass both signals.
 **Resolve the confident set.** If `$resolve_ids` is non-empty, pass each as a `--comment-id`, keeping the `--author` scope as a safety guard so a stray id can never resolve a teammate's thread:
 
 ```bash
-~/.claude/skills/review-code/scripts/resolve-review-threads.sh <pr_number> --author "$reviewer" \
+~/.agents/skills/review-code/scripts/resolve-review-threads.sh <pr_number> --author "$reviewer" \
   --comment-id <id1> --comment-id <id2> --json
 ```
 

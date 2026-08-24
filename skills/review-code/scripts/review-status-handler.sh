@@ -34,8 +34,8 @@ find_orchestrator() {
         echo "${SCRIPT_DIR}/review-orchestrator.sh"
     elif [[ -f "${SCRIPT_DIR}/../review-orchestrator.sh" ]]; then
         echo "${SCRIPT_DIR}/../review-orchestrator.sh"
-    elif [[ -f ~/.claude/skills/review-code/scripts/review-orchestrator.sh ]]; then
-        echo ~/.claude/skills/review-code/scripts/review-orchestrator.sh
+    elif [[ -f "$(resolve_skill_dir)/scripts/review-orchestrator.sh" ]]; then
+        echo "$(resolve_skill_dir)/scripts/review-orchestrator.sh"
     else
         echo "ERROR: Cannot find review-orchestrator.sh" >&2
         exit 1

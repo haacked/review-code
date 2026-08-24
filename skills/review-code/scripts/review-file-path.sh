@@ -13,7 +13,7 @@ source "${SCRIPT_DIR}/helpers/config-helpers.sh"
 #
 # Configuration:
 #   Reviews live under the fixed root from get_review_root() in
-#   helpers/config-helpers.sh (~/.claude/skills/review-code/.reviews)
+#   helpers/config-helpers.sh (~/.agents/skills/review-code/.reviews)
 #
 # Arguments:
 #   --org ORG: GitHub organization (optional, extracts from git if not provided)

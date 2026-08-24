@@ -75,7 +75,7 @@ main() {
     echo "  - Specific review: /review-code security"
     echo ""
     echo "To update: Re-run this installer"
-    echo "To uninstall: Run ~/.claude/bin/uninstall-review-code.sh"
+    echo "To uninstall: Run ~/.agents/bin/uninstall-review-code.sh"
     echo ""
     echo "═══════════════════════════════════════════════════════"
     echo ""

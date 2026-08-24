@@ -3,13 +3,13 @@
 If STATUS is "ready", get the session file path (replace `<SESSION_ID>` with the actual session ID):
 
 ```bash
-~/.claude/skills/review-code/scripts/review-status-handler.sh get-session-file "<SESSION_ID>"
+~/.agents/skills/review-code/scripts/review-status-handler.sh get-session-file "<SESSION_ID>"
 ```
 
 Save the output as `SESSION_FILE`. Then get the orchestrator-facing fields:
 
 ```bash
-~/.claude/skills/review-code/scripts/review-status-handler.sh get-review-fields "<SESSION_ID>"
+~/.agents/skills/review-code/scripts/review-status-handler.sh get-review-fields "<SESSION_ID>"
 ```
 
 Save that JSON as `REVIEW_FIELDS` and show the user `display_summary`.
@@ -18,7 +18,7 @@ Save that JSON as `REVIEW_FIELDS` and show the user `display_summary`.
 
 ### Handle Existing Review Files
 
-From `REVIEW_FIELDS`, extract `file_info`: `file_exists`, `file_path`, `has_branch_review`, `branch_review_path`, `needs_rename`, and `pr_number`. The merge and migrate procedures below live in `~/.claude/skills/review-code/handlers/existing-review-files.md`; Read it when an option that uses one is selected.
+From `REVIEW_FIELDS`, extract `file_info`: `file_exists`, `file_path`, `has_branch_review`, `branch_review_path`, `needs_rename`, and `pr_number`. The merge and migrate procedures below live in `~/.agents/skills/review-code/handlers/existing-review-files.md`; Read it when an option that uses one is selected.
 
 **If `has_branch_review` is true** (both PR and branch reviews exist):
 
@@ -52,7 +52,7 @@ First, check `REVIEW_FIELDS` for `overwrite` and `append` flags:
 On "Cancel" in any of the prompts above: clean up the session, then stop. A worktree may have been provisioned for this session; cleanup releases it instead of leaving it behind.
 
 ```bash
-~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
+~/.agents/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
 ```
 
 ### Extract Session Data
@@ -83,12 +83,12 @@ Some steps apply only to certain sessions, and their instructions live in separa
 
 | Condition (`REVIEW_FIELDS`) | Read this file |
 |---|---|
-| `debug_session_dir` is a non-empty string | `~/.claude/skills/review-code/handlers/review-debug.md` |
-| `chunk_metadata.chunked` is `true` | `~/.claude/skills/review-code/handlers/review-chunked.md` |
-| `adversary` is present | `~/.claude/skills/review-code/handlers/review-adversary.md` |
-| `mode` is `"pr"` | `~/.claude/skills/review-code/handlers/review-pr-output.md` |
-| `fix` is `true` | `~/.claude/skills/review-code/handlers/review-fix.md` |
-| always, at the compose step | `~/.claude/skills/review-code/handlers/review-compose.md` (Read it then, not now) |
+| `debug_session_dir` is a non-empty string | `~/.agents/skills/review-code/handlers/review-debug.md` |
+| `chunk_metadata.chunked` is `true` | `~/.agents/skills/review-code/handlers/review-chunked.md` |
+| `adversary` is present | `~/.agents/skills/review-code/handlers/review-adversary.md` |
+| `mode` is `"pr"` | `~/.agents/skills/review-code/handlers/review-pr-output.md` |
+| `fix` is `true` | `~/.agents/skills/review-code/handlers/review-fix.md` |
+| always, at the compose step | `~/.agents/skills/review-code/handlers/review-compose.md` (Read it then, not now) |
 
 Each file states where in the flow below its steps run. If no condition holds, read nothing and continue.
 
@@ -99,7 +99,7 @@ Runs only when `append` is true in `REVIEW_FIELDS` and `file_info.file_exists` i
 A re-review normally pays full freight: every agent reads the whole diff again even when the author pushed a two-line fix. The previous review's metadata header records the SHA it was taken at, so the changes since then are computable:
 
 ```bash
-~/.claude/skills/review-code/scripts/review-delta.sh \
+~/.agents/skills/review-code/scripts/review-delta.sh \
   --review-file "<file_info.file_path>" \
   --head-sha "<pr.head_sha>" \
   --base "<pr.base>" \
@@ -126,7 +126,7 @@ Read `mode` from the JSON it prints:
 Run the scope classifier to determine exploration depth and agent selection based on diff size and file characteristics:
 
 ```bash
-~/.claude/skills/review-code/scripts/classify-review-scope.sh "$SESSION_FILE"
+~/.agents/skills/review-code/scripts/classify-review-scope.sh "$SESSION_FILE"
 ```
 
 Parse the JSON output and store:
@@ -152,7 +152,9 @@ If you loaded `review-debug.md` (`debug_session_dir` set), store `$debug_session
 
 ### Track Token Usage
 
-Track API token consumption across all agents dispatched during the review. The Agent/Task tool returns usage metadata at the end of each response:
+Track API token consumption across all agents dispatched during the review.
+
+**Claude ($harness = `claude`):** The Agent/Task tool returns usage metadata at the end of each response:
 
 ```
 <usage>total_tokens: NNN
@@ -161,6 +163,8 @@ duration_ms: NNN</usage>
 ```
 
 Maintain a `$token_usage` map throughout the review. After each Agent/Task tool invocation completes (context explorer, review agents, chunk analyzers, finding validators), parse the `<usage>` block from its response and record `total_tokens`, `tool_uses`, and `duration_ms` keyed by agent name (e.g., `context_explorer`, `code-reviewer-security`, `chunk-1-analysis`, `validator-1`). If the usage block is absent from a response, skip that entry.
+
+**Codex ($harness = `codex`):** Codex's JSONL stream carries different signals; the response surface is what `codex exec --output-last-message` writes. Track per-agent wall-clock (time around each `agent-dispatch.sh run` call) and any token fields in the final `turn.completed` event of the JSONL stream. Codex doesn't expose tool-call counts, so record `tool_uses` only when the JSONL provides it; otherwise omit the field. Keep the same `$token_usage` map shape so the token-report rendering downstream doesn't branch on harness.
 
 ### Prepare File Access Instructions
 
@@ -194,7 +198,35 @@ No safe local checkout is available for reading PR files. This can happen becaus
 
 ### Subagent Availability
 
-The steps below spawn named subagent types: `code-review-context-explorer`, the `code-reviewer-*` reviewers, `finding-validator`, `comprehension-gate`, and `code-reviewer-voice`. Some harnesses don't register user-installed agents, so these names won't appear in the environment's available agent types. In that case, spawn a `general-purpose` agent for each invocation instead, prepending the full body of the matching agent definition (`~/.claude/agents/<subagent_type>.md`, frontmatter stripped) to the prompt. Read from `~/.claude/agents/` even when `CLAUDE_CONFIG_DIR` points elsewhere: it is the copy `bin/setup` always installs, while a redirected config home's `agents/` dir is typically what's missing or unread when this fallback applies. If the Agent tool accepts a `model` parameter, pass the definition's `model:` frontmatter value so each agent keeps its intended cost tier. Keep the same parallelism and the same finding format (it is parsed downstream), and mention the substitution once in the final output rather than per agent.
+The steps below spawn named subagent types: `code-review-context-explorer`, the `code-reviewer-*` reviewers, `finding-validator`, `comprehension-gate`, and `code-reviewer-voice`. How they spawn depends on the harness.
+
+**Detect the harness once, at the start of "ready":**
+
+```bash
+~/.agents/skills/review-code/scripts/helpers/agent-dispatch.sh --detect
+```
+
+This prints `claude` or `codex`. Save it as `$harness`. If the command exits non-zero (no harness detected), stop and report the error.
+
+**Claude ($harness = `claude`):** Spawn subagents via the Task tool with `subagent_type` set to the agent name (`code-review-context-explorer`, `code-reviewer-security`, etc.). If those names aren't registered in the environment, spawn `general-purpose` and prepend the full body of `~/.agents/agents/<subagent_type>.md` (frontmatter stripped) to the prompt; pass the definition's `model:` value if the Agent tool accepts it. Findings come back in-conversation. After `synthesis`, write each agent's raw findings to `<artifacts_dir>/findings/<agent-name>.md` (one file per reviewer) using `agent-report.sh`, so the compose step can concatenate from disk instead of holding them in context.
+
+**Codex ($harness = `codex`):** Spawn subagents via the `codex` CLI — Codex has no Task tool or subagent registration inside the orchestrating process. For each agent in the plan:
+
+```bash
+~/.agents/skills/review-code/scripts/helpers/agent-dispatch.sh \
+    run <agent-name> <prompt-file> <artifacts_dir>/findings/<agent-name>.md
+```
+
+`<prompt-file>` is a markdown file you write first containing the same prompt body the Claude path would send inline. The helper shells out to `codex exec --json --sandbox read-only --output-last-message <findings-file>`, so the agent's final message lands directly at the findings path. Codex subagents cannot stream back into this conversation; all findings, architectural context, and validation notes reach us as files.
+
+Under Codex, dispatch is sequential unless you background the invocations; prefer backgrounding (`... &`) when the plan picks several reviewers so they run in parallel, then `wait` before synthesis. Track each backgrounded PID alongside the agent name so you can attribute a non-zero exit.
+
+**Codex feature gaps to disclose.** Claude-only steps are:
+- The coverage-resume bounce (per-agent Task resume isn't available)
+- Per-agent model override (the rendered TOMLs carry the mapped model; the orchestrator cannot swap mid-flight)
+- The Task tool's `<usage>` block (track wall-clock and codex's `tokens_used` from the JSONL tail instead — log what you have)
+
+Note each gap in the review's fix/limitations section if it fired. The review still produces findings; the differences are observability and iteration depth, not coverage.
 
 ### Gather Architectural Context
 
@@ -310,7 +342,7 @@ Do not write it with a shell heredoc. The explorer quotes code from the PR verba
 Then build the briefing, passing the agents being dispatched so the area-scoped diffs get written:
 
 ```bash
-~/.claude/skills/review-code/scripts/build-agent-briefing.sh "$SESSION_FILE" \
+~/.agents/skills/review-code/scripts/build-agent-briefing.sh "$SESSION_FILE" \
   --arch-context-file "<artifacts_dir>/architectural-context.md" \
   --agents "<space-separated $selected_agents>"
 ```
@@ -335,7 +367,7 @@ If either file is missing or unreadable, stop immediately and reply with exactly
 $file_access_instructions
 ```
 
-**If an agent replies `BRIEFING_UNAVAILABLE`:** Read `~/.claude/skills/review-code/handlers/review-inline-fallback.md` and re-dispatch that one agent with the payload inlined. Report in the review that the fallback fired, since it means the briefing path is broken and every later run pays full freight until it is fixed.
+**If an agent replies `BRIEFING_UNAVAILABLE`:** Read `~/.agents/skills/review-code/handlers/review-inline-fallback.md` and re-dispatch that one agent with the payload inlined. Report in the review that the fallback fired, since it means the briefing path is broken and every later run pays full freight until it is fixed.
 
 ### Check What Each Agent Actually Read
 
@@ -344,7 +376,7 @@ The line counts in the agent prompt are advisory. They only help an agent that r
 After the agents return, check what they read:
 
 ```bash
-~/.claude/skills/review-code/scripts/check-diff-coverage.sh --diff-lines <diff_lines> --json
+~/.agents/skills/review-code/scripts/check-diff-coverage.sh --diff-lines <diff_lines> --json
 ```
 
 It reads this session's subagent transcripts (`--session` defaults to `$CLAUDE_CODE_SESSION_ID`) and returns per-agent coverage plus a `below_threshold` array. It exits 0 whenever it can read the transcripts; short coverage is a result, not a failure.
@@ -411,7 +443,7 @@ Before including any finding in the final review, verify it references code actu
 **Step 1: Run the position mapper.** For each agent finding that references a specific file and line, build a targets array and run:
 
 ```bash
-~/.claude/skills/review-code/scripts/diff-position-mapper.sh --diff-file "<diff_path>" <<'EOF'
+~/.agents/skills/review-code/scripts/diff-position-mapper.sh --diff-file "<diff_path>" <<'EOF'
 {"targets": [<targets array>]}
 EOF
 ```
@@ -532,14 +564,14 @@ If you loaded `review-fix.md` (session has `fix: true`), apply fixes per its ins
 
 ### Compose the Review Document
 
-Read `~/.claude/skills/review-code/handlers/review-compose.md` and follow it to build and save the review document.
+Read `~/.agents/skills/review-code/handlers/review-compose.md` and follow it to build and save the review document.
 
 ### Log Token Usage
 
 After saving the review, append a record to the central token-usage log. Pass the raw `$token_usage` map; the script computes the sums, which is what keeps `agents_run` and `total_tokens` honest:
 
 ```bash
-~/.claude/skills/review-code/scripts/log-token-usage.sh \
+~/.agents/skills/review-code/scripts/log-token-usage.sh \
   --review-file "$review_file" \
   --usage '<$token_usage as a JSON object, agent key to total_tokens>' \
   --org "<org>" --repo "<repo>" --mode "<mode>" --identifier "<pr number or branch>" \
@@ -562,7 +594,7 @@ If you loaded `review-pr-output.md` (PR mode), run its remaining steps now, in o
 After the review is complete, clean up the session (replace `<SESSION_ID>` with the actual session ID):
 
 ```bash
-~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
+~/.agents/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
 ```
 
 This removes the temporary session files and frees up disk space.

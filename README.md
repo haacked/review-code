@@ -1,8 +1,8 @@
-# Review-Code for Claude Code
+# Review-Code
 
 [![CI](https://github.com/haacked/review-code/actions/workflows/ci.yml/badge.svg)](https://github.com/haacked/review-code/actions/workflows/ci.yml)
 
-A comprehensive code review system for Claude Code that uses specialized AI agents to review your code for security, performance, correctness, maintainability, testing, compatibility, and architecture concerns.
+A comprehensive code review system for Claude Code and OpenAI Codex that uses specialized AI agents to review your code for security, performance, correctness, maintainability, testing, compatibility, and architecture concerns.
 
 > **⚠️ macOS Users:** This tool requires **bash 4.0+**. macOS ships with bash 3.2 by default. Install bash 4.0+ with `brew install bash` before proceeding.
 
@@ -108,7 +108,10 @@ Before installing, ensure you have:
 - **git**: `git --version` (install from [git-scm.com](https://git-scm.com))
 - **gh (GitHub CLI)**: `gh --version` (install from [cli.github.com](https://cli.github.com))
 - **jq**: `jq --version` (`brew install jq`)
-- **Claude Code**: The `~/.claude` directory should exist
+- **Claude Code** (for Claude use): `~/.claude` directory should exist
+- **OpenAI Codex** (for Codex use): `codex` CLI installed (`npm install -g @openai/codex` or `brew install codex`)
+
+At least one of Claude Code or Codex must be present.
 
 ### Installation
 
@@ -165,8 +168,8 @@ bin/setup
 
 Both methods will:
 
-- Copy skill files to `~/.claude/skills/review-code/` (SKILL.md, handlers, scripts, context)
-- Copy agent definitions to `~/.claude/agents/`
+- Copy skill files to `~/.agents/skills/review-code/` (SKILL.md, handlers, scripts, context)
+- Copy agent definitions to `~/.agents/agents/`
 - Install the uninstaller at `~/.claude/bin/uninstall-review-code.sh`
 - Smart-merge context files so user learnings are preserved across updates
 - Migrate runtime state (reviews, learnings, sessions) into dot-prefixed directories
@@ -203,7 +206,7 @@ This means you can review PRs for any repository without needing to clone it loc
 
 #### Speeding up cross-repo PR reviews with `repos.conf`
 
-When reviewing a PR from outside its repository, the skill can provision a short-lived worktree off a local clone you already have, giving agents native `Read`/`Grep`/`Glob` access to the PR source instead of falling back to a diff-only review. Opt in by creating `~/.claude/skills/review-code/repos.conf`:
+When reviewing a PR from outside its repository, the skill can provision a short-lived worktree off a local clone you already have, giving agents native `Read`/`Grep`/`Glob` access to the PR source instead of falling back to a diff-only review. Opt in by creating `~/.agents/skills/review-code/repos.conf`:
 
 ```
 # Format: <org>/<repo>  <absolute-or-tilde-path>
@@ -480,10 +483,10 @@ Loads repo-specific workflows and requirements. Add your own in `context/orgs/{o
 
 ### Review Output Path
 
-Reviews are saved to `~/.claude/skills/review-code/.reviews/{org}/{repo}/{pr-number-or-branch}.md`. The directory structure is created automatically:
+Reviews are saved to `~/.agents/skills/review-code/.reviews/{org}/{repo}/{pr-number-or-branch}.md`. The directory structure is created automatically:
 
 ```text
-~/.claude/skills/review-code/.reviews/
+~/.agents/skills/review-code/.reviews/
 ├── org-name/
 │   ├── repo-name/
 │   │   ├── pr-123.md
@@ -605,8 +608,8 @@ Your review files are preserved unless you explicitly choose to remove the conte
 
 ### Reviews not being saved
 
-- Reviews are written to `~/.claude/skills/review-code/.reviews/{org}/{repo}/`
-- Check the directory exists and is writable: `ls -la ~/.claude/skills/review-code/.reviews`
+- Reviews are written to `~/.agents/skills/review-code/.reviews/{org}/{repo}/`
+- Check the directory exists and is writable: `ls -la ~/.agents/skills/review-code/.reviews`
 
 ## Documentation
 

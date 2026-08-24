@@ -133,8 +133,8 @@ teardown() {
     cd "$TEST_REPO"
 
     # Create config pointing to our mock review root
-    mkdir -p "$TEST_DIR/.claude/skills/review-code"
-    echo "REVIEW_ROOT_PATH=$MOCK_REVIEW_ROOT" > "$TEST_DIR/.claude/skills/review-code/.env"
+    mkdir -p "$TEST_DIR/.agents/skills/review-code"
+    echo "REVIEW_ROOT_PATH=$MOCK_REVIEW_ROOT" > "$TEST_DIR/.agents/skills/review-code/.env"
 
     HOME="$TEST_DIR" run "$PROJECT_ROOT/skills/review-code/scripts/learn-from-pr.sh" 123 --org testorg --repo testrepo
     [ "$status" -eq 1 ]
@@ -144,8 +144,8 @@ teardown() {
 @test "learn-from-pr.sh: suggests running review-code when no review exists" {
     cd "$TEST_REPO"
 
-    mkdir -p "$TEST_DIR/.claude/skills/review-code"
-    echo "REVIEW_ROOT_PATH=$MOCK_REVIEW_ROOT" > "$TEST_DIR/.claude/skills/review-code/.env"
+    mkdir -p "$TEST_DIR/.agents/skills/review-code"
+    echo "REVIEW_ROOT_PATH=$MOCK_REVIEW_ROOT" > "$TEST_DIR/.agents/skills/review-code/.env"
 
     HOME="$TEST_DIR" run "$PROJECT_ROOT/skills/review-code/scripts/learn-from-pr.sh" 456 --org testorg --repo testrepo
     [ "$status" -eq 1 ]

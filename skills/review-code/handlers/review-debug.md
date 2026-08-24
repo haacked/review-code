@@ -8,24 +8,24 @@ Debug writes must never block or fail the review: if a write fails, ignore the e
 
 To save content:
 ```bash
-echo '{"action":"save","debug_dir":"$debug_session_dir","stage":"<stage>","filename":"<name>","content":"<text>"}' | ~/.claude/skills/review-code/scripts/debug-artifact-writer.sh
+echo '{"action":"save","debug_dir":"$debug_session_dir","stage":"<stage>","filename":"<name>","content":"<text>"}' | ~/.agents/skills/review-code/scripts/debug-artifact-writer.sh
 ```
 
 To record timing:
 ```bash
-echo '{"action":"time","debug_dir":"$debug_session_dir","stage":"<stage>","event":"start"}' | ~/.claude/skills/review-code/scripts/debug-artifact-writer.sh
+echo '{"action":"time","debug_dir":"$debug_session_dir","stage":"<stage>","event":"start"}' | ~/.agents/skills/review-code/scripts/debug-artifact-writer.sh
 ```
 
 To write stats:
 ```bash
-echo '{"action":"stats","debug_dir":"$debug_session_dir","stage":"<stage>","data":{"key":"value"}}' | ~/.claude/skills/review-code/scripts/debug-artifact-writer.sh
+echo '{"action":"stats","debug_dir":"$debug_session_dir","stage":"<stage>","data":{"key":"value"}}' | ~/.agents/skills/review-code/scripts/debug-artifact-writer.sh
 ```
 
 For content with special characters (quotes, newlines), use jq to build the JSON safely:
 ```bash
 jq -n --arg dir "$debug_session_dir" --arg content "$variable_with_content" \
   '{"action":"save","debug_dir":$dir,"stage":"08-context-explorer","filename":"result.md","content":$content}' \
-  | ~/.claude/skills/review-code/scripts/debug-artifact-writer.sh
+  | ~/.agents/skills/review-code/scripts/debug-artifact-writer.sh
 ```
 
 **Stages to instrument:**
@@ -47,5 +47,5 @@ jq -n --argjson agents '<JSON object with per-agent {total_tokens, tool_uses, du
   --arg total '<total_tokens sum>' --arg count '<step_count>' \
   --arg dir "$debug_session_dir" \
   '{"action":"stats","debug_dir":$dir,"stage":"12-token-usage","data":{"agents":$agents,"total_tokens":($total|tonumber),"step_count":($count|tonumber),"agent_count":($count|tonumber)}}' \
-  | ~/.claude/skills/review-code/scripts/debug-artifact-writer.sh
+  | ~/.agents/skills/review-code/scripts/debug-artifact-writer.sh
 ```
