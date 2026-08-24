@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Lint the bodies the voice pass produced and report which ones still read wrong.
 
-Reads a JSON array of accepted voice-pass rewrites on stdin and runs
-lint-comment-voice.py over each `description` and `proposed_fix`. Prints one
+Reads a JSON array of accepted voice-pass rewrites from a file, or from stdin
+when the path is '-', and runs lint-comment-voice.py over each `description`
+and `proposed_fix`. The pipeline passes a path: finding bodies quote the diff,
+so inlining them into a command is a delimiter hazard. Prints one
 JSON object naming the findings that still carry warnings, so the caller can
 bounce them back to the voice agent once and revert the ones that come back
 dirty.
 
 This script decides nothing about the review. It reports; the caller reverts.
 
-Input (stdin), one object per accepted rewrite:
+Input, one object per accepted rewrite:
 
     [{"id": 1, "description": "...", "proposed_fix": "... or null"}]
 
@@ -51,13 +53,15 @@ DEFAULT_PER_FINDING_LIMIT = 6
 LINTED_FIELDS = ("description", "proposed_fix")
 
 
-def empty_result(error: str | None = None) -> dict:
+def result(*, checked: int = 0, warned_ids=(), findings=(), error=None) -> dict:
+    """Build the one result shape, so the error path cannot drift from the rest."""
+    ids = list(warned_ids)
     return {
-        "checked": 0,
-        "clean": 0,
-        "warned": 0,
-        "warned_ids": [],
-        "findings": [],
+        "checked": checked,
+        "clean": checked - len(ids),
+        "warned": len(ids),
+        "warned_ids": ids,
+        "findings": list(findings),
         "error": error,
     }
 
@@ -93,14 +97,7 @@ def gate(linter, items: list, limit: int) -> dict:
             finding["suppressed"] = len(warnings) - limit
         findings.append(finding)
 
-    return {
-        "checked": checked,
-        "clean": checked - len(warned_ids),
-        "warned": len(warned_ids),
-        "warned_ids": warned_ids,
-        "findings": findings,
-        "error": None,
-    }
+    return result(checked=checked, warned_ids=warned_ids, findings=findings)
 
 
 def parse_args() -> argparse.Namespace:
@@ -134,12 +131,12 @@ def main() -> int:
         items = json.loads(raw)
         if not isinstance(items, list):
             raise ValueError("input must be a JSON array of rewrites")
-        result = gate(load_linter(), items, args.limit)
+        gated = gate(load_linter(), items, args.limit)
     except Exception as error:  # noqa: BLE001 - fail open on anything
-        print(json.dumps(empty_result(f"{type(error).__name__}: {error}")))
+        print(json.dumps(result(error=f"{type(error).__name__}: {error}")))
         return 0
 
-    print(json.dumps(result))
+    print(json.dumps(gated))
     return 0
 
 

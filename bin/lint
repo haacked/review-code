@@ -12,9 +12,15 @@ print_color blue "Linting scripts…"
 
 success_status=true
 
-# Check for shellcheck
+# Check for both linters up front. A missing linter is a failure rather than a
+# skipped language, so say which one is missing instead of letting it surface
+# later as "Linting found issues".
 if ! command_exists shellcheck; then
     fatal "shellcheck not found - install with: brew install shellcheck"
+fi
+
+if ! command_exists ruff; then
+    fatal "ruff not found - install with: brew install ruff"
 fi
 
 collect_shell_files
@@ -47,17 +53,13 @@ fi
 # Lint Python with ruff. The two pipeline scripts insert their helpers
 # directory on sys.path before importing from it, so E402 (import not at top of
 # file) is the module-loading idiom here rather than a defect.
-if command_exists ruff; then
-    collect_python_files
-    if [[ ${#python_files[@]} -gt 0 ]]; then
-        print_color blue "Found ${#python_files[@]} Python scripts"
-        if ! run_command "ruff check ${python_files[*]}" "Running ruff"; then
-            success_status=false
-        fi
+collect_python_files
+
+if [[ ${#python_files[@]} -gt 0 ]]; then
+    print_color blue "Found ${#python_files[@]} Python scripts"
+    if ! run_command "ruff check ${python_files[*]}" "Running ruff"; then
+        success_status=false
     fi
-else
-    warning "ruff not found - install with: brew install ruff"
-    success_status=false
 fi
 
 if ${success_status}; then

@@ -139,10 +139,12 @@ prune_pycache() {
 }
 
 # Copy every *.sh and *.py in $1 to $2, marking each executable. No-op if $1
-# doesn't exist or is empty.
+# doesn't exist or is empty. Reports how many it copied in copied_scripts, so
+# the caller never restates the glob to count them.
 copy_scripts_dir() {
     local src_subdir="$1"
     local dst_subdir="$2"
+    copied_scripts=0
     [[ -d "${src_subdir}" ]] || return 0
     local src
     for src in "${src_subdir}/"*.sh "${src_subdir}/"*.py; do
@@ -150,6 +152,7 @@ copy_scripts_dir() {
         local filename="${src##*/}"
         cp "${src}" "${dst_subdir}/${filename}"
         chmod +x "${dst_subdir}/${filename}"
+        copied_scripts=$((copied_scripts + 1))
     done
 }
 
@@ -186,9 +189,7 @@ install_skill() {
     # invoked by session-manager.sh; e.g. review-code-cleanup.sh removes a
     # provisioned PR worktree).
     copy_scripts_dir "${src_dir}/scripts" "${dst_dir}/scripts"
-    local script_count
-    script_count=$(find "${dst_dir}/scripts" -maxdepth 1 -type f \
-        \( -name '*.sh' -o -name '*.py' \) | wc -l | tr -d ' ')
+    local script_count="${copied_scripts}"
 
     # Copy helper scripts
     copy_scripts_dir "${src_dir}/scripts/helpers" "${dst_dir}/scripts/helpers"

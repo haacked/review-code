@@ -47,8 +47,6 @@ from lint_loader import load_linter  # noqa: E402
 NOTES_HEADING = "## Lint notes"
 DEFAULT_PER_CATEGORY_LIMIT = 5
 
-LINTER = load_linter()
-
 # A heading at level 1 or 2: the level that opens or closes a section. H3 and
 # deeper nest inside whatever section is current.
 TOP_HEADING = re.compile(r"^ {0,3}#{1,2}\s")
@@ -61,15 +59,23 @@ NARRATIVE_SECTION = re.compile(
     r"^ {0,3}#{2,3}\s+(?:Overview|Fix Summary|.+\sReview)\s*$"
 )
 NOTES_SECTION = re.compile(r"^ {0,3}##\s+Lint notes\s*$")
-# Findings open with a severity token separated by a colon or an em/en dash.
-# The token vocabulary and its bold/backtick wrappers come from the linter so
-# this and SEVERITY_PREFIX cannot drift apart. The ASCII hyphen is deliberately
-# excluded: it would swallow a sentence opening "Nit-picking aside".
-FINDING_START = re.compile(
-    rf"^\s*{LINTER.SEVERITY_WRAP}(?:{LINTER.SEVERITY_TOKENS}){LINTER.SEVERITY_WRAP}"
-    r"\s*(?::|\s*[—–])",
-    re.I,
-)
+
+
+def finding_start(linter) -> re.Pattern[str]:
+    """Compile the finding opener from the linter's own token vocabulary.
+
+    Built here rather than at import time so `load_linter` can sit inside
+    `main`'s try/except: a missing linter has to reach the fail-open path this
+    script documents, not a traceback. Findings open with a severity token
+    separated by a colon or an em/en dash; the ASCII hyphen is deliberately
+    excluded, since it would swallow a sentence opening "Nit-picking aside".
+    """
+    return re.compile(
+        rf"^\s*{linter.SEVERITY_WRAP}(?:{linter.SEVERITY_TOKENS}){linter.SEVERITY_WRAP}"
+        r"\s*(?::|\s*[—–])",
+        re.I,
+    )
+
 
 PREAMBLE = (
     "Voice-lint warnings on this review's narrative prose (the Overview and the "
@@ -107,6 +113,7 @@ def outside_fences(linter, lines: list[str]):
 def mask_non_narrative(linter, lines: list[str]) -> list[str]:
     """Blank every line that is not narrative prose, preserving line count."""
     masked = [""] * len(lines)
+    opener = finding_start(linter)
     in_section = False
     in_finding = False
     fence = ""
@@ -138,7 +145,7 @@ def mask_non_narrative(linter, lines: list[str]) -> list[str]:
             in_finding = False
             paragraph_start = True
         else:
-            if paragraph_start and FINDING_START.match(line):
+            if paragraph_start and opener.match(line):
                 in_finding = True
             paragraph_start = False
 
@@ -253,10 +260,11 @@ def main() -> int:
 
     try:
         path = Path(args.file)
+        linter = load_linter()
         lines = path.read_text(encoding="utf-8").splitlines()
-        warnings, suppressed = collect(LINTER, lines, args.limit)
+        warnings, suppressed = collect(linter, lines, args.limit)
         annotated = (
-            annotate(LINTER, path, lines, warnings, suppressed)
+            annotate(linter, path, lines, warnings, suppressed)
             if args.annotate
             else False
         )
