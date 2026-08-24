@@ -214,10 +214,12 @@ setup_function_body() {
 }
 
 # The voice linter and the two scripts that call it are Python. When the copy
-# loops matched *.sh only, they were absent from the installed skill and every
+# loop matched *.sh only, they were absent from the installed skill and every
 # handler step that shells out to them failed open, silently and permanently.
-@test "setup: install_skill copies Python scripts, not just shell scripts" {
-    run grep -q 'scripts/"\*\.py' <<< "$(setup_function_body install_skill)"
+@test "setup: install_skill routes the scripts dir through copy_scripts_dir" {
+    # One copy loop, so a future file-type addition is one edit rather than two
+    # that can drift.
+    run grep -q 'copy_scripts_dir "${src_dir}/scripts" ' <<< "$(setup_function_body install_skill)"
     [ "$status" -eq 0 ]
 }
 
@@ -252,17 +254,17 @@ setup_function_body() {
     [ -f "$dir/helpers/keep.sh" ]
 }
 
-@test "setup: both new Python scripts suppress bytecode writes" {
-    # Belt to prune_pycache's braces: the scripts must not recreate the
-    # directory on the next review.
-    for script in gate-voice-lint.py lint-review-narrative.py; do
-        run grep -c 'sys.dont_write_bytecode = True' \
-            "$PROJECT_ROOT/skills/review-code/scripts/$script"
-        [[ "$output" == "1" ]] || {
-            echo "$script does not suppress bytecode writes"
+@test "setup: every Python entry point suppresses bytecode writes" {
+    # Belt to prune_pycache's braces: an entry point that imports the loader
+    # without this line recreates __pycache__ in the installed skill on the next
+    # review. Enumerated rather than listed, so a new script is covered.
+    while IFS= read -r script; do
+        grep -q 'sys.dont_write_bytecode = True' "$script" || {
+            echo "$(basename "$script") does not suppress bytecode writes"
             false
         }
-    done
+    done < <(grep -rl 'from lint_loader import' \
+        "$PROJECT_ROOT/skills/review-code/scripts" --include='*.py')
 }
 
 @test "setup: every Python script in the skill's scripts tree is installable" {

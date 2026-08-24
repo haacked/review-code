@@ -138,11 +138,11 @@ NORMALIZED=$(echo "${USAGE_JSON}" | jq -c '
 # comprehension-gate's validation_failures are the two that exist today; both
 # are only useful compared across runs.
 COUNTERS=$(echo "${USAGE_JSON}" | jq -c '
-    [ to_entries[]
-      | select(.value | type == "object")
-      | {key, value: (.value | del(.total_tokens, .tool_uses, .duration_ms))}
-      | select(.value | length > 0)
-    ] | from_entries')
+    with_entries(
+        select(.value | type == "object")
+        | .value |= del(.total_tokens, .tool_uses, .duration_ms)
+        | select(.value | length > 0)
+    )')
 
 # agents_run defaults to the number of agents that actually reported usage,
 # which is the honest count when the caller does not supply one. A step that

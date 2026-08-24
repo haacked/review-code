@@ -21,6 +21,10 @@ write_review() {
     cat > "$REVIEW"
 }
 
+checksum() {
+    md5 -q "$1" 2> /dev/null || md5sum "$1" | cut -d' ' -f1
+}
+
 # =============================================================================
 # Script structure
 # =============================================================================
@@ -82,15 +86,11 @@ EOF
     [[ "$(echo "$output" | field "['count']")" == "0" ]]
 }
 
-@test "lint-review-narrative: skips Fix Summary and Suggested Comments" {
+@test "lint-review-narrative: skips Suggested Comments" {
     write_review <<'EOF'
-## Fix Summary
-
-A comprehensive fix that leverages the helper.
-
 ## Suggested Comments
 
-`blocking`: this is not pinned by any test.
+`blocking`: this is not pinned by any test and leverages the helper.
 
 ## Overview
 
@@ -98,6 +98,20 @@ The cache clears on write.
 EOF
     run "$NARRATIVE" "$REVIEW"
     [[ "$(echo "$output" | field "['count']")" == "0" ]]
+}
+
+# Fix Summary is the fix pass's own prose, not finding bodies the voice pass
+# gated, and across saved reviews it is the largest single source of narrative
+# warnings. Excluding it was the bug.
+@test "lint-review-narrative: lints Fix Summary prose" {
+    write_review <<'EOF'
+## Fix Summary
+
+A comprehensive fix that leverages the helper.
+EOF
+    run "$NARRATIVE" "$REVIEW"
+    [[ "$(echo "$output" | categories)" == *"ai_vocabulary"* ]]
+    [[ "$(echo "$output" | categories)" == *"hype"* ]]
 }
 
 @test "lint-review-narrative: an H1 ends the current narrative section" {
@@ -275,7 +289,6 @@ This is a comprehensive rewrite.
 EOF
     "$NARRATIVE" --annotate "$REVIEW" > /dev/null
     "$NARRATIVE" --annotate "$REVIEW" > /dev/null
-    "$NARRATIVE" --annotate "$REVIEW" > /dev/null
     run grep -c '^## Lint notes$' "$REVIEW"
     [[ "$output" == "1" ]]
     run grep -c '^> line 3, hype:' "$REVIEW"
@@ -316,10 +329,10 @@ EOF
 
 The cache clears on write.
 EOF
-    before="$(md5 -q "$REVIEW" 2>/dev/null || md5sum "$REVIEW" | cut -d' ' -f1)"
+    before="$(checksum "$REVIEW")"
     run "$NARRATIVE" --annotate "$REVIEW"
     [[ "$(echo "$output" | field "['annotated']")" == "False" ]]
-    after="$(md5 -q "$REVIEW" 2>/dev/null || md5sum "$REVIEW" | cut -d' ' -f1)"
+    after="$(checksum "$REVIEW")"
     [[ "$before" == "$after" ]]
 }
 
@@ -350,6 +363,39 @@ EOF
     [[ "$output" == "1" ]]
 }
 
+# On the delta path the notes land mid-document and the carry-forward merge
+# writes a thematic break after them. Cutting to the next heading would take
+# that separator along.
+@test "lint-review-narrative: replacing a mid-document section keeps the separator" {
+    write_review <<'EOF'
+## Overview
+
+This is a comprehensive rewrite.
+
+## Lint notes
+
+Voice-lint warnings on this review's narrative prose.
+
+> line 3, hype: stale note from the previous run.
+
+---
+
+# Re-review at abc1234
+
+Carried forward.
+EOF
+    run "$NARRATIVE" --annotate "$REVIEW"
+    [ "$status" -eq 0 ]
+    run grep -c '^---$' "$REVIEW"
+    [[ "$output" == "1" ]]
+    run grep -c '^# Re-review at abc1234$' "$REVIEW"
+    [[ "$output" == "1" ]]
+    run grep -c '^## Lint notes$' "$REVIEW"
+    [[ "$output" == "1" ]]
+    run grep -c 'stale note from the previous run' "$REVIEW"
+    [[ "$output" == "0" ]]
+}
+
 @test "lint-review-narrative: an existing Lint notes section is not itself linted" {
     write_review <<'EOF'
 ## Overview
@@ -372,9 +418,9 @@ EOF
 
 This is a comprehensive rewrite.
 EOF
-    before="$(md5 -q "$REVIEW" 2>/dev/null || md5sum "$REVIEW" | cut -d' ' -f1)"
+    before="$(checksum "$REVIEW")"
     "$NARRATIVE" "$REVIEW" > /dev/null
-    after="$(md5 -q "$REVIEW" 2>/dev/null || md5sum "$REVIEW" | cut -d' ' -f1)"
+    after="$(checksum "$REVIEW")"
     [[ "$before" == "$after" ]]
 }
 

@@ -81,7 +81,7 @@ Save the complete review to `$review_file`.
 ~/.claude/skills/review-code/scripts/lint-review-narrative.py --annotate "$review_file"
 ```
 
-Re-running is safe: it replaces any section an earlier run left, and drops the section when the prose comes back clean. A nonzero `error` field, or a missing script, leaves the review as composed. The `delta` path handles this differently; `review-carry-forward.md` says how. In debug mode, save the stage `11c2-voice-lint` narrative artifacts (see `review-debug.md`).
+Re-running is safe: it replaces any section an earlier run left, and drops the section when the prose comes back clean. A nonzero `error` field, or a missing script, leaves the review as composed. On the `delta` path this step runs after the carry-forward merge, against the merged file; `review-carry-forward.md` says where. In debug mode, save the stage `11c2-voice-lint` narrative artifacts (see `review-debug.md`).
 
 Then inform the user with a clickable file link:
 

@@ -88,13 +88,13 @@ EOF
 # Payload capping
 # =============================================================================
 
-@test "gate-voice-lint: --limit caps warnings per finding and notes the rest" {
+@test "gate-voice-lint: --limit caps warnings per finding and counts the rest" {
     run "$GATE" --limit 2 - <<'EOF'
 [{"id": 1, "description": "`blocking`: this pins the behavior.\nIt is not pinned anywhere.\nThe read is pinned by a test.\nNothing pinned elsewhere covers it.\nThe contract isn't pinned.", "proposed_fix": null}]
 EOF
     [ "$status" -eq 0 ]
-    [[ "$(echo "$output" | field "['findings'][0]['warnings'][-1]['category']")" == "note" ]]
-    [[ "$(echo "$output" | field "['findings'][0]['warnings'][-1]['message']")" == *"further warning"* ]]
+    [[ "$(echo "$output" | field "['findings'][0]['warnings'].__len__()")" == "2" ]]
+    [[ "$(echo "$output" | field "['findings'][0]['suppressed']")" -gt 0 ]]
 }
 
 @test "gate-voice-lint: --limit 0 keeps every warning" {
@@ -102,7 +102,7 @@ EOF
 [{"id": 1, "description": "`blocking`: this pins the behavior.\nIt is not pinned anywhere.\nThe read is pinned by a test.", "proposed_fix": null}]
 EOF
     [ "$status" -eq 0 ]
-    run bash -c "echo '$output' | python3 -c \"import json,sys; d=json.load(sys.stdin); print(any(w['category']=='note' for w in d['findings'][0]['warnings']))\""
+    run bash -c "echo '$output' | python3 -c \"import json,sys; print('suppressed' in json.load(sys.stdin)['findings'][0])\""
     [[ "$output" == "False" ]]
 }
 

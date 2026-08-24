@@ -18,8 +18,10 @@ Output (stdout):
     {"checked": 9, "clean": 7, "warned": 2, "warned_ids": [3, 7],
      "findings": [{"id": 3, "warnings": [
         {"field": "description", "line": 1, "category": "pinning",
-         "message": "...", "text": "..."}]}],
+         "message": "...", "text": "..."}], "suppressed": 2}],
      "error": null}
+
+`suppressed` appears only when --limit dropped warnings from that finding.
 
 Fails open: any internal failure prints a zero-count result with `error` set
 and exits 0, so a bad input or a broken rule can never block a review.
@@ -40,11 +42,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "helpers"))
 
 from lint_loader import load_linter  # noqa: E402
 
-# Warning text is echoed back to the voice agent in the retry prompt. A body
-# that trips the same rule on ten lines does not need ten examples to be fixed,
-# and an uncapped payload is paid for at output-token prices.
+# Every warning on a finding is echoed back to the voice agent in the bounce
+# prompt, so this caps the whole list per finding rather than per category: what
+# needs bounding is the total payload, which a per-category cap would not bound.
 DEFAULT_PER_FINDING_LIMIT = 6
-TEXT_EXCERPT_CHARS = 160
 
 # The fields a rewrite can carry. `proposed_fix` is often null.
 LINTED_FIELDS = ("description", "proposed_fix")
@@ -61,60 +62,45 @@ def empty_result(error: str | None = None) -> dict:
     }
 
 
-def lint_body(linter, text: str, field: str) -> list[dict]:
-    """Lint one field and tag each warning with the field it came from."""
-    return [
-        {
-            "field": field,
-            "line": item["line"],
-            "category": item["category"],
-            "message": item["message"],
-            "text": item["text"][:TEXT_EXCERPT_CHARS],
-        }
-        for item in linter.lint(text)
-    ]
-
-
 def gate(linter, items: list, limit: int) -> dict:
-    result = empty_result()
-    findings = []
+    checked = 0
+    warned_ids: list = []
+    findings: list[dict] = []
 
     for item in items:
         if not isinstance(item, dict):
             continue
-        result["checked"] += 1
+        checked += 1
         warnings: list[dict] = []
         for field in LINTED_FIELDS:
             value = item.get(field)
             if isinstance(value, str) and value.strip():
-                warnings.extend(lint_body(linter, value, field))
+                warnings.extend(
+                    linter.trim_warning(w, field=field) for w in linter.lint(value)
+                )
 
         if not warnings:
-            result["clean"] += 1
             continue
 
-        result["warned"] += 1
         # Indexing, not .get: an entry with no id would put null into
         # warned_ids and send the caller bouncing an id no finding has.
         # Raising here lands on the documented fail-open result instead.
         identifier = item["id"]
-        result["warned_ids"].append(identifier)
+        warned_ids.append(identifier)
+        finding = {"id": identifier, "warnings": warnings}
         if limit > 0 and len(warnings) > limit:
-            suppressed = len(warnings) - limit
-            warnings = warnings[:limit]
-            warnings.append(
-                {
-                    "field": "",
-                    "line": 0,
-                    "category": "note",
-                    "message": f"{suppressed} further warning(s) not listed.",
-                    "text": "",
-                }
-            )
-        findings.append({"id": identifier, "warnings": warnings})
+            finding["warnings"] = warnings[:limit]
+            finding["suppressed"] = len(warnings) - limit
+        findings.append(finding)
 
-    result["findings"] = findings
-    return result
+    return {
+        "checked": checked,
+        "clean": checked - len(warned_ids),
+        "warned": len(warned_ids),
+        "warned_ids": warned_ids,
+        "findings": findings,
+        "error": None,
+    }
 
 
 def parse_args() -> argparse.Namespace:

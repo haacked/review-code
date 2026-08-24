@@ -126,10 +126,12 @@ verify_repo_structure() {
     fi
 }
 
-# Remove __pycache__ left by a previous run's Python scripts. The scripts
-# themselves set sys.dont_write_bytecode, so this only clears what installs
-# from before that landed. Unlike .reviews and .sessions, __pycache__ is not
-# dot-prefixed, so it counts against the skill's file budget.
+# Remove __pycache__ from the installed scripts tree. The scripts set
+# sys.dont_write_bytecode, so this is a standing net rather than a one-off
+# migration: a future entry point that imports lint_loader without that line
+# recreates the directory, and this is what removes it. Unlike .reviews and
+# .sessions, __pycache__ is not dot-prefixed, so it counts against the skill's
+# file budget.
 prune_pycache() {
     local dir="$1"
     [[ -d "${dir}" ]] || return 0
@@ -178,26 +180,19 @@ install_skill() {
 
     cp "${skill_src}" "${skill_dst}"
 
-    # Copy scripts
-    local script_count=0
-    for src in "${src_dir}/scripts/"*.sh "${src_dir}/scripts/"*.py; do
-        [[ -e "${src}" ]] || continue
-        local filename
-        filename=$(basename "${src}")
-        local dst="${dst_dir}/scripts/${filename}"
-
-        cp "${src}" "${dst}"
-        chmod +x "${dst}"
-        script_count=$((script_count + 1))
-    done
-
     prune_pycache "${dst_dir}/scripts"
+
+    # Copy scripts, their helpers, and the session hooks (per-command teardown
+    # invoked by session-manager.sh; e.g. review-code-cleanup.sh removes a
+    # provisioned PR worktree).
+    copy_scripts_dir "${src_dir}/scripts" "${dst_dir}/scripts"
+    local script_count
+    script_count=$(find "${dst_dir}/scripts" -maxdepth 1 -type f \
+        \( -name '*.sh' -o -name '*.py' \) | wc -l | tr -d ' ')
 
     # Copy helper scripts
     copy_scripts_dir "${src_dir}/scripts/helpers" "${dst_dir}/scripts/helpers"
 
-    # Copy session hooks (per-command teardown invoked by session-manager.sh;
-    # e.g. review-code-cleanup.sh removes a provisioned PR worktree)
     copy_scripts_dir "${src_dir}/scripts/session-hooks" "${dst_dir}/scripts/session-hooks"
 
     # Copy handlers

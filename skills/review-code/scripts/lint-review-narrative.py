@@ -45,28 +45,31 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "helpers"))
 from lint_loader import load_linter  # noqa: E402
 
 NOTES_HEADING = "## Lint notes"
-TEXT_EXCERPT_CHARS = 160
 DEFAULT_PER_CATEGORY_LIMIT = 5
 
-ANY_HEADING = re.compile(r"^ {0,3}#{1,6}\s")
-H1 = re.compile(r"^ {0,3}#\s")
-H2 = re.compile(r"^ {0,3}##\s")
+LINTER = load_linter()
+
+# A heading at level 1 or 2: the level that opens or closes a section. H3 and
+# deeper nest inside whatever section is current.
+TOP_HEADING = re.compile(r"^ {0,3}#{1,2}\s")
 # H3 as well as H2: some reviews nest the per-agent summaries under a
-# non-narrative H2, and an H3-only whitelist would report those as clean.
-NARRATIVE_SECTION = re.compile(r"^ {0,3}#{2,3}\s+(?:Overview|.+\sReview)\s*$")
+# non-narrative H2, and an H2-only whitelist would report those as clean.
+# "Overview" and "<Something> Review" are the composer's per-agent sections;
+# "Fix Summary" is written by the fix pass and, unlike Suggested Comments, is
+# the composer's own prose rather than finding bodies the voice pass gated.
+NARRATIVE_SECTION = re.compile(
+    r"^ {0,3}#{2,3}\s+(?:Overview|Fix Summary|.+\sReview)\s*$"
+)
 NOTES_SECTION = re.compile(r"^ {0,3}##\s+Lint notes\s*$")
 # Findings open with a severity token separated by a colon or an em/en dash.
-# The ASCII hyphen is deliberately excluded: it would swallow a sentence
-# opening "Nit-picking aside".
+# The token vocabulary and its bold/backtick wrappers come from the linter so
+# this and SEVERITY_PREFIX cannot drift apart. The ASCII hyphen is deliberately
+# excluded: it would swallow a sentence opening "Nit-picking aside".
 FINDING_START = re.compile(
-    r"^\s*(?:\*\*)?`?(?:blocking|suggestion|question|nit)`?(?:\*\*)?\s*(?::|\s*[—–])",
+    rf"^\s*{LINTER.SEVERITY_WRAP}(?:{LINTER.SEVERITY_TOKENS}){LINTER.SEVERITY_WRAP}"
+    r"\s*(?::|\s*[—–])",
     re.I,
 )
-# The trailer the agents write under a fenced finding body
-# (`Location: path:line | Confidence: NN%`). The linter's own LABEL_LINE only
-# matches a bare `Location:` with nothing after it, so without this the trailer
-# reads as narrative and its em dash reports on every finding.
-FINDING_TRAILER = re.compile(r"^\s*(?:\*\*)?Location(?:\*\*)?\s*:", re.I)
 
 PREAMBLE = (
     "Voice-lint warnings on this review's narrative prose (the Overview and the "
@@ -75,14 +78,30 @@ PREAMBLE = (
 )
 
 
-def empty_result(path: str, error: str | None = None) -> dict:
+def result(path, *, count=0, annotated=False, warnings=(), error=None) -> dict:
     return {
-        "file": path,
-        "count": 0,
-        "annotated": False,
-        "warnings": [],
+        "file": str(path),
+        "count": count,
+        "annotated": annotated,
+        "warnings": list(warnings),
         "error": error,
     }
+
+
+def outside_fences(linter, lines: list[str]):
+    """Yield (index, line) for every line outside a fenced code block."""
+    fence = ""
+    for index, line in enumerate(lines):
+        marker = linter.FENCE.match(line)
+        token = marker.group(1) if marker else ""
+        if fence:
+            if marker and token.startswith(fence) and not line[marker.end():].strip():
+                fence = ""
+            continue
+        if token:
+            fence = token
+            continue
+        yield index, line
 
 
 def mask_non_narrative(linter, lines: list[str]) -> list[str]:
@@ -96,9 +115,6 @@ def mask_non_narrative(linter, lines: list[str]) -> list[str]:
     for index, line in enumerate(lines):
         marker = linter.FENCE.match(line)
         token = marker.group(1) if marker else ""
-        # Set by branches whose line must be blanked even inside a narrative
-        # section, because `prose_lines` would otherwise read it as prose.
-        structural = False
 
         if fence:
             if marker and token.startswith(fence) and not line[marker.end():].strip():
@@ -107,13 +123,13 @@ def mask_non_narrative(linter, lines: list[str]) -> list[str]:
         elif token:
             fence = token
             paragraph_start = False
-        elif ANY_HEADING.match(line):
+        elif linter.HEADING.match(line):
             # A heading always ends a finding block. An H2 or H3 naming a
-            # narrative section enters one; any other H2 or an H1 leaves.
+            # narrative section enters one; any other H1 or H2 leaves.
             in_finding = False
             if NARRATIVE_SECTION.match(line):
                 in_section = True
-            elif H2.match(line) or H1.match(line):
+            elif TOP_HEADING.match(line):
                 in_section = False
             paragraph_start = True
         elif not line.strip():
@@ -121,39 +137,26 @@ def mask_non_narrative(linter, lines: list[str]) -> list[str]:
         elif linter.HR.match(line):
             in_finding = False
             paragraph_start = True
-        elif FINDING_TRAILER.match(line):
-            structural = True
-            paragraph_start = False
         else:
             if paragraph_start and FINDING_START.match(line):
                 in_finding = True
             paragraph_start = False
 
-        # Headings, blank lines, and thematic breaks reach this in their own
-        # right; `prose_lines` skips all three, so passing them through changes
-        # nothing that gets reported. The trailer is not one of those, so it
-        # sets `structural` to opt out.
-        if in_section and not in_finding and not structural:
+        # Headings, blank lines, thematic breaks, and `Location:` trailers reach
+        # this in their own right; `prose_lines` skips all four, so passing them
+        # through changes nothing that gets reported.
+        if in_section and not in_finding:
             masked[index] = line
 
     return masked
 
 
-def collect(linter, text: str, limit: int) -> tuple[list[dict], dict[str, int]]:
-    masked = mask_non_narrative(linter, text.splitlines())
+def collect(linter, lines: list[str], limit: int) -> tuple[list[dict], dict[str, int]]:
+    masked = mask_non_narrative(linter, lines)
     warnings = linter.lint("\n".join(masked))
     warnings.sort(key=lambda item: (item["line"], item["category"]))
     kept, suppressed = linter.cap_warnings(warnings, limit)
-    trimmed = [
-        {
-            "line": item["line"],
-            "category": item["category"],
-            "message": item["message"],
-            "text": item["text"][:TEXT_EXCERPT_CHARS],
-        }
-        for item in kept
-    ]
-    return trimmed, suppressed
+    return [linter.trim_warning(item) for item in kept], suppressed
 
 
 def find_notes_heading(linter, lines: list[str]) -> int | None:
@@ -163,32 +166,30 @@ def find_notes_heading(linter, lines: list[str]) -> int | None:
     the fence walk, that quoted line reads as a section opener and everything
     from it to the next heading is cut from the saved review.
     """
-    fence = ""
-    for index, line in enumerate(lines):
-        marker = linter.FENCE.match(line)
-        token = marker.group(1) if marker else ""
-        if fence:
-            if marker and token.startswith(fence) and not line[marker.end():].strip():
-                fence = ""
-            continue
-        if token:
-            fence = token
-            continue
-        if NOTES_SECTION.match(line):
-            return index
-    return None
+    return next(
+        (
+            index
+            for index, line in outside_fences(linter, lines)
+            if NOTES_SECTION.match(line)
+        ),
+        None,
+    )
 
 
-def strip_notes_section(linter, lines: list[str]) -> list[str]:
-    """Drop an existing Lint notes section so re-running never stacks them."""
-    start = find_notes_heading(linter, lines)
+def strip_notes_section(linter, lines: list[str], start: int | None) -> list[str]:
+    """Drop an existing Lint notes section so re-running never stacks them.
+
+    The section ends at the next H1 or H2, or at a thematic break, whichever
+    comes first. Stopping at the break matters on the delta path, where the
+    carry-forward merge writes one between the previous review and the new one.
+    """
     if start is None:
         return lines
     end = next(
         (
             index
             for index in range(start + 1, len(lines))
-            if H2.match(lines[index]) or H1.match(lines[index])
+            if TOP_HEADING.match(lines[index]) or linter.HR.match(lines[index])
         ),
         len(lines),
     )
@@ -208,16 +209,19 @@ def render_notes(warnings: list[dict], suppressed: dict[str, int]) -> list[str]:
 
 
 def annotate(
-    linter, path: Path, warnings: list[dict], suppressed: dict[str, int]
+    linter,
+    path: Path,
+    lines: list[str],
+    warnings: list[dict],
+    suppressed: dict[str, int],
 ) -> bool:
-    lines = path.read_text(encoding="utf-8").splitlines()
-    has_notes = find_notes_heading(linter, lines) is not None
+    start = find_notes_heading(linter, lines)
     # Nothing to say and nothing stale to remove: leave the file alone rather
     # than rewriting it, which would normalize its line endings and its
     # trailing newline for no reason.
-    if not warnings and not suppressed and not has_notes:
+    if not warnings and not suppressed and start is None:
         return False
-    lines = strip_notes_section(linter, lines)
+    lines = strip_notes_section(linter, lines, start)
     if warnings or suppressed:
         lines.extend([""] + render_notes(warnings, suppressed))
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -249,26 +253,25 @@ def main() -> int:
 
     try:
         path = Path(args.file)
-        linter = load_linter()
-        warnings, suppressed = collect(
-            linter, path.read_text(encoding="utf-8"), args.limit
-        )
+        lines = path.read_text(encoding="utf-8").splitlines()
+        warnings, suppressed = collect(LINTER, lines, args.limit)
         annotated = (
-            annotate(linter, path, warnings, suppressed) if args.annotate else False
+            annotate(LINTER, path, lines, warnings, suppressed)
+            if args.annotate
+            else False
         )
     except Exception as error:  # noqa: BLE001 - fail open on anything
-        print(json.dumps(empty_result(args.file, f"{type(error).__name__}: {error}")))
+        print(json.dumps(result(args.file, error=f"{type(error).__name__}: {error}")))
         return 0
 
     print(
         json.dumps(
-            {
-                "file": str(path),
-                "count": len(warnings) + sum(suppressed.values()),
-                "annotated": annotated,
-                "warnings": warnings,
-                "error": None,
-            }
+            result(
+                path,
+                count=len(warnings) + sum(suppressed.values()),
+                annotated=annotated,
+                warnings=warnings,
+            )
         )
     )
     return 0

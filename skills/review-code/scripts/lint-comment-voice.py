@@ -197,7 +197,7 @@ HR = re.compile(r"^\s*(?:[-*_]\s*){3,}$")
 LABEL_LINE = re.compile(
     r"^\s*(?:\*\*)?(?:Location|Found by|Raised by|Resolution|Agents?|Severity|"
     r"Confidence|Status|Assessment|Source|Thread|Review scope|Fix summary)\s*"
-    r"(?:\*\*)?\s*:\s*$",
+    r"(?:\*\*)?\s*:(?:\s|$)",
     re.I,
 )
 INLINE_CODE = re.compile(r"`[^`]*`")
@@ -205,23 +205,24 @@ URL = re.compile(r"https?://[^\s)>]+")
 WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9'’/-]*")
 SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 
+SEVERITY_TOKENS = r"blocking|suggestion|question|nit"
+# Bold and backticks nest either way round in real reviews, so accept any
+# run of them on both sides rather than one fixed order.
+SEVERITY_WRAP = r"(?:\*\*|`)*"
 SEVERITY_PREFIX = re.compile(
-    r"^\s*`?\*{0,2}(?:blocking|suggestion|question|nit)\*{0,2}`?\s*:",
+    rf"^\s*{SEVERITY_WRAP}(?:{SEVERITY_TOKENS}){SEVERITY_WRAP}\s*:",
     re.I,
 )
-
-# Rules whose findings should not fire when the only matches sit inside a
-# severity prefix at the start of a line. Everything else masks inline code,
-# which already neutralizes the backticked prefix forms; the bare case needed
-# its own guard.
-RULES_RESPECTING_PREFIX = {
-    "pseudo_header",
-    "verdict_opener",
-}
 
 # Categories that are only worth reporting once per line, so a body with three
 # em dashes doesn't triple-report.
 CAPPED_CATEGORIES = {"dash"}
+
+
+# How much of the offending line to quote back. Both pipeline consumers show
+# this excerpt: the gate hands it to the voice agent on a bounce, the narrative
+# linter writes it into the review, and they should agree.
+TEXT_EXCERPT_CHARS = 160
 
 
 class LintWarning(TypedDict):
@@ -231,11 +232,23 @@ class LintWarning(TypedDict):
     text: str
 
 
+def trim_warning(item: LintWarning, **extra) -> dict:
+    """Render one warning for a consumer, with the quoted line bounded."""
+    return {
+        **extra,
+        "line": item["line"],
+        "category": item["category"],
+        "message": item["message"],
+        "text": item["text"][:TEXT_EXCERPT_CHARS],
+    }
+
+
 def prose_lines(text: str) -> Iterable[tuple[int, str, str]]:
     """Yield (line_number, original_line, prose) with code and metadata masked."""
-    # Strip whole-document review-metadata blocks before line iteration. A
+    # Blank whole-document review-metadata blocks before line iteration. A
     # block comment that spans lines would otherwise survive per-line masking.
-    text = METADATA_COMMENT.sub("", text)
+    # Newlines are preserved so reported line numbers still point at the file.
+    text = METADATA_COMMENT.sub(lambda m: "\n" * m.group(0).count("\n"), text)
 
     fence = ""
     for line_number, line in enumerate(text.splitlines(), start=1):
@@ -257,7 +270,7 @@ def prose_lines(text: str) -> Iterable[tuple[int, str, str]]:
         ):
             continue
 
-        prose = URL.sub("", INLINE_CODE.sub("", line))
+        prose = URL.sub("", INLINE_CODE.sub("", strip_severity_prefix(line)))
         yield line_number, line, prose
 
 
@@ -284,17 +297,7 @@ def lint(text: str) -> list[LintWarning]:
             continue
 
         for category, patterns in PATTERNS.items():
-            if category in RULES_RESPECTING_PREFIX:
-                # Strip the prefix off the raw line, before masking, then mask.
-                # Masking first deletes the backticked severity word and leaves
-                # a bare ": ", which no longer matches SEVERITY_PREFIX; the
-                # start-anchored rules then never see the start of the sentence.
-                subject = URL.sub(
-                    "", INLINE_CODE.sub("", strip_severity_prefix(original))
-                )
-            else:
-                subject = raw_prose
-            if any(pattern.search(subject) for pattern in patterns):
+            if any(pattern.search(raw_prose) for pattern in patterns):
                 warnings.append(
                     warning(
                         line_number,
