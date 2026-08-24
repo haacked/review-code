@@ -6,6 +6,7 @@ For each finding you report:
 3. Only flag code in the diff. Do not flag pre-existing issues in unchanged code.
 4. For bug claims: read surrounding code to confirm the behavior before reporting
 5. For every `blocking:` or `suggestion:` finding, include a **concrete code fix**: show the recommended change as a diff (`- old` / `+ new`) or replacement code block. If you cannot provide a concrete fix, demote the finding to `question:`.
+6. Every finding has to ask the author for something: a change to make, or a question only they can answer. If your own analysis lands on "leave it as it is", the finding is cleared. Record it in your Investigation Summary and don't report it. A finding whose trigger hasn't happened yet is the same thing ("if a third caller is ever added…", "once this grows past N"): file it when the trigger arrives. Rewriting a no-ask finding as a `question:` or a `nit:` doesn't rescue it, and neither does describing the problem and then talking yourself out of the fix. Deferring the decision to the author ("your call", "worth considering") is fine; leaving them nothing to decide is not.
 
 **Comment Prefixes:**
 

@@ -29,6 +29,24 @@
       "difficulty": "medium"
     },
     {
+      "id": "shadow-diff-duplication",
+      "category": "crafted",
+      "name": "Shadow Diff Duplication",
+      "description": "Rust shadow diff with two by-id copies that should not be consolidated, plus real bugs elsewhere",
+      "languages": ["rust"],
+      "areas": ["correctness", "maintainability"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "analytics-emitter-batching",
+      "category": "crafted",
+      "name": "Analytics Event Emitters",
+      "description": "TypeScript emitters where two functions differing by one string literal should be consolidated, next to identical per-endpoint config that should not be; the ask-branch counterpart to shadow-diff-duplication",
+      "languages": ["typescript"],
+      "areas": ["maintainability", "correctness"],
+      "difficulty": "medium"
+    },
+    {
       "id": "canonical-log-parallel",
       "category": "posthog",
       "name": "Canonical Log Lines No-Op in Parallel Path",

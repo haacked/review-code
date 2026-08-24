@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "expected_findings": [
+    {
+      "id": "track-event-string-literal-copies",
+      "description": "trackSignup and trackLogin are the same function apart from the event name string, so one trackEvent(event: string, payload: EventPayload) replaces both",
+      "area": "maintainability",
+      "severity": "suggestion",
+      "weight": 8,
+      "file": "src/analytics/emitters.ts",
+      "line_start": 43,
+      "line_end": 69,
+      "keywords": ["tracksignup", "tracklogin", "string literal", "event name", "shared function", "consolidat", "single function"]
+    },
+    {
+      "id": "chunk-events-drops-remainder",
+      "description": "chunkEvents loops while i + size <= events.length, so a trailing partial batch is never produced and those events are silently never sent",
+      "area": "correctness",
+      "severity": "blocking",
+      "weight": 8,
+      "file": "src/analytics/emitters.ts",
+      "line_start": 24,
+      "line_end": 31,
+      "keywords": ["partial", "remainder", "last batch", "final batch", "leftover", "off-by-one", "silently drop"]
+    },
+    {
+      "id": "flush-all-foreach-async",
+      "description": "flushAll passes an async callback to forEach, so it resolves before any POST completes and a rejected request becomes an unhandled rejection",
+      "area": "correctness",
+      "severity": "blocking",
+      "weight": 7,
+      "file": "src/analytics/emitters.ts",
+      "line_start": 33,
+      "line_end": 41,
+      "keywords": ["foreach", "does not await", "not awaited", "floating promise", "unhandled rejection", "promise.all", "resolves before"]
+    }
+  ],
+  "false_positive_traps": [
+    {
+      "id": "share-retry-policy-constants",
+      "description": "CAPTURE_RETRY and BATCH_RETRY hold the same values today, but they are per-endpoint configuration tuned independently, and the comment on BATCH_RETRY says so. Collapsing them into one constant couples two endpoints that are meant to diverge. Configuration that happens to match is cleared, not a comment.",
+      "area": "maintainability",
+      "file": "src/analytics/emitters.ts",
+      "line_start": 10,
+      "line_end": 22,
+      "trap_keywords": ["consolidat", "shared constant", "single constant", "one constant", "deduplicat", "same values", "extract a", "extract into"]
+    }
+  ],
+  "clean_areas": ["security", "compatibility"]
+}
