@@ -250,6 +250,51 @@ EOF
     [[ "$(echo "$output" | categories)" == *"ai_vocabulary"* ]]
 }
 
+# parse-review-findings.sh recognises `### `blocking`: title` as a finding, and
+# the masker cleared in_finding on that heading without ever setting it, so the
+# body underneath was read as narrative.
+@test "lint-review-narrative: a heading-form finding opens a finding block" {
+    write_review <<'EOF'
+## Security Review
+
+The guard holds.
+
+### `blocking`: the request raises a 500
+
+This is a comprehensive failure that leverages the old path.
+EOF
+    run "$NARRATIVE" "$REVIEW"
+    [[ "$(echo "$output" | field "['count']")" == "0" ]]
+}
+
+@test "lint-review-narrative: narrative above a heading-form finding still lints" {
+    write_review <<'EOF'
+## Security Review
+
+The guard leverages the old validator.
+
+### `blocking`: the request raises a 500
+
+This is a comprehensive failure.
+EOF
+    run "$NARRATIVE" "$REVIEW"
+    [[ "$(echo "$output" | categories)" == *"ai_vocabulary"* ]]
+}
+
+@test "lint-review-narrative: --annotate leaves no temp file behind" {
+    write_review <<'EOF'
+## Overview
+
+This is a comprehensive rewrite.
+EOF
+    run "$NARRATIVE" --annotate "$REVIEW"
+    [ "$status" -eq 0 ]
+    run bash -c "ls -a '$BATS_TEST_TMPDIR' | grep -c 'lint-notes' || true"
+    [[ "$output" == "0" ]]
+    run grep -c '^## Lint notes$' "$REVIEW"
+    [[ "$output" == "1" ]]
+}
+
 @test "lint-review-narrative: reported line numbers point at the review file" {
     write_review <<'EOF'
 ## Overview

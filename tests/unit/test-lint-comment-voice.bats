@@ -180,6 +180,25 @@ blocking: Direct, well-scoped change.
 EOF
 }
 
+# Reviews separate the severity token with an em dash as often as with a colon.
+# Treating only the colon as a prefix left the structural dash in the prose,
+# so the dash rule reported on every dash-separated finding title.
+@test "lint-comment-voice: a dash-separated severity prefix is not prose" {
+    run "$LINTER" - <<'EOF'
+**`question` — the doc comment claims a retry the code does not have.**
+EOF
+    [ "$status" -eq 0 ]
+    [[ "$output" == "[]" ]]
+}
+
+@test "lint-comment-voice: a dash inside the body still reports" {
+    run "$LINTER" - <<'EOF'
+`blocking`: the cache stays stale — see client.py — after deploy.
+EOF
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"dash"'* ]]
+}
+
 @test "lint-comment-voice: flags a pseudo-header behind a severity prefix" {
     run "$LINTER" - <<'EOF'
 `blocking`: **Issue**: the request raises a 500.

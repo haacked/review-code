@@ -207,8 +207,12 @@ SEVERITY_TOKENS = r"blocking|suggestion|question|nit"
 # Bold and backticks nest either way round in real reviews, so accept any
 # run of them on both sides rather than one fixed order.
 SEVERITY_WRAP = r"(?:\*\*|`)*"
+# The separator is a colon or an em/en dash; reviews use both. The ASCII hyphen
+# is deliberately excluded, since it would swallow a sentence opening
+# "Nit-picking aside". Without the dash, the structural dash in a title like
+# **`question` — …** stays in the prose and the dash rule reports on it.
 SEVERITY_PREFIX = re.compile(
-    rf"^\s*{SEVERITY_WRAP}(?:{SEVERITY_TOKENS}){SEVERITY_WRAP}\s*:",
+    rf"^\s*{SEVERITY_WRAP}(?:{SEVERITY_TOKENS}){SEVERITY_WRAP}\s*(?::|\s*[—–])",
     re.I,
 )
 

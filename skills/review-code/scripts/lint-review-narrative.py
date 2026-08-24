@@ -6,13 +6,15 @@ per-agent summaries, so that prose is the one place in a review nothing checks.
 This script lints exactly that prose and, with --annotate, writes the warnings
 into the review as a "Lint notes" section.
 
-What counts as narrative is a whitelist: the body of `## Overview` and of every
-`## <Something> Review` section, minus the finding blocks inside them. A finding
-block runs from a paragraph opening with a severity prefix (`blocking:`,
-`suggestion:`, `question:`, `nit:`) to the next thematic break or heading. Fix
-Summary, Suggested Comments, tables, and the metadata header are skipped: the
-first two re-quote finding bodies the voice pass already gated, and a whitelist
-keeps a newly added section out until someone decides it belongs.
+What counts as narrative is a whitelist: the body of `## Overview`, `## Fix
+Summary`, and every `## <Something> Review` section, minus the finding blocks
+inside them. A finding block starts at a paragraph or heading opening with a
+severity token (`blocking`, `suggestion`, `question`, `nit`, separated by a
+colon or an em dash) and runs to the next thematic break or heading. Suggested
+Comments, tables, and the metadata header are skipped: the first re-quotes
+finding bodies the voice pass already gated, and a whitelist keeps a newly added
+section out until someone decides it belongs. Fix Summary is the fix pass's own
+prose, so it is linted.
 
 Excluded lines are blanked rather than dropped, so reported line numbers point
 at the review file itself.
@@ -32,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -59,22 +62,6 @@ NARRATIVE_SECTION = re.compile(
     r"^ {0,3}#{2,3}\s+(?:Overview|Fix Summary|.+\sReview)\s*$"
 )
 NOTES_SECTION = re.compile(r"^ {0,3}##\s+Lint notes\s*$")
-
-
-def finding_start(linter) -> re.Pattern[str]:
-    """Compile the finding opener from the linter's own token vocabulary.
-
-    Built here rather than at import time so `load_linter` can sit inside
-    `main`'s try/except: a missing linter has to reach the fail-open path this
-    script documents, not a traceback. Findings open with a severity token
-    separated by a colon or an em/en dash; the ASCII hyphen is deliberately
-    excluded, since it would swallow a sentence opening "Nit-picking aside".
-    """
-    return re.compile(
-        rf"^\s*{linter.SEVERITY_WRAP}(?:{linter.SEVERITY_TOKENS}){linter.SEVERITY_WRAP}"
-        r"\s*(?::|\s*[—–])",
-        re.I,
-    )
 
 
 PREAMBLE = (
@@ -113,7 +100,6 @@ def outside_fences(linter, lines: list[str]):
 def mask_non_narrative(linter, lines: list[str]) -> list[str]:
     """Blank every line that is not narrative prose, preserving line count."""
     masked = [""] * len(lines)
-    opener = finding_start(linter)
     in_section = False
     in_finding = False
     fence = ""
@@ -138,6 +124,9 @@ def mask_non_narrative(linter, lines: list[str]) -> list[str]:
                 in_section = True
             elif TOP_HEADING.match(line):
                 in_section = False
+            elif linter.SEVERITY_PREFIX.match(linter.HEADING.sub("", line)):
+                # A heading can open a finding: `### `blocking`: title`.
+                in_finding = True
             paragraph_start = True
         elif not line.strip():
             paragraph_start = True
@@ -145,7 +134,7 @@ def mask_non_narrative(linter, lines: list[str]) -> list[str]:
             in_finding = False
             paragraph_start = True
         else:
-            if paragraph_start and opener.match(line):
+            if paragraph_start and linter.SEVERITY_PREFIX.match(line):
                 in_finding = True
             paragraph_start = False
 
@@ -231,7 +220,15 @@ def annotate(
     lines = strip_notes_section(linter, lines, start)
     if warnings or suppressed:
         lines.extend([""] + render_notes(warnings, suppressed))
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    # Replace atomically: write_text truncates first, so a write that fails
+    # part-way would leave the review a partial file, and the fail-open handler
+    # would report that as a clean skip.
+    tmp = path.with_name(f".{path.name}.lint-notes")
+    try:
+        tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
     return bool(warnings or suppressed)
 
 
