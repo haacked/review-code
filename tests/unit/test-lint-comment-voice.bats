@@ -122,6 +122,57 @@ EOF
     [[ "$output" == "[]" ]]
 }
 
+# The voice agent and the agent briefing name this family phrase by phrase. If a
+# phrase they ban stops firing here, the lint gate silently stops enforcing it.
+@test "lint-comment-voice: flags every pin phrase the voice rules ban" {
+    while IFS= read -r phrase; do
+        run bash -c "printf '%s\n' \"\$1\" | '$LINTER' -" _ "$phrase"
+        [ "$status" -eq 0 ]
+        [[ "$output" == *'"pinning"'* ]] || {
+            echo "no pinning warning for: $phrase"
+            false
+        }
+    done <<'EOF'
+the contract isn't pinned
+the timeout is pinned by a test
+this pins the behavior
+the read is not pinned by any case
+that path is pinned elsewhere in the suite
+pin the actual behavior here
+EOF
+}
+
+@test "lint-comment-voice: flags every verdict opener the voice rules ban" {
+    while IFS= read -r phrase; do
+        run bash -c "printf '%s\n' \"\$1\" | '$LINTER' -" _ "$phrase"
+        [ "$status" -eq 0 ]
+        [[ "$output" == *'"verdict_opener"'* ]] || {
+            echo "no verdict_opener warning for: $phrase"
+            false
+        }
+    done <<'EOF'
+Sound and proportionate.
+The new machinery is in good shape.
+Direct, well-scoped change.
+This is a real upgrade-window risk.
+EOF
+}
+
+@test "lint-comment-voice: leaves the version and SHA pinning the rules exempt" {
+    while IFS= read -r phrase; do
+        run bash -c "printf '%s\n' \"\$1\" | '$LINTER' -" _ "$phrase"
+        [ "$status" -eq 0 ]
+        [[ "$output" == "[]" ]] || {
+            echo "unexpected warning for exempt phrase: $phrase"
+            false
+        }
+    done <<'EOF'
+The dependency is pinned to `v2.4.1` in the lockfile.
+The action is pinned to that SHA.
+`requests` stays pinned at 2.31.0.
+EOF
+}
+
 @test "lint-comment-voice: flags AI vocabulary" {
     run "$LINTER" - <<'EOF'
 This leverages the existing validator to ensure the robust, comprehensive handling of every case.

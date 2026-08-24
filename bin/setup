@@ -126,14 +126,14 @@ verify_repo_structure() {
     fi
 }
 
-# Copy every *.sh in $1 to $2, marking each executable. No-op if $1 doesn't
-# exist or is empty.
+# Copy every *.sh and *.py in $1 to $2, marking each executable. No-op if $1
+# doesn't exist or is empty.
 copy_scripts_dir() {
     local src_subdir="$1"
     local dst_subdir="$2"
     [[ -d "${src_subdir}" ]] || return 0
     local src
-    for src in "${src_subdir}/"*.sh; do
+    for src in "${src_subdir}/"*.sh "${src_subdir}/"*.py; do
         [[ -e "${src}" ]] || continue
         local filename="${src##*/}"
         cp "${src}" "${dst_subdir}/${filename}"
@@ -170,7 +170,7 @@ install_skill() {
 
     # Copy scripts
     local script_count=0
-    for src in "${src_dir}/scripts/"*.sh; do
+    for src in "${src_dir}/scripts/"*.sh "${src_dir}/scripts/"*.py; do
         [[ -e "${src}" ]] || continue
         local filename
         filename=$(basename "${src}")

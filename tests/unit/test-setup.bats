@@ -213,6 +213,37 @@ setup_function_body() {
     [ "$status" -eq 0 ]
 }
 
+# The voice linter and the two scripts that call it are Python. When the copy
+# loops matched *.sh only, they were absent from the installed skill and every
+# handler step that shells out to them failed open, silently and permanently.
+@test "setup: install_skill copies Python scripts, not just shell scripts" {
+    run grep -q 'scripts/"\*\.py' <<< "$(setup_function_body install_skill)"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: copy_scripts_dir installs Python scripts alongside shell scripts" {
+    local src="$BATS_TEST_TMPDIR/src"
+    local dst="$BATS_TEST_TMPDIR/dst"
+    mkdir -p "$src" "$dst"
+    : > "$src/helper.sh"
+    : > "$src/linter.py"
+    : > "$src/notes.md"
+
+    eval "$(setup_function_body copy_scripts_dir)"
+    copy_scripts_dir "$src" "$dst"
+
+    [ -x "$dst/helper.sh" ]
+    [ -x "$dst/linter.py" ]
+    [ ! -e "$dst/notes.md" ]
+}
+
+@test "setup: every Python script in the skill's scripts tree is installable" {
+    # Guards the reverse gap: a script added under a subdirectory the copy
+    # loops never visit would install as silently as the *.sh-only globs did.
+    run bash -c "cd '$PROJECT_ROOT/skills/review-code/scripts' && find . -name '*.py' -mindepth 2 -not -path './helpers/*' -not -path './session-hooks/*' | wc -l | tr -d ' '"
+    [[ "$output" == "0" ]]
+}
+
 @test "setup: install_skill creates .reviews directory (not reviews)" {
     body="$(setup_function_body install_skill)"
     run grep -q 'dst_dir}/\.reviews' <<< "$body"

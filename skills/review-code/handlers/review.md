@@ -516,11 +516,22 @@ Save the agent's response. Extract usage metadata and record in `$token_usage["c
 2. Every backtick-quoted path-shaped or line-number token from the original (`auth.py:45`, `src/foo.ts`, `:67`, `line 67`) still appears. Backtick-quoted identifiers (`OverflowError`) are exempt; skip the check when the original has no such tokens.
 3. The body grew to no more than about 2x the original length (unpacking dense sentences into plain ones may grow the body; paragraph breaks and punctuation tweaks never fail this on their own).
 
-**Fail open, never block the review:** on an agent error or timeout, a JSON parse failure, or an array length off by more than 1, continue with the original findings. If more than 50% of rewrites fail validation, discard all rewrites; the voice agent is misbehaving, and verbose comments beat wrong ones.
+**Lint the accepted bodies.** The voice agent's own final scan misses tells it wrote or left in place, so check the rewrites that passed preservation. Skip this when nothing passed. The script returns the ids that still read wrong:
+
+```bash
+echo '<JSON array of {id, description, proposed_fix} for the accepted rewrites>' \
+  | ~/.claude/skills/review-code/scripts/gate-voice-lint.py
+```
+
+For every id in `warned_ids`, resume the voice agent once, in a single batched message carrying each id's current body and its warnings, and ask it to rewrite the flagged sentence rather than swap the offending word. Re-run preservation checks 1-3 on what comes back, then re-run the script on the ones that passed. Any id still warned keeps its **original** pre-voice body. One bounce total; record each resume's usage as `voice-lint-bounce-{N}`.
+
+Record the script's counts in `$token_usage["voice-lint"]` as `{total_tokens: 0, checked, clean, warned, bounced, reverted}`, where `reverted` counts the bodies that went back to their original. Lint reverts stay out of the preservation-failure budget below; the two measure different things.
+
+**Fail open, never block the review:** on an agent error or timeout, a JSON parse failure, or an array length off by more than 1, continue with the original findings. If more than 50% of rewrites fail validation, discard all rewrites; the voice agent is misbehaving, and verbose comments beat wrong ones. A nonzero `error` field from the lint script, or a missing script, leaves every accepted rewrite standing.
 
 The Voice Pass step runs in all review modes (quick and comprehensive) when findings exist. There is no mode-based guard.
 
-In debug mode, save the stage `11c-voice-rewrite` artifacts (see `review-debug.md`).
+In debug mode, save the stage `11c-voice-rewrite` and `11c2-voice-lint` artifacts (see `review-debug.md`).
 
 ### Link File References in Comment Bodies
 
