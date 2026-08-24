@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""Run lint-comment-voice over recent review files and report per-rule hit rates.
+
+This is the tuning loop for the linter before it acts on findings: lint a set
+of historical reviews, see which rules fire and how often, and decide whether
+the pattern needs to be narrowed (too many false positives), kept (clean hits
+on real violations), or split (one pattern catching two different phenomena).
+
+Reads review files only; never writes to them.
+"""
+
+from __future__ import annotations
+
+import argparse
+import collections
+import glob
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+
+def find_repo_root() -> Path:
+    result = subprocess.run(
+        ["git", "-C", str(Path(__file__).parent), "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return Path(result.stdout.strip())
+
+
+def load_linter(repo_root: Path):
+    script = repo_root / "skills" / "review-code" / "scripts" / "lint-comment-voice.py"
+    script_str = str(script)
+    spec = importlib.util.spec_from_file_location("lint_comment_voice", script_str)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load linter at {script_str}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def recent_reviews(directory: Path, count: int) -> list[Path]:
+    paths = glob.glob(str(directory / "**" / "*.md"), recursive=True)
+    paths = [p for p in paths if Path(p).is_file()]
+    paths.sort(key=lambda p: Path(p).stat().st_mtime, reverse=True)
+    return [Path(p) for p in paths[:count]]
+
+
+def parse_args(repo_root: Path) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--dir",
+        metavar="<path>",
+        default=os.path.expanduser("~/.claude/skills/review-code/.reviews"),
+        help="Directory of review .md files (default: installed reviews directory)",
+    )
+    parser.add_argument(
+        "--limit-files",
+        type=int,
+        default=30,
+        metavar="<n>",
+        help="Lint at most n most-recently-modified review files (default: 30)",
+    )
+    parser.add_argument(
+        "--per-category-limit",
+        type=int,
+        default=0,
+        metavar="<n>",
+        help="Cap warnings shown per category to n before counting "
+        "(0 counts them all)",
+    )
+    parser.add_argument(
+        "--json", action="store_true", help="Emit machine-readable JSON instead of a table"
+    )
+    parser.add_argument(
+        "--show-samples",
+        type=int,
+        metavar="<k>",
+        default=3,
+        help="Print up to k example warnings per category (default: 3; 0 hides samples)",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args(find_repo_root())
+    linter = load_linter(find_repo_root())
+    reviews_dir = Path(args.dir)
+
+    files = recent_reviews(reviews_dir, args.limit_files)
+    if not files:
+        print(f"no .md review files under {reviews_dir}", file=sys.stderr)
+        return 1
+
+    per_category: dict[str, int] = collections.Counter()
+    per_file: dict[str, dict[str, int]] = {}
+    samples: dict[str, list[dict]] = collections.defaultdict(list)
+    total_files = len(files)
+    files_with_warnings = 0
+
+    for path in files:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        warnings = linter.lint(text)
+        capped, suppressed = linter.cap_warnings(warnings, args.per_category_limit)
+        if suppressed:
+            for category, count in suppressed.items():
+                per_category[category] += count
+        for item in capped:
+            category = item["category"]
+            per_category[category] += 1
+            per_file.setdefault(str(path), collections.Counter())[category] += 1
+            if len(samples[category]) < args.show_samples:
+                samples[category].append(
+                    {
+                        "file": str(path.relative_to(reviews_dir)),
+                        "line": item["line"],
+                        "text": item["text"][:160],
+                    }
+                )
+        if warnings:
+            files_with_warnings += 1
+
+    if args.json:
+        payload = {
+            "reviews_dir": str(reviews_dir),
+            "files_linted": total_files,
+            "files_with_warnings": files_with_warnings,
+            "per_category": dict(per_category),
+            "per_file": per_file,
+            "samples": dict(samples),
+        }
+        print(json.dumps(payload, indent=2))
+        return 0
+
+    print(f"Linted {total_files} review files under {reviews_dir}")
+    print(f"Files with at least one warning: {files_with_warnings}")
+    print()
+
+    if not per_category:
+        print("No warnings recorded.")
+        return 0
+
+    widths = [len(category) for category in per_category] + [len("category")]
+    span = max(widths)
+    print(f"{'category':<{span}}  total  per-file-avg  files-hit")
+    print(f"{'-' * span}  -----  ------------  ---------")
+    for category, total in sorted(per_category.items(), key=lambda kv: -kv[1]):
+        files_hit = sum(1 for counts in per_file.values() if category in counts)
+        avg = total / files_hit if files_hit else 0.0
+        print(f"{category:<{span}}  {total:>5}  {avg:>12.2f}  {files_hit:>9}")
+        if args.show_samples:
+            for sample in samples.get(category, [])[: args.show_samples]:
+                print(f"  {sample['file']}:{sample['line']}: {sample['text']}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
