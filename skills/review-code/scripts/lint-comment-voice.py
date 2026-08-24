@@ -2,9 +2,10 @@
 """Report review-comment style violations without scoring the prose.
 
 Reads text (one or more comment bodies, or a whole review document) and emits
-one JSON line per warning. The rules come from the review-code voice agent
-(agents/code-reviewer-voice.md): the checks a regex can perform deterministically
-so a cheap script can gate what three LLM passes let through.
+one JSON line per warning, or the literal "[]" when the input is clean. The
+rules come from the review-code voice agent (agents/code-reviewer-voice.md):
+the checks a regex can perform deterministically so a cheap script can gate
+what three LLM passes let through.
 
 Code blocks, inline code, URLs, review-metadata comment blocks, and severity
 prefixes are masked before any rule runs: they are structure, not prose.
