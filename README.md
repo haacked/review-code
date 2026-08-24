@@ -169,8 +169,8 @@ bin/setup
 Both methods will:
 
 - Copy skill files to `~/.agents/skills/review-code/` (SKILL.md, handlers, scripts, context)
-- Copy agent definitions to `~/.agents/agents/`
-- Install the uninstaller at `~/.claude/bin/uninstall-review-code.sh`
+- Copy agent definitions to `~/.claude/agents/` (Markdown) and `~/.codex/agents/` (rendered TOML)
+- Install the uninstaller at `~/.agents/bin/uninstall-review-code.sh`
 - Smart-merge context files so user learnings are preserved across updates
 - Migrate runtime state (reviews, learnings, sessions) into dot-prefixed directories
 - Show permissions guide for Claude Code

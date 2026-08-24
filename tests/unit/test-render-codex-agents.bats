@@ -18,6 +18,13 @@ write_agent() {
     local name="$1"
     local model="$2"
     local color="${3:-}"
+    local tier
+    case "$model" in
+        haiku) tier="fast" ;;
+        sonnet) tier="balanced" ;;
+        opus) tier="deep" ;;
+        *) tier="balanced" ;;
+    esac
     {
         echo "---"
         echo "name: $name"
@@ -27,7 +34,7 @@ write_agent() {
             echo "color: $color"
         fi
         echo "metadata:"
-        echo "  execution-tier: $model-tier"
+        echo "  execution-tier: $tier"
         echo "---"
         echo ""
         echo "Body for $name."
