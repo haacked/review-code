@@ -57,3 +57,7 @@ skills/review-code/learnings/status-cache.json
 
 # Package manager files (not applicable here, but good to have)
 node_modules/
+
+# Python interpreter caches
+__pycache__/
+*.pyc
