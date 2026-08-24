@@ -42,7 +42,14 @@ NC='\033[0m' # No Color
 # Directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLAUDE_DIR="${HOME}/.claude"
-SKILL_DIR="${CLAUDE_DIR}/skills/review-code"
+AGENTS_DIR="${HOME}/.agents"
+CODEX_DIR="${HOME}/.codex"
+
+# Canonical skill directory, shared by Claude (via symlink) and Codex. The
+# Claude location stays as a compatibility symlink so existing SKILL.md and
+# handler paths under ~/.claude/ keep resolving.
+SKILL_DIR="${AGENTS_DIR}/skills/review-code"
+CLAUDE_SKILL_LINK="${CLAUDE_DIR}/skills/review-code"
 
 # PostHog Desktop agent directories that install_agents installed into,
 # reported in the summary output.
@@ -85,9 +92,10 @@ check_prerequisites() {
         fi
     done
 
-    # Check ~/.claude directory
-    if [[ ! -d "${CLAUDE_DIR}" ]]; then
-        missing+=("${HOME}/.claude directory (install Claude Code first)")
+    # At least one harness must be present. Missing both is an install bug,
+    # not a partial one.
+    if [[ ! -d "${CLAUDE_DIR}" && ! -d "${AGENTS_DIR}" && ! -d "${CODEX_DIR}" ]]; then
+        missing+=("${HOME}/.claude, ${HOME}/.agents, or ${HOME}/.codex directory (install Claude Code or Codex first)")
     fi
 
     if [[ ${#missing[@]} -gt 0 ]]; then
@@ -218,18 +226,112 @@ install_skill() {
 
     # Copy uninstall script to main bin (not in skill folder)
     if [[ -f "${SCRIPT_DIR}/uninstall.sh" ]]; then
-        mkdir -p "${CLAUDE_DIR}/bin"
-        cp "${SCRIPT_DIR}/uninstall.sh" "${CLAUDE_DIR}/bin/uninstall-review-code.sh"
-        chmod +x "${CLAUDE_DIR}/bin/uninstall-review-code.sh"
+        mkdir -p "${AGENTS_DIR}/bin"
+        cp "${SCRIPT_DIR}/uninstall.sh" "${AGENTS_DIR}/bin/uninstall-review-code.sh"
+        chmod +x "${AGENTS_DIR}/bin/uninstall-review-code.sh"
     fi
 
     info "Installed skill: review-code (${script_count} scripts)"
 }
 
+# Symlink the Claude skill location at the canonical one so the same tree
+# serves both harnesses. Idempotent: existing symlink to SKILL_DIR is a no-op,
+# existing symlink elsewhere is replaced, existing real directory triggers
+# migration via merge_legacy_skill_dir first.
+install_claude_compat_link() {
+    # The link only has meaning when Claude Code is present; creating
+    # ${CLAUDE_DIR}/skills on a Codex-only machine would materialize the
+    # tree the other guards in this file exist to avoid.
+    if [[ ! -d "${CLAUDE_DIR}" ]]; then
+        debug "Skipping Claude compatibility symlink: ${CLAUDE_DIR} absent (Codex-only install)"
+        return 0
+    fi
+
+    mkdir -p "${CLAUDE_DIR}/skills"
+
+    if [[ -L "${CLAUDE_SKILL_LINK}" ]]; then
+        local current
+        current="$(readlink "${CLAUDE_SKILL_LINK}")"
+        if [[ "${current}" == "${SKILL_DIR}" ]]; then
+            debug "Claude compatibility symlink already in place"
+            return 0
+        fi
+        info "Repointing Claude compatibility symlink from ${current} to ${SKILL_DIR}"
+        rm "${CLAUDE_SKILL_LINK}"
+    elif [[ -d "${CLAUDE_SKILL_LINK}" ]]; then
+        # Legacy install: real directory at the Claude location with content
+        # the canonical location may not have yet. Migrate before linking.
+        merge_legacy_skill_dir "${CLAUDE_SKILL_LINK}" "${SKILL_DIR}"
+    fi
+
+    ln -s "${SKILL_DIR}" "${CLAUDE_SKILL_LINK}"
+    info "Linked ${CLAUDE_SKILL_LINK} -> ${SKILL_DIR}"
+}
+
+# Merge a pre-port real-directory skill install into the canonical location.
+# User learnings and reviews are content we must preserve; SKILL.md, scripts,
+# and handlers are code this installer just overwrote and are dropped.
+merge_legacy_skill_dir() {
+    local old_dir="$1"
+    local new_dir="$2"
+
+    mkdir -p "${new_dir}"
+
+    # Move learnings (user-authored content); existing files in the canonical
+    # tree win so a re-run doesn't clobber newer state.
+    if [[ -d "${old_dir}/.learnings" ]]; then
+        mkdir -p "${new_dir}/.learnings"
+        local src
+        while IFS= read -r src; do
+            local base
+            base="$(basename "${src}")"
+            if [[ ! -e "${new_dir}/.learnings/${base}" ]]; then
+                mv "${src}" "${new_dir}/.learnings/${base}"
+            fi
+        done < <(find "${old_dir}/.learnings" -maxdepth 1 -type f)
+    fi
+
+    # Move reviews (state worth keeping). Process substitution (not a
+    # pipeline) so a failed mv aborts the install instead of being swallowed
+    # by the subshell a pipe would create.
+    if [[ -d "${old_dir}/.reviews" ]]; then
+        mkdir -p "${new_dir}/.reviews"
+        while IFS= read -r rel; do
+            local src="${old_dir}/.reviews/${rel}"
+            local dst="${new_dir}/.reviews/${rel}"
+            if [[ ! -e "${dst}" ]]; then
+                mkdir -p "$(dirname "${dst}")"
+                mv "${src}" "${dst}"
+            fi
+        done < <(cd "${old_dir}/.reviews" && find . -type f)
+    fi
+
+    # Move sessions and worktrees (live state).
+    for sub in .sessions .worktrees; do
+        if [[ -d "${old_dir}/${sub}" && ! -e "${new_dir}/${sub}" ]]; then
+            mv "${old_dir}/${sub}" "${new_dir}/${sub}"
+        fi
+    done
+
+    # Move repos.conf (user's clone map).
+    if [[ -f "${old_dir}/repos.conf" && ! -e "${new_dir}/repos.conf" ]]; then
+        mv "${old_dir}/repos.conf" "${new_dir}/repos.conf"
+    fi
+
+    # Anything else (code + previously-backed-up files) is removed. Code has
+    # already been replaced in ${new_dir}; the .bak copies live next to it.
+    rm -rf "${old_dir}"
+    info "Migrated ${old_dir} into canonical location"
+}
+
 install_session_clear_hook() {
-    # Register a global SessionStart hook (matcher: clear) so /clear writes
-    # a marker the skill can read on its next invocation. This breaks the
-    # pre-flight prompt loop that otherwise asks the user to /clear forever.
+    # Claude-only. Codex has no hook system, so there's nothing to register;
+    # the marker/resume scripts still exist (shared), only the wiring differs.
+    if [[ ! -d "${CLAUDE_DIR}" ]]; then
+        debug "Skipping SessionStart hook install: ${CLAUDE_DIR} absent (Codex-only install)"
+        return 0
+    fi
+
     local manager="${SKILL_DIR}/scripts/manage-session-hook.sh"
     if [[ ! -x "${manager}" ]]; then
         warn "Skipping SessionStart hook install: ${manager} not found"
@@ -260,8 +362,11 @@ install_agents() {
         "finding-validator"
     )
 
-    install_agents_to "${CLAUDE_DIR}/agents" "${agents[@]}"
-    info "Installed ${#agents[@]} agents (9 reviewers + 1 context explorer + 1 voice rewriter + 1 comprehension gate + 1 finding validator)"
+    # Claude agents: installed as .md files at the Claude location.
+    if [[ -d "${CLAUDE_DIR:-}" ]]; then
+        install_agents_to "${CLAUDE_DIR}/agents" "${agents[@]}"
+        info "Installed ${#agents[@]} agents (9 reviewers + 1 context explorer + 1 voice rewriter + 1 comprehension gate + 1 finding validator)"
+    fi
 
     # PostHog Desktop points CLAUDE_CONFIG_DIR at its own data directory, so
     # its sessions never read ~/.claude/agents. Install into each existing app
@@ -277,6 +382,32 @@ install_agents() {
         POSTHOG_AGENT_DIRS+=("${config_home}/agents")
         info "Installed ${#agents[@]} agents for PostHog Desktop (${config_home}/agents)"
     done
+
+    # Codex agents: rendered TOMLs staged under ~/.codex/.review-code-agents/
+    # and linked into ~/.codex/agents/. Codex scans the target dir recursively
+    # and does not skip dot-directories, so staging inside it would register
+    # every agent twice. Same pattern as dotfiles' install-codex.sh. Install
+    # whenever the codex CLI or config directory exists; absent both means
+    # this machine doesn't run Codex and there's nothing to link into.
+    # ${CODEX_DIR:-} and ${CLAUDE_DIR:-} keep this function sourceable in
+    # isolation by tests that only set the variables they exercise.
+    if [[ -d "${CODEX_DIR:-}" || -n "${CODEX_HOME:-}" || -x "$(command -v codex 2> /dev/null)" ]]; then
+        install_codex_agents "${agents[@]}"
+    fi
+}
+
+install_codex_agents() {
+    local installer="${SCRIPT_DIR}/bin/install-codex.sh"
+    if [[ ! -x "${installer}" ]]; then
+        warn "Skipping Codex agent install: ${installer} not found"
+        return 0
+    fi
+
+    if "${installer}"; then
+        info "Installed Codex agents"
+    else
+        warn "Codex agent install reported failures (see output above)"
+    fi
 }
 
 install_agents_to() {
@@ -306,6 +437,10 @@ install_agents_to() {
 }
 
 cleanup_old_command() {
+    # Skip entirely on Codex-only installs: touching ${CLAUDE_DIR} paths
+    # would create empty directories that look like a failed install.
+    [[ -d "${CLAUDE_DIR}" ]] || return 0
+
     # Remove old command-based installation if it exists
     local old_command="${CLAUDE_DIR}/commands/review-code.md"
     local old_scripts="${CLAUDE_DIR}/bin/review-code"
@@ -801,6 +936,16 @@ main() {
     # Clean up deprecated config files
     cleanup_old_config
 
+    # Move pre-port installs at the legacy Claude location into the canonical
+    # directory, preserving user learnings / reviews / worktrees / clone map.
+    # Must run before migrate_state_dirs and install_skill so setup is a
+    # no-op when re-run: subsequent invocations see only the canonical tree
+    # plus a compat symlink.
+    if [[ -d "${CLAUDE_SKILL_LINK}" && ! -L "${CLAUDE_SKILL_LINK}" ]]; then
+        info "Migrating legacy skill install from ${CLAUDE_SKILL_LINK}"
+        merge_legacy_skill_dir "${CLAUDE_SKILL_LINK}" "${SKILL_DIR}"
+    fi
+
     # Clean up legacy bare-cache directory from the pre-worktree approach.
     local legacy_cache="${SKILL_DIR}/cache"
     if [[ -d "${legacy_cache}" ]]; then
@@ -822,6 +967,7 @@ main() {
     echo ""
     info "Installing review-code components…"
     install_skill
+    install_claude_compat_link
     install_session_clear_hook
     install_agents
     install_context
@@ -847,8 +993,16 @@ main() {
     echo "  - Specific review: /review-code security"
     echo ""
     echo "Installation locations:"
-    echo "  - Skill: ${SKILL_DIR}/"
-    echo "  - Agents: ${CLAUDE_DIR}/agents/"
+    echo "  - Skill (canonical): ${SKILL_DIR}/"
+    if [[ -L "${CLAUDE_SKILL_LINK}" ]]; then
+        echo "  - Skill (Claude symlink): ${CLAUDE_SKILL_LINK}/ -> ${SKILL_DIR}/"
+    fi
+    if [[ -d "${CLAUDE_DIR}/agents" ]]; then
+        echo "  - Agents (Claude): ${CLAUDE_DIR}/agents/"
+    fi
+    if [[ -d "${CODEX_DIR}/agents" && -n "$(find "${CODEX_DIR}/.review-code-agents" -name '*.toml' 2> /dev/null)" ]]; then
+        echo "  - Agents (Codex): ${CODEX_DIR}/agents/ (rendered in ${CODEX_DIR}/.review-code-agents/)"
+    fi
     local posthog_agent_dir
     for posthog_agent_dir in ${POSTHOG_AGENT_DIRS[@]+"${POSTHOG_AGENT_DIRS[@]}"}; do
         echo "  - Agents (PostHog Desktop): ${posthog_agent_dir}/"

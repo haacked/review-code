@@ -348,6 +348,9 @@ _with_pr_worktree_stub() {
         "$script_tmp/session-hooks/"
     cp "$PROJECT_ROOT/skills/review-code/scripts/helpers/worktree-layout.sh" \
         "$script_tmp/helpers/"
+    # session-manager.sh sources config-helpers.sh for resolve_skill_dir.
+    cp "$PROJECT_ROOT/skills/review-code/scripts/helpers/config-helpers.sh" \
+        "$script_tmp/helpers/"
 
     cat > "$script_tmp/pr-worktree.sh" << EOF
 #!/usr/bin/env bash

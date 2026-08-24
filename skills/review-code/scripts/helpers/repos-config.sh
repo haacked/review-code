@@ -7,7 +7,7 @@
 #   posthog/posthog  ~/dev/posthog/posthog
 #
 # Location:
-#   ~/.claude/skills/review-code/repos.conf
+#   ~/.agents/skills/review-code/repos.conf
 #   (overridable via $REVIEW_CODE_CONFIG_DIR for tests/advanced users)
 #
 # Usage (sourced):
@@ -16,6 +16,8 @@
 #   # Empty string if not found or not a git repo.
 
 _REPOS_CONFIG_HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=config-helpers.sh
+source "${_REPOS_CONFIG_HELPER_DIR}/config-helpers.sh"
 # shellcheck source=repo-detection.sh
 source "${_REPOS_CONFIG_HELPER_DIR}/repo-detection.sh"
 
@@ -37,7 +39,8 @@ find_repos_config() {
         return 1
     fi
 
-    local default="${HOME}/.claude/skills/review-code/repos.conf"
+    local default
+    default="$(resolve_skill_dir)/repos.conf"
     if [[ -f "${default}" ]]; then
         echo "${default}"
         return 0

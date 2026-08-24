@@ -20,8 +20,12 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=helpers/config-helpers.sh
+source "${SCRIPT_DIR}/helpers/config-helpers.sh"
+
 SETTINGS_FILE="${CLAUDE_SETTINGS_FILE:-${HOME}/.claude/settings.json}"
-HOOK_COMMAND="${REVIEW_CODE_HOOK_COMMAND:-${HOME}/.claude/skills/review-code/scripts/session-clear-hook.sh}"
+HOOK_COMMAND="${REVIEW_CODE_HOOK_COMMAND:-$(resolve_skill_dir)/scripts/session-clear-hook.sh}"
 # Substring used to identify hook entries we own. Any command whose path
 # contains this marker is considered ours and is stripped on install /
 # uninstall. This handles migration when the hook script gets renamed (e.g.

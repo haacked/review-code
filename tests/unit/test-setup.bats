@@ -274,7 +274,7 @@ setup_function_body() {
     TEST_TEMP_DIR=$(mktemp -d)
     fake_home="${TEST_TEMP_DIR}/home"
     app_config="${fake_home}/Library/Application Support/@posthog/posthog-code/claude"
-    mkdir -p "${app_config}"
+    mkdir -p "${app_config}" "${fake_home}/.claude"
 
     run bash -c "
         set -euo pipefail
@@ -302,7 +302,7 @@ setup_function_body() {
 @test "setup: install_agents skips PostHog Desktop config homes that don't exist" {
     TEST_TEMP_DIR=$(mktemp -d)
     fake_home="${TEST_TEMP_DIR}/home"
-    mkdir -p "${fake_home}"
+    mkdir -p "${fake_home}" "${fake_home}/.claude"
 
     run bash -c "
         set -euo pipefail
@@ -1298,8 +1298,8 @@ EOF
 # Installation path tests
 # =============================================================================
 
-@test "setup: uses SKILL_DIR under ~/.claude/skills/review-code" {
-    run bash -c "grep -q 'SKILL_DIR=\"\${CLAUDE_DIR}/skills/review-code\"' '$PROJECT_ROOT/bin/setup'"
+@test "setup: uses SKILL_DIR under ~/.agents/skills/review-code" {
+    run bash -c "grep -q 'SKILL_DIR=\"\${AGENTS_DIR}/skills/review-code\"' '$PROJECT_ROOT/bin/setup'"
     [ "$status" -eq 0 ]
 }
 

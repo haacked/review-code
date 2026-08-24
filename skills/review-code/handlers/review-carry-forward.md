@@ -24,7 +24,7 @@ Run the merge below once the file is complete.
 ## Merge it in
 
 ```bash
-~/.claude/skills/review-code/scripts/carry-forward-findings.sh \
+~/.agents/skills/review-code/scripts/carry-forward-findings.sh \
   --review-file "<file_info.file_path>" \
   --delta-diff "<diff_path from review-delta.sh>" \
   --append-file "<artifacts_dir>/review-append.md" \

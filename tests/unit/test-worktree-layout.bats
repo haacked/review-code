@@ -11,11 +11,22 @@ setup() {
     source "$HELPER"
 }
 
-@test "worktree_root: falls back to ~/.claude/skills/review-code/.worktrees by default" {
+@test "worktree_root: falls back to ~/.agents/skills/review-code/.worktrees by default" {
     unset REVIEW_CODE_WORKTREE_DIR
     run worktree_root
     [ "$status" -eq 0 ]
-    [ "$output" = "$HOME/.claude/skills/review-code/.worktrees" ]
+    [ "$output" = "$HOME/.agents/skills/review-code/.worktrees" ]
+}
+
+@test "worktree_root: falls back to ~/.claude/skills/review-code/.worktrees on legacy installs" {
+    unset REVIEW_CODE_WORKTREE_DIR
+    # resolve_skill_dir prefers the canonical location; create only the
+    # legacy dir to force the fallback.
+    local fake_home="$BATS_TEST_TMPDIR/fakehome"
+    mkdir -p "$fake_home/.claude/skills/review-code"
+    HOME="$fake_home" run worktree_root
+    [ "$status" -eq 0 ]
+    [ "$output" = "$fake_home/.claude/skills/review-code/.worktrees" ]
 }
 
 @test "worktree_root: honors REVIEW_CODE_WORKTREE_DIR" {

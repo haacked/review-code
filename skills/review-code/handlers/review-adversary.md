@@ -15,7 +15,7 @@ jq -n \
   --argjson findings '<findings JSON array>' \
   --rawfile diff "<diff_path>" \
   --argjson timeout_seconds 300 \
-  '$ARGS.named' | ~/.claude/skills/review-code/scripts/$engine-meta-review.sh
+  '$ARGS.named' | ~/.agents/skills/review-code/scripts/$engine-meta-review.sh
 ```
 
 `--rawfile` reads the diff straight off disk, so its bytes never pass through this conversation. `<findings JSON array>` is the JSON array of surviving findings, and `$engine` selects `copilot-meta-review.sh` or `codex-meta-review.sh`.

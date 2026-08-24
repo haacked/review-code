@@ -2,6 +2,8 @@
 name: code-review-context-explorer
 description: Gathers architectural and pattern context before code review by exploring the codebase beyond the diff
 model: sonnet
+metadata:
+  execution-tier: balanced
 ---
 
 # Code Review Context Explorer

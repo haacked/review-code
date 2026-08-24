@@ -71,7 +71,7 @@ An Overview paragraph in the right register reads like:
 
 **Gate the Overview.** The voice agent never sees narrative prose, so after drafting the Overview paragraph, send it through the comprehension gate as a one-item batch: invoke the Task tool with subagent_type `comprehension-gate` and the array `[{"id": 1, "severity": "overview", "location": null, "description": "<overview text>", "proposed_fix": null, "kind": "prose"}]` in a four-backtick `json` fence. On `REWRITE`, you wrote this paragraph, so apply the notes yourself: lead with what the change does, one idea per sentence. Re-check the rewritten paragraph at most once, then proceed with your best version regardless of the second verdict. On any error or malformed response, keep the drafted Overview (fail open). Record usage in `$token_usage["comprehension-gate-overview"]`. In debug mode, save the stage `11e-overview-gate` artifacts (see `review-debug.md`).
 
-**On the `delta` path** (`$review_mode` is `delta`), everything above still governs what you compose, but not where it goes: Read `~/.claude/skills/review-code/handlers/review-carry-forward.md` and follow it instead of saving over `$review_file`. Do not Read the existing review.
+**On the `delta` path** (`$review_mode` is `delta`), everything above still governs what you compose, but not where it goes: Read `~/.agents/skills/review-code/handlers/review-carry-forward.md` and follow it instead of saving over `$review_file`. Do not Read the existing review.
 
 Save the complete review to `$review_file` and inform the user with a clickable file link:
 

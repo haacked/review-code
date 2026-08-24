@@ -38,10 +38,10 @@ skills/review-code/
 agents/                               # Review agent definitions
 ```
 
-**Installed at `~/.claude/skills/review-code/`:**
+**Installed at `~/.agents/skills/review-code/`:**
 
 ```
-~/.claude/skills/review-code/
+~/.agents/skills/review-code/
     SKILL.md
     handlers/                         # Large handlers loaded on demand
         find.md
@@ -65,7 +65,7 @@ agents/                               # Review agent definitions
     .worktrees/                       # PR checkout worktrees (org/repo/pr-N)
 ```
 
-**Key insight:** The repo structure mirrors the installed structure, except that runtime state (reviews, learnings, sessions, worktrees) is installed into dot-prefixed directories so skill scanners that ignore dot-directories don't count it against the skill's file budget (source `learnings/README.md` installs to `.learnings/README.md`). During setup, `skills/review-code/` is copied to `~/.claude/skills/review-code/`. User learnings applied to installed context are preserved through smart merge - new sections from base are added, but existing sections (which may contain learned patterns) are kept.
+**Key insight:** The repo structure mirrors the installed structure, except that runtime state (reviews, learnings, sessions, worktrees) is installed into dot-prefixed directories so skill scanners that ignore dot-directories don't count it against the skill's file budget (source `learnings/README.md` installs to `.learnings/README.md`). During setup, `skills/review-code/` is copied to `~/.agents/skills/review-code/`. User learnings applied to installed context are preserved through smart merge - new sections from base are added, but existing sections (which may contain learned patterns) are kept.
 
 ## Keeping Reviews Cheap
 
@@ -80,21 +80,32 @@ Measure with `bin/token-report` before and after. The skill's own `.reviews/toke
 
 ## Important: Edit Source Files Only
 
-**Never edit files in `~/.claude/` directly.** Always edit the source files in this repo.
+**Never edit files in `~/.agents/` or `~/.claude/skills/review-code/` directly.** Always edit the source files in this repo.
 
-The files in `~/.claude/skills/review-code/` are installed copies. To update them after making changes:
+The trees at `~/.agents/skills/review-code/` (canonical, Codex + Claude) and at `~/.claude/skills/review-code/` (symlink to canonical) are installed copies. To update them after making changes:
 
 ```bash
 bin/setup
 ```
 
-This copies the source files to the appropriate locations and uses smart merge for context files to preserve user learnings.
+This copies the source files to the canonical location, maintains the symlink, renders Codex agent TOMLs, and uses smart merge for context files to preserve user learnings.
+
+## Codex Support
+
+The skill runs under both Claude Code (native Task tool dispatch) and OpenAI Codex (`codex exec` subprocess dispatch). `~/.agents/skills/review-code` is the canonical install location; `~/.claude/skills/review-code` is a symlink to it. Agent definitions in `agents/*.md` are the single source for both Claude (installed as `.md`) and Codex (rendered to `.toml` by `bin/render-codex-agents.py` and staged under `~/.codex/.review-code-agents/`).
+
+Claude-only features the skill gates on harness detection:
+- The `/clear` resume marker + SessionStart hook (Codex has no hook system)
+- The `PreToolUse` safety hook (Codex has no per-skill tool scoping)
+- Per-agent Task resume for coverage validation and finding-validator callbacks
+
+If you change an agent definition's `model:` value, keep `codex/model-tiers.conf` in sync; `bin/render-codex-agents.py` fails on any model it doesn't recognize.
 
 ## Testing Changes
 
 After editing source files:
 
-1. Run `bin/setup` to install changes to `~/.claude/`
+1. Run `bin/setup` to install changes to `~/.agents/`
 2. Test the skill with `/review-code` in a Claude Code session
 3. Run `bin/test` to run the test suite
 

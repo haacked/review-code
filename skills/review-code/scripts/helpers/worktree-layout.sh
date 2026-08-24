@@ -5,9 +5,13 @@
 # (pr-worktree.sh, session-hooks, bin/setup) should go through these helpers so
 # changes to the shape live in one place.
 
+_WORKTREE_LAYOUT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=config-helpers.sh
+source "${_WORKTREE_LAYOUT_DIR}/config-helpers.sh"
+
 # Root directory that holds all review worktrees.
 worktree_root() {
-    echo "${REVIEW_CODE_WORKTREE_DIR:-${HOME}/.claude/skills/review-code/.worktrees}"
+    echo "${REVIEW_CODE_WORKTREE_DIR:-$(resolve_skill_dir)/.worktrees}"
 }
 
 # Path leaf relative to worktree_root, e.g. "acme/widget/pr-7". Lowercases org
