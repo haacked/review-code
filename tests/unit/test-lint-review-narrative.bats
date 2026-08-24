@@ -178,6 +178,64 @@ EOF
     [[ "$(echo "$output" | field "['count']")" == "0" ]]
 }
 
+# Reviews separate the severity token with an em dash as often as with a colon.
+# A colon-only opener left those bodies read as narrative, and their own em dash
+# came back as a warning against prose the voice pass had already gated.
+@test "lint-review-narrative: skips a finding whose severity is set off by a dash" {
+    write_review <<'EOF'
+## Testing Review
+
+The suite covers the new module.
+
+**`question` — the doc comment claims a retry the code doesn't have.**
+
+That path leverages the old helper.
+EOF
+    run "$NARRATIVE" "$REVIEW"
+    [[ "$(echo "$output" | field "['count']")" == "0" ]]
+}
+
+@test "lint-review-narrative: an ASCII hyphen does not open a finding" {
+    write_review <<'EOF'
+## Overview
+
+Nit-picking aside, this is a comprehensive rewrite.
+EOF
+    run "$NARRATIVE" "$REVIEW"
+    [[ "$(echo "$output" | categories)" == *"hype"* ]]
+}
+
+# The agents' canonical format is a fenced ```text body plus a
+# `Location: ... | Confidence: NN%` trailer. The fence means no severity token
+# ever appears at paragraph start, so the trailer has to be skipped on its own.
+@test "lint-review-narrative: skips the Location trailer under a fenced finding" {
+    write_review <<'EOF'
+## Security Review
+
+The new guard holds.
+
+```text
+`blocking`: the request raises a 500.
+```
+
+Location: `auth.py:45` | Confidence: 85% — **Fixed**
+EOF
+    run "$NARRATIVE" "$REVIEW"
+    [[ "$(echo "$output" | field "['count']")" == "0" ]]
+}
+
+@test "lint-review-narrative: lints per-agent prose nested under an H3" {
+    write_review <<'EOF'
+## Per-Agent Sections
+
+### Security Review
+
+The new guard leverages the existing validator.
+EOF
+    run "$NARRATIVE" "$REVIEW"
+    [[ "$(echo "$output" | categories)" == *"ai_vocabulary"* ]]
+}
+
 @test "lint-review-narrative: reported line numbers point at the review file" {
     write_review <<'EOF'
 ## Overview
@@ -246,6 +304,50 @@ EOF
     [[ "$(echo "$output" | field "['annotated']")" == "False" ]]
     run grep -c '^## Lint notes$' "$REVIEW"
     [[ "$output" == "0" ]]
+    # Absence of the heading is also true of an emptied file, so check the
+    # prose is still there.
+    run grep -c '^The cache clears on write\.$' "$REVIEW"
+    [[ "$output" == "1" ]]
+}
+
+@test "lint-review-narrative: --annotate leaves a clean file byte-identical" {
+    write_review <<'EOF'
+## Overview
+
+The cache clears on write.
+EOF
+    before="$(md5 -q "$REVIEW" 2>/dev/null || md5sum "$REVIEW" | cut -d' ' -f1)"
+    run "$NARRATIVE" --annotate "$REVIEW"
+    [[ "$(echo "$output" | field "['annotated']")" == "False" ]]
+    after="$(md5 -q "$REVIEW" 2>/dev/null || md5sum "$REVIEW" | cut -d' ' -f1)"
+    [[ "$before" == "$after" ]]
+}
+
+# A finding body can quote a markdown file that contains this heading. Without
+# a fence walk, that quoted line reads as a section opener and everything from
+# it to the next heading is cut out of the saved review.
+@test "lint-review-narrative: a Lint notes heading inside a fence is not a section" {
+    write_review <<'EOF'
+## Security Review
+
+The guard holds.
+
+`blocking`: the template writes the wrong heading.
+
+```markdown
+## Lint notes
+```
+
+## Testing Review
+
+Coverage keeps pace.
+EOF
+    run "$NARRATIVE" --annotate "$REVIEW"
+    [ "$status" -eq 0 ]
+    run grep -c '^## Testing Review$' "$REVIEW"
+    [[ "$output" == "1" ]]
+    run grep -c '^Coverage keeps pace\.$' "$REVIEW"
+    [[ "$output" == "1" ]]
 }
 
 @test "lint-review-narrative: an existing Lint notes section is not itself linted" {
@@ -304,7 +406,6 @@ This is a comprehensive rewrite.
 The comprehensive migration lands next.
 A comprehensive test suite follows.
 EOF
-    run "$NARRATIVE" --limit 1 "$REVIEW"
     run bash -c "'$NARRATIVE' --limit 1 '$REVIEW' | python3 -c \"import json,sys; print(len(json.load(sys.stdin)['warnings']))\""
     [[ "$output" == "1" ]]
 }

@@ -209,6 +209,47 @@ teardown() {
     [ "$output" -eq 3 ]
 }
 
+# voice-lint is a script, not an agent: it reports counts and zero tokens.
+# Counting it would report one more agent step than actually ran.
+@test "log-token-usage: agents_run skips steps that consumed no tokens" {
+    local usage='{"code-reviewer-security": 45000, "voice-lint": {"total_tokens": 0, "reverted": 1}}'
+    local log_file="$REVIEWS_DIR/token-usage.jsonl"
+
+    "$SCRIPT" --review-file "$REVIEW_FILE" --usage "$usage" --org "org" --repo "repo"
+
+    run bash -c "cat '$log_file' | jq -r '.agents_run'"
+    [ "$status" -eq 0 ]
+    [ "$output" -eq 1 ]
+}
+
+# A revert count is only useful compared across runs, so it has to reach the
+# log; the normalization to {total_tokens, tool_uses} used to drop it.
+@test "log-token-usage: keeps per-step counters the normalization would drop" {
+    local usage='{"voice-lint": {"total_tokens": 0, "checked": 9, "reverted": 2}, "comprehension-gate": {"total_tokens": 5000, "validation_failures": 1}}'
+    local log_file="$REVIEWS_DIR/token-usage.jsonl"
+
+    "$SCRIPT" --review-file "$REVIEW_FILE" --usage "$usage" --org "org" --repo "repo"
+
+    run bash -c "cat '$log_file' | jq -r '.counters[\"voice-lint\"].reverted'"
+    [ "$output" -eq 2 ]
+    run bash -c "cat '$log_file' | jq -r '.counters[\"comprehension-gate\"].validation_failures'"
+    [ "$output" -eq 1 ]
+
+    # The token fields keep their existing shape so bin/token-report is unaffected.
+    run bash -c "cat '$log_file' | jq -r '.agents[\"comprehension-gate\"]'"
+    [ "$output" -eq 5000 ]
+}
+
+@test "log-token-usage: omits counters when no step reported one" {
+    local usage='{"code-reviewer-security": 45000}'
+    local log_file="$REVIEWS_DIR/token-usage.jsonl"
+
+    "$SCRIPT" --review-file "$REVIEW_FILE" --usage "$usage" --org "org" --repo "repo"
+
+    run bash -c "cat '$log_file' | jq -r 'has(\"counters\")'"
+    [[ "$output" == "false" ]]
+}
+
 @test "log-token-usage: agents_run accepts explicit value" {
     local usage='{"code-reviewer-security": 45000}'
     local log_file="$REVIEWS_DIR/token-usage.jsonl"

@@ -32,6 +32,10 @@ import json
 import sys
 from pathlib import Path
 
+# Set before the helper import and before the loader's exec_module: both are
+# what would write bytecode into the installed skill tree, where __pycache__ is
+# not dot-prefixed and so lands in the counted part of the skill.
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent / "helpers"))
 
 from lint_loader import load_linter  # noqa: E402
@@ -90,7 +94,10 @@ def gate(linter, items: list, limit: int) -> dict:
             continue
 
         result["warned"] += 1
-        identifier = item.get("id")
+        # Indexing, not .get: an entry with no id would put null into
+        # warned_ids and send the caller bouncing an id no finding has.
+        # Raising here lands on the documented fail-open result instead.
+        identifier = item["id"]
         result["warned_ids"].append(identifier)
         if limit > 0 and len(warnings) > limit:
             suppressed = len(warnings) - limit

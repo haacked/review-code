@@ -126,6 +126,16 @@ verify_repo_structure() {
     fi
 }
 
+# Remove __pycache__ left by a previous run's Python scripts. The scripts
+# themselves set sys.dont_write_bytecode, so this only clears what installs
+# from before that landed. Unlike .reviews and .sessions, __pycache__ is not
+# dot-prefixed, so it counts against the skill's file budget.
+prune_pycache() {
+    local dir="$1"
+    [[ -d "${dir}" ]] || return 0
+    find "${dir}" -type d -name __pycache__ -prune -exec rm -rf {} + 2> /dev/null || true
+}
+
 # Copy every *.sh and *.py in $1 to $2, marking each executable. No-op if $1
 # doesn't exist or is empty.
 copy_scripts_dir() {
@@ -180,6 +190,8 @@ install_skill() {
         chmod +x "${dst}"
         script_count=$((script_count + 1))
     done
+
+    prune_pycache "${dst_dir}/scripts"
 
     # Copy helper scripts
     copy_scripts_dir "${src_dir}/scripts/helpers" "${dst_dir}/scripts/helpers"

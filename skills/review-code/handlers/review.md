@@ -516,16 +516,17 @@ Save the agent's response. Extract usage metadata and record in `$token_usage["c
 2. Every backtick-quoted path-shaped or line-number token from the original (`auth.py:45`, `src/foo.ts`, `:67`, `line 67`) still appears. Backtick-quoted identifiers (`OverflowError`) are exempt; skip the check when the original has no such tokens.
 3. The body grew to no more than about 2x the original length (unpacking dense sentences into plain ones may grow the body; paragraph breaks and punctuation tweaks never fail this on their own).
 
-**Lint the accepted bodies.** The voice agent's own final scan misses tells it wrote or left in place, so check the rewrites that passed preservation. Skip this when nothing passed. The script returns the ids that still read wrong:
+**Lint the surviving bodies.** The voice agent's own final scan misses tells it wrote or left in place, so check every body the pass is about to hand on: the rewrites that passed preservation, and the ones the agent returned `unchanged: true`. An unchanged body is the likeliest to still carry a tell, since nothing looked at it. Skip this only when the pool is empty.
+
+Write the array to `<artifacts_dir>/voice-lint-input.json` with the Write tool, then pass the path. Do not inline it into the command: finding bodies are conversational and full of apostrophes, and one of them ends a shell-quoted string, which would leave the gate silently doing nothing.
 
 ```bash
-echo '<JSON array of {id, description, proposed_fix} for the accepted rewrites>' \
-  | ~/.claude/skills/review-code/scripts/gate-voice-lint.py
+~/.claude/skills/review-code/scripts/gate-voice-lint.py "<artifacts_dir>/voice-lint-input.json"
 ```
 
-For every id in `warned_ids`, resume the voice agent once, in a single batched message carrying each id's current body and its warnings, and ask it to rewrite the flagged sentence rather than swap the offending word. Re-run preservation checks 1-3 on what comes back, then re-run the script on the ones that passed. Any id still warned keeps its **original** pre-voice body. One bounce total; record each resume's usage as `voice-lint-bounce-{N}`.
+For every id in `warned_ids`, resume the voice agent once, in a single batched message carrying each id's current body and its warnings, and ask it to rewrite the flagged sentence rather than swap the offending word. Re-run preservation checks 1-3 on what comes back, then write the smaller re-check array to `<artifacts_dir>/voice-lint-recheck.json` and run the script again on that path. Any id still warned keeps its **original** pre-voice body; for a body that was `unchanged: true`, that is already what it holds, so the revert is a no-op. One bounce total; record each resume's usage as `voice-lint-bounce-{N}`.
 
-Record the script's counts in `$token_usage["voice-lint"]` as `{total_tokens: 0, checked, clean, warned, bounced, reverted}`, where `reverted` counts the bodies that went back to their original. Lint reverts stay out of the preservation-failure budget below; the two measure different things.
+Record the script's counts in `$token_usage["voice-lint"]` as `{total_tokens: 0, checked, clean, warned, bounced, reverted}`, where `reverted` counts the bodies that went back to their original, and report them in the run summary. Lint reverts stay out of the preservation-failure budget below; the two measure different things.
 
 **Fail open, never block the review:** on an agent error or timeout, a JSON parse failure, or an array length off by more than 1, continue with the original findings. If more than 50% of rewrites fail validation, discard all rewrites; the voice agent is misbehaving, and verbose comments beat wrong ones. A nonzero `error` field from the lint script, or a missing script, leaves every accepted rewrite standing.
 

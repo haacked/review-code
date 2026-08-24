@@ -237,6 +237,34 @@ setup_function_body() {
     [ ! -e "$dst/notes.md" ]
 }
 
+@test "setup: prune_pycache clears bytecode left by an earlier install" {
+    local dir="$BATS_TEST_TMPDIR/scripts"
+    mkdir -p "$dir/__pycache__" "$dir/helpers/__pycache__"
+    : > "$dir/__pycache__/lint-comment-voice.cpython-313.pyc"
+    : > "$dir/helpers/__pycache__/lint_loader.cpython-313.pyc"
+    : > "$dir/helpers/keep.sh"
+
+    eval "$(setup_function_body prune_pycache)"
+    prune_pycache "$dir"
+
+    [ ! -d "$dir/__pycache__" ]
+    [ ! -d "$dir/helpers/__pycache__" ]
+    [ -f "$dir/helpers/keep.sh" ]
+}
+
+@test "setup: both new Python scripts suppress bytecode writes" {
+    # Belt to prune_pycache's braces: the scripts must not recreate the
+    # directory on the next review.
+    for script in gate-voice-lint.py lint-review-narrative.py; do
+        run grep -c 'sys.dont_write_bytecode = True' \
+            "$PROJECT_ROOT/skills/review-code/scripts/$script"
+        [[ "$output" == "1" ]] || {
+            echo "$script does not suppress bytecode writes"
+            false
+        }
+    done
+}
+
 @test "setup: every Python script in the skill's scripts tree is installable" {
     # Guards the reverse gap: a script added under a subdirectory the copy
     # loops never visit would install as silently as the *.sh-only globs did.
@@ -289,6 +317,7 @@ setup_function_body() {
         SCRIPT_DIR='${TEST_TEMP_DIR}/src'
         CLAUDE_DIR='${TEST_TEMP_DIR}/dst'
         SKILL_DIR='${dst_dir}'
+        source <(sed -n '/^prune_pycache()/,/^}/p' '$PROJECT_ROOT/bin/setup')
         source <(sed -n '/^copy_scripts_dir()/,/^}/p' '$PROJECT_ROOT/bin/setup')
         source <(sed -n '/^install_skill()/,/^}/p' '$PROJECT_ROOT/bin/setup')
         install_skill

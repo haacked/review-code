@@ -155,7 +155,45 @@ Sound and proportionate.
 The new machinery is in good shape.
 Direct, well-scoped change.
 This is a real upgrade-window risk.
+In good shape overall.
 EOF
+}
+
+# Every body the lint gate receives opens with a severity prefix. Masking
+# deletes the backticked word and leaves a bare ": ", which used to defeat
+# every start-anchored rule, so the whole verdict-opener family passed the gate
+# while the unprefixed test above went on passing.
+@test "lint-comment-voice: flags a verdict opener behind a severity prefix" {
+    while IFS= read -r phrase; do
+        run bash -c "printf '%s\n' \"\$1\" | '$LINTER' -" _ "$phrase"
+        [ "$status" -eq 0 ]
+        [[ "$output" == *'"verdict_opener"'* ]] || {
+            echo "no verdict_opener warning for: $phrase"
+            false
+        }
+    done <<'EOF'
+`blocking`: This is a real upgrade-window risk.
+`suggestion`: Sound and proportionate.
+`nit`: The new machinery is in good shape.
+**blocking**: In good shape overall.
+blocking: Direct, well-scoped change.
+EOF
+}
+
+@test "lint-comment-voice: flags a pseudo-header behind a severity prefix" {
+    run "$LINTER" - <<'EOF'
+`blocking`: **Issue**: the request raises a 500.
+EOF
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"pseudo_header"'* ]]
+}
+
+@test "lint-comment-voice: a clean prefixed body stays clean" {
+    run "$LINTER" - <<'EOF'
+`suggestion`: `users.py:67` fetches each profile inside the loop, so a request for 100 users runs 101 queries.
+EOF
+    [ "$status" -eq 0 ]
+    [[ "$output" == "[]" ]]
 }
 
 @test "lint-comment-voice: leaves the version and SHA pinning the rules exempt" {

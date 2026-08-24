@@ -38,6 +38,23 @@ finding with its body untouched, appends what you composed, and advances the
 header. It prints counts and flags only, never finding bodies, which is what
 keeps this step cheap.
 
+## Lint the narrative, without annotating
+
+Run the narrative linter on the append file, and leave `--annotate` off:
+
+```bash
+~/.claude/skills/review-code/scripts/lint-review-narrative.py "<artifacts_dir>/review-append.md"
+```
+
+Report any warnings to the user with the rest of this run's summary, and save
+them in debug mode under stage `11c2-voice-lint`. Nothing is written into the
+document on this path, for two reasons. The merge appends this file's bytes to
+the end of the review, so a warning recorded as line 7 would arrive at line 7
+of a throwaway file and point somewhere in the middle of the saved document.
+And each delta run composes a fresh append file, so the linter would never see
+the section the previous run merged in, and the sections would stack up one per
+re-review.
+
 ## Tell the user what happened
 
 Say how many findings carried forward and how many were re-derived. Four fields

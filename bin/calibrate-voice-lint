@@ -14,33 +14,17 @@ from __future__ import annotations
 import argparse
 import collections
 import glob
-import importlib.util
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(
+    0,
+    str(Path(__file__).resolve().parent.parent / "skills/review-code/scripts/helpers"),
+)
 
-def find_repo_root() -> Path:
-    result = subprocess.run(
-        ["git", "-C", str(Path(__file__).parent), "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return Path(result.stdout.strip())
-
-
-def load_linter(repo_root: Path):
-    script = repo_root / "skills" / "review-code" / "scripts" / "lint-comment-voice.py"
-    script_str = str(script)
-    spec = importlib.util.spec_from_file_location("lint_comment_voice", script_str)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load linter at {script_str}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+from lint_loader import load_linter  # noqa: E402
 
 
 def recent_reviews(directory: Path, count: int) -> list[Path]:
@@ -50,7 +34,7 @@ def recent_reviews(directory: Path, count: int) -> list[Path]:
     return [Path(p) for p in paths[:count]]
 
 
-def parse_args(repo_root: Path) -> argparse.Namespace:
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--dir",
@@ -87,8 +71,8 @@ def parse_args(repo_root: Path) -> argparse.Namespace:
 
 
 def main() -> int:
-    args = parse_args(find_repo_root())
-    linter = load_linter(find_repo_root())
+    args = parse_args()
+    linter = load_linter()
     reviews_dir = Path(args.dir)
 
     files = recent_reviews(reviews_dir, args.limit_files)

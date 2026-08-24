@@ -206,7 +206,7 @@ WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9'’/-]*")
 SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 
 SEVERITY_PREFIX = re.compile(
-    r"^(?:`\*\*`\s*)?`?(?:blocking|suggestion|question|nit)`?\s*:",
+    r"^\s*`?\*{0,2}(?:blocking|suggestion|question|nit)\*{0,2}`?\s*:",
     re.I,
 )
 
@@ -285,7 +285,13 @@ def lint(text: str) -> list[LintWarning]:
 
         for category, patterns in PATTERNS.items():
             if category in RULES_RESPECTING_PREFIX:
-                subject = strip_severity_prefix(raw_prose)
+                # Strip the prefix off the raw line, before masking, then mask.
+                # Masking first deletes the backticked severity word and leaves
+                # a bare ": ", which no longer matches SEVERITY_PREFIX; the
+                # start-anchored rules then never see the start of the sentence.
+                subject = URL.sub(
+                    "", INLINE_CODE.sub("", strip_severity_prefix(original))
+                )
             else:
                 subject = raw_prose
             if any(pattern.search(subject) for pattern in patterns):
