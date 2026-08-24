@@ -95,6 +95,31 @@ parse_common_args() {
 # Collect every shell script in the repo into the shell_files array. Tests under
 # tests/unit and tests/integration are .bats, a dialect that neither shfmt nor
 # our linter parses, so bin/test covers those instead.
+# Every Python file bin/fmt and bin/lint act on. Kept beside
+# collect_shell_files so the two languages are enumerated the same way and a
+# new directory is one edit rather than two.
+collect_python_files() {
+    local patterns=(
+        bin/*
+        skills/review-code/scripts/*.py
+        skills/review-code/scripts/helpers/*.py
+        evals/scripts/*.py
+    )
+
+    python_files=()
+    local pattern file
+    for pattern in "${patterns[@]}"; do
+        for file in ${pattern}; do
+            [[ -f "${file}" ]] || continue
+            # A .py extension is enough; anything else has to declare a python
+            # shebang, which is what picks up extensionless tools in bin/.
+            if [[ "${file}" == *.py ]] || { [[ -x "${file}" ]] && head -1 "${file}" | grep -q '^#!/.*python'; }; then
+                python_files+=("${file}")
+            fi
+        done
+    done
+}
+
 collect_shell_files() {
     local patterns=(
         bin/*

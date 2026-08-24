@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #/ Usage: bin/fmt [options]
-#/ Description: Formats shell scripts according to project standards
+#/ Description: Formats shell and Python scripts according to project standards
 #/ Options:
 #/   -c, --check    Check formatting without making changes
 #/   -v, --verbose  Verbose output
@@ -31,9 +31,9 @@ while (("$#")); do
 done
 
 if ${check}; then
-    print_color blue "Checking shell script formatting…"
+    print_color blue "Checking script formatting…"
 else
-    print_color blue "Formatting shell scripts…"
+    print_color blue "Formatting scripts…"
 fi
 
 success_status=true
@@ -56,6 +56,25 @@ if command_exists shfmt; then
     fi
 else
     warning "shfmt not found - install with: brew install shfmt"
+    success_status=false
+fi
+
+# Format Python with ruff if available
+if command_exists ruff; then
+    collect_python_files
+
+    cmd="ruff format"
+    if ${check}; then
+        cmd="${cmd} --check"
+    fi
+
+    if [[ ${#python_files[@]} -gt 0 ]]; then
+        if ! run_command "${cmd} ${python_files[*]}" "Formatting Python with ruff"; then
+            success_status=false
+        fi
+    fi
+else
+    warning "ruff not found - install with: brew install ruff"
     success_status=false
 fi
 

@@ -95,7 +95,7 @@ def outside_fences(linter, lines: list[str]):
         marker = linter.FENCE.match(line)
         token = marker.group(1) if marker else ""
         if fence:
-            if marker and token.startswith(fence) and not line[marker.end():].strip():
+            if marker and token.startswith(fence) and not line[marker.end() :].strip():
                 fence = ""
             continue
         if token:
@@ -117,7 +117,7 @@ def mask_non_narrative(linter, lines: list[str]) -> list[str]:
         token = marker.group(1) if marker else ""
 
         if fence:
-            if marker and token.startswith(fence) and not line[marker.end():].strip():
+            if marker and token.startswith(fence) and not line[marker.end() :].strip():
                 fence = ""
             paragraph_start = False
         elif token:

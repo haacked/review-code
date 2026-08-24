@@ -19,6 +19,11 @@ import os
 import sys
 from pathlib import Path
 
+# Set before the helper import and before the loader's exec_module: both are
+# what write bytecode, and this tool runs from the checkout rather than the
+# installed skill, so without it every calibration run leaves __pycache__ in
+# skills/review-code/scripts.
+sys.dont_write_bytecode = True
 sys.path.insert(
     0,
     str(Path(__file__).resolve().parent.parent / "skills/review-code/scripts/helpers"),
@@ -54,11 +59,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=0,
         metavar="<n>",
-        help="Cap warnings shown per category to n before counting "
-        "(0 counts them all)",
+        help="Cap warnings shown per category to n before counting (0 counts them all)",
     )
     parser.add_argument(
-        "--json", action="store_true", help="Emit machine-readable JSON instead of a table"
+        "--json",
+        action="store_true",
+        help="Emit machine-readable JSON instead of a table",
     )
     parser.add_argument(
         "--show-samples",

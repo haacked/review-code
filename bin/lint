@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #/ Usage: bin/lint [options]
-#/ Description: Lints shell scripts for quality and potential issues
+#/ Description: Lints shell and Python scripts for quality and potential issues
 #/ Options:
 #/   -v, --verbose  Verbose output
 
@@ -8,7 +8,7 @@ source bin/helpers/_utils.sh
 set_source_and_root_dir
 parse_common_args "$@"
 
-print_color blue "Linting shell scripts…"
+print_color blue "Linting scripts…"
 
 success_status=true
 
@@ -41,6 +41,22 @@ print_color blue "Found ${#shell_files[@]} shell scripts"
 #   has reviewed ended in a per-file disable with that same reason, so exclude
 #   them once here rather than repeating the directive in forty files.
 if ! run_command "shellcheck -x -o all -P SCRIPTDIR -e SC1091,SC2250,SC2310,SC2312 ${shell_files[*]}" "Running shellcheck"; then
+    success_status=false
+fi
+
+# Lint Python with ruff. The two pipeline scripts insert their helpers
+# directory on sys.path before importing from it, so E402 (import not at top of
+# file) is the module-loading idiom here rather than a defect.
+if command_exists ruff; then
+    collect_python_files
+    if [[ ${#python_files[@]} -gt 0 ]]; then
+        print_color blue "Found ${#python_files[@]} Python scripts"
+        if ! run_command "ruff check ${python_files[*]}" "Running ruff"; then
+            success_status=false
+        fi
+    fi
+else
+    warning "ruff not found - install with: brew install ruff"
     success_status=false
 fi
 

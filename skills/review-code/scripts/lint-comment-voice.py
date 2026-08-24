@@ -121,9 +121,7 @@ RAW_PATTERNS: dict[str, tuple[str, ...]] = {
     # them before the voice agent ever sees them. Author-attribution labels that
     # the review itself writes for the reader ("Raised by: … (corroborated)")
     # are structure, not leaks, and stay exempt.
-    "provenance_leak": (
-        r"\*\s*\((?:corroborat\w+|flagged|disputed)[^*]*\)\*",
-    ),
+    "provenance_leak": (r"\*\s*\((?:corroborat\w+|flagged|disputed)[^*]*\)\*",),
     # Verdict-first openers. The voice agent bans opening with a label or
     # adjective stack ("This is a real upgrade-window risk", "Sound and
     # proportionate"); these patterns catch the common shapes.
@@ -255,7 +253,7 @@ def prose_lines(text: str) -> Iterable[tuple[int, str, str]]:
         marker = FENCE.match(line)
         token = marker.group(1) if marker else ""
         if fence:
-            if marker and token.startswith(fence) and not line[marker.end():].strip():
+            if marker and token.startswith(fence) and not line[marker.end() :].strip():
                 fence = ""
             continue
         if token:
