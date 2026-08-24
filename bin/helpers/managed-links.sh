@@ -17,22 +17,24 @@
 # either way. Callers under `set -e` must therefore invoke this in an `if` or
 # `||` context; a bare call aborts the script on the first destination it
 # cannot own.
+# POSIX sh has no `local`, and the caller (bin/install-codex.sh) is `#!/bin/sh`,
+# so the argument names below are prefixed to stay out of the caller's namespace.
 install_managed_link() {
-    local source_path="$1"
-    local destination="$2"
-    local managed_prefix="$3"
-    if [ -e "$destination" ] && [ ! -L "$destination" ]; then
-        warning "$destination is not a symlink; skipping"
+    _managed_source="$1"
+    _managed_destination="$2"
+    _managed_prefix="$3"
+    if [ -e "$_managed_destination" ] && [ ! -L "$_managed_destination" ]; then
+        warning "$_managed_destination is not a symlink; skipping"
         return 1
-    elif [ -L "$destination" ]; then
-        case "$(readlink "$destination")" in
-            "$managed_prefix"*) ln -sfn "$source_path" "$destination" ;;
+    elif [ -L "$_managed_destination" ]; then
+        case "$(readlink "$_managed_destination")" in
+            "$_managed_prefix"*) ln -sfn "$_managed_source" "$_managed_destination" ;;
             *)
-                warning "$destination is unmanaged; skipping"
+                warning "$_managed_destination is unmanaged; skipping"
                 return 1
                 ;;
         esac
     else
-        ln -s "$source_path" "$destination"
+        ln -s "$_managed_source" "$_managed_destination"
     fi
 }

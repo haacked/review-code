@@ -72,6 +72,8 @@ remove_managed_agents() {
         if [ -L "$agent" ]; then
             case "$(readlink "$agent")" in
                 "$CODEX_AGENTS_STAGING"/*) rm -f "$agent" ;;
+                # A link pointing anywhere else is someone else's; leave it.
+                *) ;;
             esac
         elif [ "$(head -n 1 "$agent")" = "$MANAGED_AGENT_HEADER" ]; then
             rm -f "$agent"

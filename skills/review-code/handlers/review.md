@@ -217,7 +217,7 @@ This prints `claude` or `codex`. Save it as `$harness`. If the command exits non
     run <agent-name> <prompt-file> <artifacts_dir>/findings/<agent-name>.md
 ```
 
-`<prompt-file>` is a markdown file you write first containing the same prompt body the Claude path would send inline. The helper shells out to `codex exec --json --sandbox read-only --output-last-message <findings-file>`, so the agent's final message lands directly at the findings path. Codex subagents cannot stream back into this conversation; all findings, architectural context, and validation notes reach us as files.
+`<prompt-file>` is a markdown file you write first containing the same prompt body the Claude path would send inline. The helper shells out to `codex exec --json --sandbox read-only --output-last-message <findings-file>`, applying the model, reasoning effort, and instructions from `~/.codex/agents/<agent-name>.toml`, so the agent's final message lands directly at the findings path. Don't repeat the agent definition in the prompt file; the helper supplies it. Codex subagents cannot stream back into this conversation; all findings, architectural context, and validation notes reach us as files.
 
 Under Codex, dispatch is sequential unless you background the invocations; prefer backgrounding (`... &`) when the plan picks several reviewers so they run in parallel, then `wait` before synthesis. Track each backgrounded PID alongside the agent name so you can attribute a non-zero exit.
 

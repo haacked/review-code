@@ -39,7 +39,8 @@ find_repos_config() {
         return 1
     fi
 
-    local default="$(resolve_skill_dir)/repos.conf"
+    local default
+    default="$(resolve_skill_dir)/repos.conf"
     if [[ -f "${default}" ]]; then
         echo "${default}"
         return 0
