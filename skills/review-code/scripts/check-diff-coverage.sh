@@ -199,9 +199,14 @@ for subdir in subdirs:
         # back to --diff-lines; that caller-supplied count is the only honest
         # total left.
         named = [p for p in paths if p]
-        counts = [c for c in (line_count(p) for p in named) if c is not None]
-        diff_path = max(named) if named else None
-        total = max(counts) if counts else TOTAL
+        counted = [(line_count(p), p) for p in named if line_count(p) is not None]
+        # diff_path must come from the same max() as total. Picking them from
+        # two different maxima (lexicographic for one, line count for the
+        # other) can name chunk-1 as the diff while sizing coverage against
+        # chunk-0 when an agent mentions both. max() on (count, path) tuples
+        # breaks count ties by path, which is fine — that just picks one of
+        # the equally-long files.
+        total, diff_path = max(counted) if counted else (TOTAL, None)
 
         merged = [[a, min(b, total)] for a, b in merge(intervals) if a <= min(b, total)]
         covered = sum(b - a + 1 for a, b in merged)

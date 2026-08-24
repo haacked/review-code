@@ -308,3 +308,18 @@ make_patch() { # $1 name, $2 lines
     [ "$(echo "$output" | jq -r '.agents[0].diff_path')" = "null" ]
     [ "$(echo "$output" | jq '.below_threshold | length')" -eq 1 ]
 }
+
+@test "check-diff-coverage: diff_path and total come from the same file when an agent names two patches" {
+    # Regression for the independent-maxima bug: diff_path was the lexicographic
+    # max of named paths and total the numeric max of their line counts, so the
+    # row could name chunk-1 while sizing against chunk-0. They must pair up.
+    local chunk0="$(make_patch chunk-0.patch 2029)"
+    local chunk1="$(make_patch chunk-1.patch 896)"
+    make_agent code-reviewer-security a1 \
+        "$(bash_block "sed -n '1,2029p' $chunk0")" \
+        "$(bash_block "sed -n '1,896p' $chunk1")"
+    run_cov --diff-lines 2029 --json
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.agents[0].diff_path')" = "$chunk0" ]
+    [ "$(echo "$output" | jq -r '.agents[0].total')" -eq 2029 ]
+}
