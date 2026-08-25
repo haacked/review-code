@@ -15,11 +15,20 @@ setup() {
 
     REGISTRY="$BENCHMARKS_DIR/registry.json"
     export REGISTRY
-}
 
-# Print "<category>/<id>" for every registry entry.
-benchmark_paths() {
-    jq -r '.benchmarks[] | "\(.category)/\(.id)"' "$REGISTRY"
+    # Every loop below walks this list, and a `while read` over an empty list
+    # runs zero times and passes without asserting anything. Resolve it once
+    # here so an unreadable or empty registry fails every test in the file
+    # instead of leaving six of them reporting ok on nothing.
+    BENCH_PATHS=$(jq -r '.benchmarks[] | "\(.category)/\(.id)"' "$REGISTRY") || {
+        echo "setup: cannot read the benchmark list from $REGISTRY" >&2
+        return 1
+    }
+    if [[ -z "$BENCH_PATHS" ]]; then
+        echo "setup: the benchmark list from $REGISTRY is empty" >&2
+        return 1
+    fi
+    export BENCH_PATHS
 }
 
 @test "eval benchmarks: registry.json is valid JSON with a benchmarks array" {
@@ -46,7 +55,7 @@ benchmark_paths() {
         for required in metadata.json answer-key.json diff.patch; do
             [[ -f "$dir/$required" ]] || problems+="$bench: missing $required"$'\n'
         done
-    done < <(benchmark_paths)
+    done <<< "$BENCH_PATHS"
 
     [[ -z "$problems" ]] || echo "$problems" >&2
     [ -z "$problems" ]
@@ -61,7 +70,7 @@ benchmark_paths() {
             [[ -f "$path" ]] || continue
             jq empty "$path" 2> /dev/null || problems+="$bench: $file is not valid JSON"$'\n'
         done
-    done < <(benchmark_paths)
+    done <<< "$BENCH_PATHS"
 
     [[ -z "$problems" ]] || echo "$problems" >&2
     [ -z "$problems" ]
@@ -77,7 +86,7 @@ benchmark_paths() {
         metadata_id=$(jq -r '.id // ""' "$path")
         [[ "$metadata_id" == "$registry_id" ]] ||
             problems+="$bench: metadata id is '$metadata_id'"$'\n'
-    done < <(benchmark_paths)
+    done <<< "$BENCH_PATHS"
 
     [[ -z "$problems" ]] || echo "$problems" >&2
     [ -z "$problems" ]
@@ -100,7 +109,7 @@ benchmark_paths() {
             problems+="$bench: expected_finding_count is $declared_findings, answer key has $actual_findings"$'\n'
         [[ "$declared_traps" == "$actual_traps" ]] ||
             problems+="$bench: false_positive_trap_count is $declared_traps, answer key has $actual_traps"$'\n'
-    done < <(benchmark_paths)
+    done <<< "$BENCH_PATHS"
 
     [[ -z "$problems" ]] || echo "$problems" >&2
     [ -z "$problems" ]
@@ -127,7 +136,7 @@ benchmark_paths() {
             ] | join(", ")
         ' "$key")
         [[ -z "$bad" ]] || problems+="$bench: incomplete entries: $bad"$'\n'
-    done < <(benchmark_paths)
+    done <<< "$BENCH_PATHS"
 
     [[ -z "$problems" ]] || echo "$problems" >&2
     [ -z "$problems" ]
@@ -148,7 +157,7 @@ benchmark_paths() {
             ] | join(", ")
         ' "$key")
         [[ -z "$bad" ]] || problems+="$bench: reversed ranges: $bad"$'\n'
-    done < <(benchmark_paths)
+    done <<< "$BENCH_PATHS"
 
     [[ -z "$problems" ]] || echo "$problems" >&2
     [ -z "$problems" ]
@@ -157,7 +166,7 @@ benchmark_paths() {
 @test "eval benchmarks: no benchmark directory is missing from the registry" {
     local problems=""
     local registered
-    registered=$(benchmark_paths)
+    registered="$BENCH_PATHS"
 
     local dir
     while read -r dir; do
