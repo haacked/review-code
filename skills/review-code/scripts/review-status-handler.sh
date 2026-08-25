@@ -215,7 +215,7 @@ case "${ACTION}" in
         }
         + ({force, draft, self, overwrite, append, full, fix} | with_entries(select(.value)))
         + (if .debug_session_dir then {debug_session_dir} else {} end)
-        + (if .pr then {pr: {number: .pr.number, title: .pr.title, author: .pr.author, url: .pr.url, base: .pr.base, head: .pr.head, head_sha: .pr.head_sha, linked_issues: [.pr.linked_issues[]? | {number, title}]}, reviewer_username, is_own_pr} else {} end)
+        + (if .pr then {pr: {number: .pr.number, title: .pr.title, author: .pr.author, url: .pr.url, base: .pr.base_ref, head: .pr.head_ref, head_sha: .pr.head_sha, linked_issues: [.pr.linked_issues[]? | {number, title}]}, reviewer_username, is_own_pr} else {} end)
         + (if .branch then {branch} else {} end)
         + (if .base_branch then {base_branch} else {} end)
         + (if .base_source then {base_source} else {} end)

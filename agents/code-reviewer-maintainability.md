@@ -157,10 +157,12 @@ Run this over the comment and docstring lines the diff adds or changes, in the d
 3. **Search for prior use, then read the hits.** Search the repo as it stood *before* this PR, so the diff's own additions do not count as precedent:
 
    ```bash
-   git -C <checkout> grep -inF "<phrase>" <base ref> -- <source root>
+   git -C <checkout> grep -inF -e "<phrase>" <base ref> -- <source root> | head -20
    ```
 
-   `<checkout>` and `<base ref>` come from File Access: the base ref is the merge base of the PR's head and its base branch, and the PR's head is `file_ref` when File Access names one, because in the cross-branch case the working tree sits on another branch and `HEAD` there is not the PR. Keep `-F`, or a phrase with regex characters in it matches the wrong things. The diff's own removed lines also count as prior use. If there is no checkout, or the command errors, grep the working tree instead and discard hits on lines the diff adds.
+   `<checkout>` comes from File Access. Derive `<base ref>` yourself: take the base branch from the briefing's `- Branch: <head> → <base>` line and run `git -C <checkout> merge-base HEAD <base branch>`, falling back to `origin/<base branch>` when the bare name does not resolve. Where File Access names a `file_ref`, use it in place of `HEAD`, because in the cross-branch case the working tree sits on another branch and `HEAD` there is not the PR. `<source root>` is the top-level directories the diff's own changed files sit under.
+
+   Keep `-F`, or a phrase with regex characters in it matches the wrong things, and quote the phrase so the shell searches it literally: double quotes with a backslash before any `$` or backtick, since a phrase may itself contain an apostrophe. `-e` stops a phrase that starts with a dash from being read as a flag. `head` caps a phrase that matches everywhere; neither it nor the pathspec changes the count this turns on, which is only 0-1 against 2 or more. The diff's own removed lines also count as prior use. If there is no checkout, the command errors, or you cannot determine a base ref, grep the working tree instead, discard hits on lines the diff adds, and say in your Investigation Summary that the search covered the working tree rather than the base.
 
    Then read every hit. Two or more pre-existing uses that mean the same thing make it the repo's vocabulary: stop, do not flag. Hits that pair the phrase with a different object are a different term.
 
@@ -245,7 +247,7 @@ Before including any finding, argue against it:
 
 **Response Structure:**
 
-1. **Investigation Summary**: Conventions observed in neighboring files, existing utilities found (or confirmed absent), and similar functions compared. Note any steps where `$architectural_context` already provided sufficient coverage.
+1. **Investigation Summary**: Conventions observed in neighboring files, existing utilities found (or confirmed absent), similar functions compared, and, for each comment phrase you flag, the phrase you searched for prior use and what came back. Note any steps where `$architectural_context` already provided sufficient coverage.
 2. **What's Working Well**: Acknowledge good maintainability practices
 3. **Blocking Issues**: Must-fix items that will confuse or mislead maintainers
 4. **Suggestions & Questions**: Items that add technical debt or need clarification
