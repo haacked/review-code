@@ -38,7 +38,7 @@ When reviewing networking, IP handling, or infrastructure-related code, consult 
     - `argocd/contour/values/values.yaml` - num-trusted-hops config
     - `argocd/contour-ingress/values/values.prod-*.yaml` - routing and header policies
     - `docs/CONTOUR-GEOIP-README.md` - GeoIP and header handling
-    - `charts/posthog-rust/templates/deployment.yaml` - pod defaults for Rust services (grace period, resources; current values in the repo context file)
+    - `charts/posthog-rust/templates/deployment.yaml` - pod defaults for Rust services (grace period, resources; current values in `repos/charts.md`)
 
 ## Performance Guidelines
 
