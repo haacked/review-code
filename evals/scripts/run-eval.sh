@@ -211,6 +211,18 @@ run_pr_benchmark() {
         fi
     fi
 
+    # A frozen diff alone leaves the checkout on the PR's current head, and
+    # agents verify every line by reading the file there. On an open PR that
+    # means they read the author's later corrections and drop the findings the
+    # answer key expects. source_sha pins the checkout to the commit the diff
+    # was taken from.
+    local source_sha
+    source_sha=$(jq -r '.source_sha // ""' "${bench_dir}/metadata.json" 2> /dev/null)
+    if [[ -n "${source_sha}" ]]; then
+        frozen_env+=(REVIEW_CODE_PR_SHA="${source_sha}")
+        echo "  Pinning checkout to ${source_sha}"
+    fi
+
     # Run the review via claude -p using the PR URL.
     # Unset CLAUDECODE to allow running inside an existing Claude Code session.
     echo "  Budget: ${budget:+\$}${budget:-none}"

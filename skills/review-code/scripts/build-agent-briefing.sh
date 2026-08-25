@@ -125,7 +125,7 @@ case "${MODE}" in
         emit "**PR Details:**"
         emit "- URL: $(sget '.pr.url')"
         emit "- Author: $(sget '.pr.author')"
-        emit "- Branch: $(sget '.pr.head') → $(sget '.pr.base')"
+        emit "- Branch: $(sget '.pr.head_ref') → $(sget '.pr.base_ref')"
         emit "- Status: $(sget '.pr.state')"
         emit ""
         emit "**PR Description:**"

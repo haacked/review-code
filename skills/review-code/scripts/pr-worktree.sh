@@ -11,6 +11,12 @@
 #     stderr: progress / diagnostics
 #     exit 1 on fetch or worktree failure (caller falls back to diff-only)
 #
+#     Set REVIEW_CODE_PR_SHA to check out one commit of the PR rather than its
+#     head; the returned "ref" is then that sha. It must be reachable from the
+#     fetched ref, and provision fails rather than silently using the head when
+#     it is not. Used by frozen-diff evals, where reading the head would show
+#     agents the corrections the author pushed after the diff was captured.
+#
 #   pr-worktree.sh teardown <org> <repo> <pr_number> <local_clone>
 #     Removes the worktree no matter what state it is in, including one an
 #     external tool has locked and one with uncommitted edits. Keeps the ref
@@ -192,19 +198,35 @@ provision() {
         fi
     fi
 
+    # REVIEW_CODE_PR_SHA pins the checkout to one commit of the PR instead of
+    # its current head. Freezing only the diff is not enough for a benchmark:
+    # agents are told to verify each line by reading the file, so they read
+    # whatever the author has since pushed. The commit must be reachable from
+    # the ref just fetched, which is what makes a plain checkout of it work.
+    local checkout_ref="${ref}"
+    if [[ -n "${REVIEW_CODE_PR_SHA:-}" ]]; then
+        if ! git -C "${local_clone}" merge-base --is-ancestor \
+            "${REVIEW_CODE_PR_SHA}" "${ref}" 2> /dev/null; then
+            error "REVIEW_CODE_PR_SHA ${REVIEW_CODE_PR_SHA} is not reachable from ${ref}"
+            return 1
+        fi
+        checkout_ref="${REVIEW_CODE_PR_SHA}"
+        log "Pinning checkout to ${checkout_ref} instead of the head of ${ref}"
+    fi
+
     mkdir -p "$(dirname "${path}")"
     path=$(canonicalize "${path}")
 
     if worktree_is_registered "${local_clone}" "${path}"; then
-        log "Reusing worktree at ${path} (checking out ${ref})…"
-        if ! git -C "${path}" checkout --detach "${ref}" > /dev/null 2>&1; then
+        log "Reusing worktree at ${path} (checking out ${checkout_ref})…"
+        if ! git -C "${path}" checkout --detach "${checkout_ref}" > /dev/null 2>&1; then
             # Reused worktree has dirty state (a prior review crashed mid-edit,
             # or an agent wrote inside it). The detached checkout refuses to
             # overwrite. Discarding silently would lose work the user cared
             # about, so recreate the orchestrator-owned worktree instead.
             log "Checkout rejected (dirty worktree?); recreating…"
             force_remove_worktree "${local_clone}" "${path}"
-            if ! create_worktree "${local_clone}" "${path}" "${ref}"; then
+            if ! create_worktree "${local_clone}" "${path}" "${checkout_ref}"; then
                 error "Failed to recreate worktree at ${path}"
                 return 1
             fi
@@ -214,13 +236,13 @@ provision() {
         return 1
     else
         log "Creating worktree at ${path}…"
-        if ! create_worktree "${local_clone}" "${path}" "${ref}"; then
+        if ! create_worktree "${local_clone}" "${path}" "${checkout_ref}"; then
             error "Worktree creation failed for ${org}/${repo}#${pr_number}"
             return 1
         fi
     fi
 
-    jq -n --arg path "${path}" --arg ref "${ref}" \
+    jq -n --arg path "${path}" --arg ref "${checkout_ref}" \
         '{worktree_path: $path, ref: $ref}'
 }
 
