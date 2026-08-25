@@ -71,6 +71,11 @@ posted_json() {
     ]'
 }
 
+# Same shape as tests/unit/test-lint-review-narrative.bats:24.
+checksum() {
+    md5 -q "$1" 2> /dev/null || md5sum "$1" | cut -d' ' -f1
+}
+
 annotate() {
     posted_json | python3 "$SCRIPT" annotate --review-file "$REVIEW" "$@"
 }
@@ -161,12 +166,12 @@ annotate() {
 # =============================================================================
 
 @test "annotate: invalid input reports an error and leaves the file untouched" {
-    checksum_before=$(md5 -q "$REVIEW" 2> /dev/null || md5sum "$REVIEW" | cut -d' ' -f1)
+    checksum_before=$(checksum "$REVIEW")
     run bash -c "echo 'not json' | python3 '$SCRIPT' annotate --review-file '$REVIEW'"
     [ "$status" -eq 0 ]
     [[ "$output" == *'"error":'* ]]
     [[ "$output" != *'"error": null'* ]]
-    checksum_after=$(md5 -q "$REVIEW" 2> /dev/null || md5sum "$REVIEW" | cut -d' ' -f1)
+    checksum_after=$(checksum "$REVIEW")
     [ "$checksum_before" = "$checksum_after" ]
 }
 
@@ -462,4 +467,45 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *'"updated": 0'* ]]
     grep -q "Validate the token first." "$REVIEW"
+}
+
+# A review never posted as a draft has no heading token, only the prose line.
+# Python has to honour it or annotate's filter lets the retired block be
+# claimed by a new finding at the same path and line.
+@test "withdraw: a hand-marked withdrawal is honoured without a heading token" {
+    cat > "$REVIEW" << 'EOF'
+#### `src/auth.ts:42`
+
+```text
+Retired by hand, never posted as a draft.
+```
+
+*Withdrawn 2026-08-25: author was right*
+
+---
+
+#### `src/auth.ts:42`
+
+```text
+A live finding at the same line.
+```
+
+---
+EOF
+    jq -n '[{id: 999, node_id: "PRRC_new", path: "src/auth.ts", line: 42,
+             body: "Matches neither body, forcing the path and line fallback."}]' \
+        | python3 "$SCRIPT" annotate --review-file "$REVIEW"
+
+    # The hand-marked block keeps no annotation; the live one gets it.
+    run grep -c 'pc:999' "$REVIEW"
+    [ "$output" -eq 1 ]
+    line_no=$(grep -n 'pc:999' "$REVIEW" | cut -d: -f1)
+    [ "$line_no" -gt 5 ]
+}
+
+@test "status: identical bodies read as in_sync even with a stale digest" {
+    annotate
+    # Corrupt the recorded digest, as a dropped refresh would.
+    sed -i.bak -E 's/ b:[0-9a-f]{8} / b:00000000 /' "$REVIEW"
+    [ "$(status_of '.')" = "in_sync" ]
 }

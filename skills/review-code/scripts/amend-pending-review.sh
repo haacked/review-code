@@ -38,6 +38,8 @@
 # .../events, and every comment it touches must already belong to the caller's
 # own pending review.
 
+# shellcheck disable=SC2016  # jq and GraphQL documents throughout; the $vars
+# in single quotes are bound by --argjson/--arg/-f, not shell expansions.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -46,71 +48,11 @@ source "${SCRIPT_DIR}/helpers/gh-wrapper.sh"
 # shellcheck source=helpers/gh-review-helpers.sh
 source "${SCRIPT_DIR}/helpers/gh-review-helpers.sh"
 
-# ── Logging ──────────────────────────────────────────────────────────────────
-# Log to stderr so stdout stays clean for JSON consumers.
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-log_info() { echo -e "${BLUE}[INFO]${NC} $1" >&2; }
-log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1" >&2; }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $1" >&2; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
+# shellcheck source=helpers/pr-target.sh
+source "${SCRIPT_DIR}/helpers/pr-target.sh"
 
 usage() {
     sed -n '2,39p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
-}
-
-# ── PR target resolution ─────────────────────────────────────────────────────
-# Vendored from resolve-review-threads.sh, which vendors it in turn. Keep the
-# three copies in step.
-
-parse_pr_url() {
-    local url="$1"
-    if [[ "$url" =~ ^https://github\.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
-        OWNER="${BASH_REMATCH[1]}"
-        REPO_NAME="${BASH_REMATCH[2]}"
-        REPO="${OWNER}/${REPO_NAME}"
-        PR_NUMBER="${BASH_REMATCH[3]}"
-        return 0
-    fi
-    return 1
-}
-
-get_current_repo() {
-    gh repo view --json nameWithOwner -q '.nameWithOwner' 2> /dev/null || {
-        log_error "Could not determine repository. Run from inside a repo or pass a full PR URL."
-        exit 1
-    }
-}
-
-resolve_pr_target() {
-    local pr_arg="${1:-}"
-    if [[ -z "$pr_arg" ]]; then
-        local pr_url
-        pr_url=$(gh pr view --json url -q '.url' 2> /dev/null) || {
-            log_error "No PR found for the current branch. Specify a PR number or URL."
-            exit 1
-        }
-        if ! parse_pr_url "$pr_url"; then
-            log_error "Could not parse PR URL from current branch: ${pr_url}"
-            exit 1
-        fi
-    elif parse_pr_url "$pr_arg"; then
-        :
-    elif [[ "$pr_arg" =~ ^[0-9]+$ ]]; then
-        PR_NUMBER="$pr_arg"
-        REPO=$(get_current_repo)
-        OWNER="${REPO%%/*}"
-        REPO_NAME="${REPO##*/}"
-    else
-        log_error "Invalid PR argument: ${pr_arg}"
-        log_error "Expected a PR number or URL (https://github.com/owner/repo/pull/123)."
-        exit 1
-    fi
 }
 
 resolve_reviewer() {
@@ -123,7 +65,6 @@ resolve_reviewer() {
         exit 1
     fi
 }
-
 resolve_review_file() {
     if [[ -n "${REVIEW_FILE}" ]]; then
         return
@@ -154,6 +95,27 @@ echo_comment() {
         echo "${comment}" | jq -r '.notes_body // .live_body // ""'
         echo "────────────────────────────────────────────────────────────────────────"
     } >&2
+}
+
+# Emit JSON only when asked, and never let that decision become an exit status.
+# `[[ cond ]] && cmd` as a function's last statement returns 1 when cond is
+# false, which under set -euo pipefail kills the run silently, after the
+# mutation has already happened.
+# Pass data with --argjson, never by pipe: when JSON is off this returns
+# without reading stdin, so a piped producer takes SIGPIPE and set -euo
+# pipefail kills the run. That failure is a race on the pipe buffer, so it
+# hides on small payloads and surfaces under load.
+emit_json() {
+    [[ "${JSON_OUTPUT}" == "true" ]] || return 0
+    jq "$@"
+}
+
+# Show every comment a mode is about to touch, in full.
+echo_comments() {
+    local label="$1" targets="$2" comment
+    while IFS= read -r comment; do
+        echo_comment "${label}" "${comment}"
+    done < <(echo "${targets}" | jq -c '.[]')
 }
 
 display_status() {
@@ -200,8 +162,6 @@ validate_ids() {
 
 reword_comment() {
     local node_id="$1" body="$2"
-    # shellcheck disable=SC2016  # GraphQL document; $id and $body are GraphQL
-    # variables bound by --f, not shell expansions.
     gh api graphql \
         -f query='mutation($id: ID!, $body: String!) {
             updatePullRequestReviewComment(input: {pullRequestReviewCommentId: $id, body: $body}) {
@@ -224,9 +184,9 @@ main() {
     REVIEWER=""
     REASON=""
     local mode="status"
-    local dry_run=false
-    local json_output=false
-    local -a comment_ids=()
+    DRY_RUN=false
+    JSON_OUTPUT=false
+    COMMENT_IDS=()
 
     while (("$#")); do
         case "$1" in
@@ -259,7 +219,7 @@ main() {
                     log_error "--comment-id requires a numeric REST API comment ID, got: ${2:-}"
                     exit 1
                 }
-                comment_ids+=("$2")
+                COMMENT_IDS+=("$2")
                 shift 2
                 ;;
             --pull | --push | --drop)
@@ -271,11 +231,11 @@ main() {
                 shift
                 ;;
             --dry-run)
-                dry_run=true
+                DRY_RUN=true
                 shift
                 ;;
             --json)
-                json_output=true
+                JSON_OUTPUT=true
                 shift
                 ;;
             -h | --help)
@@ -299,7 +259,7 @@ main() {
         esac
     done
 
-    if [[ "${mode}" == "drop" && ${#comment_ids[@]} -eq 0 ]]; then
+    if [[ "${mode}" == "drop" && ${#COMMENT_IDS[@]} -eq 0 ]]; then
         log_error "--drop requires at least one --comment-id. Refusing to drop every comment."
         exit 1
     fi
@@ -307,7 +267,7 @@ main() {
         log_error "--reason only applies to --drop."
         exit 1
     fi
-    if [[ "${mode}" == "pull" && ${#comment_ids[@]} -gt 0 ]]; then
+    if [[ "${mode}" == "pull" && ${#COMMENT_IDS[@]} -gt 0 ]]; then
         log_error "--comment-id does not apply to --pull, which reconciles the whole review."
         exit 1
     fi
@@ -326,12 +286,14 @@ main() {
     if [[ "${pending}" == "null" ]]; then
         if [[ "${mode}" == "status" ]]; then
             log_info "No pending review by ${REVIEWER} on ${REPO}#${PR_NUMBER}."
-            [[ "${json_output}" == "true" ]] && jq -n '{comments: [], counts: {}, unrecorded: []}'
+            emit_json -n '{comments: [], counts: {}, unrecorded: []}'
             exit 0
         fi
         log_error "No pending review by ${REVIEWER} on ${REPO}#${PR_NUMBER}. Nothing to amend."
         exit 1
     fi
+
+    REVIEW_ID=$(echo "${pending}" | jq -r '.review_id')
 
     # One normalizer, in Python, so the shell never invents a second notion of
     # "changed" that disagrees with the one that wrote the digests.
@@ -340,10 +302,10 @@ main() {
         | "${SCRIPT_DIR}/review-comment-blocks.py" status --review-file "${REVIEW_FILE}")
 
     case "${mode}" in
-        status) do_status "${status_json}" "${json_output}" ;;
-        pull) do_pull "${status_json}" "${dry_run}" "${json_output}" ;;
-        push) do_push "${status_json}" "${dry_run}" "${json_output}" "${comment_ids[@]+"${comment_ids[@]}"}" ;;
-        drop) do_drop "${pending}" "${status_json}" "${dry_run}" "${json_output}" "${comment_ids[@]}" ;;
+        status) do_status "${status_json}" ;;
+        pull) do_pull "${status_json}" ;;
+        push) do_push "${status_json}" ;;
+        drop) do_drop "${pending}" ;;
         *)
             log_error "Unhandled mode '${mode}'."
             exit 1
@@ -352,37 +314,34 @@ main() {
 }
 
 do_status() {
-    local status_json="$1" json_output="$2"
-    if [[ "${json_output}" == "true" ]]; then
-        echo "${status_json}" | jq '{review_id, counts, unrecorded,
-            comments: [.comments[] | {id, node_id, path, line, position, state}]}'
+    local status_json="$1"
+    if [[ "${JSON_OUTPUT}" == "true" ]]; then
+        emit_json -n --argjson s "${status_json}" '{review_id: $s.review_id,
+            counts: $s.counts, unrecorded: $s.unrecorded,
+            comments: [$s.comments[] | {id, node_id, path, line, position, state}]}'
     else
         display_status "${status_json}"
     fi
 }
 
 do_pull() {
-    local status_json="$1" dry_run="$2" json_output="$3"
-    local targets
+    local status_json="$1"
+    local targets count
     targets=$(echo "${status_json}" | jq -c '[.comments[]
         | select(.state == "changed_on_github" or .state == "diverged" or .state == "unknown_baseline")]')
-    local count
     count=$(echo "${targets}" | jq 'length')
 
     if [[ "${count}" -eq 0 ]]; then
         log_info "Notes already match GitHub; nothing to pull."
-        [[ "${json_output}" == "true" ]] && echo "${status_json}" | jq '{pulled: 0, dryRun: false}'
+        emit_json -n '{pulled: 0, dryRun: false}'
         return 0
     fi
 
-    local comment
-    while IFS= read -r comment; do
-        echo_comment "Replacing notes body for comment" "${comment}"
-    done < <(echo "${targets}" | jq -c '.[]')
+    echo_comments "Replacing notes body for comment" "${targets}"
 
-    if [[ "${dry_run}" == "true" ]]; then
+    if [[ "${DRY_RUN}" == "true" ]]; then
         log_info "Dry run: would update ${count} block(s) in ${REVIEW_FILE}."
-        [[ "${json_output}" == "true" ]] && echo "${targets}" | jq '{pulled: 0, dryRun: true, comments: [.[] | {id, state}]}'
+        emit_json -n --argjson t "${targets}" '{pulled: 0, dryRun: true, comments: [$t[] | {id, state}]}'
         return 0
     fi
 
@@ -390,26 +349,24 @@ do_pull() {
         | "${SCRIPT_DIR}/review-comment-blocks.py" set-body --review-file "${REVIEW_FILE}" > /dev/null
     refresh_digests
     log_success "Pulled ${count} comment(s) from GitHub into ${REVIEW_FILE}."
-    [[ "${json_output}" == "true" ]] && echo "${targets}" | jq '{pulled: length, dryRun: false, comments: [.[] | {id, state}]}'
+    emit_json -n --argjson t "${targets}" '{pulled: ($t | length), dryRun: false, comments: [$t[] | {id, state}]}'
     return 0
 }
 
 do_push() {
-    local status_json="$1" dry_run="$2" json_output="$3"
-    shift 3
-    local -a wanted=("$@")
+    local status_json="$1"
+    local targets blocked count
 
-    local targets
     targets=$(echo "${status_json}" | jq -c '[.comments[] | select(.state == "changed_in_notes")]')
-    if [[ ${#wanted[@]} -gt 0 ]]; then
+    if [[ ${#COMMENT_IDS[@]} -gt 0 ]]; then
         local ids_json
-        ids_json=$(printf '%s\n' "${wanted[@]}" | jq -s 'map(tonumber)')
-        targets=$(echo "${targets}" | jq -c --argjson ids "${ids_json}" '[.[] | select(.id as $i | $ids | index($i) != null)]')
+        ids_json=$(printf '%s\n' "${COMMENT_IDS[@]}" | jq -s 'map(tonumber)')
+        targets=$(echo "${targets}" | jq -c --argjson ids "${ids_json}" \
+            '[.[] | select(.id as $i | $ids | index($i) != null)]')
     fi
 
     # Refuse rather than clobber. A body that moved on GitHub is someone's hand
     # edit, and overwriting it silently is the failure this tool exists to stop.
-    local blocked
     blocked=$(echo "${status_json}" | jq -c '[.comments[]
         | select(.state == "changed_on_github" or .state == "diverged")]')
     if [[ "$(echo "${blocked}" | jq 'length')" -gt 0 ]]; then
@@ -419,39 +376,36 @@ do_push() {
         exit 1
     fi
 
-    local count
     count=$(echo "${targets}" | jq 'length')
     if [[ "${count}" -eq 0 ]]; then
         log_info "No reworded comments to push."
-        [[ "${json_output}" == "true" ]] && jq -n '{pushed: 0, failed: 0, dryRun: false}'
+        emit_json -n '{pushed: 0, failed: 0, dryRun: false}'
         return 0
     fi
 
-    local comment
-    while IFS= read -r comment; do
-        echo_comment "Rewording comment" "${comment}"
-    done < <(echo "${targets}" | jq -c '.[]')
+    echo_comments "Rewording comment" "${targets}"
 
-    if [[ "${dry_run}" == "true" ]]; then
+    if [[ "${DRY_RUN}" == "true" ]]; then
         log_info "Dry run: would reword ${count} comment(s) on ${REPO}#${PR_NUMBER}."
-        [[ "${json_output}" == "true" ]] && echo "${targets}" | jq '{pushed: 0, failed: 0, dryRun: true, comments: [.[] | {id}]}'
+        emit_json -n --argjson t "${targets}" '{pushed: 0, failed: 0, dryRun: true, comments: [$t[] | {id}]}'
         return 0
     fi
 
-    local pushed=0 failed=0 id node_id body
-    while IFS=$'\t' read -r id node_id; do
-        body=$(echo "${targets}" | jq -r --argjson id "${id}" '.[] | select(.id == $id) | .notes_body')
-        if reword_comment "${node_id}" "${body}"; then
+    local pushed=0 failed=0 id node_id body_b64
+    # One jq pass carries the body along, so the loop does not re-parse the
+    # whole target list once per comment. base64 keeps newlines out of the TSV.
+    while IFS=$'\t' read -r id node_id body_b64; do
+        if reword_comment "${node_id}" "$(printf '%s' "${body_b64}" | base64 --decode)"; then
             log_success "Reworded ${id}"
             pushed=$((pushed + 1))
         else
             log_warn "Failed to reword ${id}"
             failed=$((failed + 1))
         fi
-    done < <(echo "${targets}" | jq -r '.[] | [.id, .node_id] | @tsv')
+    done < <(echo "${targets}" | jq -r '.[] | [.id, .node_id, (.notes_body | @base64)] | @tsv')
 
     refresh_digests
-    [[ "${json_output}" == "true" ]] && jq -n --argjson pushed "${pushed}" --argjson failed "${failed}" \
+    emit_json -n --argjson pushed "${pushed}" --argjson failed "${failed}" \
         '{pushed: $pushed, failed: $failed, dryRun: false}'
     if [[ "${failed}" -gt 0 ]]; then
         log_error "${failed} comment(s) failed to reword."
@@ -461,38 +415,29 @@ do_push() {
 }
 
 do_drop() {
-    local pending="$1" status_json="$2" dry_run="$3" json_output="$4"
-    shift 4
-    local -a wanted=("$@")
+    local pending="$1"
 
-    validate_ids "${pending}" "${wanted[@]}"
+    validate_ids "${pending}" "${COMMENT_IDS[@]}"
 
+    # Built from the pending review, not from the notes: validate_ids has just
+    # proved every id is in there, and the body GitHub holds is the one the
+    # operator should read before an irreversible delete.
     local ids_json targets
-    ids_json=$(printf '%s\n' "${wanted[@]}" | jq -s 'map(tonumber)')
-    targets=$(echo "${status_json}" | jq -c --argjson ids "${ids_json}" \
-        '[.comments[] | select(.id as $i | $ids | index($i) != null)]')
+    ids_json=$(printf '%s\n' "${COMMENT_IDS[@]}" | jq -s 'map(tonumber)')
+    targets=$(echo "${pending}" | jq -c --argjson ids "${ids_json}" \
+        '[.comments[] | select(.id as $i | $ids | index($i) != null)
+          | {id, path, line, position, live_body: .body}]')
 
-    # An id can be in the pending review but absent from the notes, so fall
-    # back to the live comment rather than skipping it.
-    if [[ "$(echo "${targets}" | jq 'length')" -lt ${#wanted[@]} ]]; then
-        targets=$(echo "${pending}" | jq -c --argjson ids "${ids_json}" \
-            '[.comments[] | select(.id as $i | $ids | index($i) != null)
-              | {id, node_id, path, line, position, live_body: .body}]')
-    fi
+    echo_comments "Dropping comment" "${targets}"
 
-    local comment
-    while IFS= read -r comment; do
-        echo_comment "Dropping comment" "${comment}"
-    done < <(echo "${targets}" | jq -c '.[]')
-
-    if [[ "${dry_run}" == "true" ]]; then
-        log_info "Dry run: would drop ${#wanted[@]} comment(s) from ${REPO}#${PR_NUMBER}."
-        [[ "${json_output}" == "true" ]] && echo "${targets}" | jq '{dropped: 0, failed: 0, dryRun: true, comments: [.[] | {id, path}]}'
+    if [[ "${DRY_RUN}" == "true" ]]; then
+        log_info "Dry run: would drop ${#COMMENT_IDS[@]} comment(s) from ${REPO}#${PR_NUMBER}."
+        emit_json -n --argjson t "${targets}" '{dropped: 0, failed: 0, dryRun: true, comments: [$t[] | {id, path}]}'
         return 0
     fi
 
     local dropped=0 failed=0 id
-    for id in "${wanted[@]}"; do
+    for id in "${COMMENT_IDS[@]}"; do
         if drop_comment "${id}"; then
             log_success "Dropped ${id}"
             dropped=$((dropped + 1))
@@ -505,7 +450,7 @@ do_drop() {
     # Retire the finding in the notes, so carry-forward does not re-propose it
     # and a later --draft does not repost it. Only the ids that actually went.
     if [[ "${dropped}" -gt 0 ]]; then
-        printf '%s\n' "${wanted[@]}" \
+        printf '%s\n' "${COMMENT_IDS[@]}" \
             | jq -R --arg reason "${REASON}" -s 'split("\n") | map(select(length > 0))
                 | map({id: tonumber, reason: $reason})' \
             | "${SCRIPT_DIR}/review-comment-blocks.py" withdraw \
@@ -516,31 +461,34 @@ do_drop() {
         }
     fi
 
+    # Read back rather than subtract, so the count reflects what GitHub kept.
     local remaining
-    remaining=$(gh api "repos/${OWNER}/${REPO_NAME}/pulls/${PR_NUMBER}/reviews/$(echo "${pending}" | jq -r '.review_id')/comments" \
-        --paginate 2> /dev/null | jq 'length' 2> /dev/null || echo "?")
+    remaining=$(pending_comments | jq 'length' 2> /dev/null || echo "?")
     log_info "${remaining} comment(s) remain in the pending review."
     if [[ "${remaining}" == "0" ]]; then
         log_warn "That was the last inline comment. The pending review still exists with its summary body."
     fi
 
-    [[ "${json_output}" == "true" ]] && jq -n --argjson dropped "${dropped}" --argjson failed "${failed}" \
-        --arg remaining "${remaining}" '{dropped: $dropped, failed: $failed, remaining: $remaining, dryRun: false}'
+    emit_json -n --argjson dropped "${dropped}" --argjson failed "${failed}" \
+        --arg remaining "${remaining}" \
+        '{dropped: $dropped, failed: $failed, remaining: $remaining, dryRun: false}'
     if [[ "${failed}" -gt 0 ]]; then
         return 1
     fi
     return 0
 }
 
+# The pending review's comments, from the id this run already resolved.
+pending_comments() {
+    gh api "repos/${OWNER}/${REPO_NAME}/pulls/${PR_NUMBER}/reviews/${REVIEW_ID}/comments" \
+        --paginate 2> /dev/null || echo "[]"
+}
+
 # Re-stamp the last-synced digests so the next run can still tell which side
-# moved. Best effort: a stale digest makes the next push refuse and --pull
-# re-syncs, which is the safe direction to fail in.
+# moved. Best effort, and safe to fail: classify() settles identical bodies as
+# in sync before it consults a digest, so a stale one cannot wedge the tool.
 refresh_digests() {
-    local live
-    live=$(gh api "repos/${OWNER}/${REPO_NAME}/pulls/${PR_NUMBER}/reviews/$(
-        get_existing_pending_review "${OWNER}" "${REPO_NAME}" "${PR_NUMBER}" "${REVIEWER}" | jq -r '.review_id'
-    )/comments" --paginate 2> /dev/null || echo "[]")
-    echo "${live}" | "${SCRIPT_DIR}/review-comment-blocks.py" annotate \
+    pending_comments | "${SCRIPT_DIR}/review-comment-blocks.py" annotate \
         --review-file "${REVIEW_FILE}" > /dev/null 2>&1 || true
 }
 

@@ -200,6 +200,7 @@ EOF
   "reviewer_username": "<reviewer from session>",
   "review_commit": "<pr.head_sha from session, if available>",
   "original_diff_path": "<diff_path>",
+  "review_file": "<review_file from session>",
   "summary": "<Short, conversational summary (see guidance below)>",
   "comments": [
     {"path": "file.ts", "line": 42, "side": "RIGHT", "body": "Clean comment text", "line_content": "    the_actual_code()"}

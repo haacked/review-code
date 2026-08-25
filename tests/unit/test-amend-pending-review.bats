@@ -69,6 +69,7 @@ create_mock_gh() {
 #!/usr/bin/env bash
 args="$*"
 body777="${LIVE_BODY_777:-Validate the token first.}"
+[[ -n "${GH_CALL_LOG:-}" ]] && echo "$args" >> "$GH_CALL_LOG"
 
 if [[ "$args" == *"repo view"* ]]; then echo "org/test"; exit 0; fi
 if [[ "$args" == *"api user"* ]]; then echo "testuser"; exit 0; fi
@@ -116,6 +117,11 @@ annotate() {
       {id:777, node_id:"PRRC_aaa", path:"src/auth.ts", line:42, body:"Validate the token first."},
       {id:888, node_id:"PRRC_bbb", path:"src/db.py", line:12, body:"N+1 query here."}
     ]' | python3 "$BLOCKS" annotate --review-file "$REVIEW" --review-id 99 > /dev/null
+}
+
+# Same shape as tests/unit/test-lint-review-narrative.bats:24.
+checksum() {
+    md5 -q "$1" 2> /dev/null || md5sum "$1" | cut -d' ' -f1
 }
 
 amend() { "$SCRIPT" 1 --review-file "$REVIEW" "$@"; }
@@ -238,10 +244,10 @@ amend() { "$SCRIPT" 1 --review-file "$REVIEW" "$@"; }
 
 @test "amend: pull --dry-run leaves the notes alone" {
     annotate
-    before=$(md5 -q "$REVIEW" 2> /dev/null || md5sum "$REVIEW" | cut -d' ' -f1)
+    before=$(checksum "$REVIEW")
     LIVE_BODY_777="Edited in the UI." run amend --pull --dry-run
     [ "$status" -eq 0 ]
-    after=$(md5 -q "$REVIEW" 2> /dev/null || md5sum "$REVIEW" | cut -d' ' -f1)
+    after=$(checksum "$REVIEW")
     [ "$before" = "$after" ]
 }
 
@@ -355,4 +361,46 @@ amend() { "$SCRIPT" 1 --review-file "$REVIEW" "$@"; }
     amend --pull > /dev/null 2>&1 || true
     amend --drop --comment-id 888 --reason "x" > /dev/null 2>&1 || true
     ! grep -q "UNEXPECTED-URL" "$MUTATIONS"
+}
+
+# =============================================================================
+# Invariants the /simplify pass established
+# =============================================================================
+
+# `[[ cond ]] && cmd` as a function's last statement returns 1 when cond is
+# false, which under set -euo pipefail kills the run silently after the
+# mutation has already landed. Every mode must exit 0 without --json.
+@test "amend: every mode exits zero without --json" {
+    annotate
+    amend > /dev/null
+    amend --pull > /dev/null
+    amend --push > /dev/null
+    jq -n '[{id: 777, body: "Reworded."}]' \
+        | python3 "$BLOCKS" set-body --review-file "$REVIEW" > /dev/null
+    amend --push > /dev/null
+    amend --drop --comment-id 888 --reason "x" > /dev/null
+}
+
+@test "amend: a push makes no redundant pending-review lookups" {
+    annotate
+    jq -n '[{id: 777, body: "Reworded."}]' \
+        | python3 "$BLOCKS" set-body --review-file "$REVIEW" > /dev/null
+    : > "$TEST_DIR/calls.log"
+    GH_CALL_LOG="$TEST_DIR/calls.log" amend --push > /dev/null
+    # The reviews list is read once. Re-reading it to recover an id this run
+    # already holds is what the refresh path used to do.
+    [ "$(grep -c 'reviews --paginate' "$TEST_DIR/calls.log")" -eq 1 ]
+}
+
+# emit_json returns without reading stdin when --json is off. Anything piped
+# into it takes SIGPIPE, and set -euo pipefail turns that into a silent death
+# mid-run. It is a race on the pipe buffer, so only a large payload makes it
+# deterministic; a small one hides the bug.
+@test "amend: a large payload does not kill a non-JSON run" {
+    annotate
+    big=$(head -c 200000 /dev/zero | tr '\0' 'x')
+    LIVE_BODY_777="$big" run amend --pull --dry-run
+    [ "$status" -eq 0 ]
+    LIVE_BODY_777="$big" run amend --json
+    [ "$status" -eq 0 ]
 }

@@ -845,3 +845,70 @@ EOF
     [[ "$output" == *"1 comments filtered out"* ]]
     [[ "$output" == *'"inline_count": 2'* ]]
 }
+
+# =============================================================================
+# Recording posted comment ids in the review file
+# =============================================================================
+
+# The whole amend flow rests on these ids existing. Nothing else drives
+# create-draft-review.sh with review_file, so without this the feature can go
+# inert without a single test noticing.
+@test "create-draft-review: records posted comment ids in the review file" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews/99999/comments"* ]]; then
+    echo '[{"id":777,"node_id":"PRRC_aaa","path":"src/auth.ts","line":42,"position":3,"body":"Validate the token first."}]'
+elif [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 99999}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local review="$MOCK_DIR/pr-1.md"
+    cat > "$review" << 'EOF'
+<!-- review-metadata
+reviewed_at: 2026-08-25T00:00:00Z
+mode: pr
+-->
+
+## Suggested Comments
+
+### New Comments
+
+#### `src/auth.ts:42`
+
+```text
+Validate the token first.
+```
+
+*From: Security (85% confidence)*
+
+---
+EOF
+
+    local input
+    input=$(jq -n --arg rf "$review" '{owner:"org", repo:"test", pr_number:1,
+        reviewer_username:"user", summary:"T", review_file:$rf,
+        comments:[{path:"src/auth.ts", line:42, side:"RIGHT", body:"Validate the token first."}]}')
+    run bash -c "echo '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"annotated_count": 1'* ]]
+    grep -Eq '^#### `src/auth\.ts:42` <!-- pc:777 PRRC_aaa b:[0-9a-f]{8} -->$' "$review"
+    grep -q '^review_id: 99999$' "$review"
+}
+
+@test "create-draft-review: annotates nothing when no review_file is given" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"--method POST"* ]]; then echo '{"id": 99999}'; else echo '[]'; fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "T", "comments": []}'
+    run bash -c "echo '$input' | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"annotated_count": 0'* ]]
+}

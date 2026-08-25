@@ -7,13 +7,26 @@
 # duplicate review detection, etc.).
 #
 # Blocked patterns:
-#   - gh pr review    (submits/creates reviews directly)
-#   - gh api with review endpoints (bypasses create-draft-review.sh)
+#   - gh pr review                          (submits/creates reviews directly)
+#   - gh api on a PR's reviews endpoints    (bypasses create-draft-review.sh)
+#   - gh api on a single review comment     (can delete a published comment)
+#   - GraphQL review-comment mutations      (the other transport for the same)
 #
 # Input: JSON on stdin (Claude Code PreToolUse hook format)
 # Output: JSON with permissionDecision (deny or allow)
 
 set -euo pipefail
+
+deny() {
+    jq -n --arg reason "$1" '{
+        hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: $reason
+        }
+    }'
+    exit 0
+}
 
 input=$(cat)
 command=$(echo "$input" | jq -r '.tool_input.command // ""')
@@ -25,26 +38,12 @@ fi
 
 # Block direct gh pr review commands
 if echo "$command" | grep -qE '\bgh\s+pr\s+review\b'; then
-    jq -n '{
-        hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "deny",
-            permissionDecisionReason: "Direct gh pr review is blocked during code review. Use create-draft-review.sh instead, which ensures reviews stay in PENDING state and handles duplicate detection."
-        }
-    }'
-    exit 0
+    deny "Direct gh pr review is blocked during code review. Use create-draft-review.sh instead, which ensures reviews stay in PENDING state and handles duplicate detection."
 fi
 
 # Block direct gh api calls to review endpoints
 if echo "$command" | grep -qE '\bgh\s+api\b.*\brepos/[^/]+/[^/]+/pulls/[0-9]+/reviews\b'; then
-    jq -n '{
-        hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "deny",
-            permissionDecisionReason: "Direct GitHub API calls to review endpoints are blocked during code review. Use create-draft-review.sh instead."
-        }
-    }'
-    exit 0
+    deny "Direct GitHub API calls to review endpoints are blocked during code review. Use create-draft-review.sh instead."
 fi
 
 # Block direct calls to the single-review-comment endpoints, whatever the
@@ -56,14 +55,7 @@ fi
 # literal number. It does not match pulls/<n>/comments or the reply endpoint
 # pulls/<n>/comments/<id>/replies, neither of which contains "pulls/comments/".
 if echo "$command" | grep -qE '\bgh\s+api\b.*\brepos/[^/]+/[^/]+/pulls/comments/'; then
-    jq -n '{
-        hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "deny",
-            permissionDecisionReason: "Direct GitHub API calls to review comment endpoints are blocked during code review. Use amend-pending-review.sh to list, reword, or drop comments in your pending review."
-        }
-    }'
-    exit 0
+    deny "Direct GitHub API calls to review comment endpoints are blocked during code review. Use amend-pending-review.sh to list, reword, or drop comments in your pending review."
 fi
 
 # Rewording a pending comment only works over GraphQL, so the REST pattern above
@@ -71,14 +63,7 @@ fi
 # resolveReviewThread is deliberately absent: resolve-review-threads.sh is the
 # sanctioned path for that and agents are not the ones calling it directly.
 if echo "$command" | grep -qE '\bgh\s+api\b.*\bgraphql\b.*(updatePullRequestReviewComment|addPullRequestReviewThread|deletePullRequestReviewComment)'; then
-    jq -n '{
-        hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "deny",
-            permissionDecisionReason: "Direct GraphQL mutations on review comments are blocked during code review. Use amend-pending-review.sh to reword or drop comments in your pending review."
-        }
-    }'
-    exit 0
+    deny "Direct GraphQL mutations on review comments are blocked during code review. Use amend-pending-review.sh to reword or drop comments in your pending review."
 fi
 
 # Allow everything else

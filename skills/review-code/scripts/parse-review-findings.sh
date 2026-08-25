@@ -3,7 +3,7 @@
 # parse-review-findings.sh - Extract structured findings from review markdown files
 #
 # Usage:
-#   parse-review-findings.sh [--with-spans] <review-file-path>
+#   parse-review-findings.sh [--with-spans] [--include-withdrawn] <review-file-path>
 #
 # Description:
 #   Parses a code review markdown file and extracts structured findings.
@@ -13,6 +13,9 @@
 #   - Agent section headers: ## Security Review, ## Performance Review
 #
 # Options:
+#   --include-withdrawn  Include findings retired after the review was posted.
+#                 Skipped by default so a re-review neither carries one forward
+#                 nor reposts it; each carries "withdrawn": true.
 #   --with-spans  Add the line range each finding occupies in the file, plus
 #                 whether that range is safe to cut. carry-forward-findings.sh
 #                 uses it to prune a review in place without the document
@@ -26,7 +29,8 @@
 #       "confidence": 85,
 #       "file": "auth.py",
 #       "line": 45,
-#       "description": "SQL injection risk"
+#       "description": "SQL injection risk",
+#       "withdrawn": false
 #     }
 #   ]
 #
@@ -49,7 +53,7 @@ INCLUDE_WITHDRAWN=false
 
 # Append a finding as a single JSONL line.
 # Args: $1=agent, $2=confidence, $3=file, $4=line, $5=description,
-#       $6=start_line, $7=end_line, $8=deletable
+#       $6=start_line, $7=end_line, $8=deletable, $9=withdrawn
 # Uses: findings_jsonl variable (must be in scope)
 # Modifies: findings_jsonl variable
 save_finding() {
@@ -61,6 +65,7 @@ save_finding() {
     local start="$6"
     local end="$7"
     local deletable="$8"
+    local withdrawn="$9"
 
     # Truncated for the orchestrator, which only needs enough to identify a
     # finding. Not under --with-spans: carry-forward-findings.sh compares whole
@@ -70,8 +75,6 @@ save_finding() {
     if [[ "${WITH_SPANS}" != "true" ]]; then
         desc=$(echo "${desc}" | head -c 500)
     fi
-    local withdrawn="$9"
-
     # A withdrawn finding was argued down after the review was posted. It stays
     # in the document so the argument stays on the record, but it is not a live
     # finding: carry-forward must not re-propose it and the draft payload must
@@ -283,7 +286,7 @@ main() {
             begin_finding
             # A drop stamps the heading's comment-id annotation rather than the
             # body, so the flag costs the description nothing.
-            if [[ "${line}" =~ withdrawn: ]]; then
+            if [[ "${line}" =~ \<!--[[:space:]]*pc:[^\>]*withdrawn: ]]; then
                 finding_withdrawn=true
             fi
             continue

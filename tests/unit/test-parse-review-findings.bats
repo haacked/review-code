@@ -780,3 +780,20 @@ EOF
     run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
     [ "$(echo "$output" | jq -r '.[0].withdrawn')" = "false" ]
 }
+
+@test "parse-review-findings.sh: prose on a heading does not retire a finding" {
+    # Only the token inside the pc annotation retires a finding. An unanchored
+    # match would let this heading silently drop a live finding.
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `src/auth.ts:42` (withdrawn: still under discussion)
+
+The token check is wrong.
+
+---
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq 'length')" -eq 1 ]
+}

@@ -33,9 +33,10 @@ Subcommands:
              an internal failure is reported and exits 0 rather than turning a
              successful post into a script error.
 
-  read       Emit the recorded blocks as JSON. Fails loud, because a silent
-             empty result is indistinguishable from "nothing was ever recorded"
-             and would let an amend run act on the wrong thing.
+  read       Emit the recorded blocks as JSON. Nothing in the pipeline calls
+             this; it is the way to inspect what a review file has recorded,
+             by hand or from a test. Fails loud so an unreadable file is not
+             mistaken for a file with nothing recorded in it.
 
   set-body   Replace the fenced body of the blocks named on stdin, as
              [{"id": N, "body": "..."}]. Fails loud, for the same reason.
@@ -134,12 +135,16 @@ def find_blocks(lines: list[str]) -> list[dict]:
         match = HEADING.match(line)
         if match:
             body_start, body_end = body_span(lines, index + 1)
+            annotation = parse_annotation(match.group("rest"))
+            annotation["withdrawn"] = annotation["withdrawn"] or prose_withdrawal(
+                lines, body_end if body_end is not None else index
+            )
             blocks.append(
                 {
                     "index": index,
                     "path": match.group("path").strip().strip("`"),
                     "line": int(match.group("line")),
-                    **parse_annotation(match.group("rest")),
+                    **annotation,
                     "body_start": body_start,
                     "body_end": body_end,
                     "body": (
@@ -174,6 +179,24 @@ def body_span(lines: list[str], start: int) -> tuple[int | None, int | None]:
         if marker and token.startswith(fence) and not line[marker.end() :].strip():
             return open_at, offset
     return None, None
+
+
+def prose_withdrawal(lines: list[str], start: int) -> str | None:
+    """Find a `*Withdrawn ...*` line in the block's tail, if there is one.
+
+    parse-review-findings.sh accepts this marker as well as the heading token,
+    so a review that was never posted as a draft can still retire a finding.
+    Reading only the token here would leave such a block looking live, and the
+    annotate filter would then let a new finding at the same path and line
+    claim it. Bounded by the next heading or thematic break so it cannot reach
+    into the following finding.
+    """
+    for line in lines[start + 1 :]:
+        if line.startswith("#") or line.strip().startswith("---"):
+            return None
+        if line.startswith("*Withdrawn"):
+            return line.strip().strip("*") or "yes"
+    return None
 
 
 def match_comments(blocks: list[dict], comments: list[dict]) -> tuple[dict, list]:
@@ -346,10 +369,16 @@ def cmd_annotate(args, lines: list[str], path: Path) -> dict:
 # at the last sync, so it is the only thing that distinguishes an edit made on
 # GitHub from one made in the notes.
 def classify(notes: str, live: str, recorded: str | None) -> str:
+    # Settle the agreeing case before consulting the digest. A digest that went
+    # stale (a dropped network call during a refresh, say) would otherwise read
+    # as `diverged` on two identical bodies, which accuses someone of a UI edit
+    # they did not make and leaves --push refusing with nothing to reconcile.
+    if normalize(notes) == normalize(live):
+        return "in_sync"
     if recorded is None:
-        # Annotated before digests existed, or hand-edited. Two values can only
-        # report disagreement, never attribute it.
-        return "in_sync" if body_hash(notes) == body_hash(live) else "unknown_baseline"
+        # Annotated before digests existed, or hand-edited. Two differing
+        # values can report disagreement but never attribute it.
+        return "unknown_baseline"
     notes_moved = body_hash(notes) != recorded
     live_moved = body_hash(live) != recorded
     if notes_moved and live_moved:
@@ -507,12 +536,9 @@ def main() -> int:
         result.update(COMMANDS[args.command](args, lines, path))
     except Exception as exc:  # noqa: BLE001 - see FAIL_OPEN
         result["error"] = str(exc)
-        if args.command not in FAIL_OPEN:
-            print(json.dumps(result))
-            return 1
 
     print(json.dumps(result))
-    return 0
+    return 1 if result["error"] and args.command not in FAIL_OPEN else 0
 
 
 if __name__ == "__main__":
