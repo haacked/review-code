@@ -344,6 +344,10 @@ setup_function_body() {
         debug() { :; }
         warn() { :; }
         error() { :; }
+        # install_agents calls this whenever the codex CLI or config dir exists,
+        # so without the stub these tests pass or fail depending on whether the
+        # machine has Codex installed. They cover the PostHog Desktop loop.
+        install_codex_agents() { :; }
         HOME='${fake_home}'
         SCRIPT_DIR='$PROJECT_ROOT'
         CLAUDE_DIR='${fake_home}/.claude'
@@ -372,6 +376,10 @@ setup_function_body() {
         debug() { :; }
         warn() { :; }
         error() { :; }
+        # install_agents calls this whenever the codex CLI or config dir exists,
+        # so without the stub these tests pass or fail depending on whether the
+        # machine has Codex installed. They cover the PostHog Desktop loop.
+        install_codex_agents() { :; }
         HOME='${fake_home}'
         SCRIPT_DIR='$PROJECT_ROOT'
         CLAUDE_DIR='${fake_home}/.claude'
