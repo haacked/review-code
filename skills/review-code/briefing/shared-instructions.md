@@ -29,6 +29,11 @@ When the answer is about file content (does X exist, what does Y do, where is Z 
 2. If `working_dir` is set, use Read/Grep on the PR's files at `git.working_dir`.
 3. If `file_ref` is set, fetch via `git show "$file_ref:<path>"`.
 4. If `pr.head_sha` is available, fetch via `gh api repos/<org>/<repo>/contents/<path>?ref=<sha>` and decode the base64 `content` field.
+5. If the answer lives in a different repo, name that repo and look there. Check a local clone if one is mapped in `repos.conf`, otherwise `gh api repos/<org>/<repo>/contents/<path>` (decode the base64 `content` field; add `?ref=<sha-or-tag-or-branch>` when you know which ref to read) or `gh search code`. For PostHog, deployment and runtime values live in `PostHog/charts`; the org context file lists the key paths.
+
+**Values your finding depends on.**
+
+If a finding's severity rests on a specific number — a timeout, grace period, batch size, quota, rollout percentage, retry count — the finding is only as good as the number. Read the value before asserting the consequence. If you cannot read it, describe the coupling without asserting the outcome, and label the finding `question:`. Arithmetic in the diff is verifiable from the diff and fine to state (a shutdown path that now drains twice at 15s each is up to 30s); its consequence ("exceeds the grace period, triggers SIGKILL") is a finding only after you have read the value it is measured against.
 
 Only ask the author when the answer genuinely depends on context outside the code: their intent, a future plan, an incident the code is responding to, an external system's behavior. "What do you mean?" / "Does X exist?" / "Where is Y handled?" almost always have an answer in the repo, and asking the author for them wastes their time.
 
