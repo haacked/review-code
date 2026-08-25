@@ -205,7 +205,11 @@ else
         }
     ' "${REVIEW_FILE}" > "${PRUNED_FILE}"
 
-    ACTUAL=$("${SCRIPT_DIR}/parse-review-findings.sh" "${PRUNED_FILE}" | identity)
+    # --with-spans on both sides, because only the plain mode truncates a
+    # description at 500 bytes. Parsing the two sides differently made the
+    # comparison fail on every review with a finding body past that length,
+    # which is most of them, so the cut was always abandoned.
+    ACTUAL=$("${SCRIPT_DIR}/parse-review-findings.sh" --with-spans "${PRUNED_FILE}" | identity)
     if [[ "${ACTUAL}" == "${EXPECTED}" ]]; then
         PRUNED=true
     else

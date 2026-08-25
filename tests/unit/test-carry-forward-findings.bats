@@ -330,3 +330,53 @@ PY
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.pruned == true' > /dev/null
 }
+
+# =============================================================================
+# Prune safety across long finding bodies
+# =============================================================================
+
+# The check that guards the cut compares the expected survivors against a
+# re-parse of the pruned file. Both sides have to be parsed the same way: the
+# plain mode truncates a description at 500 bytes and the --with-spans mode does
+# not, so on any review with a finding body past that length the two can never
+# match and the cut is abandoned every time. Real reviews run to thousands of
+# characters per finding, so this is the normal case, not an edge one.
+@test "carry-forward-findings.sh: prunes a review whose findings exceed the truncation limit" {
+    local long_body
+    long_body=$(printf 'The token comparison leaks timing information. %.0s' {1..20})
+    [ "${#long_body}" -gt 500 ]
+
+    cat > "$TEST_DIR/long.md" << EOF
+<!-- review-metadata
+reviewed_at: 2026-08-01T10:00:00Z
+mode: pr
+pr_number: 42
+review_commit: aaaaaaa
+-->
+
+# Pull Request Review: #42
+
+## Security Review
+
+#### \`src/auth.py:45\`
+
+${long_body}
+
+---
+
+#### \`src/untouched.py:10\`
+
+${long_body}
+
+---
+EOF
+
+    run "$SCRIPT" --review-file "$TEST_DIR/long.md" --delta-diff "$TEST_DIR/delta.patch"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.pruned == true' > /dev/null
+    echo "$output" | jq -e '.dropped == 1' > /dev/null
+    echo "$output" | jq -e '.carried == 1' > /dev/null
+    # The delta touched src/auth.py, so that finding goes and the other stays.
+    ! grep -q 'src/auth.py:45' "$TEST_DIR/long.md"
+    grep -q 'src/untouched.py:10' "$TEST_DIR/long.md"
+}
