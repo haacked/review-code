@@ -115,7 +115,7 @@ Location: `utils.rs:67` | Confidence: 65%
 
 Is this abstraction earning its complexity? Abstractions should emerge from repeated use, not be imposed speculatively.
 
-**Rule of thumb:** Abstract when you have 3+ similar implementations. Until then, keep it concrete.
+**Rule of thumb:** Abstract when the extraction costs less than the copies, not when a count is reached. Two implementations that one shared function with a plain signature replaces are worth consolidating; two that need generics, a new trait, or a behavior flag threaded through several decision points in the shared path are not.
 
 **Example finding:**
 

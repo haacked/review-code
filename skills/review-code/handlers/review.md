@@ -419,10 +419,11 @@ Synthesize the remaining findings using extended thinking into a coherent, dedup
 **Cross-agent corroboration:** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function. Cross-model corroboration (an adversary meta-review `CONFIRMED` verdict, only when an adversary pass ran) also counts as corroboration even if only one Claude agent flagged the issue.
 
 **Filtering rules:**
+- **No ask (every severity, applied first):** drop any finding whose recommendation is that the author change nothing now, or whose trigger hasn't happened yet ("if a third caller is ever added"). Leaving a real change to the author's judgment ("your call") is fine; leaving them nothing to decide is not.
 - **Corroborated (2+ agents or chunks):** Keep even if individual confidence is below 40%.
 - **Solo finding, confidence >= 40%:** Include as-is.
 - **Solo finding, confidence < 40%:** Drop silently.
-- **Questions and nits:** Exempt from filtering. Include regardless of confidence.
+- **Questions and nits:** Exempt from the confidence filter, not from the no-ask rule. Include regardless of confidence.
 - When consolidating corroborated findings, merge into a single entry using the highest confidence value. Corroboration is synthesis-time metadata used for prioritization; never embed it in the comment body (see "Comment Body Hygiene" below).
 
 **Comment Body Hygiene:**

@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "expected_findings": [
+    {
+      "id": "prune-stale-index-shift",
+      "description": "prune_stale removes from the vec while walking it by index, so every entry after a removal shifts down and gets skipped, and the index runs past the shrunken length",
+      "area": "correctness",
+      "severity": "blocking",
+      "weight": 9,
+      "file": "src/flags/shadow_diff.rs",
+      "line_start": 111,
+      "line_end": 117,
+      "keywords": ["retain", "shift", "skip", "index", "out of bounds", "while iterating"]
+    },
+    {
+      "id": "drift-percent-divide-by-zero",
+      "description": "drift_percent divides by total with no zero guard, so an empty payload panics instead of reporting no drift",
+      "area": "correctness",
+      "severity": "blocking",
+      "weight": 8,
+      "file": "src/flags/shadow_diff.rs",
+      "line_start": 120,
+      "line_end": 123,
+      "keywords": ["divide", "division", "zero", "checked_div", "empty payload"]
+    }
+  ],
+  "false_positive_traps": [
+    {
+      "id": "extract-generic-shadow-diff",
+      "description": "diff_flags and diff_cohorts run the same three-phase by-id diff, but the id types, field sets, and issue enums differ, so collapsing them needs generics and a trait for id extraction. The FlagIssue and CohortIssue enums above them carry the same three variants over different id types, and the flag_issue_id and cohort_issue_id extractors below them repeat the same match arms, and both are the same cleared duplication. Two copies with no drift and no cheap consolidation is cleared, not a comment. A comment that describes the duplication and then declines to ask for the extraction, or defers it to a third copy that does not exist, is the same false positive.",
+      "area": "maintainability",
+      "file": "src/flags/shadow_diff.rs",
+      "line_start": 19,
+      "line_end": 109,
+      "trap_keywords": ["duplication", "duplicated", "near-identical", "generic", "shared helper", "consolidat", "written twice", "extract a", "extract into", "extract them", "third copy", "repeat yourself"]
+    }
+  ],
+  "clean_areas": ["compatibility"]
+}
