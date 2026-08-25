@@ -119,14 +119,13 @@ Review code changes for these maintainability concerns in priority order.
 - Magic numbers/strings repeated throughout code
 - Validation rules duplicated instead of centralized
 - Error handling patterns duplicated instead of abstracted
-- New functions nearly identical to existing ones (same structure, different string literals or one extra parameter); these should be consolidated
+- New functions nearly identical to existing ones (same structure, different string literals or one extra parameter)
 
 **When Duplication is Acceptable:**
 
 - Different domains that happen to look similar now
 - Test code (some duplication aids clarity)
 - Configuration or data definitions
-- When abstraction would be more complex than the duplication
 
 **Two copies: ask, or stay silent.**
 
