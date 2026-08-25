@@ -146,7 +146,7 @@ These findings all say one thing: this behavior isn't covered. A new test or a l
 
 **Is the test hard to place or assert?** Then say where the coverage goes: the test to extend, or one to mirror because it carries the structure. Use its real name and location ("`test_saving_flag_strips_legacy_holdout_groups`, right above"). "Sibling" is vocabulary for you and never for the author, so don't write "the closest sibling to mirror" or "the siblings above". When where it goes is obvious, skip the pointer. "`setEarlyExit` is the only writer of `early_exit`, so it's worth a unit test" is the whole comment.
 
-Never write the test. No recipe in prose ("dispatch X, assert Y, then dispatch Z and assert it flips back"), and code only where the assertion boundary is genuinely ambiguous, trimmed to the fields the assertion needs. A single corrected assertion usually clears that bar; a full test body never does.
+Never write the test. No recipe in prose ("dispatch X, assert Y, then dispatch Z and assert it flips back"), and code only where the assertion boundary is genuinely ambiguous, trimmed to the lines the assertion needs. Corrected assertions clear that bar, along with a call they depend on when the assertion mechanism itself is what changes. A named test, with its own `def` or `it(...)` line, never does.
 
 Three more things will feel necessary and aren't:
 
