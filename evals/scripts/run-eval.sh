@@ -267,7 +267,14 @@ run_crafted_benchmark() {
         return 1
     fi
 
-    local tmp_branch="eval-tmp-${id}"
+    # The reviewing agent is handed the branch name (skill_prompt puts it in the
+    # prompt) and reads the commit messages, so neither may carry the benchmark
+    # id: names like shadow-diff-duplication or unsafe-api tell it what to look
+    # for before it sees any code. Hash the id instead, which keeps the branch
+    # unique per benchmark for cleanup and for concurrent runs.
+    local bench_tag
+    bench_tag=$(printf '%s' "${id}" | git -C "${TARGET_REPO}" hash-object --stdin | cut -c1-12)
+    local tmp_branch="eval-tmp-${bench_tag}"
     local original_ref
     original_ref=$(git -C "${TARGET_REPO}" branch --show-current 2> /dev/null)
     # Detached HEAD: restore by commit SHA instead of branch name
@@ -281,7 +288,7 @@ run_crafted_benchmark() {
         git -C "${TARGET_REPO}" branch -D "${tmp_branch}" --quiet 2> /dev/null || true
     }
 
-    echo "  Applying patch to ${tmp_branch}…"
+    echo "  Applying patch for ${id} to ${tmp_branch}…"
 
     # Create a temporary branch from HEAD, apply the patch, and commit
     git -C "${TARGET_REPO}" checkout -b "${tmp_branch}" --quiet 2> /dev/null || {
@@ -300,7 +307,7 @@ run_crafted_benchmark() {
             return 1
         fi
         git -C "${TARGET_REPO}" add -A
-        git -C "${TARGET_REPO}" commit -m "eval: base state for ${id}" --quiet --no-gpg-sign
+        git -C "${TARGET_REPO}" commit -m "eval: base state ${bench_tag}" --quiet --no-gpg-sign
     fi
 
     if ! git -C "${TARGET_REPO}" apply --check "${patch}" 2> /dev/null; then
@@ -315,9 +322,9 @@ run_crafted_benchmark() {
     fi
 
     git -C "${TARGET_REPO}" add -A
-    git -C "${TARGET_REPO}" commit -m "eval: apply benchmark ${id}" --quiet --no-gpg-sign
+    git -C "${TARGET_REPO}" commit -m "eval: apply patch ${bench_tag}" --quiet --no-gpg-sign
 
-    echo "  Running review on ${tmp_branch}…"
+    echo "  Running review on ${tmp_branch} (${id})…"
 
     # Determine the org/repo for locating the review output. Plain string
     # slicing instead of sed: BSD sed rejects the lazy quantifier a trailing
@@ -384,7 +391,7 @@ run_crafted_benchmark() {
         cp "${review_file}" "${result_dir}/review.md"
         echo "  Review saved to ${result_dir}/review.md"
     else
-        echo "  Warning: no review output found for ${tmp_branch}" >&2
+        echo "  Warning: no review output found for ${id} (${tmp_branch})" >&2
     fi
 
     cleanup_crafted_benchmark

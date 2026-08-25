@@ -169,3 +169,22 @@ benchmark_paths() {
     [[ -z "$problems" ]] || echo "$problems" >&2
     [ -z "$problems" ]
 }
+
+@test "eval benchmarks: the reviewing agent is never told the benchmark id" {
+    # run_crafted_benchmark hands the temp branch name to the review prompt and
+    # commits on that branch, and the skill reads both the branch name and the
+    # commit messages. An id like shadow-diff-duplication or unsafe-api would
+    # tell the reviewer what to look for before it reads any code.
+    local script="$PROJECT_ROOT/evals/scripts/run-eval.sh"
+    local problems=""
+
+    grep -qE 'tmp_branch="eval-tmp-\$\{bench_tag\}"' "$script" ||
+        problems+="temp branch name is not derived from the hashed bench_tag"$'\n'
+
+    local leaky
+    leaky=$(grep -nE 'commit -m "eval:[^"]*\$\{id\}' "$script" || true)
+    [[ -z "$leaky" ]] || problems+="eval commit message carries the id: $leaky"$'\n'
+
+    [[ -z "$problems" ]] || echo "$problems" >&2
+    [ -z "$problems" ]
+}
