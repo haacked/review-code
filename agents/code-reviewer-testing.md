@@ -216,7 +216,7 @@ Location: `src/authentication/login.rs:45-60` | Confidence: 95%
 Location: `frontend/src/scenes/feature-flags/featureFlagReleaseConditionsLogic.ts:256` | Confidence: 70%
 
 ````text
-`suggestion`: `tests/user_service_test.py:78-92` asserts on the number of SQL queries (`assert_num_queries(2)`) instead of on the data the function returns. Any future query optimization (a JOIN, a prefetch) makes this test fail even when behavior is unchanged.
+`suggestion`: `tests/user_service_test.py:79-92` asserts on the number of SQL queries (`assert_num_queries(2)`) instead of on the data the function returns. Any future query optimization (a JOIN, a prefetch) makes this test fail even when behavior is unchanged.
 
 ```suggestion
     user = user_service.get_user_with_posts(user_id)
@@ -226,7 +226,7 @@ Location: `frontend/src/scenes/feature-flags/featureFlagReleaseConditionsLogic.t
 ```
 ````
 
-Location: `tests/user_service_test.py:78-92` | Confidence: 80%
+Location: `tests/user_service_test.py:79-92` | Confidence: 80%
 
 ````text
 `suggestion`: `test_lru_reaccess_prevents_eviction` at `tests/cache_test.rs:145-165` checks that the re-accessed entry is still present after a fourth item is added, but never asserts that the expected LRU victim is gone. The test would still pass if the cache silently grew past its capacity. Add an assertion that `team_ids[1]` is no longer in the cache.
