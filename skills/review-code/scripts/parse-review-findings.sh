@@ -45,6 +45,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 
 WITH_SPANS=false
+INCLUDE_WITHDRAWN=false
 
 # Append a finding as a single JSONL line.
 # Args: $1=agent, $2=confidence, $3=file, $4=line, $5=description,
@@ -69,6 +70,17 @@ save_finding() {
     if [[ "${WITH_SPANS}" != "true" ]]; then
         desc=$(echo "${desc}" | head -c 500)
     fi
+    local withdrawn="$9"
+
+    # A withdrawn finding was argued down after the review was posted. It stays
+    # in the document so the argument stays on the record, but it is not a live
+    # finding: carry-forward must not re-propose it and the draft payload must
+    # not repost it. The learning path asks for them explicitly, since a
+    # finding the author successfully rebutted is exactly what it wants to see.
+    if [[ "${withdrawn}" == "true" && "${INCLUDE_WITHDRAWN}" != "true" ]]; then
+        return 0
+    fi
+
     local entry
     entry=$(jq -nc --arg agent "${agent}" \
         --arg conf "${conf}" \
@@ -79,12 +91,14 @@ save_finding() {
         --argjson end "${end}" \
         --argjson deletable "${deletable}" \
         --argjson spans "${WITH_SPANS}" \
+        --argjson withdrawn "${withdrawn}" \
         '{
             agent: $agent,
             confidence: ($conf | tonumber),
             file: $file,
             line: ($line | tonumber),
-            description: $desc
+            description: $desc,
+            withdrawn: $withdrawn
         }
         + (if $spans then {
             start_line: $start,
@@ -102,6 +116,7 @@ begin_finding() {
     finding_start="${lineno}"
     finding_end=0
     finding_deletable="${1:-true}"
+    finding_withdrawn=false
 }
 
 # Append one body line to the pending finding's description. Both the in-fence
@@ -123,7 +138,7 @@ flush_pending_finding() {
             end="${prev_nonblank}"
         fi
         save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file:-}" "${finding_line:-0}" "${finding_description}" \
-            "${finding_start}" "${end}" "${finding_deletable}"
+            "${finding_start}" "${end}" "${finding_deletable}" "${finding_withdrawn:-false}"
     fi
 }
 
@@ -136,6 +151,10 @@ main() {
                 WITH_SPANS=true
                 shift
                 ;;
+            --include-withdrawn)
+                INCLUDE_WITHDRAWN=true
+                shift
+                ;;
             *)
                 review_file="$1"
                 shift
@@ -144,7 +163,7 @@ main() {
     done
 
     if [[ -z "${review_file}" ]]; then
-        error "Usage: parse-review-findings.sh [--with-spans] <review-file-path>"
+        error "Usage: parse-review-findings.sh [--with-spans] [--include-withdrawn] <review-file-path>"
         exit 1
     fi
 
@@ -231,6 +250,13 @@ main() {
             continue
         fi
 
+        # A finding marked withdrawn by hand, in a review that was never posted
+        # as a draft and so carries no heading annotation to stamp. Checked
+        # outside fences only: a body quoting this line is quoting, not marking.
+        if [[ "${in_finding}" == true ]] && [[ "${line}" =~ ^\*Withdrawn ]]; then
+            finding_withdrawn=true
+        fi
+
         # Detect agent section headers (## Security Review, ## Performance Review, etc.)
         if [[ "${line}" =~ ^##[[:space:]]+(Security|Performance|Correctness|Maintainability|Testing|Compatibility|Architecture|Frontend)[[:space:]]+Review ]]; then
             flush_pending_finding
@@ -255,6 +281,11 @@ main() {
             finding_description=""
             current_confidence=""
             begin_finding
+            # A drop stamps the heading's comment-id annotation rather than the
+            # body, so the flag costs the description nothing.
+            if [[ "${line}" =~ withdrawn: ]]; then
+                finding_withdrawn=true
+            fi
             continue
         fi
 
@@ -324,7 +355,7 @@ main() {
 
             # This pattern includes the description inline, so save it immediately
             save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file}" "${finding_line}" "${finding_description}" \
-                "${lineno}" "${lineno}" true
+                "${lineno}" "${lineno}" true false
 
             finding_file=""
             finding_line=""
@@ -359,7 +390,7 @@ main() {
 
             # Save this finding immediately (inline pattern)
             save_finding "${agent_name}" "${current_confidence}" "${finding_file}" "${finding_line}" "${finding_description}" \
-                "${lineno}" "${lineno}" true
+                "${lineno}" "${lineno}" true false
 
             finding_file=""
             finding_line=""

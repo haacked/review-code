@@ -16,6 +16,8 @@ This repo contains the source files for the `/review-code` skill:
 
 The nine domain reviewers in `agents/` deliberately repeat four shared blocks instead of sourcing them from one file: "Before You Review", "Self-Challenge", the confidence rubric, and the finding format (a fenced ```text body plus the `Location: path:line | Confidence: NN%` trailer). Each subagent receives its own prompt exactly once, so deduplicating would save no runtime tokens; keep the four blocks in sync when editing one. The finding format is parsed by `parse-review-findings.sh` and the synthesis step in `handlers/review.md`; don't change its shape.
 
+A posted finding also carries the GitHub comment it produced, as an HTML comment on its heading: ``#### `path:42` <!-- pc:<id> <node_id> b:<digest> -->``. Three separate things depend on it sitting exactly there. `parse-review-findings.sh` never lets a heading line reach a finding's `description` and its header pattern is unanchored on the right, so the annotation changes nothing it parses. The annotation sits inside the finding's span, so `carry-forward-findings.sh` cuts it with the finding instead of orphaning it. And the digest is the body as of the last sync, which is the only thing that can say whether a later difference came from the notes or from someone editing the comment in the GitHub UI; without it `amend-pending-review.sh --push` cannot tell a clean push from one overwriting a hand edit. `review-comment-blocks.py` owns every read and write of these, and `tests/unit/test-review-comment-blocks.bats` asserts the parser cannot see them.
+
 ## Architecture
 
 **In the repository:**

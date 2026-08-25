@@ -284,3 +284,54 @@ EOF
     ! grep -q "constant time" "$TEST_DIR/review.md"
     grep -q "Missing input validation" "$TEST_DIR/review.md"
 }
+
+# =============================================================================
+# Withdrawn findings
+# =============================================================================
+
+# A finding the author argued down must not come back on the next re-review,
+# and its text must survive so the argument stays on the record.
+@test "carry-forward-findings.sh: does not carry a withdrawn finding forward as live" {
+    # Retire the finding on a file the delta does not touch, so the only thing
+    # that can keep it out of the carried set is the withdrawal marker.
+    python3 - "$TEST_DIR/review.md" << 'PY'
+import sys
+path = sys.argv[1]
+lines = open(path).read().splitlines()
+for i, line in enumerate(lines):
+    if line.startswith("#### `src/untouched.py"):
+        lines.insert(i + 1, "")
+        lines.insert(i + 2, "*Withdrawn 2026-08-25: author showed the header is validated upstream*")
+        break
+open(path, "w").write("\n".join(lines) + "\n")
+PY
+    carried_before=$("$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" \
+        --include-withdrawn "$TEST_DIR/review.md" | jq '[.[] | select(.withdrawn)] | length')
+    [ "$carried_before" -eq 1 ]
+
+    run "$SCRIPT" --review-file "$TEST_DIR/review.md" --delta-diff "$TEST_DIR/delta.patch"
+    [ "$status" -eq 0 ]
+
+    # Still in the document, but no longer a finding anything will act on.
+    grep -q "Missing input validation on the forwarded header." "$TEST_DIR/review.md"
+    live=$("$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md" \
+        | jq '[.[] | select(.file == "src/untouched.py")] | length')
+    [ "$live" -eq 0 ]
+}
+
+@test "carry-forward-findings.sh: prune-safety still passes with a withdrawal marker present" {
+    python3 - "$TEST_DIR/review.md" << 'PY'
+import sys
+path = sys.argv[1]
+lines = open(path).read().splitlines()
+for i, line in enumerate(lines):
+    if line.startswith("#### `src/untouched.py"):
+        lines.insert(i + 1, "")
+        lines.insert(i + 2, "*Withdrawn 2026-08-25: not a real issue*")
+        break
+open(path, "w").write("\n".join(lines) + "\n")
+PY
+    run "$SCRIPT" --review-file "$TEST_DIR/review.md" --delta-diff "$TEST_DIR/delta.patch"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.pruned == true' > /dev/null
+}

@@ -47,5 +47,39 @@ if echo "$command" | grep -qE '\bgh\s+api\b.*\brepos/[^/]+/[^/]+/pulls/[0-9]+/re
     exit 0
 fi
 
+# Block direct calls to the single-review-comment endpoints, whatever the
+# method. Matching the verb is not worth attempting: -X DELETE, --method DELETE,
+# flag order and a shell variable in place of the verb all defeat it. Blocking
+# reads too costs nothing, because GET on a pending comment 404s anyway and
+# amend-pending-review.sh is the sanctioned way to list them. The pattern has no
+# trailing id class on purpose, so pulls/comments/$id is caught as well as a
+# literal number. It does not match pulls/<n>/comments or the reply endpoint
+# pulls/<n>/comments/<id>/replies, neither of which contains "pulls/comments/".
+if echo "$command" | grep -qE '\bgh\s+api\b.*\brepos/[^/]+/[^/]+/pulls/comments/'; then
+    jq -n '{
+        hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: "Direct GitHub API calls to review comment endpoints are blocked during code review. Use amend-pending-review.sh to list, reword, or drop comments in your pending review."
+        }
+    }'
+    exit 0
+fi
+
+# Rewording a pending comment only works over GraphQL, so the REST pattern above
+# would miss it entirely and the hole would simply move to the new transport.
+# resolveReviewThread is deliberately absent: resolve-review-threads.sh is the
+# sanctioned path for that and agents are not the ones calling it directly.
+if echo "$command" | grep -qE '\bgh\s+api\b.*\bgraphql\b.*(updatePullRequestReviewComment|addPullRequestReviewThread|deletePullRequestReviewComment)'; then
+    jq -n '{
+        hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: "Direct GraphQL mutations on review comments are blocked during code review. Use amend-pending-review.sh to reword or drop comments in your pending review."
+        }
+    }'
+    exit 0
+fi
+
 # Allow everything else
 exit 0

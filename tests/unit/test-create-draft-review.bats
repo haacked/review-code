@@ -56,8 +56,8 @@ EOF
     [ "$status" -eq 0 ]
 }
 
-@test "create-draft-review: has get_existing_pending_review function" {
-    run bash -c "grep -q '^get_existing_pending_review()' '$SCRIPT'"
+@test "create-draft-review: has get_existing_pending_review function (via gh-review-helpers)" {
+    run bash -c "source '$SCRIPT' && declare -f get_existing_pending_review > /dev/null"
     [ "$status" -eq 0 ]
 }
 

@@ -100,9 +100,11 @@ main() {
         exit 1
     fi
 
-    # Parse Claude's findings from review file
+    # Parse Claude's findings from review file. Withdrawn findings are asked
+    # for here and nowhere else: a finding the author argued down is the
+    # clearest false positive there is, and it is exactly what learning wants.
     local claude_findings
-    claude_findings=$("${SCRIPT_DIR}/parse-review-findings.sh" "${review_file}")
+    claude_findings=$("${SCRIPT_DIR}/parse-review-findings.sh" --include-withdrawn "${review_file}")
 
     # Fetch PR data from GitHub
     local pr_data

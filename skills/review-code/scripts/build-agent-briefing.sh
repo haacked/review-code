@@ -219,6 +219,9 @@ if [[ -n "${PREVIOUS_REVIEW}" && -f "${PREVIOUS_REVIEW}" ]]; then
     emit "- Update status if code changed"
     emit "- Mark findings as resolved if fixed"
     emit ""
+    emit "Do NOT re-raise a finding marked \`*Withdrawn ...*\`. Those were argued"
+    emit "down by the author after the review was posted and taken off the PR."
+    emit ""
 fi
 
 # ------------------------------------------------------ shared instructions

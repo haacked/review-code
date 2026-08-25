@@ -683,3 +683,100 @@ EOF
     echo "$output" | jq -e 'length == 1' > /dev/null
     echo "$output" | jq -e '.[0].end_line == 12' > /dev/null
 }
+
+# =============================================================================
+# Withdrawn findings
+# =============================================================================
+
+@test "parse-review-findings.sh: skips a finding withdrawn on its heading" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `src/auth.ts:42` <!-- pc:777 PRRC_aaa withdrawn:2026-08-25 -->
+
+The token check is wrong.
+
+*Withdrawn 2026-08-25: author showed it was already handled*
+
+---
+
+#### `src/db.py:12` <!-- pc:888 PRRC_bbb -->
+
+N+1 query here.
+
+---
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq 'length')" -eq 1 ]
+    [ "$(echo "$output" | jq -r '.[0].file')" = "src/db.py" ]
+}
+
+@test "parse-review-findings.sh: --include-withdrawn returns it with a flag" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `src/auth.ts:42` <!-- pc:777 PRRC_aaa withdrawn:2026-08-25 -->
+
+The token check is wrong.
+
+---
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --include-withdrawn "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq 'length')" -eq 1 ]
+    [ "$(echo "$output" | jq -r '.[0].withdrawn')" = "true" ]
+}
+
+@test "parse-review-findings.sh: skips a finding marked withdrawn by hand" {
+    # A review never posted as a draft has no heading annotation to stamp.
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `src/auth.ts:42`
+
+The token check is wrong.
+
+*Withdrawn 2026-08-25: author showed it was already handled*
+
+---
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq 'length')" -eq 0 ]
+}
+
+@test "parse-review-findings.sh: a quoted Withdrawn line does not retire a finding" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `src/auth.ts:42`
+
+```text
+The docs show the marker as:
+
+*Withdrawn 2026-01-01: example*
+
+which is what to write.
+```
+
+---
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq 'length')" -eq 1 ]
+}
+
+@test "parse-review-findings.sh: a live finding reports withdrawn false" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `src/auth.ts:42`
+
+The token check is wrong.
+
+---
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$(echo "$output" | jq -r '.[0].withdrawn')" = "false" ]
+}

@@ -134,3 +134,84 @@ make_input() {
     make_input "gh pr review 123" | bash "$SCRIPT"
     [ $? -eq 0 ]
 }
+
+# =============================================================================
+# Single review comment endpoints (REST)
+# =============================================================================
+
+@test "blocks gh api DELETE on a single review comment" {
+    result=$(make_input "gh api --method DELETE repos/org/repo/pulls/comments/123" | bash "$SCRIPT")
+    decision=$(echo "$result" | jq -r '.hookSpecificOutput.permissionDecision')
+    [ "$decision" = "deny" ]
+}
+
+@test "blocks the -X DELETE spelling too" {
+    result=$(make_input "gh api -X DELETE repos/org/repo/pulls/comments/123" | bash "$SCRIPT")
+    decision=$(echo "$result" | jq -r '.hookSpecificOutput.permissionDecision')
+    [ "$decision" = "deny" ]
+}
+
+@test "blocks gh api PATCH on a single review comment" {
+    result=$(make_input "gh api --method PATCH repos/org/repo/pulls/comments/123 -f body=x" | bash "$SCRIPT")
+    decision=$(echo "$result" | jq -r '.hookSpecificOutput.permissionDecision')
+    [ "$decision" = "deny" ]
+}
+
+@test "blocks a review comment endpoint built from a shell variable" {
+    result=$(make_input 'gh api --method DELETE repos/$OWNER/$REPO/pulls/comments/$id' | bash "$SCRIPT")
+    decision=$(echo "$result" | jq -r '.hookSpecificOutput.permissionDecision')
+    [ "$decision" = "deny" ]
+}
+
+@test "block reason for a review comment endpoint names amend-pending-review.sh" {
+    result=$(make_input "gh api --method DELETE repos/org/repo/pulls/comments/123" | bash "$SCRIPT")
+    reason=$(echo "$result" | jq -r '.hookSpecificOutput.permissionDecisionReason')
+    [[ "$reason" == *"amend-pending-review.sh"* ]]
+}
+
+@test "still allows the PR comments collection" {
+    result=$(make_input "gh api repos/org/repo/pulls/123/comments" | bash "$SCRIPT")
+    [ -z "$result" ]
+}
+
+@test "still allows replying to a review comment" {
+    result=$(make_input "gh api --method POST repos/org/repo/pulls/123/comments/456/replies -f body=ok" | bash "$SCRIPT")
+    [ -z "$result" ]
+}
+
+@test "allows amend-pending-review.sh" {
+    result=$(make_input "~/.agents/skills/review-code/scripts/amend-pending-review.sh 123 --drop --comment-id 456" | bash "$SCRIPT")
+    [ -z "$result" ]
+}
+
+# =============================================================================
+# Review comment mutations (GraphQL)
+# =============================================================================
+
+@test "blocks a raw GraphQL comment reword" {
+    result=$(make_input "gh api graphql -f query='mutation { updatePullRequestReviewComment(input: {}) { x } }'" | bash "$SCRIPT")
+    decision=$(echo "$result" | jq -r '.hookSpecificOutput.permissionDecision')
+    [ "$decision" = "deny" ]
+}
+
+@test "blocks a raw GraphQL addPullRequestReviewThread" {
+    result=$(make_input "gh api graphql -f query='mutation { addPullRequestReviewThread(input: {}) { x } }'" | bash "$SCRIPT")
+    decision=$(echo "$result" | jq -r '.hookSpecificOutput.permissionDecision')
+    [ "$decision" = "deny" ]
+}
+
+@test "block reason for a GraphQL mutation names amend-pending-review.sh" {
+    result=$(make_input "gh api graphql -f query='mutation { updatePullRequestReviewComment(input: {}) { x } }'" | bash "$SCRIPT")
+    reason=$(echo "$result" | jq -r '.hookSpecificOutput.permissionDecisionReason')
+    [[ "$reason" == *"amend-pending-review.sh"* ]]
+}
+
+@test "still allows the GraphQL thread resolution the append flow uses" {
+    result=$(make_input "gh api graphql -f query='mutation { resolveReviewThread(input: {}) { x } }'" | bash "$SCRIPT")
+    [ -z "$result" ]
+}
+
+@test "still allows an ordinary GraphQL query" {
+    result=$(make_input "gh api graphql -f query='query { viewer { login } }'" | bash "$SCRIPT")
+    [ -z "$result" ]
+}
