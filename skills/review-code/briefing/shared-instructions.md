@@ -29,7 +29,7 @@ When the answer is about file content (does X exist, what does Y do, where is Z 
 2. If `working_dir` is set, use Read/Grep on the PR's files at `git.working_dir`.
 3. If `file_ref` is set, fetch via `git show "$file_ref:<path>"`.
 4. If `pr.head_sha` is available, fetch via `gh api repos/<org>/<repo>/contents/<path>?ref=<sha>` and decode the base64 `content` field.
-5. If the answer lives in a different repo, name that repo and look there. Check a local clone if one is mapped in `repos.conf`, otherwise `gh api repos/<org>/<repo>/contents/<path>` (decode the base64 `content` field) or `gh search code`. For PostHog, deployment and runtime values live in `PostHog/charts`; the org context file lists the key paths.
+5. If the answer lives in a different repo, name that repo and look there. Check a local clone if one is mapped in `repos.conf`, otherwise `gh api repos/<org>/<repo>/contents/<path>` (decode the base64 `content` field; add `?ref=<sha-or-tag-or-branch>` when you know which ref to read) or `gh search code`. For PostHog, deployment and runtime values live in `PostHog/charts`; the org context file lists the key paths.
 
 **Values your finding depends on.**
 

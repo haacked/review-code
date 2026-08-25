@@ -71,4 +71,4 @@ When reviewing changes:
 3. Confirm environment variable additions are propagated to all relevant deployments
 4. Note any intentional per-environment differences (e.g., staged rollouts)
 
-Deployment values in this repo bound `posthog/posthog` application timeouts (shutdown drains against `terminationGracePeriodSeconds`, connection counts against replica counts, memory use against resource limits), so application changes there assert consequences about values defined here.
+Deployment values in this repo bind `posthog/posthog` application timeouts (shutdown drains against `terminationGracePeriodSeconds`, connection counts against replica counts, memory use against resource limits), so application changes there assert consequences about values defined here.
