@@ -87,6 +87,16 @@
       "languages": ["python"],
       "areas": ["correctness", "maintainability", "performance"],
       "difficulty": "medium"
+    },
+    {
+      "id": "comment-prose-labels",
+      "category": "posthog",
+      "name": "Comment Phrases That Name a Mechanism",
+      "description": "Code comments that name a mechanism without describing it, against established repo vocabulary that must not be flagged",
+      "source": "posthog/posthog#86291",
+      "languages": ["typescript"],
+      "areas": ["maintainability"],
+      "difficulty": "hard"
     }
   ]
 }
