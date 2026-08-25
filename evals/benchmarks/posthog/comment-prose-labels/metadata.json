@@ -4,11 +4,18 @@
   "description": "TypeScript ingestion comments that name a mechanism without describing it, mixed with established repo vocabulary that must not be flagged",
   "source": "posthog/posthog#86291",
   "source_url": "https://github.com/PostHog/posthog/pull/86291",
-  "languages": ["typescript"],
-  "frameworks": ["node"],
-  "areas": ["maintainability"],
+  "source_sha": "cb51c55ab3be00dd630f7bdde4680604351246b2",
+  "languages": [
+    "typescript"
+  ],
+  "frameworks": [
+    "node"
+  ],
+  "areas": [
+    "maintainability"
+  ],
   "difficulty": "hard",
-  "expected_finding_count": 3,
+  "expected_finding_count": 2,
   "false_positive_trap_count": 6,
   "frozen_diff": true
 }

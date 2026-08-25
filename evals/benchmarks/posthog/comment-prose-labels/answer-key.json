@@ -3,7 +3,7 @@
   "expected_findings": [
     {
       "id": "holds-the-batch",
-      "description": "The docstring says a produce still in flight \"holds the batch\" without saying what holding does: the batch could be kept in memory, blocked from the next step, or held back from committing offsets. The same file's previous comment said it in full (\"holds the batch's offset commit until the produce lands\", visible as a removed line in this diff), and the only pre-existing uses elsewhere are \"holds the batch lock\" and \"holds the batch in flight\", which are different things. The fix is to write the behavior: the batch does not commit its offsets until the broker answers.",
+      "description": "The docstring says a produce still in flight \"holds the batch\" without saying what holding does: the batch could be kept in memory, blocked from the next step, or held back from committing offsets. The prior-use search settles it. At the PR's base, the only uses are \"holds the batch lock\" twice in sessionreplay/consumer and \"holds the batch in flight\" once in ingestion-api-server.test, all pairing the phrase with a different object, which is the decisive case rather than established vocabulary. The fix is to write the behavior: the batch does not commit its offsets until the broker answers.",
       "area": "maintainability",
       "severity": "suggestion",
       "weight": 10,
@@ -13,46 +13,35 @@
       "keywords": ["holds the batch", "offset", "commit", "broker", "what holding", "does not say", "resolve", "batch lock", "concrete"]
     },
     {
-      "id": "disposes-of-a-rejected-side-effect",
-      "description": "\"Each host disposes of a rejected side effect differently\" names a behavior the very next clause already spells out (consumer-v2 latches a fatal and holds the offset, consumer-v1 stops the process, ingestion-api-server stops the pod). The label is redundant rather than unresolvable, so the fix is to delete it and let the list carry the sentence, or to state the shared consequence directly: only one host redelivers the batch, the rest stop the process or the pod.",
-      "area": "maintainability",
-      "severity": "nit",
-      "weight": 8,
-      "file": "nodejs/src/ingestion/common/steps/event-processing/fork-flag-evaluations-step.ts",
-      "line_start": 112,
-      "line_end": 116,
-      "keywords": ["disposes of", "differently", "redundant", "already lists", "next sentence", "delete the label", "restates"]
-    },
-    {
-      "id": "the-contract",
-      "description": "\"The contract now sits on PipelineContext.sideEffects\" gives \"the contract\" no antecedent: a reader has to guess which rule moved. The fix is to say what the referenced type now states, for example that PipelineContext.sideEffects says a side effect must not reject and lists what each host does with one.",
+      "id": "holds-the-batch-service",
+      "description": "The same coinage repeats in the service docstring, where \"a produce still in flight holds the batch\" has the same missing object. Flagging this one is correct under the check's own steps; it is weighted low because the fork-flag-evaluations-step instance is the exemplary case and the rule caps a review at three findings of this kind.",
       "area": "maintainability",
       "severity": "suggestion",
-      "weight": 7,
-      "file": "nodejs/src/ingestion/common/steps/event-processing/fork-flag-evaluations-step.ts",
-      "line_start": 115,
-      "line_end": 115,
-      "keywords": ["the contract", "antecedent", "which contract", "which rule", "must not reject", "guess", "name it"]
+      "weight": 3,
+      "file": "nodejs/src/ingestion/common/flag-evaluations/flag-evaluations-service.ts",
+      "line_start": 25,
+      "line_end": 25,
+      "keywords": ["holds the batch", "offset", "commit", "broker", "same", "repeats", "what holding"]
     }
   ],
   "false_positive_traps": [
     {
       "id": "in-flight-is-established",
-      "description": "\"In flight\" appears 88 times in nodejs/src before this PR and reads the same way to any engineer. It sits in the same sentence as the \"holds the batch\" finding, so a check that flags the sentence wholesale rather than the coined half is wrong.",
+      "description": "\"In flight\" appears 91 times in nodejs/src at the base and reads the same way to any engineer. It sits in the same sentence as the \"holds the batch\" finding, so a check that flags the sentence wholesale rather than the coined half is wrong.",
       "area": "maintainability",
       "file": "nodejs/src/ingestion/common/steps/event-processing/fork-flag-evaluations-step.ts",
       "line_start": 72,
       "line_end": 72,
-      "trap_keywords": ["in flight", "in-flight", "jargon", "unclear term", "coined"]
+      "trap_keywords": ["in flight", "in-flight"]
     },
     {
       "id": "load-bearing-is-established",
-      "description": "\"Load-bearing\" has 10 pre-existing uses across unrelated modules, all meaning the same thing. Rewriting it makes the diff noisier without making it clearer.",
+      "description": "\"Load-bearing\" has 9 pre-existing uses across unrelated modules, all meaning the same thing. Rewriting it makes the diff noisier without making it clearer. The keywords are deliberately specific: the line above carries a genuine \"holds the batch\" finding, and generic words like \"coined\" or \"jargon\" would count that correct finding against this trap.",
       "area": "maintainability",
       "file": "nodejs/src/ingestion/common/flag-evaluations/flag-evaluations-service.ts",
       "line_start": 24,
       "line_end": 24,
-      "trap_keywords": ["load-bearing", "load bearing", "metaphor", "coined", "jargon"]
+      "trap_keywords": ["load-bearing", "load bearing", "metaphor"]
     },
     {
       "id": "holds-the-offset-is-fine",
@@ -61,34 +50,34 @@
       "file": "nodejs/src/ingestion/framework/pipeline.interface.ts",
       "line_start": 63,
       "line_end": 63,
-      "trap_keywords": ["holds the offset", "holds", "same verb", "coined", "unclear"]
+      "trap_keywords": ["holds the offset", "same verb"]
     },
     {
       "id": "latches-a-fatal-is-established",
-      "description": "\"Latches a fatal\" is anchored to consumer-v2.ts's own `fatalError` and to 10 pre-existing uses of latch/latched in the consumer and pipeline code.",
+      "description": "\"Latches a fatal\" is anchored to consumer-v2.ts's own `fatalError` and to pre-existing uses of latch/latched in the consumer and pipeline code.",
       "area": "maintainability",
       "file": "nodejs/src/ingestion/framework/pipeline.interface.ts",
       "line_start": 63,
       "line_end": 63,
-      "trap_keywords": ["latches", "latched", "latch", "jargon", "coined"]
+      "trap_keywords": ["latches", "latched", "latch"]
     },
     {
       "id": "drained-is-established",
-      "description": "\"Drained with the batch\" uses drain/drained, which has 82 pre-existing uses in nodejs/src.",
+      "description": "\"Drained with the batch\" uses drain/drained, which has 90 pre-existing uses in nodejs/src at the base.",
       "area": "maintainability",
       "file": "nodejs/src/ingestion/framework/pipeline.interface.ts",
       "line_start": 61,
       "line_end": 61,
-      "trap_keywords": ["drained", "drain", "jargon", "coined", "unclear"]
+      "trap_keywords": ["drained", "drain"]
     },
     {
       "id": "best-effort-is-established",
-      "description": "\"Best effort\" is added by this PR but has 36 pre-existing uses in nodejs/src and is ordinary software English besides.",
+      "description": "\"Best effort\" is added by this PR but the hyphenated spelling has 36 pre-existing uses in nodejs/src, and it is ordinary software English besides.",
       "area": "maintainability",
       "file": "nodejs/src/ingestion/pipelines/analytics/event-subpipeline.ts",
       "line_start": 166,
       "line_end": 166,
-      "trap_keywords": ["best effort", "best-effort", "jargon", "coined", "unclear"]
+      "trap_keywords": ["best effort", "best-effort"]
     }
   ],
   "clean_areas": ["security", "compatibility", "performance"]
