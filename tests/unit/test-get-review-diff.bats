@@ -355,8 +355,8 @@ teardown_test_repo() {
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"DIFF_TYPE: branch + uncommitted (main...feature + local)"* ]]
-    [[ "$output" == *"file2.txt"* ]]  # Branch changes
-    [[ "$output" == *"file3.txt"* ]]  # Uncommitted changes
+    [[ "$output" == *"file2.txt"* ]] # Branch changes
+    [[ "$output" == *"file3.txt"* ]] # Uncommitted changes
     [[ "$output" == *"Uncommitted Changes"* ]]
 
     teardown_test_repo
