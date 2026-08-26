@@ -138,16 +138,21 @@ The regression must be reachable from the code as it stands. If the gap only bit
 
 Avoid closing on severity adjectives ("this is a critical gap", "this is a serious testing weakness"). The mechanism plus the missed regression already convey severity.
 
-## Keep "Add a Test" Findings Short
+## Keep Coverage Findings Short
 
-For a "this behavior is untested, add a test" finding, name the gap, don't write the test. The author knows how to write tests; your job is to point at what's unwritten. Scale the comment to how non-obvious the test is:
+These findings all say one thing: this behavior isn't covered. A new test or a line added to an existing one closes it equally; the choice is the author's and doesn't change what you write. Name what isn't covered and stop, since the author knows how to write tests. Two questions decide whether anything more is needed.
 
-- **Trivial test → one sentence, no sibling, no recipe.** For a one-line reducer, a toggle, a getter, just name what's unwritten and that it's worth covering: "`setEarlyExit` is the only writer of `early_exit`, so it's worth a unit test." Don't tell the author how to test a one-liner, and don't reach for a sibling they don't need.
-- **Non-obvious test → add a sibling pointer.** When the setup is involved or the assertion boundary isn't obvious, point at an existing test to mirror: "Nothing tests that this strip-on-save clears super groups. There's a `test_saving_flag_strips_legacy_holdout_groups` right above for the holdout key; this needs the same." The sibling carries the structure, which is the whole point of citing it. "Sibling" is vocabulary for you, not for the author: the word never appears in a comment body. Write the test's actual name and where it sits ("`test_x`, right above", "the two tests above this one"), never "the closest sibling to mirror" or "the siblings above".
-- **Never narrate the recipe.** Whether or not you cite a sibling, don't spell out the steps ("dispatch X, assert Y, then dispatch Z and assert it flips back"). That's a test body in prose; it repeats what the sibling pointer or the scenario name already conveys. Only add a minimal code snippet if the assertion boundary is genuinely ambiguous (trimmed to the fields the assertion needs, not a full fixture).
-- **Secondary gaps get one parenthetical line**, not a paragraph.
+**Does something make the gap look covered?** Then one sentence on why it isn't, and that sentence is where your effort goes. A fixture that sets `"count": 7`, a test named for a path it never reaches, a case that runs but asserts around the value: each of these makes a bare "this isn't covered" read as false, and the author will dismiss it on the evidence in front of them. Say why the assertion would pass even if the behavior were broken. When nothing looks like it covers the gap, skip this. "Nothing tests the no-timestamp case, where the group entry should win" is already complete.
 
-This applies to *missing*-test findings. When the fix is to an *existing* test (incomplete negative assertion, stale assertion, wrong-mock helper swap), a small corrected-assertion snippet is still the clearest way to convey it, so keep those.
+**Is the test hard to place or assert?** Then say where the coverage goes: the test to extend, or one to mirror because it carries the structure. Use its real name and location ("`test_saving_flag_strips_legacy_holdout_groups`, right above"). "Sibling" is vocabulary for you and never for the author, so don't write "the closest sibling to mirror" or "the siblings above". When where it goes is obvious, skip the pointer. "`setEarlyExit` is the only writer of `early_exit`, so it's worth a unit test" is the whole comment.
+
+Never write the test. No recipe in prose ("dispatch X, assert Y, then dispatch Z and assert it flips back"), and code only where the assertion boundary is genuinely ambiguous, trimmed to the lines the assertion needs. Corrected assertions clear that bar, along with a call they depend on when the assertion mechanism itself is what changes. A named test, with its own `def` or `it(...)` line, never does.
+
+Three more things will feel necessary and aren't:
+
+- **Arguing the scenario is realistic.** The author hasn't disputed it. Name the code that emits the shape in a clause and stop; if they push back, that's when the case for it gets made.
+- **Explaining what the test does catch.** Only what it misses is actionable.
+- **Working through secondary gaps.** One parenthetical line each.
 
 ## Self-Challenge
 
@@ -172,12 +177,12 @@ Structure your response as:
 
 Write each finding as a fenced ```text``` block containing the comment body, followed by metadata on a single line.
 
-Write the comment body in conversational prose. Lead with the prefix and name the specific scenario the test misses or the false confidence it creates. Describe the behavior in plain English and cite `path:line`; quote code only for the test or function name the author must act on or an exact value that matters. For a fix to an existing test, show the corrected assertion inline as a fenced code block; for a missing test, name the scenario and point at a sibling rather than writing the test out (see "Keep 'Add a Test' Findings Short"). Do not use `**Issue**:`/`**Impact**:`/`**Recommendation**:` headers in the comment body.
+Write the comment body in conversational prose. Lead with the prefix and name the specific scenario the test misses or the false confidence it creates. Describe the behavior in plain English and cite `path:line`; quote code only for the test or function name the author must act on or an exact value that matters. Name the uncovered scenario, and point at the test to extend or mirror when that isn't obvious; show a corrected assertion inline only where the assertion boundary is ambiguous, and never write a test body out (see "Keep Coverage Findings Short"). Do not use `**Issue**:`/`**Impact**:`/`**Recommendation**:` headers in the comment body.
 
 Write the body for a teammate who has not read the diff and shouldn't have to decode anything. One idea per sentence: if a sentence carries two claims, split it, and state a claim before the evidence for it. Use as many plain sentences as the finding needs; past about 8, it's probably two findings. A `nit:` body is at most 2 sentences.
 
 ```text
-`<severity>`: <conversational comment body. Describe the gap in plain English, quoting the test name or function under test only where the author must act on them. For fixes to existing tests, show the corrected assertion as an inline code block. For missing tests, name the scenario and point at a sibling, but do not write the test body.>
+`<severity>`: <conversational comment body. Describe the gap in plain English, quoting the test name or function under test only where the author must act on them. Name the uncovered scenario and point at the test to extend or mirror when that isn't obvious. Show a corrected assertion as an inline code block only where the assertion boundary is ambiguous, and never write out a test body.>
 ```
 
 Location: `path/to/file.ext:line-range` | Confidence: NN%
@@ -211,10 +216,9 @@ Location: `src/authentication/login.rs:45-60` | Confidence: 95%
 Location: `frontend/src/scenes/feature-flags/featureFlagReleaseConditionsLogic.ts:256` | Confidence: 70%
 
 ````text
-`suggestion`: `tests/user_service_test.py:78-92` asserts on the number of SQL queries (`assert_num_queries(2)`) instead of on the data the function returns. Any future query optimization (a JOIN, a prefetch) makes this test fail even when behavior is unchanged.
+`suggestion`: `tests/user_service_test.py:79-92` asserts on the number of SQL queries (`assert_num_queries(2)`) instead of on the data the function returns. Any future query optimization (a JOIN, a prefetch) makes this test fail even when behavior is unchanged.
 
 ```suggestion
-def test_get_user_with_posts():
     user = user_service.get_user_with_posts(user_id)
     assert user.id == expected_user_id
     assert user.email == "test@example.com"
@@ -222,7 +226,7 @@ def test_get_user_with_posts():
 ```
 ````
 
-Location: `tests/user_service_test.py:78-92` | Confidence: 80%
+Location: `tests/user_service_test.py:79-92` | Confidence: 80%
 
 ````text
 `suggestion`: `test_lru_reaccess_prevents_eviction` at `tests/cache_test.rs:145-165` checks that the re-accessed entry is still present after a fourth item is added, but never asserts that the expected LRU victim is gone. The test would still pass if the cache silently grew past its capacity. Add an assertion that `team_ids[1]` is no longer in the cache.
