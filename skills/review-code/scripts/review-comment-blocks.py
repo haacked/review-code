@@ -199,12 +199,54 @@ def prose_withdrawal(lines: list[str], start: int) -> str | None:
     return None
 
 
+def copies_of(blocks: list[dict], taken: set, anchor: dict) -> list[dict]:
+    """Every block that is the same finding written out again.
+
+    A composed review carries each finding twice, once in its agent section and
+    once under Suggested Comments. Same path, same line and the same body text
+    is what marks a copy, rather than a different finding that happens to sit on
+    the same line. A block with no body cannot be told apart that way, so it
+    stands alone.
+    """
+    body = normalize(anchor["body"])
+    if not body:
+        return [anchor]
+    return [
+        block
+        for block in blocks
+        if block["index"] not in taken
+        and block["path"] == anchor["path"]
+        and block["line"] == anchor["line"]
+        and normalize(block["body"]) == body
+    ]
+
+
+def one_per_id(blocks: list[dict]) -> list[dict]:
+    """Collapse a finding's copies to the one that was posted.
+
+    Both copies carry the id, so reporting each separately would invent a second
+    comment: status would pair the live comment with one and mark the other
+    missing_on_github, which is enough to make --push refuse. The later block is
+    the copy under Suggested Comments, and that is the text that was posted.
+    """
+    by_id: dict[int, dict] = {}
+    for block in blocks:
+        by_id[block["id"]] = block
+    return list(by_id.values())
+
+
 def match_comments(blocks: list[dict], comments: list[dict]) -> tuple[dict, list]:
-    """Pair each posted comment with the block that produced it.
+    """Pair each posted comment with every block that carries its text.
 
     Body is the primary key, not path:line. Drift remapping can move a comment
     to a different line than the heading records, and two findings can share a
     line, so the text is the only thing that reliably identifies the block.
+
+    Every copy is paired, not just the first. Only the copy under Suggested
+    Comments was posted, but the agent-section copy comes first in the document,
+    so annotating one and leaving the other meant a withdrawal landed on a copy
+    nothing reads: the posted finding stayed live and the next re-review offered
+    the comment again. status and read collapse the copies back to one entry.
     """
     taken: set[int] = set()
     pairs: dict[int, dict] = {}
@@ -213,34 +255,68 @@ def match_comments(blocks: list[dict], comments: list[dict]) -> tuple[dict, list
     for comment in comments:
         path = (comment.get("path") or "").strip()
         body = normalize(comment.get("body") or "")
-        chosen = None
-        for block in blocks:
-            if block["index"] in taken or block["path"] != path:
-                continue
-            if body and normalize(block["body"]) == body:
-                chosen = block
-                break
-        if chosen is None:
-            for block in blocks:
-                if block["index"] in taken or block["path"] != path:
-                    continue
-                if block["line"] == comment.get("line"):
-                    chosen = block
-                    break
-        if chosen is None:
+        anchor = None
+        if body:
+            anchor = next(
+                (
+                    block
+                    for block in blocks
+                    if block["index"] not in taken
+                    and block["path"] == path
+                    and normalize(block["body"]) == body
+                ),
+                None,
+            )
+        if anchor is None:
+            anchor = next(
+                (
+                    block
+                    for block in blocks
+                    if block["index"] not in taken
+                    and block["path"] == path
+                    and block["line"] == comment.get("line")
+                ),
+                None,
+            )
+        if anchor is None:
             unmatched.append({"id": comment.get("id"), "path": path})
             continue
-        taken.add(chosen["index"])
-        pairs[chosen["index"]] = comment
+        for block in copies_of(blocks, taken, anchor):
+            taken.add(block["index"])
+            pairs[block["index"]] = comment
     return pairs, unmatched
 
 
-def annotate_heading(line: str, comment: dict) -> str:
+def heading_tokens(line: str) -> list[str]:
+    """The annotation tokens a heading already carries."""
+    match = HEADING.match(line)
+    if not match:
+        return []
+    annotation = ANNOTATION.search(match.group("rest"))
+    return annotation.group("ids").split() if annotation else []
+
+
+def rewrite_annotation(line: str, tokens: list[str]) -> str:
+    """Put this token list on the heading, replacing any annotation there.
+
+    The heading's shape is the contract CLAUDE.md documents and three readers
+    depend on, so it is rebuilt here and nowhere else. What differs between
+    callers is which tokens belong on it, so each one says that for itself
+    rather than the rule living inside two near-identical rebuild bodies.
+    """
     match = HEADING.match(line)
     if not match:
         return line
     rest = ANNOTATION.sub("", match.group("rest")).rstrip()
-    ids = " ".join(
+    head = (
+        f"{match.group('open')}{match.group('path')}:{match.group('line')}"
+        f"{match.group('close')}{rest}"
+    )
+    return f"{head} <!-- pc:{' '.join(tokens)} -->" if tokens else head
+
+
+def annotate_heading(line: str, comment: dict) -> str:
+    tokens = [
         str(v)
         for v in (
             comment.get("id"),
@@ -248,11 +324,12 @@ def annotate_heading(line: str, comment: dict) -> str:
             BODY_HASH_PREFIX + body_hash(comment.get("body") or ""),
         )
         if v
-    )
-    return (
-        f"{match.group('open')}{match.group('path')}:{match.group('line')}"
-        f"{match.group('close')}{rest} <!-- pc:{ids} -->"
-    )
+    ]
+    # A withdrawal already on the heading survives re-annotation. These tokens
+    # are built from the comment, so anything not rebuilt from it has to be
+    # carried over deliberately or it is dropped.
+    tokens += [t for t in heading_tokens(line) if t.startswith(WITHDRAWN_PREFIX)]
+    return rewrite_annotation(line, tokens)
 
 
 def stamp_withdrawn(line: str, date: str) -> str:
@@ -262,18 +339,9 @@ def stamp_withdrawn(line: str, date: str) -> str:
     on the withdrawal rather than on a missing id, which keeps "never posted"
     and "posted then withdrawn" distinguishable.
     """
-    match = HEADING.match(line)
-    if not match:
-        return line
-    annotation = ANNOTATION.search(match.group("rest"))
-    tokens = annotation.group("ids").split() if annotation else []
-    tokens = [t for t in tokens if not t.startswith(WITHDRAWN_PREFIX)]
+    tokens = [t for t in heading_tokens(line) if not t.startswith(WITHDRAWN_PREFIX)]
     tokens.append(f"{WITHDRAWN_PREFIX}{date}")
-    rest = ANNOTATION.sub("", match.group("rest")).rstrip()
-    return (
-        f"{match.group('open')}{match.group('path')}:{match.group('line')}"
-        f"{match.group('close')}{rest} <!-- pc:{' '.join(tokens)} -->"
-    )
+    return rewrite_annotation(line, tokens)
 
 
 def header_span(lines: list[str]) -> tuple[int | None, int | None]:
@@ -392,9 +460,9 @@ def classify(notes: str, live: str, recorded: str | None) -> str:
 
 def cmd_status(args, lines: list[str], path: Path) -> dict:
     live_by_id = {int(c["id"]): c for c in load_stdin_list() if c.get("id") is not None}
-    blocks = [
-        b for b in find_blocks(lines) if b["id"] is not None and not b["withdrawn"]
-    ]
+    blocks = one_per_id(
+        [b for b in find_blocks(lines) if b["id"] is not None and not b["withdrawn"]]
+    )
 
     comments = []
     for block in blocks:
@@ -467,9 +535,9 @@ def cmd_withdraw(args, lines: list[str], path: Path) -> dict:
 
 
 def cmd_read(args, lines: list[str], path: Path) -> dict:
-    blocks = [
-        b for b in find_blocks(lines) if b["id"] is not None and not b["withdrawn"]
-    ]
+    blocks = one_per_id(
+        [b for b in find_blocks(lines) if b["id"] is not None and not b["withdrawn"]]
+    )
     return {
         "review_id": header_field(lines, "review_id"),
         "posted_at": header_field(lines, "posted_at"),

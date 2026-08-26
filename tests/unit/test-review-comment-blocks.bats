@@ -563,3 +563,119 @@ DOC
     [ "$("$PARSER" --include-withdrawn "$REVIEW" | jq -r '.[0].withdrawn')" = "true" ]
     [ "$("$PARSER" "$REVIEW" | jq 'length')" -eq 0 ]
 }
+
+# =============================================================================
+# A finding written twice: agent section and Suggested Comments
+# =============================================================================
+
+# What a composed review actually looks like. Only the copy under Suggested
+# Comments was posted, but the agent-section copy comes first in the document.
+write_duplicated_review() {
+    cat > "$REVIEW" << 'DOC'
+<!-- review-metadata
+mode: pr
+pr_number: 1
+-->
+
+# Pull Request Review: #1
+
+## Security Review
+
+#### `src/auth.ts:42`
+
+```text
+Validate the token first.
+```
+
+## Suggested Comments
+
+### New Comments
+
+#### `src/auth.ts:42`
+
+```text
+Validate the token first.
+```
+
+*From: Security (85% confidence)*
+
+---
+DOC
+}
+
+dup_annotate() {
+    jq -n '[{id: 777, node_id: "PRRC_aaa", path: "src/auth.ts", line: 42, body: "Validate the token first."}]' \
+        | python3 "$SCRIPT" annotate --review-file "$REVIEW" --review-id 99
+}
+
+@test "annotate: records the id on every copy of a repeated finding" {
+    write_duplicated_review
+    run dup_annotate
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"annotated": 2'* ]]
+    [ "$(grep -c 'pc:777 PRRC_aaa' "$REVIEW")" -eq 2 ]
+}
+
+# The point of the whole exercise: a dropped comment must stop being a live
+# finding, or the next --append re-review offers it again.
+@test "withdraw: retires every copy, so nothing is left to re-propose" {
+    write_duplicated_review
+    dup_annotate > /dev/null
+    [ "$("$PARSER" "$REVIEW" | jq 'length')" -eq 2 ]
+    withdraw "author disagreed"
+    [ "$("$PARSER" "$REVIEW" | jq 'length')" -eq 0 ]
+}
+
+# Both copies carry the id. Reporting each separately would pair the live
+# comment with one and call the other missing_on_github, which is enough on its
+# own to make --push refuse.
+@test "status: a repeated finding is one comment, not two" {
+    write_duplicated_review
+    dup_annotate > /dev/null
+    run bash -c 'jq -n "[{id: 777, node_id: \"PRRC_aaa\", path: \"src/auth.ts\", position: 3, body: \"Validate the token first.\"}]" | python3 "'"$SCRIPT"'" status --review-file "'"$REVIEW"'"'
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '[.comments[] | select(.id == 777)] | length')" -eq 1 ]
+    [ "$(echo "$output" | jq -r '.comments[] | select(.id == 777) | .state')" = "in_sync" ]
+    [ "$(echo "$output" | jq '.unrecorded | length')" -eq 0 ]
+}
+
+@test "set-body: rewrites every copy, so the two do not drift apart" {
+    write_duplicated_review
+    dup_annotate > /dev/null
+    jq -n '[{id: 777, body: "Reworded once."}]' | python3 "$SCRIPT" set-body --review-file "$REVIEW" > /dev/null
+    [ "$(grep -c 'Reworded once.' "$REVIEW")" -eq 2 ]
+    ! grep -q "Validate the token first." "$REVIEW"
+}
+
+# Two different findings that happen to share a line are not copies of one
+# another, so the second must not be claimed by the first comment.
+@test "annotate: two findings on the same line keep their own ids" {
+    cat > "$REVIEW" << 'DOC'
+<!-- review-metadata
+mode: pr
+pr_number: 1
+-->
+
+## Suggested Comments
+
+#### `src/auth.ts:42`
+
+```text
+Validate the token first.
+```
+
+#### `src/auth.ts:42`
+
+```text
+This allocation is avoidable.
+```
+
+---
+DOC
+    jq -n '[
+      {id: 777, node_id: "PRRC_aaa", path: "src/auth.ts", line: 42, body: "Validate the token first."},
+      {id: 888, node_id: "PRRC_bbb", path: "src/auth.ts", line: 42, body: "This allocation is avoidable."}
+    ]' | python3 "$SCRIPT" annotate --review-file "$REVIEW" --review-id 99 > /dev/null
+    [ "$(grep -c 'pc:777' "$REVIEW")" -eq 1 ]
+    [ "$(grep -c 'pc:888' "$REVIEW")" -eq 1 ]
+}
