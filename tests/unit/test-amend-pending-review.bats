@@ -407,9 +407,15 @@ amend() { "$SCRIPT" 1 --review-file "$REVIEW" "$@"; }
 # into it takes SIGPIPE, and set -euo pipefail turns that into a silent death
 # mid-run. It is a race on the pipe buffer, so only a large payload makes it
 # deterministic; a small one hides the bug.
+#
+# The size has a floor and a ceiling. It has to clear the 64KiB pipe buffer, or
+# the write succeeds and the bug hides. It also has to stay under the 128KiB
+# Linux puts on any single argv or environment string (PAGE_SIZE * 32), because
+# the body reaches the script through the environment: at 200000 execve failed
+# with E2BIG before the script ran, which passes on macOS and fails on Linux.
 @test "amend: a large payload does not kill a non-JSON run" {
     annotate
-    big=$(head -c 200000 /dev/zero | tr '\0' 'x')
+    big=$(head -c 100000 /dev/zero | tr '\0' 'x')
     LIVE_BODY_777="$big" run amend --pull --dry-run
     [ "$status" -eq 0 ]
     LIVE_BODY_777="$big" run amend --json
