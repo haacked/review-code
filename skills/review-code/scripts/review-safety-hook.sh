@@ -7,16 +7,35 @@
 # duplicate review detection, etc.).
 #
 # Blocked patterns:
-#   - gh pr review    (submits/creates reviews directly)
-#   - gh api with review endpoints (bypasses create-draft-review.sh)
+#   - gh pr review                          (submits/creates reviews directly)
+#   - gh api on a PR's reviews endpoints    (bypasses create-draft-review.sh)
+#   - gh api on a single review comment     (can delete a published comment)
+#   - GraphQL review-comment mutations      (the other transport for the same)
 #
 # Input: JSON on stdin (Claude Code PreToolUse hook format)
 # Output: JSON with permissionDecision (deny or allow)
 
 set -euo pipefail
 
+deny() {
+    jq -n --arg reason "$1" '{
+        hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: $reason
+        }
+    }'
+    exit 0
+}
+
 input=$(cat)
-command=$(echo "$input" | jq -r '.tool_input.command // ""')
+# Newlines are flattened to spaces before any matching below. Every check greps
+# the command, and grep tests one line at a time, so a mutation split across
+# lines would put "gh api" and the endpoint on different lines and match none of
+# the patterns. Both spellings that get written by hand are multi-line: a
+# GraphQL query in a quoted heredoc-style string, and a REST call continued with
+# a trailing backslash.
+command=$(echo "$input" | jq -r '.tool_input.command // ""' | tr '\n' ' ')
 
 # Allow empty commands (shouldn't happen, but be safe)
 if [[ -z "$command" ]]; then
@@ -25,26 +44,36 @@ fi
 
 # Block direct gh pr review commands
 if echo "$command" | grep -qE '\bgh\s+pr\s+review\b'; then
-    jq -n '{
-        hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "deny",
-            permissionDecisionReason: "Direct gh pr review is blocked during code review. Use create-draft-review.sh instead, which ensures reviews stay in PENDING state and handles duplicate detection."
-        }
-    }'
-    exit 0
+    deny "Direct gh pr review is blocked during code review. Use create-draft-review.sh instead, which ensures reviews stay in PENDING state and handles duplicate detection."
 fi
 
 # Block direct gh api calls to review endpoints
 if echo "$command" | grep -qE '\bgh\s+api\b.*\brepos/[^/]+/[^/]+/pulls/[0-9]+/reviews\b'; then
-    jq -n '{
-        hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "deny",
-            permissionDecisionReason: "Direct GitHub API calls to review endpoints are blocked during code review. Use create-draft-review.sh instead."
-        }
-    }'
-    exit 0
+    deny "Direct GitHub API calls to review endpoints are blocked during code review. Use create-draft-review.sh instead."
+fi
+
+# Block direct calls to the single-review-comment endpoints, whatever the
+# method. Matching the verb is not worth attempting: -X DELETE, --method DELETE,
+# flag order and a shell variable in place of the verb all defeat it. Blocking
+# reads too costs nothing, because GET on a pending comment 404s anyway and
+# amend-pending-review.sh is the sanctioned way to list them. The pattern has no
+# trailing id class on purpose, so pulls/comments/$id is caught as well as a
+# literal number. It does not match pulls/<n>/comments or the reply endpoint
+# pulls/<n>/comments/<id>/replies, neither of which contains "pulls/comments/".
+if echo "$command" | grep -qE '\bgh\s+api\b.*\brepos/[^/]+/[^/]+/pulls/comments/'; then
+    deny "Direct GitHub API calls to review comment endpoints are blocked during code review. Use amend-pending-review.sh to list, reword, or drop comments in your pending review."
+fi
+
+# Rewording a pending comment only works over GraphQL, so the REST pattern above
+# would miss it entirely and the hole would simply move to the new transport.
+# submitPullRequestReview and addPullRequestReview publish every pending comment
+# at once and cannot be undone; the REST pattern above already denies the same
+# action on /pulls/<n>/reviews, so leaving them out here enforced "never submit
+# on the user's behalf" on one transport only.
+# resolveReviewThread is deliberately absent: resolve-review-threads.sh is the
+# sanctioned path for that and agents are not the ones calling it directly.
+if echo "$command" | grep -qE '\bgh\s+api\b.*\bgraphql\b.*(updatePullRequestReviewComment|addPullRequestReviewThread|deletePullRequestReviewComment|submitPullRequestReview|addPullRequestReview)'; then
+    deny "Direct GraphQL mutations on reviews and review comments are blocked during code review. Use amend-pending-review.sh to reword or drop comments in your pending review. Never submit a review; that is the user's call."
 fi
 
 # Allow everything else

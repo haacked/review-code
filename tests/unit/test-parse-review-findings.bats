@@ -683,3 +683,214 @@ EOF
     echo "$output" | jq -e 'length == 1' > /dev/null
     echo "$output" | jq -e '.[0].end_line == 12' > /dev/null
 }
+
+# =============================================================================
+# Withdrawn findings
+# =============================================================================
+
+@test "parse-review-findings.sh: skips a finding withdrawn on its heading" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `src/auth.ts:42` <!-- pc:777 PRRC_aaa withdrawn:2026-08-25 -->
+
+The token check is wrong.
+
+*Withdrawn 2026-08-25: author showed it was already handled*
+
+---
+
+#### `src/db.py:12` <!-- pc:888 PRRC_bbb -->
+
+N+1 query here.
+
+---
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq 'length')" -eq 1 ]
+    [ "$(echo "$output" | jq -r '.[0].file')" = "src/db.py" ]
+}
+
+@test "parse-review-findings.sh: --include-withdrawn returns it with a flag" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `src/auth.ts:42` <!-- pc:777 PRRC_aaa withdrawn:2026-08-25 -->
+
+The token check is wrong.
+
+---
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --include-withdrawn "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq 'length')" -eq 1 ]
+    [ "$(echo "$output" | jq -r '.[0].withdrawn')" = "true" ]
+}
+
+@test "parse-review-findings.sh: skips a finding marked withdrawn by hand" {
+    # A review never posted as a draft has no heading annotation to stamp.
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `src/auth.ts:42`
+
+The token check is wrong.
+
+*Withdrawn 2026-08-25: author showed it was already handled*
+
+---
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq 'length')" -eq 0 ]
+}
+
+@test "parse-review-findings.sh: a quoted Withdrawn line does not retire a finding" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `src/auth.ts:42`
+
+```text
+The docs show the marker as:
+
+*Withdrawn 2026-01-01: example*
+
+which is what to write.
+```
+
+---
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq 'length')" -eq 1 ]
+}
+
+@test "parse-review-findings.sh: a live finding reports withdrawn false" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `src/auth.ts:42`
+
+The token check is wrong.
+
+---
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$(echo "$output" | jq -r '.[0].withdrawn')" = "false" ]
+}
+
+@test "parse-review-findings.sh: prose on a heading does not retire a finding" {
+    # Only the token inside the pc annotation retires a finding. An unanchored
+    # match would let this heading silently drop a live finding.
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `src/auth.ts:42` (withdrawn: still under discussion)
+
+The token check is wrong.
+
+---
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq 'length')" -eq 1 ]
+}
+
+# =============================================================================
+# The withdrawal reason travels as a field, not as description text
+# =============================================================================
+
+@test "parse-review-findings.sh: a withdrawn finding carries its reason as a field" {
+    review="$TEST_DIR/review.md"
+    cat > "$review" << 'DOC'
+# Review
+
+## Suggested Comments
+
+#### `src/auth.ts:42`
+
+```text
+Validate the token first.
+```
+
+*Withdrawn 2026-08-25: author showed the guard is unreachable*
+
+---
+DOC
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --include-withdrawn "$review"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.[0].withdrawn_reason')" = "author showed the guard is unreachable" ]
+}
+
+# The marker describes the finding rather than being part of it. Left in the
+# description it reads as the tail of the finding text, and the learning pass
+# quotes descriptions back at the user.
+@test "parse-review-findings.sh: the withdrawal marker stays out of the description" {
+    review="$TEST_DIR/review.md"
+    cat > "$review" << 'DOC'
+# Review
+
+## Suggested Comments
+
+#### `src/auth.ts:42`
+
+```text
+Validate the token first.
+```
+
+*Withdrawn 2026-08-25: author showed the guard is unreachable*
+
+---
+DOC
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --include-withdrawn "$review"
+    [ "$status" -eq 0 ]
+    [[ "$(echo "$output" | jq -r '.[0].description')" != *"Withdrawn"* ]]
+    [[ "$(echo "$output" | jq -r '.[0].description')" == *"Validate the token first."* ]]
+}
+
+@test "parse-review-findings.sh: a live finding reports an empty withdrawal reason" {
+    review="$TEST_DIR/review.md"
+    cat > "$review" << 'DOC'
+# Review
+
+## Suggested Comments
+
+#### `src/auth.ts:42`
+
+```text
+Validate the token first.
+```
+
+---
+DOC
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$review"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.[0].withdrawn')" = "false" ]
+    [ "$(echo "$output" | jq -r '.[0].withdrawn_reason')" = "" ]
+}
+
+# A marker with no reason after the date must not store the date as the reason.
+@test "parse-review-findings.sh: a reasonless withdrawal leaves the field empty" {
+    review="$TEST_DIR/review.md"
+    cat > "$review" << 'DOC'
+# Review
+
+## Suggested Comments
+
+#### `src/auth.ts:42`
+
+```text
+Validate the token first.
+```
+
+*Withdrawn 2026-08-25*
+
+---
+DOC
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --include-withdrawn "$review"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.[0].withdrawn')" = "true" ]
+    [ "$(echo "$output" | jq -r '.[0].withdrawn_reason')" = "" ]
+}

@@ -41,6 +41,8 @@ For **"unaddressed" findings** (Claude found, file not modified after review), s
   3. "Correct but low priority": Valid but not worth changing
   4. "Skip": Don't record this learning
 
+For **"withdrawn" findings** (dropped from the review after it was posted), do not ask. The author already argued the finding down and `withdrawn_reason` carries what they said, so record it straight away as `type: "false_positive"`, `source: "claude"`, with the finding's `withdrawn_reason` as `user_feedback`. Report each one in a line so the user can see what was recorded on their behalf. Asking again would put the same question back to the person who already answered it, and "the file was not modified" is exactly what a withdrawn finding looks like.
+
 For **"missed" findings** (other reviewer found, Claude missed), show file, line, description, and author, then use AskUserQuestion:
 - Question: "Another reviewer found this issue that Claude missed. Should Claude learn to detect this?"
 - Options:

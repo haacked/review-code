@@ -355,8 +355,8 @@ teardown_test_repo() {
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"DIFF_TYPE: branch + uncommitted (main...feature + local)"* ]]
-    [[ "$output" == *"file2.txt"* ]]  # Branch changes
-    [[ "$output" == *"file3.txt"* ]]  # Uncommitted changes
+    [[ "$output" == *"file2.txt"* ]] # Branch changes
+    [[ "$output" == *"file3.txt"* ]] # Uncommitted changes
     [[ "$output" == *"Uncommitted Changes"* ]]
 
     teardown_test_repo
@@ -563,5 +563,93 @@ teardown_test_repo() {
     # Should NOT show "filtered by" since feature.test is the branch name
     [[ "$output" != *"filtered by"* ]]
 
+    teardown_test_repo
+}
+
+# =============================================================================
+# Refs that carry a slash
+# =============================================================================
+
+# A remote-tracking ref on the left of a range is the ordinary way to name the
+# base, and it used to be read as a pathspec and stripped, leaving the range
+# positional unset.
+@test "get-review-diff.sh: range mode accepts a remote-tracking ref" {
+    setup_test_repo
+
+    echo "one" > file.txt
+    git add file.txt
+    git commit -q -m "First"
+    git update-ref refs/remotes/origin/main HEAD
+    echo "two" > file.txt
+    git commit -q -am "Second"
+
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" range "origin/main..HEAD"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"DIFF_TYPE: range (origin/main..HEAD)"* ]]
+    [[ "$output" == *"two"* ]]
+    teardown_test_repo
+}
+
+# Same shape, one argument earlier: a base branch whose name carries a dot after
+# the slash, such as a release line.
+@test "get-review-diff.sh: branch mode accepts a base ref with a dot in it" {
+    setup_test_repo
+
+    echo "one" > file.txt
+    git add file.txt
+    git commit -q -m "First"
+    git update-ref refs/remotes/origin/release-1.0 HEAD
+    git checkout -q -b feature
+    echo "two" > file.txt
+    git commit -q -am "Second"
+
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" branch feature "origin/release-1.0"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"origin/release-1.0...feature"* ]]
+    teardown_test_repo
+}
+
+@test "get-review-diff.sh: a pattern after a slashed range still filters" {
+    setup_test_repo
+
+    echo "one" > keep.py
+    echo "one" > skip.txt
+    git add keep.py skip.txt
+    git commit -q -m "First"
+    git update-ref refs/remotes/origin/main HEAD
+    echo "two" > keep.py
+    echo "two" > skip.txt
+    git commit -q -am "Second"
+
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" range "origin/main..HEAD" "*.py"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"filtered by: *.py"* ]]
+    [[ "$output" == *"keep.py"* ]]
+    [[ "$output" != *"skip.txt"* ]]
+    teardown_test_repo
+}
+
+# The old shape test only recognised a pattern with a glob or a dot after a
+# slash, so a plain filename was silently dropped and the diff came back
+# unfiltered rather than wrong, which is harder to notice.
+@test "get-review-diff.sh: a bare filename is treated as a pattern" {
+    setup_test_repo
+
+    echo "one" > keep.py
+    echo "one" > skip.txt
+    git add keep.py skip.txt
+    git commit -q -m "First"
+    echo "two" > keep.py
+    echo "two" > skip.txt
+    git commit -q -am "Second"
+
+    run "$PROJECT_ROOT/skills/review-code/scripts/get-review-diff.sh" range "HEAD~1..HEAD" "keep.py"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"filtered by: keep.py"* ]]
+    [[ "$output" != *"skip.txt"* ]]
     teardown_test_repo
 }

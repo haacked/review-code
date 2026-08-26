@@ -284,3 +284,99 @@ EOF
     ! grep -q "constant time" "$TEST_DIR/review.md"
     grep -q "Missing input validation" "$TEST_DIR/review.md"
 }
+
+# The withdrawal marker's literal form is the contract parse-review-findings.sh
+# matches on, so it lives in one place here rather than in each test.
+withdraw_untouched_finding() {
+    python3 - "$TEST_DIR/review.md" "$1" << 'PY'
+import sys
+path, reason = sys.argv[1], sys.argv[2]
+lines = open(path).read().splitlines()
+for i, line in enumerate(lines):
+    if line.startswith("#### `src/untouched.py"):
+        lines[i + 1:i + 1] = ["", f"*Withdrawn 2026-08-25: {reason}*"]
+        break
+open(path, "w").write("\n".join(lines) + "\n")
+PY
+}
+
+# =============================================================================
+# Withdrawn findings
+# =============================================================================
+
+# A finding the author argued down must not come back on the next re-review,
+# and its text must survive so the argument stays on the record.
+@test "carry-forward-findings.sh: does not carry a withdrawn finding forward as live" {
+    # Retire the finding on a file the delta does not touch, so the only thing
+    # that can keep it out of the carried set is the withdrawal marker.
+    withdraw_untouched_finding "author showed the header is validated upstream"
+    carried_before=$("$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" \
+        --include-withdrawn "$TEST_DIR/review.md" | jq '[.[] | select(.withdrawn)] | length')
+    [ "$carried_before" -eq 1 ]
+
+    run "$SCRIPT" --review-file "$TEST_DIR/review.md" --delta-diff "$TEST_DIR/delta.patch"
+    [ "$status" -eq 0 ]
+
+    # Still in the document, but no longer a finding anything will act on.
+    grep -q "Missing input validation on the forwarded header." "$TEST_DIR/review.md"
+    live=$("$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md" \
+        | jq '[.[] | select(.file == "src/untouched.py")] | length')
+    [ "$live" -eq 0 ]
+}
+
+@test "carry-forward-findings.sh: prune-safety still passes with a withdrawal marker present" {
+    withdraw_untouched_finding "not a real issue"
+    run "$SCRIPT" --review-file "$TEST_DIR/review.md" --delta-diff "$TEST_DIR/delta.patch"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.pruned == true' > /dev/null
+}
+
+# =============================================================================
+# Prune safety across long finding bodies
+# =============================================================================
+
+# The check that guards the cut compares the expected survivors against a
+# re-parse of the pruned file. Both sides have to be parsed the same way: the
+# plain mode truncates a description at 500 bytes and the --with-spans mode does
+# not, so on any review with a finding body past that length the two can never
+# match and the cut is abandoned every time. Real reviews run to thousands of
+# characters per finding, so this is the normal case, not an edge one.
+@test "carry-forward-findings.sh: prunes a review whose findings exceed the truncation limit" {
+    local long_body
+    long_body=$(printf 'The token comparison leaks timing information. %.0s' {1..20})
+    [ "${#long_body}" -gt 500 ]
+
+    cat > "$TEST_DIR/long.md" << EOF
+<!-- review-metadata
+reviewed_at: 2026-08-01T10:00:00Z
+mode: pr
+pr_number: 42
+review_commit: aaaaaaa
+-->
+
+# Pull Request Review: #42
+
+## Security Review
+
+#### \`src/auth.py:45\`
+
+${long_body}
+
+---
+
+#### \`src/untouched.py:10\`
+
+${long_body}
+
+---
+EOF
+
+    run "$SCRIPT" --review-file "$TEST_DIR/long.md" --delta-diff "$TEST_DIR/delta.patch"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.pruned == true' > /dev/null
+    echo "$output" | jq -e '.dropped == 1' > /dev/null
+    echo "$output" | jq -e '.carried == 1' > /dev/null
+    # The delta touched src/auth.py, so that finding goes and the other stays.
+    ! grep -q 'src/auth.py:45' "$TEST_DIR/long.md"
+    grep -q 'src/untouched.py:10' "$TEST_DIR/long.md"
+}

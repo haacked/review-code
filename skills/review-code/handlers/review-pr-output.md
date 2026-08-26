@@ -58,7 +58,7 @@ When combining agent findings into the review document, add a "Suggested Comment
 
    Comment bodies already have their in-prose file:line citations rendered as GitHub permalinks (see "Link File References in Comment Bodies" above). Keep those links intact when writing the bodies into the review file.
 
-   Bodies must also already carry the seam structure (see "Break at the seam" under Inline Comment Voice in `review.md`) before they're written into the review file; preserve their paragraph breaks, never flatten a body into one block.
+   Bodies must also already carry the seam structure (see "Break at the seam" under Inline Comment Voice in `briefing/shared-instructions.md`) before they're written into the review file; preserve their paragraph breaks, never flatten a body into one block.
 
 2. **Check against existing comments**: For each finding, check if there are existing inline comments (from `$inline_comments`) that:
    - Are on the same file
@@ -86,7 +86,7 @@ For each finding that needs a new comment:
 #### `<file_path>:<line_number>`
 
 ```text
-<comment text: direct, specific, conversational (see Inline Comment Voice in review.md)>
+<comment text: direct, specific, conversational (see Inline Comment Voice in briefing/shared-instructions.md)>
 ```
 
 *From: <Agent Name> (<confidence>% confidence)*
@@ -164,9 +164,11 @@ If any condition fails, skip draft review creation.
 
 1. **Extract suggested comments from the review**: Parse the "Suggested Comments" section to get file path, line number, and comment body. Extract only the text inside the ` ```text ``` ` code block; the `*From: <Agent Name> (<confidence>% confidence)*` line is internal metadata and never goes to GitHub.
 
+   **Skip any block carrying a `*Withdrawn ...*` line or a `withdrawn:` mark on its heading.** Those findings were argued down by the author and taken off the PR; they stay in the document so the argument stays on the record. Reposting one would put back the exact comment someone already had removed.
+
    Keep any GitHub permalinks in the comment body intact (see "Link File References in Comment Bodies" above). They render as clickable links in the posted comment. The same applies to the `summary` field and `unmapped_comments` descriptions.
 
-   Bodies must already carry the seam structure (see "Break at the seam" under Inline Comment Voice in `review.md`); copy their blank lines into the draft payload verbatim.
+   Bodies must already carry the seam structure (see "Break at the seam" under Inline Comment Voice in `briefing/shared-instructions.md`); copy their blank lines into the draft payload verbatim.
 
    Look for this pattern in the review file:
    ```
@@ -198,6 +200,7 @@ EOF
   "reviewer_username": "<reviewer from session>",
   "review_commit": "<pr.head_sha from session, if available>",
   "original_diff_path": "<diff_path>",
+  "review_file": "<review_file from session>",
   "summary": "<Short, conversational summary (see guidance below)>",
   "comments": [
     {"path": "file.ts", "line": 42, "side": "RIGHT", "body": "Clean comment text", "line_content": "    the_actual_code()"}
@@ -272,9 +275,11 @@ Summary:
 - Note: PR received new commits since review. Comments were adjusted to match current diff.
 
 The review is in PENDING state. Visit GitHub to:
-- Edit or remove any comments
 - Add additional comments
 - Submit with Approve/Request Changes/Comment
+
+To reword or drop a comment later, read
+~/.agents/skills/review-code/handlers/amend-pending-review.md.
 ```
 
 If failed, show the error and suggest using the review file manually.
@@ -289,6 +294,12 @@ If failed, show the error and suggest using the review file manually.
   3. Suggest: "You can copy comments from the review file and post them manually on GitHub."
   4. Clean up the session: `~/.agents/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"`
   5. **Stop here.** Do not post the findings any other way: a regular PR comment or a direct `gh pr review` call publishes immediately instead of staying pending (and the PreToolUse hook blocks the direct calls regardless).
+
+### Amending a Draft After It Is Posted
+
+**Nothing in this section runs during a review.** It is here so the correction path sits next to the posting path; skip it unless the user is asking to change a comment on a review that is already on GitHub.
+
+A finding that gets argued down, or one whose wording turns out to be wrong, does not need a new review. Read `~/.agents/skills/review-code/handlers/amend-pending-review.md` and follow it. Never reach for a raw `gh api` call: the PreToolUse hook blocks those endpoints on both REST and GraphQL, and re-running the review to fix one sentence costs every agent again and renumbers every comment.
 
 ### Resolve Addressed Threads (--append, PR Mode Only)
 
