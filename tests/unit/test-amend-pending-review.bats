@@ -68,7 +68,16 @@ create_mock_gh() {
     cat > "$MOCK_DIR/gh" << 'EOF'
 #!/usr/bin/env bash
 args="$*"
+# A reword that landed is the body GitHub holds from then on, the same way a
+# deleted comment stays deleted below. Without this the mock keeps reporting the
+# pre-reword body, every later push reads as still-pending, and the digest
+# re-stamp after a successful push has nothing asserting it. The body is kept in
+# its own file rather than parsed back out of the mutation log, because the log
+# holds the whole GraphQL query and that spans lines.
 body777="${LIVE_BODY_777:-Validate the token first.}"
+if [[ -z "${LIVE_BODY_777:-}" && -s "$MUTATIONS.body.PRRC_aaa" ]]; then
+    body777=$(cat "$MUTATIONS.body.PRRC_aaa")
+fi
 [[ -n "${GH_CALL_LOG:-}" ]] && echo "$args" >> "$GH_CALL_LOG"
 
 if [[ "$args" == *"repo view"* ]]; then echo "org/test"; exit 0; fi
@@ -76,6 +85,8 @@ if [[ "$args" == *"api user"* ]]; then echo "testuser"; exit 0; fi
 
 if [[ "$args" == *"graphql"* ]]; then
     echo "GRAPHQL $args" >> "$MUTATIONS"
+    node="${args##*-f id=}"; node="${node%% *}"
+    printf '%s' "${args#*-f body=}" > "$MUTATIONS.body.$node"
     echo '{"data":{"updatePullRequestReviewComment":{"pullRequestReviewComment":{"databaseId":777}}}}'
     exit 0
 fi
@@ -403,4 +414,114 @@ amend() { "$SCRIPT" 1 --review-file "$REVIEW" "$@"; }
     [ "$status" -eq 0 ]
     LIVE_BODY_777="$big" run amend --json
     [ "$status" -eq 0 ]
+}
+
+# =============================================================================
+# Drop: what reaches the notes when GitHub does not take every id
+# =============================================================================
+
+# The mock deletes 777 and refuses 888, so the run ends with one comment gone
+# and one still on the PR.
+fail_delete_888() {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/usr/bin/env bash
+args="$*"
+[[ -n "${GH_CALL_LOG:-}" ]] && echo "$args" >> "$GH_CALL_LOG"
+if [[ "$args" == *"repo view"* ]]; then echo "org/test"; exit 0; fi
+if [[ "$args" == *"api user"* ]]; then echo "testuser"; exit 0; fi
+if [[ "$args" == *"--method DELETE"* ]]; then
+    if [[ "$args" == *"pulls/comments/888"* ]]; then
+        echo '{"message":"Server Error"}'; exit 1
+    fi
+    echo "DELETE $args" >> "$MUTATIONS"; exit 0
+fi
+if [[ "$args" == *"repos/org/test/pulls/1/reviews/99/comments"* ]]; then
+    dropped=$(grep -oE 'pulls/comments/[0-9]+' "$MUTATIONS" 2> /dev/null \
+        | grep -oE '[0-9]+$' | jq -R -s 'split("\n") | map(select(length > 0) | tonumber)')
+    jq -n --argjson dropped "${dropped:-[]}" '[
+      {id:777, node_id:"PRRC_aaa", path:"src/auth.ts", line:null, position:3, body:"Validate the token first."},
+      {id:888, node_id:"PRRC_bbb", path:"src/db.py", line:null, position:7, body:"N+1 query here."}
+    ] | map(select(.id as $i | $dropped | index($i) == null))'
+    exit 0
+fi
+if [[ "$args" == *"repos/org/test/pulls/1/reviews"* ]]; then
+    echo '[{"id":99,"state":"PENDING","user":{"login":"testuser"},"body":"summary"}]'
+    exit 0
+fi
+echo '{"message":"Not Found"}'; exit 1
+EOF
+    chmod +x "$MOCK_DIR/gh"
+}
+
+@test "amend: a failed delete leaves its finding live in the notes" {
+    annotate
+    fail_delete_888
+    run amend --drop --comment-id 777 --comment-id 888 --reason "not real"
+    # 888 is still on the PR, so its finding must still be proposable.
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$REVIEW"
+    [ "$(echo "$output" | jq '[.[] | select(.file == "src/db.py")] | length')" -eq 1 ]
+}
+
+@test "amend: a failed delete does not stamp its heading withdrawn" {
+    annotate
+    fail_delete_888
+    amend --drop --comment-id 777 --comment-id 888 --reason "not real" || true
+    # One withdrawal, for 777, not two.
+    [ "$(grep -c '^\*Withdrawn ' "$REVIEW")" -eq 1 ]
+}
+
+@test "amend: dropping an id the notes never recorded warns instead of passing silently" {
+    # No annotate call, so no finding carries an id. Every draft posted before
+    # the payload set review_file is in exactly this state.
+    run amend --drop --comment-id 777 --reason "not real"
+    [[ "$output" == *"records no finding"* ]]
+}
+
+@test "amend: an unrecorded drop leaves the finding live rather than losing it" {
+    PARSER="$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh"
+    before=$("$PARSER" "$REVIEW" | jq 'length')
+    amend --drop --comment-id 777 --reason "not real" || true
+    after=$("$PARSER" "$REVIEW" | jq 'length')
+    [ "$after" -eq "$before" ]
+}
+
+@test "amend: push refuses an id that is not in the pending review" {
+    annotate
+    run amend --push --comment-id 4242
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"Not in your pending review"* ]]
+}
+
+@test "amend: push names the id when the notes hold no reword for it" {
+    annotate
+    run amend --push --comment-id 888
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"No reword recorded"* ]]
+    [[ "$output" == *"888"* ]]
+}
+
+@test "amend: a second reword pushes after the first one landed" {
+    annotate
+    jq -n '[{id:777, body:"First reword."}]' \
+        | python3 "$BLOCKS" set-body --review-file "$REVIEW" > /dev/null
+    run amend --push
+    [ "$status" -eq 0 ]
+
+    # GitHub now holds "First reword." The digest re-stamp after that push is
+    # what keeps this second one from reading as someone's edit in the UI.
+    jq -n '[{id:777, body:"Second reword."}]' \
+        | python3 "$BLOCKS" set-body --review-file "$REVIEW" > /dev/null
+    run amend --push
+    [ "$status" -eq 0 ]
+    [ "$(grep -c GRAPHQL "$MUTATIONS")" -eq 2 ]
+    grep -q 'Second reword.' "$MUTATIONS"
+}
+
+@test "amend: a pushed reword is in sync on the next status" {
+    annotate
+    jq -n '[{id:777, body:"Reworded once."}]' \
+        | python3 "$BLOCKS" set-body --review-file "$REVIEW" > /dev/null
+    amend --push
+    run amend --json
+    [ "$(echo "$output" | jq -r '.comments[] | select(.id == 777) | .state')" = "in_sync" ]
 }

@@ -29,7 +29,13 @@ deny() {
 }
 
 input=$(cat)
-command=$(echo "$input" | jq -r '.tool_input.command // ""')
+# Newlines are flattened to spaces before any matching below. Every check greps
+# the command, and grep tests one line at a time, so a mutation split across
+# lines would put "gh api" and the endpoint on different lines and match none of
+# the patterns. Both spellings that get written by hand are multi-line: a
+# GraphQL query in a quoted heredoc-style string, and a REST call continued with
+# a trailing backslash.
+command=$(echo "$input" | jq -r '.tool_input.command // ""' | tr '\n' ' ')
 
 # Allow empty commands (shouldn't happen, but be safe)
 if [[ -z "$command" ]]; then
@@ -60,10 +66,14 @@ fi
 
 # Rewording a pending comment only works over GraphQL, so the REST pattern above
 # would miss it entirely and the hole would simply move to the new transport.
+# submitPullRequestReview and addPullRequestReview publish every pending comment
+# at once and cannot be undone; the REST pattern above already denies the same
+# action on /pulls/<n>/reviews, so leaving them out here enforced "never submit
+# on the user's behalf" on one transport only.
 # resolveReviewThread is deliberately absent: resolve-review-threads.sh is the
 # sanctioned path for that and agents are not the ones calling it directly.
-if echo "$command" | grep -qE '\bgh\s+api\b.*\bgraphql\b.*(updatePullRequestReviewComment|addPullRequestReviewThread|deletePullRequestReviewComment)'; then
-    deny "Direct GraphQL mutations on review comments are blocked during code review. Use amend-pending-review.sh to reword or drop comments in your pending review."
+if echo "$command" | grep -qE '\bgh\s+api\b.*\bgraphql\b.*(updatePullRequestReviewComment|addPullRequestReviewThread|deletePullRequestReviewComment|submitPullRequestReview|addPullRequestReview)'; then
+    deny "Direct GraphQL mutations on reviews and review comments are blocked during code review. Use amend-pending-review.sh to reword or drop comments in your pending review. Never submit a review; that is the user's call."
 fi
 
 # Allow everything else

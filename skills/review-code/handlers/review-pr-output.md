@@ -58,7 +58,7 @@ When combining agent findings into the review document, add a "Suggested Comment
 
    Comment bodies already have their in-prose file:line citations rendered as GitHub permalinks (see "Link File References in Comment Bodies" above). Keep those links intact when writing the bodies into the review file.
 
-   Bodies must also already carry the seam structure (see "Break at the seam" under Inline Comment Voice in `review.md`) before they're written into the review file; preserve their paragraph breaks, never flatten a body into one block.
+   Bodies must also already carry the seam structure (see "Break at the seam" under Inline Comment Voice in `briefing/shared-instructions.md`) before they're written into the review file; preserve their paragraph breaks, never flatten a body into one block.
 
 2. **Check against existing comments**: For each finding, check if there are existing inline comments (from `$inline_comments`) that:
    - Are on the same file
@@ -86,7 +86,7 @@ For each finding that needs a new comment:
 #### `<file_path>:<line_number>`
 
 ```text
-<comment text: direct, specific, conversational (see Inline Comment Voice in review.md)>
+<comment text: direct, specific, conversational (see Inline Comment Voice in briefing/shared-instructions.md)>
 ```
 
 *From: <Agent Name> (<confidence>% confidence)*
@@ -168,7 +168,7 @@ If any condition fails, skip draft review creation.
 
    Keep any GitHub permalinks in the comment body intact (see "Link File References in Comment Bodies" above). They render as clickable links in the posted comment. The same applies to the `summary` field and `unmapped_comments` descriptions.
 
-   Bodies must already carry the seam structure (see "Break at the seam" under Inline Comment Voice in `review.md`); copy their blank lines into the draft payload verbatim.
+   Bodies must already carry the seam structure (see "Break at the seam" under Inline Comment Voice in `briefing/shared-instructions.md`); copy their blank lines into the draft payload verbatim.
 
    Look for this pattern in the review file:
    ```

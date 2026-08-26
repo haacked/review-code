@@ -37,7 +37,7 @@ This copies GitHub's wording into the notes. Run it whenever anything reads `cha
 
 **3. Reword in the review file.** Edit the ` ```text ` body of the finding block. Change only the body: the heading, its `<!-- pc:… -->` annotation, and the `*From: …*` line are how the two sides stay matched.
 
-Keep the voice rules that applied when the comment was written (see Inline Comment Voice in `review.md`), including the blank line at the seam between problem and recommendation.
+Keep the voice rules that applied when the comment was written (see Inline Comment Voice in `briefing/shared-instructions.md`), including the blank line at the seam between problem and recommendation.
 
 **4. Push it back.**
 

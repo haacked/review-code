@@ -407,7 +407,13 @@ def cmd_status(args, lines: list[str], path: Path) -> dict:
         comments.append(
             {
                 "id": block["id"],
-                "node_id": block["node_id"] or (live or {}).get("node_id"),
+                # GitHub's node id wins over the one on the heading. The numeric
+                # id is checked against the pending review, but the node id is
+                # what the reword mutation actually addresses, and it is read
+                # from a file anyone can edit; taking the live one keeps the
+                # header's claim that every comment touched is the caller's own.
+                # The recorded one still covers a live comment with none.
+                "node_id": (live or {}).get("node_id") or block["node_id"],
                 "path": block["path"],
                 "line": block["line"],
                 "position": (live or {}).get("position"),

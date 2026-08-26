@@ -295,8 +295,22 @@ main() {
 
     REVIEW_ID=$(echo "${pending}" | jq -r '.review_id')
 
+    # Every mode that takes --comment-id checks membership here, so a mistyped
+    # id is refused by name rather than quietly narrowing a target set to
+    # nothing. --push used to filter by id without checking, so a typo printed
+    # "No reworded comments to push" and exited 0, which reads as "the reword
+    # never registered" and sends you looking in the wrong file.
+    if [[ ${#COMMENT_IDS[@]} -gt 0 ]]; then
+        validate_ids "${pending}" "${COMMENT_IDS[@]}"
+    fi
+
     # One normalizer, in Python, so the shell never invents a second notion of
     # "changed" that disagrees with the one that wrote the digests.
+    # --drop does not read status_json, and computing it costs a Python start
+    # plus a full parse of the review file. It runs for every mode on purpose:
+    # status exits non-zero on a review file it cannot parse, and that has to
+    # happen before the DELETE rather than after, because the delete cannot be
+    # undone and the withdrawal that records it would then have nowhere to go.
     local status_json
     status_json=$(echo "${pending}" | jq -c '.comments' \
         | "${SCRIPT_DIR}/review-comment-blocks.py" status --review-file "${REVIEW_FILE}")
@@ -378,7 +392,15 @@ do_push() {
 
     count=$(echo "${targets}" | jq 'length')
     if [[ "${count}" -eq 0 ]]; then
-        log_info "No reworded comments to push."
+        # main has already refused any id that is not in the pending review, so
+        # reaching here with ids named means they are real and nothing in the
+        # notes was reworded for them. Say which, so this is not confused with
+        # having named the wrong comment.
+        if [[ ${#COMMENT_IDS[@]} -gt 0 ]]; then
+            log_info "No reword recorded in ${REVIEW_FILE} for: ${COMMENT_IDS[*]}. Nothing pushed."
+        else
+            log_info "No reworded comments to push."
+        fi
         emit_json -n '{pushed: 0, failed: 0, dryRun: false}'
         return 0
     fi
@@ -417,10 +439,8 @@ do_push() {
 do_drop() {
     local pending="$1"
 
-    validate_ids "${pending}" "${COMMENT_IDS[@]}"
-
-    # Built from the pending review, not from the notes: validate_ids has just
-    # proved every id is in there, and the body GitHub holds is the one the
+    # Built from the pending review, not from the notes: validate_ids in main
+    # has proved every id is in there, and the body GitHub holds is the one the
     # operator should read before an irreversible delete.
     local ids_json targets
     ids_json=$(printf '%s\n' "${COMMENT_IDS[@]}" | jq -s 'map(tonumber)')
@@ -437,9 +457,11 @@ do_drop() {
     fi
 
     local dropped=0 failed=0 id
+    local dropped_ids=()
     for id in "${COMMENT_IDS[@]}"; do
         if drop_comment "${id}"; then
             log_success "Dropped ${id}"
+            dropped_ids+=("${id}")
             dropped=$((dropped + 1))
         else
             log_warn "Failed to drop ${id}"
@@ -448,17 +470,26 @@ do_drop() {
     done
 
     # Retire the finding in the notes, so carry-forward does not re-propose it
-    # and a later --draft does not repost it. Only the ids that actually went.
-    if [[ "${dropped}" -gt 0 ]]; then
-        printf '%s\n' "${COMMENT_IDS[@]}" \
+    # and a later --draft does not repost it. Only the ids whose DELETE returned
+    # success: withdrawing one whose delete failed would retire a finding whose
+    # comment is still on the PR, and withdrawn blocks are invisible to status,
+    # --push and set-body afterwards, so the file is the only way back.
+    if [[ ${#dropped_ids[@]} -gt 0 ]]; then
+        local withdraw_result marked
+        withdraw_result=$(printf '%s\n' "${dropped_ids[@]}" \
             | jq -R --arg reason "${REASON}" -s 'split("\n") | map(select(length > 0))
                 | map({id: tonumber, reason: $reason})' \
             | "${SCRIPT_DIR}/review-comment-blocks.py" withdraw \
                 --review-file "${REVIEW_FILE}" \
-                --date "$(date -u +%Y-%m-%d)" > /dev/null || {
-            log_warn "Dropped on GitHub, but could not mark the finding withdrawn in ${REVIEW_FILE}."
-            log_warn "Mark it by hand, or a later re-review may re-propose it."
-        }
+                --date "$(date -u +%Y-%m-%d)") || withdraw_result=""
+        # withdraw exits 0 and reports the ids it could not find, so a count
+        # short of the deletes means no finding carries that id: the comment is
+        # gone from GitHub and the notes still offer it to the next re-review.
+        marked=$(echo "${withdraw_result}" | jq -r '.withdrawn // 0' 2> /dev/null || echo 0)
+        if [[ "${marked}" -lt "${dropped}" ]]; then
+            log_warn "Dropped on GitHub, but ${REVIEW_FILE} records no finding for $((dropped - marked)) of them."
+            log_warn "Mark the finding withdrawn by hand, or a later re-review will propose it again."
+        fi
     fi
 
     # Read back rather than subtract, so the count reflects what GitHub kept.
