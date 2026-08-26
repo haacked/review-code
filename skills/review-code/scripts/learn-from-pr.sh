@@ -224,8 +224,14 @@ main() {
         --argjson claude "${claude_results}" \
         --argjson other "${other_findings}" \
         '
+        # A withdrawn finding was argued down after the review was posted, and
+        # the reason is on the record, so it is not put back to the user as an
+        # open question. Its file is the one nobody touched afterwards, so
+        # without this it lands in "unaddressed" and gets asked about again.
+        [$claude[] | select(.withdrawn == true) | {type: "withdrawn", finding: .}]
+        +
         # Claude findings that were not addressed - ask if false positive
-        [$claude[] | select(.addressed == "not_modified") | {type: "unaddressed", finding: .}]
+        [$claude[] | select(.addressed == "not_modified" and (.withdrawn | not)) | {type: "unaddressed", finding: .}]
         +
         # Other reviewer findings that Claude missed - ask if should learn
         [$other[] | select(.claude_caught == false and .addressed == "likely") | {type: "missed", finding: .}]

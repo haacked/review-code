@@ -53,7 +53,8 @@ INCLUDE_WITHDRAWN=false
 
 # Append a finding as a single JSONL line.
 # Args: $1=agent, $2=confidence, $3=file, $4=line, $5=description,
-#       $6=start_line, $7=end_line, $8=deletable, $9=withdrawn
+#       $6=start_line, $7=end_line, $8=deletable, $9=withdrawn,
+#       ${10}=withdrawn_reason
 # Uses: findings_jsonl variable (must be in scope)
 # Modifies: findings_jsonl variable
 save_finding() {
@@ -66,6 +67,7 @@ save_finding() {
     local end="$7"
     local deletable="$8"
     local withdrawn="$9"
+    local withdrawn_reason="${10:-}"
 
     # Truncated for the orchestrator, which only needs enough to identify a
     # finding. Not under --with-spans: carry-forward-findings.sh compares whole
@@ -95,13 +97,15 @@ save_finding() {
         --argjson deletable "${deletable}" \
         --argjson spans "${WITH_SPANS}" \
         --argjson withdrawn "${withdrawn}" \
+        --arg withdrawn_reason "${withdrawn_reason}" \
         '{
             agent: $agent,
             confidence: ($conf | tonumber),
             file: $file,
             line: ($line | tonumber),
             description: $desc,
-            withdrawn: $withdrawn
+            withdrawn: $withdrawn,
+            withdrawn_reason: $withdrawn_reason
         }
         + (if $spans then {
             start_line: $start,
@@ -120,6 +124,7 @@ begin_finding() {
     finding_end=0
     finding_deletable="${1:-true}"
     finding_withdrawn=false
+    finding_withdrawn_reason=""
 }
 
 # Append one body line to the pending finding's description. Both the in-fence
@@ -127,6 +132,13 @@ begin_finding() {
 # Once the span has ended the finding is over, so nothing more is taken.
 append_description() {
     [[ "${finding_end}" -eq 0 ]] || return 0
+    # The withdrawal marker says something about the finding rather than being
+    # part of it, and it travels as withdrawn_reason instead. Left in the
+    # description it reads as the tail of the finding text, and a consumer that
+    # wants the reason has to go looking for it in prose.
+    if [[ "$1" =~ ^\*Withdrawn ]]; then
+        return 0
+    fi
     finding_description="${finding_description:+${finding_description} }$1"
 }
 
@@ -141,7 +153,8 @@ flush_pending_finding() {
             end="${prev_nonblank}"
         fi
         save_finding "${current_agent:-unknown}" "${current_confidence:-0}" "${finding_file:-}" "${finding_line:-0}" "${finding_description}" \
-            "${finding_start}" "${end}" "${finding_deletable}" "${finding_withdrawn:-false}"
+            "${finding_start}" "${end}" "${finding_deletable}" "${finding_withdrawn:-false}" \
+            "${finding_withdrawn_reason:-}"
     fi
 }
 
@@ -258,6 +271,11 @@ main() {
         # outside fences only: a body quoting this line is quoting, not marking.
         if [[ "${in_finding}" == true ]] && [[ "${line}" =~ ^\*Withdrawn ]]; then
             finding_withdrawn=true
+            # "*Withdrawn <date>: <reason>*". A marker with no reason after the
+            # date leaves the field empty rather than storing the date twice.
+            if [[ "${line}" =~ ^\*Withdrawn[[:space:]]+[^:*]*:[[:space:]]*(.+)\*$ ]]; then
+                finding_withdrawn_reason="${BASH_REMATCH[1]}"
+            fi
         fi
 
         # Detect agent section headers (## Security Review, ## Performance Review, etc.)

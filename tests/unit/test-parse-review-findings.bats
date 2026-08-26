@@ -797,3 +797,100 @@ EOF
     [ "$status" -eq 0 ]
     [ "$(echo "$output" | jq 'length')" -eq 1 ]
 }
+
+# =============================================================================
+# The withdrawal reason travels as a field, not as description text
+# =============================================================================
+
+@test "parse-review-findings.sh: a withdrawn finding carries its reason as a field" {
+    review="$TEST_DIR/review.md"
+    cat > "$review" << 'DOC'
+# Review
+
+## Suggested Comments
+
+#### `src/auth.ts:42`
+
+```text
+Validate the token first.
+```
+
+*Withdrawn 2026-08-25: author showed the guard is unreachable*
+
+---
+DOC
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --include-withdrawn "$review"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.[0].withdrawn_reason')" = "author showed the guard is unreachable" ]
+}
+
+# The marker describes the finding rather than being part of it. Left in the
+# description it reads as the tail of the finding text, and the learning pass
+# quotes descriptions back at the user.
+@test "parse-review-findings.sh: the withdrawal marker stays out of the description" {
+    review="$TEST_DIR/review.md"
+    cat > "$review" << 'DOC'
+# Review
+
+## Suggested Comments
+
+#### `src/auth.ts:42`
+
+```text
+Validate the token first.
+```
+
+*Withdrawn 2026-08-25: author showed the guard is unreachable*
+
+---
+DOC
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --include-withdrawn "$review"
+    [ "$status" -eq 0 ]
+    [[ "$(echo "$output" | jq -r '.[0].description')" != *"Withdrawn"* ]]
+    [[ "$(echo "$output" | jq -r '.[0].description')" == *"Validate the token first."* ]]
+}
+
+@test "parse-review-findings.sh: a live finding reports an empty withdrawal reason" {
+    review="$TEST_DIR/review.md"
+    cat > "$review" << 'DOC'
+# Review
+
+## Suggested Comments
+
+#### `src/auth.ts:42`
+
+```text
+Validate the token first.
+```
+
+---
+DOC
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$review"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.[0].withdrawn')" = "false" ]
+    [ "$(echo "$output" | jq -r '.[0].withdrawn_reason')" = "" ]
+}
+
+# A marker with no reason after the date must not store the date as the reason.
+@test "parse-review-findings.sh: a reasonless withdrawal leaves the field empty" {
+    review="$TEST_DIR/review.md"
+    cat > "$review" << 'DOC'
+# Review
+
+## Suggested Comments
+
+#### `src/auth.ts:42`
+
+```text
+Validate the token first.
+```
+
+*Withdrawn 2026-08-25*
+
+---
+DOC
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --include-withdrawn "$review"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.[0].withdrawn')" = "true" ]
+    [ "$(echo "$output" | jq -r '.[0].withdrawn_reason')" = "" ]
+}
