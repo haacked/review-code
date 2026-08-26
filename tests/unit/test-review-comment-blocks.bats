@@ -509,3 +509,57 @@ EOF
     sed -i.bak -E 's/ b:[0-9a-f]{8} / b:00000000 /' "$REVIEW"
     [ "$(status_of '.')" = "in_sync" ]
 }
+
+# A finding whose body was never fenced. annotate still reaches it, because
+# match_comments falls back to path and line when no body matches, so withdraw
+# has to put the reason somewhere even with no fence to sit under.
+@test "withdraw: records the reason on a finding that has no fenced body" {
+    cat > "$REVIEW" << 'DOC'
+<!-- review-metadata
+mode: pr
+pr_number: 1
+-->
+
+# Pull Request Review: #1
+
+## Suggested Comments
+
+#### `src/auth.ts:42`
+
+Validate the token first.
+
+---
+DOC
+    jq -n '[{id: 777, node_id: "PRRC_aaa", path: "src/auth.ts", line: 42, body: "Validate the token first."}]' \
+        | python3 "$SCRIPT" annotate --review-file "$REVIEW" --review-id 99 > /dev/null
+
+    run withdraw "author showed the guard is unreachable"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"withdrawn": 1'* ]]
+    grep -q '^\*Withdrawn 2026-08-25: author showed the guard is unreachable\*$' "$REVIEW"
+}
+
+@test "withdraw: a body-less finding still reads as withdrawn afterwards" {
+    cat > "$REVIEW" << 'DOC'
+<!-- review-metadata
+mode: pr
+pr_number: 1
+-->
+
+# Pull Request Review: #1
+
+## Suggested Comments
+
+#### `src/auth.ts:42`
+
+Validate the token first.
+
+---
+DOC
+    jq -n '[{id: 777, node_id: "PRRC_aaa", path: "src/auth.ts", line: 42, body: "Validate the token first."}]' \
+        | python3 "$SCRIPT" annotate --review-file "$REVIEW" --review-id 99 > /dev/null
+    withdraw "not a real issue"
+
+    [ "$("$PARSER" --include-withdrawn "$REVIEW" | jq -r '.[0].withdrawn')" = "true" ]
+    [ "$("$PARSER" "$REVIEW" | jq 'length')" -eq 0 ]
+}

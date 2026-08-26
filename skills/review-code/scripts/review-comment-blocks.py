@@ -448,9 +448,14 @@ def cmd_withdraw(args, lines: list[str], path: Path) -> dict:
     for block in sorted(blocks, key=lambda b: b["index"], reverse=True):
         reason = wanted[block["id"]]
         note = f"*Withdrawn {date}{': ' + reason if reason else ''}*"
-        if block["body_end"] is not None:
-            lines.insert(block["body_end"] + 1, "")
-            lines.insert(block["body_end"] + 2, note)
+        # Under the fenced body, or straight under the heading when there is no
+        # fence to sit below. A block with no body reaches here: annotate's
+        # path-and-line fallback matches one even though body matching cannot,
+        # and stamping the heading while skipping the note would retire the
+        # finding with the reason written down nowhere.
+        anchor = block["index"] if block["body_end"] is None else block["body_end"]
+        lines.insert(anchor + 1, "")
+        lines.insert(anchor + 2, note)
         lines[block["index"]] = stamp_withdrawn(lines[block["index"]], date)
 
     if blocks:
