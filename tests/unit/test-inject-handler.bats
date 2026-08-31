@@ -75,12 +75,15 @@ teardown() {
 # Review mode tests (default handler)
 # =============================================================================
 
-@test "inject-handler: outputs review.md content for area keyword" {
+@test "inject-handler: outputs review.md with focused context for area keyword" {
     run "$SCRIPT" security
     [ "$status" -eq 0 ]
 
     expected_start="$(head -1 "$HANDLER_DIR/review.md")"
     [[ "$output" == *"$expected_start"* ]]
+    [[ "$output" == *"Find direct callers of changed symbols"* ]]
+    [[ "$output" == *"Read implementations of newly called methods"* ]]
+    [[ "$output" == *"Check nearby tests and public boundaries"* ]]
 }
 
 @test "inject-handler: outputs review.md content for PR number" {
