@@ -59,6 +59,16 @@ create_mock_codex() {
 # Generated stub codex executable; see tests/unit/test-codex-exec-agent.bats.
 printf '%s\n' "\${@:1:\$# - 1}" > "\$CODEX_ARGS_LOG"
 printf '%s' "\${!#}" > "\$CODEX_PROMPT_LOG"
+if [ -n "\${CODEX_AGENT_RESPONSE_FILE:-}" ]; then
+    previous=""
+    for argument in "\$@"; do
+        if [ "\$previous" = "--output-last-message" ]; then
+            cp "\$CODEX_AGENT_RESPONSE_FILE" "\$argument"
+            break
+        fi
+        previous="\$argument"
+    done
+fi
 exit $exit_code
 MOCKEOF
     chmod +x "$MOCK_DIR/codex"
@@ -173,4 +183,84 @@ MOCKEOF
     create_mock_codex 3
     run "$SCRIPT" code-reviewer-security "$PROMPT_FILE" "$OUTPUT_FILE"
     [ "$status" -eq 3 ]
+}
+
+@test "codex-exec-agent: a gate rewrite uses a fresh semantic composer and publishes its body" {
+    write_agent_toml code-reviewer-comment gpt-5.6-sol high
+    FIXTURE="$PROJECT_ROOT/tests/fixtures/finding-comments/pr-90970.json"
+    CONTRACT="$PROJECT_ROOT/skills/review-code/scripts/finding-comment-contract.py"
+    RESPONSE="$TMP_DIR/composer-response.json"
+    INITIAL="$TMP_DIR/initial.json"
+    INITIAL_COMPOSED="$TMP_DIR/initial-composed.json"
+    INITIAL_VERDICTS="$TMP_DIR/initial-verdicts.json"
+    REWRITE_DECISION="$TMP_DIR/rewrite-decision.json"
+    REPAIRED_INPUT="$TMP_DIR/repaired-input.json"
+    REPAIRED_COMPOSED="$TMP_DIR/repaired-composed.json"
+    FINAL_VERDICTS="$TMP_DIR/final-verdicts.json"
+    FINAL="$TMP_DIR/final.json"
+
+    jq '[{
+        id: 90970,
+        severity: "blocking",
+        location: "flag_matching.rs:262",
+        file: "flag_matching.rs",
+        line: 262,
+        description: .bad_description,
+        proposed_fix: null,
+        facts: .facts
+    }]' "$FIXTURE" > "$INITIAL"
+    "$CONTRACT" compose "$INITIAL" > "$INITIAL_COMPOSED"
+    jq -n '[{
+        id: 90970,
+        coverage: {problem: false, trigger: true, mechanism: false, result: true, requested_change: true, regression_case: true},
+        inference_required: true,
+        verdict: "REWRITE",
+        notes: "The body makes the reader infer the cross-property causal chain."
+    }]' > "$INITIAL_VERDICTS"
+    "$CONTRACT" gate "$INITIAL_COMPOSED" "$INITIAL_VERDICTS" > "$REWRITE_DECISION"
+
+    [ "$(jq '.findings | length' "$REWRITE_DECISION")" -eq 0 ]
+    [ "$(jq '.rewrites_needed | length' "$REWRITE_DECISION")" -eq 1 ]
+    [ "$(jq -r '.rewrites_needed[0].quality_state' "$REWRITE_DECISION")" = "rewrite_required" ]
+
+    jq '[{
+        id: 90970,
+        description: .desired_description,
+        proposed_fix: null,
+        unchanged: false
+    }]' "$FIXTURE" > "$RESPONSE"
+    CODEX_AGENT_RESPONSE_FILE="$RESPONSE"
+    export CODEX_AGENT_RESPONSE_FILE
+    printf 'Compose this structured finding from its facts.\n' > "$PROMPT_FILE"
+    create_mock_codex
+
+    run "$SCRIPT" code-reviewer-comment "$PROMPT_FILE" "$OUTPUT_FILE"
+
+    [ "$status" -eq 0 ]
+    cmp -s "$RESPONSE" "$OUTPUT_FILE"
+    run grep -Fxq -- "resume" "$CODEX_ARGS_LOG"
+    [ "$status" -ne 0 ]
+
+    jq --slurpfile response "$OUTPUT_FILE" '[{
+        id: 90970,
+        severity: "blocking",
+        location: "flag_matching.rs:262",
+        file: "flag_matching.rs",
+        line: 262,
+        description: $response[0][0].description,
+        proposed_fix: null,
+        facts: .facts
+    }]' "$FIXTURE" > "$REPAIRED_INPUT"
+    "$CONTRACT" compose "$REPAIRED_INPUT" > "$REPAIRED_COMPOSED"
+    jq -n '[{
+        id: 90970,
+        coverage: {problem: true, trigger: true, mechanism: true, result: true, requested_change: true, regression_case: true},
+        inference_required: false,
+        verdict: "PASS",
+        notes: ""
+    }]' > "$FINAL_VERDICTS"
+    "$CONTRACT" gate --final "$REPAIRED_COMPOSED" "$FINAL_VERDICTS" > "$FINAL"
+
+    [ "$(jq -r '.findings[0].publishable' "$FINAL")" = "true" ]
+    [ "$(jq -r '.findings[0].description' "$FINAL")" = "$(jq -r '.desired_description' "$FIXTURE")" ]
 }

@@ -2,14 +2,14 @@
 
 Loaded when `mode` is `"pr"`. These steps produce the PR-specific outputs. They run at two points in the review flow:
 
-- "Link File References in Comment Bodies" runs immediately after the Voice Pass (before the fix pass and document composition).
+- "Link File References in Comment Bodies" runs after the final Comprehension Gate (before the fix pass and document composition).
 - "Generate Suggested Comments", "Create Draft Review", and "Resolve Addressed Threads" run in order after the "Log Token Usage" step, before "Cleanup Session".
 
 ### Link File References in Comment Bodies
 
 Run this only when `owner`, `repo`, and `pr.head_sha` are all present in session data. Local, branch, commit, range, and area reviews have no GitHub blob URL to build, so they skip this step and leave references as plain `path:line` text.
 
-Run it as the final body-formatting step, after the Voice Pass. The voice agent preserves `path:line` tokens exactly and its preservation check expects them in plain form, so linkify only once that check has run. Apply the rewrite in place to each surviving finding's `description` (and to any unmapped-comment text). The same linkified bodies feed both the review file's Suggested Comments and the `--draft` comments, so doing it once here covers both.
+Run it as the final body-formatting step, after the final Comprehension Gate. The semantic and voice preservation checks expect `path:line` tokens in plain form, so linkify only once those checks have run. Apply the rewrite in place only to `$finding_quality.findings` entries with `publishable: true` (and to publishable unmapped-comment text). Never linkify or promote an entry from `$finding_quality.withheld`. The same linkified bodies feed both the review file's Suggested Comments and the `--draft` comments, so doing it once here covers both.
 
 When a comment body cites a file and line **other than the comment's own anchor location**, render the citation as a GitHub permalink. GitHub renders markdown in review comment bodies and in the review summary, so a permalink lets the reader jump straight to the cited line.
 
@@ -54,18 +54,18 @@ From the session data, extract:
 
 When combining agent findings into the review document, add a "Suggested Comments" section:
 
-1. **Extract findings with locations**: From each agent's output, identify findings that have a specific file path and line number.
+1. **Read the publication candidates**: Zip `$finding_publication.comments` with `$finding_publication.findings` by array position. The executable publication step already removed every unsafe or unroutable entry, so do not inspect `$finding_quality`, reviewer output, or the rendered review file for additional candidates.
 
    Comment bodies already have their in-prose file:line citations rendered as GitHub permalinks (see "Link File References in Comment Bodies" above). Keep those links intact when writing the bodies into the review file.
 
-   Bodies must also already carry the seam structure (see "Break at the seam" under Inline Comment Voice in `briefing/shared-instructions.md`) before they're written into the review file; preserve their paragraph breaks, never flatten a body into one block.
+   Bodies must already carry the seam structure (see "Break at the seam" under Inline Comment Voice in `briefing/shared-instructions.md`) before they're written into the review file. Preserve their paragraph breaks and never flatten a body into one block.
 
 2. **Check against existing comments**: For each finding, check if there are existing inline comments (from `$inline_comments`) that:
    - Are on the same file
    - Are within 5 lines of the finding
    - Address the same issue (use your judgment on semantic similarity)
 
-3. **Categorize findings**:
+3. **Categorize findings**: Save the result as `$suggested_comments = {new, build_upon, already_covered}`. Each array contains only zero-based indices into `$finding_publication.comments`; the parallel finding supplies internal attribution and confidence. Never copy a body into this selection object.
    - **New comment**: No existing comment addresses this issue
    - **Build upon existing**: Existing comment is related but incomplete
    - **Already covered**: Existing comment fully addresses the finding
@@ -162,23 +162,11 @@ If any condition fails, skip draft review creation.
 
 **If conditions are met:**
 
-1. **Extract suggested comments from the review**: Parse the "Suggested Comments" section to get file path, line number, and comment body. Extract only the text inside the ` ```text ``` ` code block; the `*From: <Agent Name> (<confidence>% confidence)*` line is internal metadata and never goes to GitHub.
+If `$finding_publication.all_withheld` is true, keep `$selected_indices` empty and continue through the executable assembly below. The resulting path will call `create-draft-review.sh` with `comments: []` and `unmapped_comments: []`. On a full review this replaces any existing pending review without carrying forward comments that the current run rejected. On a delta append, `create-draft-review.sh` retains existing pending comments on files the delta did not touch and removes the rest. Use a brief summary that says the semantic gate produced no new safe inline comments. On success, report the withheld count and point the user to the local review's `Withheld from draft` section. If the script fails, stop as required by its error handling.
 
-   **Skip any block carrying a `*Withdrawn ...*` line or a `withdrawn:` mark on its heading.** Those findings were argued down by the author and taken off the PR; they stay in the document so the argument stays on the record. Reposting one would put back the exact comment someone already had removed.
+1. **Select draft candidates by index**: When Suggested Comments ran, set `$selected_indices` to the indices in `$suggested_comments.new` and `$suggested_comments.build_upon`. When it did not run because this is an allowed `--self --draft` review, set `$selected_indices` to every index in `$finding_publication.comments`. Write only that integer array to `<artifacts_dir>/draft-selected-indices.json`. Do not parse the review file, read `$finding_quality`, or put a comment body in this selection.
 
-   Keep any GitHub permalinks in the comment body intact (see "Link File References in Comment Bodies" above). They render as clickable links in the posted comment. The same applies to the `summary` field and `unmapped_comments` descriptions.
-
-   Bodies must already carry the seam structure (see "Break at the seam" under Inline Comment Voice in `briefing/shared-instructions.md`); copy their blank lines into the draft payload verbatim.
-
-   Look for this pattern in the review file:
-   ```
-   #### `<file_path>:<line_number>`
-   ```text
-   <comment body>
-   ```
-   ```
-
-2. **Map comment locations to diff positions**: Build a targets array and run through the position mapper:
+2. **Map comment locations to diff positions**: Use `jq` over `<artifacts_dir>/finding-publication.json` and `draft-selected-indices.json` to build a targets array containing only each selected canonical `path` and `line`, then run it through the position mapper. Save the complete mapper result to `<artifacts_dir>/draft-mappings.json`.
 
 ```bash
 ~/.agents/skills/review-code/scripts/diff-position-mapper.sh --diff-file "<diff_path>" <<'EOF'
@@ -186,11 +174,19 @@ If any condition fails, skip draft review creation.
 EOF
 ```
 
-3. **Separate mappable vs unmappable comments**:
-   - Mappable: Comments with valid line mappings (will be inline comments)
-   - Unmappable: Comments where line not in diff (will go in summary)
+3. **Build the draft input executable**: Use `jq -n` to write `<artifacts_dir>/draft-assembly-input.json` with the complete `$finding_publication`, `$selected_indices`, the mapper's `mappings` array, and a `context` object containing the session values shown below. For a delta review, include `append: true` and `original_diff_path: $diff_path`; the executable derives the touched paths used to preserve pending comments on untouched files.
 
-4. **Build input for create-draft-review.sh**:
+Run:
+
+```bash
+~/.agents/skills/review-code/scripts/finding-comment-contract.py draft \
+  "<artifacts_dir>/draft-assembly-input.json" \
+  > "<artifacts_dir>/draft-input.json"
+```
+
+This command copies bodies only from `$finding_publication.comments`, rejects unknown indices or mismatched mapper results, and moves canonical comments that did not map into `unmapped_comments`. Do not edit or reconstruct its output.
+
+4. **Use the executable output for create-draft-review.sh**:
 
 ```json
 {
@@ -211,9 +207,11 @@ EOF
 }
 ```
 
+Pass `<artifacts_dir>/draft-input.json` unchanged to `create-draft-review.sh`.
+
 **Comment drift detection:** When `review_commit` is provided, `create-draft-review.sh` automatically detects if the PR received new commits since the review was generated. If comments have drifted, it remaps them to their correct positions using content-based matching. Comments that cannot be remapped are moved to `unmapped_comments`.
 
-**Extracting `line_content`:** For each comment, extract the code at the target file:line from the diff. Find the file in the diff, locate the target line number within the hunks, and use the code text at that line (without the `+`/`-`/` ` prefix). This enables content-based matching for drift detection.
+**Extracting `line_content`:** The executable draft assembly reads `original_diff_path` and copies the code at each target line into `line_content`. This enables content-based matching for drift detection without letting the orchestrator rewrite the comment object.
 
 **Writing the summary:** The `summary` field is the casual top-level comment on a GitHub review. Keep it to 1-2 short sentences. The author knows what their PR does, so never restate or narrate the approach back to them.
 
@@ -328,7 +326,7 @@ The output `threads` array holds objects with `commentId`, `path`, `line`, `isOu
 1. **The code at that location changed.** Either the thread's `isOutdated` is true, or the current review diff touches `path` at or near `line`. Requiring this is what stops you from resolving a still-open issue that a flaky re-run merely failed to surface.
 2. **Your fresh findings do not re-flag the same issue.** No finding in this review covers the same `path` within ~5 lines of `line` describing the same concern as the thread's `body`. Read the whole `body` (the listing carries up to ~1500 characters), not just its opening: a partial fix often changes the line while leaving the issue the comment described.
 
-A thread that fails either signal stays open. When in doubt, leave it open: resolving is irreversible and visible to everyone on the PR.
+A thread that fails either signal stays open. Compare only against `$finding_publication.findings`, never against withheld or pre-publication findings. When in doubt, leave it open: resolving is irreversible and visible to everyone on the PR.
 
 Build `$resolve_ids` as the list of `commentId` values that pass both signals.
 

@@ -88,6 +88,7 @@ Some steps apply only to certain sessions, and their instructions live in separa
 | `adversary` is present | `~/.agents/skills/review-code/handlers/review-adversary.md` |
 | `mode` is `"pr"` | `~/.agents/skills/review-code/handlers/review-pr-output.md` |
 | `fix` is `true` | `~/.agents/skills/review-code/handlers/review-fix.md` |
+| always, after finding validation | `~/.agents/skills/review-code/handlers/review-finding-quality.md` (Read it then, not now) |
 | always, at the compose step | `~/.agents/skills/review-code/handlers/review-compose.md` (Read it then, not now) |
 
 Each file states where in the flow below its steps run. If no condition holds, read nothing and continue.
@@ -198,7 +199,7 @@ No safe local checkout is available for reading PR files. This can happen becaus
 
 ### Subagent Availability
 
-The steps below spawn named subagent types: `code-review-context-explorer`, the `code-reviewer-*` reviewers, `finding-validator`, `comprehension-gate`, and `code-reviewer-voice`. How they spawn depends on the harness.
+The steps below spawn named subagent types: `code-review-context-explorer`, the domain `code-reviewer-*` reviewers, `finding-validator`, `code-reviewer-comment`, `comprehension-gate`, and `code-reviewer-voice`. How they spawn depends on the harness.
 
 **Detect the harness once, at the start of "ready":**
 
@@ -497,82 +498,11 @@ Where `targets` contains `{"path": "<file>", "line": <number>}` objects. The dif
 
 ### Adversary Meta-Review
 
-If you loaded `review-adversary.md` (`--adversary:*` flag), run its meta-review pass here, between finding validation and the Voice Pass. Otherwise continue to the Comprehension Gate.
+If you loaded `review-adversary.md` (`--adversary:*` flag), run its meta-review pass here, between finding validation and semantic composition. Otherwise continue to the finding contract.
 
-### Comprehension Gate (Cold-Reader Check)
+### Finding Quality Pipeline
 
-Before the Voice Pass, check that every surviving comment body is understandable by someone reading only the comment: no diff, no code. A cheap cold-reader answers, per finding, what breaks and what the author should do; bodies it cannot follow bounce back to the agent that wrote them for a plain rewrite. This step changes body text only: it never drops findings, changes severity, or edits citations. The Voice Pass that follows stays as mechanical polish; this gate carries the register.
-
-**Skip conditions:** If `$selected_agents` is empty (no findings will be produced) or the surviving finding pool is empty, skip this step entirely.
-
-**Build the input.** Collect all findings that survived synthesis, validation, and the adversary meta-review. For each, include an integer `id` (sequential, starting at 1, local to this step), `severity`, `location`, `description`, `proposed_fix` (string or null), and `kind: "finding"`. Build a JSON array.
-
-**Dispatch the check.** Invoke the Task tool with subagent_type `comprehension-gate` and a prompt that embeds the JSON array inside a **four-backtick** fence tagged `json` (finding bodies typically contain triple-backtick code blocks) and reminds the agent to answer per its definition: for each item, `what_breaks` and `action` in one sentence each, an `unresolved` array naming any phrase whose meaning it had to supply rather than read from the body, a `PASS`/`REWRITE` verdict, and `notes` naming what was unclear on every `REWRITE`, returned as a four-backtick `json` fence in the same order. Save the response. Extract usage metadata and record in `$token_usage["comprehension-gate"]`.
-
-**Parse the output.** Extract the JSON array and match entries to input findings by `id`. An input `id` with no matching entry, an entry whose verdict is neither `PASS` nor `REWRITE`, or a malformed entry counts as `PASS` (fail open per finding). Ignore entries with unknown ids. If the returned array length differs from the input length by more than 1, treat the entire response as malformed and skip the rest of this step.
-
-**Handle REWRITE verdicts.** For each finding the gate marked `REWRITE`:
-
-1. Resume the agent that produced the finding (using the agent ID from the Task tool, the same mechanism as "Validate Findings Against the Diff" Step 2). If the finding has no resumable agent (for example, an adversary-added finding) or the resume errors, keep the body as-is.
-2. Send it the current `description` and `proposed_fix`, the gate's `notes`, the gate's `what_breaks`/`action` attempts, and its `unresolved` entries, and ask for a rewrite: replace each unresolved phrase with the concrete behavior it stands for rather than defining the term, taking that behavior from the code you already read and cited rather than from the gate's `stands_for`, which is written without code access and may name two candidate readings; and drop any invented prefix ahead of the first sentence; lead with what breaks; one idea per sentence; a teammate who has not read the diff must be able to answer "what breaks" and "what should I do" from the body alone; preserve every `path:line` citation, identifier, number, code block, and the exact severity prefix; add no claims, citations, or fixes beyond the behavior behind an unresolved phrase, which is the one thing you may state that the current body does not; a `nit:` body stays at most 2 sentences. Ask it to return only the rewritten body and the rewritten `proposed_fix` (or null).
-3. Accept the rewrite only if the severity prefix is string-identical in form and every backtick-quoted path-shaped or line-number token from the original still appears (the Voice Pass preservation checks 1 and 2; no growth cap here, since the original author may legitimately restructure). If the reply is empty, malformed, or fails either check, keep the original and count the failure in `$token_usage["comprehension-gate"].validation_failures`.
-4. One bounce per finding. Take what comes back; never re-gate a rewrite. Record each resume's usage in `$token_usage` as `gate-bounce-{N}` (numbered sequentially).
-
-**Fail open, never block the review:** on an agent error or timeout, a JSON parse failure, or an array length off by more than 1, continue with the original findings. Verbose-but-correct beats blocked. This step runs in all review modes when findings exist; there is no mode-based guard.
-
-In debug mode, save the stage `11b2-comprehension-gate` artifacts (see `review-debug.md`).
-
-### Voice Pass (Final Rewrite)
-
-Before composing the review document, run a single voice-pass agent over the surviving findings to rewrite their `description` and `proposed_fix` text in a clean, conversational voice. The voice agent never changes severity, citations, line numbers, identifiers, numbers, or code blocks; it changes phrasing and paragraph structure, nothing else. It may unpack a dense sentence into more, plainer sentences, up to about 2x the original length.
-
-**Skip conditions:** If `$selected_agents` is empty (no findings will be produced) or the surviving finding pool is empty, skip this step entirely.
-
-**Build the input.** Collect all findings that survived synthesis, validation, and the adversary meta-review, with any comprehension-gate rewrites applied (the same pool the document composer will use). For each, include an integer `id` (sequential, starting at 1), `severity` (`blocking`/`suggestion`/`question`/`nit`), `location` (file:line or file path), `description` (the comment body, including any embedded code blocks), and `proposed_fix` (string or null). Build a JSON array.
-
-**Dispatch the rewrite.** Invoke the Task tool with subagent_type `code-reviewer-voice` and a prompt that:
-
-1. Tells the agent to rewrite the `description` and `proposed_fix` fields in conversational voice while preserving every citation, file path, line number, identifier, number, and code block exactly. Unpacking a compressed sentence into more, plainer sentences is encouraged, up to about 2x the original length; growth never licenses new claims, citations, or fixes.
-2. Tells the agent it is also responsible for paragraph structure: any body with three or more sentences must have a blank line separating the problem (what breaks and why) from the recommendation (what to do); enumerations that restate what an attached code block already shows get cut; a `nit:` body is at most two sentences. This structural responsibility does not license changing citations, code blocks, severity, or technical claims.
-3. Embeds the JSON array of findings inside a **four-backtick** fence tagged `json` (because finding bodies typically contain triple-backtick code blocks; a three-backtick wrapper would close prematurely).
-4. Reminds the agent to wrap its response in a four-backtick `json` fence in the same order as the input, with `id`, `description`, `proposed_fix`, and `unchanged` on each object.
-
-Save the agent's response. Extract usage metadata and record in `$token_usage["code-reviewer-voice"]`.
-
-**Parse the output.** Extract the JSON array from the response. For each rewritten finding, match it to the input by `id`.
-
-- If `unchanged: true` on a rewritten finding, skip validation and keep the original `description` and `proposed_fix` for that finding (the agent is signaling no improvement was needed).
-- If an input `id` has no matching rewrite, keep the original.
-- If a rewritten entry has an `id` that doesn't appear in the input, ignore that entry and count it as a parse anomaly toward the validation-failure budget below.
-- If the returned array length differs from the input array length by more than 1, treat the entire response as malformed and apply the agent-error fallback (continue with original findings).
-
-**Validate preservation.** For each rewrite where `unchanged` is `false`, accept it only if all three checks hold; otherwise keep the original and count the failure in `$token_usage["code-reviewer-voice"].validation_failures`:
-
-1. The severity prefix is string-identical in form (`` `blocking`: `` stays `` `blocking`: ``, `**blocking**:` stays `**blocking**:`).
-2. Every backtick-quoted path-shaped or line-number token from the original (`auth.py:45`, `src/foo.ts`, `:67`, `line 67`) still appears. Backtick-quoted identifiers (`OverflowError`) are exempt; skip the check when the original has no such tokens.
-3. The body grew to no more than about 2x the original length (unpacking dense sentences into plain ones may grow the body; paragraph breaks and punctuation tweaks never fail this on their own).
-
-**Lint the surviving bodies.** The voice agent's own final scan misses tells it wrote or left in place, so check every body the pass is about to hand on: the rewrites that passed preservation, and the ones the agent returned `unchanged: true`. An unchanged body is the likeliest to still carry a tell, since nothing looked at it. Skip this only when the pool is empty.
-
-Write the array of `{id, description, proposed_fix}` to `<artifacts_dir>/voice-lint-input.json` with the Write tool and pass the path. Finding bodies quote the diff, so the delimiter hazard described at the explorer step above applies here too.
-
-```bash
-~/.claude/skills/review-code/scripts/gate-voice-lint.py "<artifacts_dir>/voice-lint-input.json"
-```
-
-For every id in `warned_ids`, resume the voice agent once with the ids and their warnings, asking it to rewrite the flagged sentence rather than swap the offending word. The resume keeps its context, so it still holds the bodies; sending them again pays for them twice. Re-run preservation checks 1-3 on what comes back, write the re-check array to `<artifacts_dir>/voice-lint-recheck.json`, and run the script on that path. Any id still warned keeps its **original** pre-voice body, which for an `unchanged: true` body is what it already holds. One bounce total; record each resume's usage as `voice-lint-bounce-{N}`.
-
-Record the counts in `$token_usage["voice-lint"]` as `{total_tokens: 0, checked, clean, warned, bounced, reverted}` and report them in the run summary. `log-token-usage.sh` keeps them under `counters`. Lint reverts stay out of the preservation-failure budget below; the two measure different things.
-
-**Fail open, never block the review:** on an agent error or timeout, a JSON parse failure, or an array length off by more than 1, continue with the original findings. If more than 50% of rewrites fail validation, discard all rewrites; the voice agent is misbehaving, and verbose comments beat wrong ones. A nonzero `error` field from the lint script, or a missing script, leaves every accepted rewrite standing.
-
-The Voice Pass step runs in all review modes (quick and comprehensive) when findings exist. There is no mode-based guard.
-
-In debug mode, save the stage `11c-voice-rewrite` and `11c2-voice-lint` artifacts (see `review-debug.md`).
-
-### Link File References in Comment Bodies
-
-If you loaded `review-pr-output.md` (PR mode), run its "Link File References in Comment Bodies" step here, right after the Voice Pass. Other modes leave references as plain `path:line` text.
+Read `~/.agents/skills/review-code/handlers/review-finding-quality.md` and follow it now. It builds `$finding_quality`, runs PR linkification when applicable, then creates `$finding_publication` through the executable publication boundary. Continue only with `$finding_publication.findings`; carry every `$finding_publication.withheld` entry into the local review.
 
 ### Apply Fixes (--fix flag)
 

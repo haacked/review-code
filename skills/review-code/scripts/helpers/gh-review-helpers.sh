@@ -21,6 +21,7 @@ source "${_GH_REVIEW_HELPERS_DIR}/gh-wrapper.sh"
 # Args: $1 = owner, $2 = repo, $3 = pr_number, $4 = reviewer_username
 # Output: JSON with review_id and comments, or the string "null" if the user
 #         has no pending review on this PR.
+# Returns nonzero when either GitHub read fails.
 #
 # GitHub allows one pending review per user per PR, so `first` is the only one.
 # Pending comments are absent from GET /pulls/{n}/comments and from
@@ -36,7 +37,9 @@ get_existing_pending_review() {
 
     # Get all reviews for this PR
     local reviews
-    reviews=$(gh api "repos/${owner}/${repo}/pulls/${pr_number}/reviews" --paginate 2> /dev/null || echo "[]")
+    if ! reviews=$(gh api "repos/${owner}/${repo}/pulls/${pr_number}/reviews" --paginate 2> /dev/null); then
+        return 1
+    fi
 
     # Find pending review from this user
     local pending_review
@@ -53,7 +56,9 @@ get_existing_pending_review() {
 
     # Fetch comments for this pending review
     local comments
-    comments=$(gh api "repos/${owner}/${repo}/pulls/${pr_number}/reviews/${review_id}/comments" --paginate 2> /dev/null || echo "[]")
+    if ! comments=$(gh api "repos/${owner}/${repo}/pulls/${pr_number}/reviews/${review_id}/comments" --paginate 2> /dev/null); then
+        return 1
+    fi
 
     # Return review info with comments. node_id is what the GraphQL reword
     # mutation addresses; id is the REST id a delete needs.

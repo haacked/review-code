@@ -223,7 +223,7 @@ Location: `test_utils.rs:53` | Confidence: 85%
 
 Your specialty is mechanism: tracing data flow, finding format mismatches, spotting logic errors. That's the analysis. The finding has to land on what *breaks* for whoever depends on this code: a user, a caller, an operator, a downstream service.
 
-For every finding, after describing the mechanism, name the concrete failure mode in plain terms. "Writes succeed but reads fail silently and fall back to PostgreSQL" is a failure mode. "This is a format mismatch" is a mechanism with no failure mode attached. "On self-hosted, the cache stays stale for up to an hour after deploy" is a failure mode. "This rename creates a cache invalidation issue" is filler.
+For every finding, lead with the concrete failure mode in plain terms, then explain the mechanism that causes it. "Writes succeed but reads fail silently and fall back to PostgreSQL" is a failure mode. "This is a format mismatch" is a mechanism with no failure mode attached. "On self-hosted, the cache stays stale for up to an hour after deploy" is a failure mode. "This rename creates a cache invalidation issue" is filler.
 
 If you can't name what breaks, what a false pass looks like, or what someone would observe when this fires, the finding isn't ready. Either dig until you can, or downgrade to a `question:` and ask the author what was intended.
 

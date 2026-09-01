@@ -30,8 +30,9 @@ Specialized agents each focus on a distinct aspect of code quality, ensuring not
 **Supporting Agents:**
 - **Context Explorer**: Pre-review pass that gathers architectural context for the specialized reviewers
 - **Finding Validator**: Adversarial pass that attempts to disprove blocking findings before they ship
-- **Comprehension Gate**: Cold-reader pass that checks each comment body answers "what breaks" and "what should I do" on one read, and bounces the ones that don't back to their author for a plain rewrite
-- **Voice**: Final pass that rewrites comment bodies in a plain, conversational voice while preserving citations and code
+- **Comment Composer**: Code-aware pass that turns structured causal facts into the public comment body
+- **Voice**: Polishes semantically complete bodies while preserving citations and code
+- **Comprehension Gate**: Compares the final body with the structured facts and withholds comments that still require inference
 
 Each review agent runs independently and in parallel, providing deep expertise in its domain rather than a superficial scan across all concerns.
 
@@ -85,7 +86,7 @@ This creates a virtuous cycle where reviews get better as you identify new patte
 - **Specialized Review Agents**: Each agent focuses on a specific aspect of code quality
   - **Core Agents (7)**: Security, Performance, Correctness, Maintainability, Testing, Compatibility, Architecture
   - **Conditional Agents (2)**: Frontend (React/TypeScript files), Infra-Config (Helm/Terraform/K8s/CI-CD files)
-  - **Supporting Agents**: Context Explorer (pre-review), Finding Validator (adversarial pass), Comprehension Gate (cold-reader check), Voice (final rewrite)
+  - **Supporting Agents**: Context Explorer (pre-review), Finding Validator (adversarial pass), Comment Composer (code-aware composition), Voice (wording), Comprehension Gate (final semantic check)
 - **Hierarchical Context Loading**: Automatically loads language, framework, org, and repo-specific guidelines
 - **PR and Local Review Modes**: Review pull requests, branches, commits, ranges, or uncommitted changes
 - **Stack-Aware Branch Reviews**: Branch and current-branch reviews resolve their base in order: explicit `--parent`, the open PR's base branch (via `gh pr list`), a recorded Graphite parent (`gt parent` or `branch.<name>.parent`), then the repo default branch — so PRs stacked on other PRs review only their own commits. When the PR's base can't be used (gh offline or unauthenticated, base not fetched locally), detection falls through gracefully and flags the review summary
@@ -325,7 +326,7 @@ This eliminates confusion about what's being reviewed and lets you cancel if the
 
 ## Review Agents
 
-The system includes seven core agents (always run), two conditional agents (run when matching files are detected), and four supporting agents (context exploration, finding validation, comprehension gating, and voice).
+The system includes seven core agents (always run), two conditional agents (run when matching files are detected), and five supporting agents for context, validation, semantic composition, comprehension, and voice.
 
 ### Core Agents
 
@@ -439,19 +440,25 @@ Focuses on:
 
 #### Context Explorer (`code-review-context-explorer`)
 
-Runs before the specialized reviewers to gather architectural context — established patterns, related modules, and call sites — so each agent can review the diff against the surrounding codebase rather than in isolation.
+Runs before the specialized reviewers to gather established patterns, related modules, and call sites. Each agent can then review the diff against the surrounding codebase instead of reading it in isolation.
 
 #### Finding Validator (`finding-validator`)
 
 Adversarial pass that takes blocking findings and attempts to disprove them, surfacing the strongest counter-argument so theoretical or false-positive findings are filtered out before they reach the author.
 
+#### Comment Composer (`code-reviewer-comment`)
+
+Builds public comment bodies from a structured finding contract: concrete problem, trigger, ordered mechanism, observable result, requested change, and regression coverage. A fast comprehension preflight lets already-clear bodies skip this deeper pass. When composition is needed, the agent can read the briefing, diff, and cited code. It can then explain an internal helper or state without making the reader execute the code mentally.
+
 #### Comprehension Gate (`comprehension-gate`)
 
-Cold-reader pass that judges each surviving comment body with no diff and no code access: can a teammate answer "what breaks" and "what should I do" from the body alone, on one read? Findings that fail bounce back to the agent that wrote them for a plain rewrite that leads with the point. The gate never rewrites text itself and never drops findings.
+Cold-reader pass that compares the final comment body with the structured finding facts. It checks whether the body states the problem, trigger, causal chain, result, requested change, and regression case without requiring inference. A failed body gets one fresh code-aware composition attempt. If that attempt still fails, the finding stays in the local review but is withheld from Suggested Comments and draft publication.
+
+After the final gate, an executable publication step accepts only explicitly publishable findings with non-empty bodies and separate file and line routing. Suggested Comments and automatic fixes consume that filtered result. A second executable builds the exact draft payload from indices into its safe comment array, so later prose assembly cannot restore or replace a rejected body. Delta drafts retain pending comments on files the new diff did not touch.
 
 #### Voice (`code-reviewer-voice`)
 
-Final pass that rewrites comment bodies in a plain, conversational voice. Preserves every citation, file path, line number, identifier, number, and code block exactly — only the phrasing changes.
+Rewrites semantically complete comment bodies in a plain, conversational voice. It preserves every citation, file path, line number, identifier, number, and code block. The comprehension gate checks the result before publication.
 
 ## Context System
 
