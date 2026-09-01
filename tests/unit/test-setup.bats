@@ -102,6 +102,11 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
+@test "setup: installs the code-aware comment composer" {
+    run bash -c "grep -A50 'install_agents()' '$PROJECT_ROOT/bin/setup' | grep -q 'code-reviewer-comment'"
+    [ "$status" -eq 0 ]
+}
+
 # =============================================================================
 # Prerequisites checking
 # =============================================================================

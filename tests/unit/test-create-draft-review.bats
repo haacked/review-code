@@ -206,6 +206,73 @@ EOF
     [[ "$output" == *'"inline_count": 1'* ]]
 }
 
+@test "create-draft-review: publishes the final PR 90970 body from the causal contract" {
+    local fixture="$PROJECT_ROOT/tests/fixtures/finding-comments/pr-90970.json"
+    local contract="$PROJECT_ROOT/skills/review-code/scripts/finding-comment-contract.py"
+    local contract_input="$MOCK_DIR/contract-input.json"
+    local composed="$MOCK_DIR/composed.json"
+    local verdicts="$MOCK_DIR/verdicts.json"
+    local final="$MOCK_DIR/final.json"
+    local publication="$MOCK_DIR/publication.json"
+    local draft_input="$MOCK_DIR/draft-input.json"
+    DRAFT_REQUEST="$MOCK_DIR/draft-request.json"
+    export DRAFT_REQUEST
+
+    jq '[{
+        id: 90970,
+        severity: "blocking",
+        location: "flag_matching.rs:262",
+        file: "flag_matching.rs",
+        line: 262,
+        description: .desired_description,
+        proposed_fix: null,
+        facts: .facts
+    }]' "$fixture" > "$contract_input"
+    "$contract" compose "$contract_input" > "$composed"
+    jq -n '[{
+        id: 90970,
+        coverage: {problem: true, trigger: true, mechanism: true, result: true, requested_change: true, regression_case: true},
+        inference_required: false,
+        verdict: "PASS",
+        notes: ""
+    }]' > "$verdicts"
+    "$contract" gate --final "$composed" "$verdicts" > "$final"
+    "$contract" publish "$final" > "$publication"
+    jq -n \
+        --slurpfile publication "$publication" \
+        '{
+            publication: $publication[0],
+            selected_indices: [0],
+            mappings: [{path: "flag_matching.rs", line: 262, side: "RIGHT"}],
+            context: {
+                owner: "org",
+                repo: "test",
+                pr_number: 90970,
+                reviewer_username: "user",
+                summary: "One blocking issue inline."
+            }
+        }' > "$MOCK_DIR/draft-assembly.json"
+    "$contract" draft "$MOCK_DIR/draft-assembly.json" > "$draft_input"
+
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    cat > "$DRAFT_REQUEST"
+    echo '{"id": 90970, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    run bash -c "'$SCRIPT' < '$draft_input'"
+
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.comments[0].body' "$DRAFT_REQUEST")" = "$(jq -r '.desired_description' "$fixture")" ]
+}
+
 @test "create-draft-review: replaces existing pending review" {
     cat > "$MOCK_DIR/gh" << 'EOF'
 #!/bin/bash
@@ -228,6 +295,99 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *'"success": true'* ]]
     [[ "$output" == *'"replaced_existing": true'* ]]
+}
+
+@test "create-draft-review: append preserves pending comments on untouched files" {
+    local delta_diff="$MOCK_DIR/delta.patch"
+    DRAFT_REQUEST="$MOCK_DIR/draft-request.json"
+    export DRAFT_REQUEST
+    cat > "$delta_diff" <<'EOF'
+diff --git a/src/touched.py b/src/touched.py
+index 1111111..2222222 100644
+--- a/src/touched.py
++++ b/src/touched.py
+@@ -6,1 +6,2 @@
+ old
++new
+EOF
+    cat > "$MOCK_DIR/gh" <<'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[{"id": 11111, "state": "PENDING", "user": {"login": "user"}, "body": "old"}]'
+elif [[ "$*" == *"/reviews/11111/comments"* ]]; then
+    echo '[
+        {"id": 1, "node_id": "one", "path": "src/untouched.py", "line": null, "original_line": null, "position": 3, "body": "Keep me."},
+        {"id": 2, "node_id": "two", "path": "src/touched.py", "line": null, "original_line": null, "position": 4, "body": "Replace me."}
+    ]'
+elif [[ "$*" == *"--method DELETE"* ]]; then
+    echo '{}'
+elif [[ "$*" == *"--method POST"* ]]; then
+    cat > "$DRAFT_REQUEST"
+    echo '{"id": 22222, "body": "new"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input
+    input=$(jq -n \
+        --arg diff "$delta_diff" \
+        '{
+            owner: "org",
+            repo: "test",
+            pr_number: 1,
+            reviewer_username: "user",
+            summary: "Updated review",
+            append: true,
+            original_diff_path: $diff,
+            delta_paths: ["src/touched.py"],
+            comments: [{path: "src/touched.py", line: 7, side: "RIGHT", body: "New finding."}]
+        }')
+
+    run bash -c "echo '$input' | '$SCRIPT'"
+
+    [ "$status" -eq 0 ]
+    [ "$(jq '.comments | length' "$DRAFT_REQUEST")" -eq 2 ]
+    [ "$(jq -r '.comments[] | select(.path == "src/untouched.py") | .body' "$DRAFT_REQUEST")" = "Keep me." ]
+    [ "$(jq -r '.comments[] | select(.path == "src/untouched.py") | .position' "$DRAFT_REQUEST")" -eq 3 ]
+    [ "$(jq -r '.comments[] | select(.path == "src/touched.py") | .body' "$DRAFT_REQUEST")" = "New finding." ]
+}
+
+@test "create-draft-review: append aborts before replacement when pending comments cannot be read" {
+    MUTATION_LOG="$MOCK_DIR/mutations.log"
+    export MUTATION_LOG
+    cat > "$MOCK_DIR/gh" <<'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[{"id": 11111, "state": "PENDING", "user": {"login": "user"}, "body": "old"}]'
+elif [[ "$*" == *"/reviews/11111/comments"* ]]; then
+    exit 1
+elif [[ "$*" == *"--method DELETE"* ]] || [[ "$*" == *"--method POST"* ]]; then
+    echo "$*" >> "$MUTATION_LOG"
+    echo '{}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{
+        "owner": "org",
+        "repo": "test",
+        "pr_number": 1,
+        "reviewer_username": "user",
+        "summary": "Updated review",
+        "append": true,
+        "delta_paths": ["src/touched.py"],
+        "comments": []
+    }'
+
+    run bash -c "echo '$input' | '$SCRIPT'"
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *'"success": false'* ]]
+    [ ! -s "$MUTATION_LOG" ]
 }
 
 @test "create-draft-review: includes unmapped comments in body" {

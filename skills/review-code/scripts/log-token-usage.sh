@@ -133,10 +133,7 @@ NORMALIZED=$(echo "${USAGE_JSON}" | jq -c '
         )
     )')
 
-# Extra per-entry keys the normalization drops, kept so counters recorded
-# alongside a step's usage survive into the log. voice-lint's revert count and
-# comprehension-gate's validation_failures are the two that exist today; both
-# are only useful compared across runs.
+# Preserve step-specific counters that usage normalization would otherwise drop.
 COUNTERS=$(echo "${USAGE_JSON}" | jq -c '
     with_entries(
         select(.value | type == "object")

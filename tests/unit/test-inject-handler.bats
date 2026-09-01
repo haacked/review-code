@@ -91,6 +91,67 @@ teardown() {
     [[ "$output" == *"$expected_start"* ]]
 }
 
+@test "inject-handler: defers the finding quality pipeline to its handler" {
+    run grep -q 'review-finding-quality.md' "$HANDLER_DIR/review.md"
+    [ "$status" -eq 0 ]
+    [ -f "$HANDLER_DIR/review-finding-quality.md" ]
+    run grep -q '^## Finding Quality Pipeline' "$HANDLER_DIR/review-finding-quality.md"
+    [ "$status" -eq 0 ]
+}
+
+@test "finding quality: assigns unique sequential ids before contract validation" {
+    local quality_handler="$HANDLER_DIR/review-finding-quality.md"
+
+    run grep -Fq 'Assign every finding a unique sequential integer `id`, starting at 1' "$quality_handler"
+    [ "$status" -eq 0 ]
+}
+
+@test "finding quality: initializes an empty result when there are no findings" {
+    local quality_handler="$HANDLER_DIR/review-finding-quality.md"
+
+    run grep -Fq 'set `$finding_quality` to `{"findings": [], "rewrites_needed": [], "withheld": []}`' "$quality_handler"
+    [ "$status" -eq 0 ]
+}
+
+@test "finding quality: fast preflight bypasses deep composition only for clear bodies" {
+    local quality_handler="$HANDLER_DIR/review-finding-quality.md"
+
+    run grep -Fq '### Fast Comprehension Preflight' "$quality_handler"
+    [ "$status" -eq 0 ]
+    run grep -Fq '`PASS` findings bypass `code-reviewer-comment`' "$quality_handler"
+    [ "$status" -eq 0 ]
+    run grep -Fq '`REWRITE` findings go through `code-reviewer-comment`' "$quality_handler"
+    [ "$status" -eq 0 ]
+    run grep -Fq 'Send both the preflight `PASS` findings and the composed `REWRITE` findings through the final comprehension gate' "$quality_handler"
+    [ "$status" -eq 0 ]
+}
+
+@test "finding quality: executable publication filtering owns draft eligibility" {
+    local quality_handler="$HANDLER_DIR/review-finding-quality.md"
+
+    run grep -Fq 'finding-comment-contract.py publish' "$quality_handler"
+    [ "$status" -eq 0 ]
+    run grep -Fq 'Use only its `comments` and `unmapped_comments` arrays for the draft' "$quality_handler"
+    [ "$status" -eq 0 ]
+    run grep -Fq 'Keep its `withheld` array in the local review' "$quality_handler"
+    [ "$status" -eq 0 ]
+
+    local pr_output="$HANDLER_DIR/review-pr-output.md"
+    run grep -Fq 'finding-comment-contract.py draft' "$pr_output"
+    [ "$status" -eq 0 ]
+    run grep -Fq 'When it did not run because this is an allowed `--self --draft` review, set `$selected_indices` to every index' "$pr_output"
+    [ "$status" -eq 0 ]
+}
+
+@test "review PR output: replaces stale pending drafts when all findings are withheld" {
+    local pr_output="$HANDLER_DIR/review-pr-output.md"
+
+    run grep -Fq 'call `create-draft-review.sh` with `comments: []` and `unmapped_comments: []`' "$pr_output"
+    [ "$status" -eq 0 ]
+    run grep -Fq 'replaces any existing pending review' "$pr_output"
+    [ "$status" -eq 0 ]
+}
+
 @test "inject-handler: outputs review.md content for branch argument" {
     # Create a feature branch so parse-review-arg detects it as a branch
     cd "$TEST_REPO"

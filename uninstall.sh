@@ -110,6 +110,7 @@ remove_agents() {
         "code-reviewer-architecture"
         "code-reviewer-frontend"
         "code-reviewer-infra-config"
+        "code-reviewer-comment"
         "code-reviewer-voice"
         "comprehension-gate"
         "finding-validator"

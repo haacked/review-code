@@ -22,6 +22,8 @@ set -euo pipefail
 #     "review_file": "/path/pr-123.md",       (optional: records each posted comment's
 #                                              id in that file, so a later session can
 #                                              reword one comment instead of re-reviewing)
+#     "append": true,                         (optional: retain pending comments outside the delta)
+#     "delta_paths": ["src/changed.ts"],       (required when append is true)
 #     "comments": [
 #       {"path": "src/auth.ts", "line": 42, "side": "RIGHT", "body": "Consider...", "line_content": "    some_code()"},
 #       {"path": "src/utils.ts", "line": 15, "side": "RIGHT", "body": "This could..."}
@@ -114,7 +116,7 @@ main() {
     validate_json "${input}" || exit 1
 
     # Extract fields
-    local owner repo pr_number reviewer summary comments unmapped_comments review_commit review_file
+    local owner repo pr_number reviewer summary comments unmapped_comments review_commit review_file append delta_paths
     owner=$(echo "${input}" | jq -r '.owner')
     repo=$(echo "${input}" | jq -r '.repo')
     pr_number=$(echo "${input}" | jq -r '.pr_number')
@@ -124,6 +126,8 @@ main() {
     review_file=$(echo "${input}" | jq -r '.review_file // ""')
     comments=$(echo "${input}" | jq -c '.comments // []')
     unmapped_comments=$(echo "${input}" | jq -c '.unmapped_comments // []')
+    append=$(echo "${input}" | jq -r '.append // false')
+    delta_paths=$(echo "${input}" | jq -c '.delta_paths // []')
 
     # Validate required fields early, before any network calls
     require_field "${owner}" "owner" || exit 1
@@ -162,15 +166,54 @@ main() {
         fi
     fi
 
+    # Check for an existing pending review before validation so append reviews can
+    # retain its comments on files outside the delta.
+    local existing_review
+    if ! existing_review=$(get_existing_pending_review "${owner}" "${repo}" "${pr_number}" "${reviewer}"); then
+        jq -n '{success: false, error: "Failed to read the existing pending review"}'
+        exit 1
+    fi
+
+    if [[ "${append}" == "true" ]]; then
+        if [[ "$(echo "${delta_paths}" | jq -r 'type')" != "array" ]] || [[ "$(echo "${delta_paths}" | jq 'length')" -eq 0 ]]; then
+            error "Append draft input requires a non-empty delta_paths array"
+            exit 1
+        fi
+        if [[ "${existing_review}" != "null" ]]; then
+            local preserved_comments
+            preserved_comments=$(jq -n \
+                --argjson review "${existing_review}" \
+                --argjson delta_paths "${delta_paths}" \
+                '[
+                    $review.comments[]
+                    | select(.path as $path | ($delta_paths | index($path) | not))
+                    | {path, body}
+                        + (if .position != null then {position} else {line} end)
+                ]')
+            comments=$(jq -n \
+                --argjson preserved "${preserved_comments}" \
+                --argjson current "${comments}" \
+                '$preserved + $current')
+        fi
+    fi
+
     # Validate comments have required fields, filter invalid ones, and strip to API fields.
     # Single pass: partition into valid and invalid, then extract counts and filtered items.
     local validation_result
     validation_result=$(echo "${comments}" | jq -c '
         def is_valid:
-            .path != null and .line != null and .body != null and
-            (.side == null or .side == "LEFT" or .side == "RIGHT");
+            .path != null and .body != null and
+            ((.position != null) or
+             (.line != null and (.side == null or .side == "LEFT" or .side == "RIGHT")));
         {
-            valid: [.[] | select(is_valid) | {path, line, body} + (if .side then {side: .side} else {} end)],
+            valid: [
+                .[] | select(is_valid)
+                | if .position != null then
+                    {path, position, body}
+                  else
+                    {path, line, body} + (if .side then {side: .side} else {} end)
+                  end
+            ],
             invalid: [.[] | select(is_valid | not)]
         }')
     comments=$(echo "${validation_result}" | jq -c '.valid')
@@ -182,10 +225,6 @@ main() {
         echo "Filtered comments:" >&2
         echo "${validation_result}" | jq -c '.invalid[]' >&2
     fi
-
-    # Check for existing pending review
-    local existing_review
-    existing_review=$(get_existing_pending_review "${owner}" "${repo}" "${pr_number}" "${reviewer}")
 
     local replaced_existing="false"
 
