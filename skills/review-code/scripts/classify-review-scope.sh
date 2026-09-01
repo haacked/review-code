@@ -67,8 +67,19 @@ if [[ "${infra_config_count}" -gt 0 ]] && [[ "${infra_config_count}" -eq "${file
     agents=("infra-config")
     exploration_depth="minimal"
     reasoning="Infra-config-only change (${diff_tokens} diff tokens, ${infra_config_count} infra config files): infra-config agent"
-# For medium+ diffs, or when file metadata is absent (e.g., deletions-only PRs where
-# pre-review-context.sh only parses added files), always run all agents
+elif [[ "${config_count}" -gt 0 ]] && [[ "${config_count}" -eq "${file_count}" ]] && { [[ "${deleted_count}" -eq 0 ]] || [[ "${diff_tokens}" -lt 2000 ]]; }; then
+    # Config-only (note: .md/docs files are classified as source, so this branch only matches
+    # changes where all modified files are config files)
+    agents=("correctness" "compatibility")
+    reasoning="Config-only change (${diff_tokens} diff tokens, ${config_count} config, ${file_count} total files): correctness + compatibility"
+elif [[ "${test_count}" -gt 0 ]] && [[ "${test_count}" -eq "${file_count}" ]] && { [[ "${deleted_count}" -eq 0 ]] || [[ "${diff_tokens}" -lt 2000 ]]; }; then
+    # Test-only changes
+    agents=("testing" "correctness" "maintainability")
+    reasoning="Test-only change (${diff_tokens} diff tokens, ${test_count} test files): testing + correctness + maintainability"
+elif [[ "${migration_count}" -gt 0 ]] && [[ "${migration_count}" -eq "${file_count}" ]] && { [[ "${deleted_count}" -eq 0 ]] || [[ "${diff_tokens}" -lt 2000 ]]; }; then
+    # Migration-only
+    agents=("correctness" "compatibility" "security")
+    reasoning="Migration-only change (${diff_tokens} diff tokens, ${migration_count} migration files): correctness + compatibility + security"
 elif [[ "${diff_tokens}" -ge 2000 ]]; then
     agents=("${all_agents[@]}")
     reasoning="Medium or large diff (${diff_tokens} diff tokens, ${file_count} files): running all agents"
@@ -76,20 +87,6 @@ elif [[ "${file_count}" -eq 0 ]] && [[ "${diff_tokens}" -gt 0 ]]; then
     # No file metadata (likely a deletions-only PR) - run all core agents to avoid under-reviewing
     agents=("${all_agents[@]}")
     reasoning="No file metadata (${diff_tokens} diff tokens, possible deletions-only change): running all agents"
-# For tiny/small diffs, select agents based on file composition
-elif [[ "${config_count}" -gt 0 ]] && [[ "${config_count}" -eq "${file_count}" ]]; then
-    # Config-only (note: .md/docs files are classified as source, so this branch only matches
-    # changes where all modified files are config files)
-    agents=("correctness" "compatibility")
-    reasoning="Config-only change (${diff_tokens} diff tokens, ${config_count} config, ${file_count} total files): correctness + compatibility"
-elif [[ "${test_count}" -gt 0 ]] && [[ "${test_count}" -eq "${file_count}" ]]; then
-    # Test-only changes
-    agents=("testing" "correctness" "maintainability")
-    reasoning="Test-only change (${diff_tokens} diff tokens, ${test_count} test files): testing + correctness + maintainability"
-elif [[ "${migration_count}" -gt 0 ]] && [[ "${migration_count}" -eq "${file_count}" ]]; then
-    # Migration-only
-    agents=("correctness" "compatibility" "security")
-    reasoning="Migration-only change (${diff_tokens} diff tokens, ${migration_count} migration files): correctness + compatibility + security"
 elif [[ "${diff_tokens}" -lt 500 ]]; then
     # Tiny source change: core agents only
     agents=("correctness" "security" "testing" "architecture")
