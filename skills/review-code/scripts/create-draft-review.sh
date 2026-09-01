@@ -201,10 +201,19 @@ main() {
     # Single pass: partition into valid and invalid, then extract counts and filtered items.
     local validation_result
     validation_result=$(echo "${comments}" | jq -c '
+        def is_non_empty_string:
+            if type == "string" then length > 0 else false end;
+        def is_positive_integer:
+            if type == "number" then . > 0 and . == floor else false end;
         def is_valid:
-            .path != null and .body != null and
-            ((.position != null) or
-             (.line != null and (.side == null or .side == "LEFT" or .side == "RIGHT")));
+            (.path | is_non_empty_string) and
+            (.body | is_non_empty_string) and
+            (if .position != null then
+                (.position | is_positive_integer)
+             else
+                (.line | is_positive_integer) and
+                (.side == null or .side == "LEFT" or .side == "RIGHT")
+             end);
         {
             valid: [
                 .[] | select(is_valid)
@@ -221,7 +230,7 @@ main() {
     invalid_count=$(echo "${validation_result}" | jq '.invalid | length')
 
     if [[ "${invalid_count}" -gt 0 ]]; then
-        warning "${invalid_count} comments filtered out due to missing required fields or invalid side value"
+        warning "${invalid_count} comments filtered out due to missing or invalid required fields"
         echo "Filtered comments:" >&2
         echo "${validation_result}" | jq -c '.invalid[]' >&2
     fi

@@ -697,7 +697,7 @@ EOF
     [[ "$output" == *'"success": true'* ]]
 }
 
-@test "create-draft-review: treats empty string body as valid" {
+@test "create-draft-review: filters empty string body" {
     cat > "$MOCK_DIR/gh" << 'EOF'
 #!/bin/bash
 if [[ "$*" == *"/reviews --paginate"* ]]; then
@@ -713,8 +713,61 @@ EOF
     local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": [{"path": "file.ts", "line": 5, "body": ""}]}'
     run bash -c "echo '$input' | '$SCRIPT' 2>&1"
     [ "$status" -eq 0 ]
+    [[ "$output" == *"1 comments filtered out"* ]]
+    [[ "$output" == *'"inline_count": 0'* ]]
+}
+
+@test "create-draft-review: filters malformed comment fields" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": [
+        {"path": "", "line": 5, "body": "Empty path"},
+        {"path": 42, "line": 5, "body": "Numeric path"},
+        {"path": "file.ts", "line": 5, "body": []},
+        {"path": "file.ts", "position": "3", "body": "String position"},
+        {"path": "file.ts", "position": 0, "body": "Zero position"},
+        {"path": "file.ts", "position": -1, "body": "Negative position"},
+        {"path": "file.ts", "line": "3", "body": "String line"},
+        {"path": "file.ts", "line": 0, "body": "Zero line"},
+        {"path": "file.ts", "line": -1, "body": "Negative line"}
+    ]}'
+    run bash -c "echo '$input' | '$SCRIPT' 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"9 comments filtered out"* ]]
+    [[ "$output" == *'"inline_count": 0'* ]]
+}
+
+@test "create-draft-review: accepts positive integer positions and lines" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 12345, "body": "test"}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "Test", "comments": [
+        {"path": "position.ts", "position": 3, "body": "Position comment"},
+        {"path": "line.ts", "line": 5, "side": "RIGHT", "body": "Line comment"}
+    ]}'
+    run bash -c "echo '$input' | '$SCRIPT' 2>&1"
+    [ "$status" -eq 0 ]
     [[ "$output" != *"filtered out"* ]]
-    [[ "$output" == *'"inline_count": 1'* ]]
+    [[ "$output" == *'"inline_count": 2'* ]]
 }
 
 @test "create-draft-review: logs filtered comments to stderr" {
