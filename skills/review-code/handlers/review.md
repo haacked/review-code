@@ -284,16 +284,19 @@ Focus on:
 Do NOT search for code callers, function patterns, or application architecture.
 
 {If exploration_depth == "minimal" (non-infra):}
-Time-box yourself to 30 seconds. Focus on understanding what changed:
-- Read only the modified files to understand their purpose and the change
-- Skip caller search, pattern search, git history, and reference implementations
+Time-box yourself to 45 seconds. Gather only context that can change the review outcome:
+- Read the modified files to identify changed symbols and newly introduced calls
+- Find direct callers of changed symbols, limiting results to the 3 most relevant callers per symbol
+- Read implementations of newly called methods when their behavior is not obvious at the call site
+- Check nearby tests and public boundaries such as APIs, schemas, events, and configuration
+- Skip broad pattern searches, reference implementations, and git history
 
 {If exploration_depth == "standard":}
 Time-box yourself to 1-2 minutes. Explore:
 - Full context of modified files
-- Related code and dependencies
-- Callers of modified functions (who calls the changed code and might be affected?)
-  (grep for function/method names, report top 3-5 callers per significantly modified function)
+- Direct callers of changed symbols, reporting the top 3-5 relevant callers per significantly modified symbol
+- Implementations of newly called methods and dependencies whose behavior is not obvious at the call site
+- Nearby tests and public boundaries such as APIs, schemas, events, and configuration
 - Skip pattern search, reference implementations, and git history
 
 {If exploration_depth == "thorough":}
