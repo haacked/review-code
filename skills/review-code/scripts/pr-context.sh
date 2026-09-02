@@ -25,7 +25,10 @@
 #     "comments": {
 #       "conversation": [...],  # PR discussion thread comments
 #       "reviews": [...],       # Review summaries with state
-#       "inline": [...]         # Line-level code review comments
+#       "inline": [...]         # Line-level code review comments; each
+#                                # thread's root comment is stamped with
+#                                # "resolved"/"outdated" when that state was
+#                                # fetched (replies are left as-is)
 #     }
 #   }
 
@@ -146,6 +149,82 @@ fetch_inline_comments() {
 
     gh api --paginate "repos/${repo_spec}/pulls/${pr_number}/comments" \
         | jq -s 'add | [.[] | {id, author: .user.login, body, path, line, side, diff_hunk, created_at, in_reply_to_id, url: .html_url}]'
+}
+
+# Fetch each review-comment thread's resolution state, keyed by the thread's
+# root comment id (as a string, for use as a JSON object key). The REST
+# comments endpoint fetch_inline_comments uses has no notion of thread state;
+# only the GraphQL reviewThreads connection does.
+#
+# Non-fatal by convention with the rest of this file: callers should fall
+# back to an empty object on failure rather than treat this as fatal, since
+# every comment then just renders as an open thread, same as before this
+# existed.
+fetch_review_thread_state() {
+    local pr_number="$1"
+    local repo_spec="$2"
+
+    validate_pr_number "${pr_number}" || return 1
+    validate_repo_spec "${repo_spec}" || return 1
+
+    local owner="${repo_spec%%/*}"
+    local repo_name="${repo_spec##*/}"
+
+    # `gh api graphql --paginate` walks pageInfo{hasNextPage,endCursor} itself
+    # and re-issues the query with $endCursor set to the previous page's
+    # cursor — the variable must be named exactly `$endCursor` for gh to find
+    # it. It also treats a GraphQL `errors` array as a failure and exits
+    # non-zero, so no separate per-page error check is needed.
+    # shellcheck disable=SC2016  # GraphQL document; $vars are GraphQL variables bound via -F/-f
+    local query='
+    query($owner: String!, $repo: String!, $number: Int!, $endCursor: String) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $number) {
+          reviewThreads(first: 100, after: $endCursor) {
+            nodes {
+              isResolved
+              isOutdated
+              comments(first: 1) {
+                nodes { databaseId }
+              }
+            }
+            pageInfo { hasNextPage endCursor }
+          }
+        }
+      }
+    }'
+
+    gh api graphql --paginate \
+        -f query="${query}" \
+        -F owner="${owner}" \
+        -F repo="${repo_name}" \
+        -F number="${pr_number}" \
+        | jq -s '
+            [ .[].data.repository.pullRequest.reviewThreads.nodes[]
+              | select(.comments.nodes[0].databaseId != null)
+              | { (.comments.nodes[0].databaseId | tostring): {resolved: .isResolved, outdated: .isOutdated} }
+            ] | add // {}
+        ' || return 1
+}
+
+# Stamp each thread's root comment (in_reply_to_id == null) with its
+# resolution state; replies are left untouched, since format-existing-comments.sh
+# only ever reads the state off the root once it has grouped a thread. A root
+# missing from state_json (state_json is "{}" on fetch failure) defaults to
+# open: resolved=false, outdated=false.
+merge_thread_state() {
+    local inline_json="$1" state_json="$2"
+
+    jq --argjson state "${state_json}" '
+        map(
+            if .in_reply_to_id == null then
+                (.id | tostring) as $tk
+                | . + ($state[$tk] // {resolved: false, outdated: false})
+            else
+                .
+            end
+        )
+    ' <<< "${inline_json}"
 }
 
 # Fetch review summaries (approval/changes requested with body text)
@@ -317,6 +396,16 @@ main() {
             # Non-fatal: log warning but continue
             warning "Failed to fetch inline comments"
             inline_comments="[]"
+        fi
+
+        if [[ "$(echo "${inline_comments}" | jq 'length')" -gt 0 ]]; then
+            local thread_state="{}"
+            if ! thread_state=$(fetch_review_thread_state "${pr_number}" "${repo_spec}"); then
+                # Non-fatal: every comment renders as an open thread instead
+                warning "Failed to fetch review thread resolution state"
+                thread_state="{}"
+            fi
+            inline_comments=$(merge_thread_state "${inline_comments}" "${thread_state}")
         fi
     fi
 

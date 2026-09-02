@@ -175,13 +175,10 @@ fi
 if jq -e '(.pr.comments // {}) | (( .conversation // [] ) + ( .reviews // [] ) + ( .inline // [] )) | length > 0' \
     "${SESSION_FILE}" > /dev/null 2>&1; then
     emit "**Existing Review Comments:**"
-    jq -r '
-        (.pr.comments.conversation // [] | map("- [conversation] @\(.author): \(.body)")),
-        (.pr.comments.reviews // [] | map("- [review/\(.state // "comment")] @\(.author): \(.body // "")")),
-        (.pr.comments.inline // [] | map("- [inline] @\(.author) \(.path):\(.line // "?"): \(.body)"))
-        | .[]' "${SESSION_FILE}" >> "${BRIEFING}"
+    jq -c '.pr.comments // {}' "${SESSION_FILE}" | tee "${ARTIFACTS_DIR}/comments.json" \
+        | "${SCRIPT_DIR}/format-existing-comments.sh" >> "${BRIEFING}"
     emit ""
-    emit "Comment structure: \`conversation\` (discussion), \`reviews\` (approve/changes), \`inline\` (line-level with \`path\`, \`line\`, \`author\`, \`body\`)"
+    emit "Comment structure: \`conversation\` (discussion), \`reviews\` (approve/changes), \`inline\` (line-level, one bullet per thread). A resolved or outdated thread collapses to one line; an open thread with replies shows its root comment plus a reply-count summary. Bodies are capped — the uncapped text is in \`comments.json\`, alongside this briefing."
     emit ""
 fi
 
