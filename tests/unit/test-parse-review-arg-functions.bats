@@ -1534,3 +1534,37 @@ setup_parent_child_fixture() {
     [ "$status" -eq 0 ]
     ! echo "$output" | jq -e 'has("base_lookup_degraded")' > /dev/null
 }
+
+@test "comment style: defaults to concise" {
+    run bash "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" 123
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.comment_style')" = "concise" ]
+}
+
+@test "comment style: accepts separate and equals values" {
+    for style in concise detailed; do
+        run bash "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" --comment-style "$style" 123
+        [ "$status" -eq 0 ]
+        [ "$(echo "$output" | jq -r '.comment_style')" = "$style" ]
+        run bash "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" 123 "--comment-style=$style"
+        [ "$status" -eq 0 ]
+        [ "$(echo "$output" | jq -r '.comment_style')" = "$style" ]
+    done
+}
+
+@test "comment style: rejects missing and invalid values" {
+    for value in '' verbose --draft; do
+        run bash "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" 123 --comment-style "$value"
+        [ "$status" -ne 0 ]
+        [[ "$output" == *"comment-style"* ]]
+    done
+    run bash "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" 123 --comment-style
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"comment-style"* ]]
+}
+
+@test "comment style: rejects conflicting selections" {
+    run bash "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" 123 --comment-style concise --comment-style=detailed
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"comment-style"* ]]
+}

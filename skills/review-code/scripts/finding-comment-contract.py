@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-SEVERITIES = {"blocking", "suggestion", "question", "nit"}
+SEVERITIES = ("blocking", "suggestion", "question", "nit")
 FACT_FIELDS = (
     "problem",
     "trigger",
@@ -49,6 +49,8 @@ def validate_facts(item: dict[str, Any]) -> list[str]:
     identifier = item.get("id")
     if not valid_identifier(identifier):
         reasons.append("id must be a non-empty string or integer")
+    if item.get("comment_style", "concise") not in ("concise", "detailed"):
+        reasons.append("comment_style must be concise or detailed")
     severity = item.get("severity")
     if severity not in SEVERITIES:
         reasons.append("severity must be blocking, suggestion, question, or nit")
@@ -74,7 +76,7 @@ def validate_facts(item: dict[str, Any]) -> list[str]:
     if not isinstance(mechanism, list) or any(not text(step) for step in mechanism):
         reasons.append("mechanism must be an array of non-empty causal steps")
 
-    if severity in {"blocking", "suggestion"}:
+    if severity in ("blocking", "suggestion"):
         for field in ("problem", "result", "requested_change"):
             if not text(facts.get(field)):
                 reasons.append(f"{field} is required for {severity} findings")
@@ -122,12 +124,22 @@ def compose(items: Any) -> dict[str, list[dict[str, Any]]]:
             )
             continue
         reasons = validate_facts(raw)
+        try:
+            body = publication_body(raw)
+            if not body:
+                reasons.append(
+                    "description must contain text after its severity prefix"
+                )
+        except ValueError as exc:
+            reasons.append(str(exc))
         if valid_identifier(raw.get("id")) and identifier_counts[raw["id"]] > 1:
             reasons.append("id must be unique")
         if reasons:
             withheld_findings.append(withheld(raw, "invalid_contract", reasons))
             continue
         finding = dict(raw)
+        finding["description"] = body
+        finding.setdefault("comment_style", "concise")
         finding["publishable"] = False
         finding["quality_state"] = "ungated"
         findings.append(finding)
@@ -140,6 +152,12 @@ def compose(items: Any) -> dict[str, list[dict[str, Any]]]:
 
 def applicable_coverage(item: dict[str, Any]) -> list[str]:
     facts = item["facts"]
+    if item.get("comment_style", "concise") == "concise":
+        return [
+            field
+            for field in ("problem", "trigger", "requested_change")
+            if text(facts.get(field))
+        ]
     fields = [
         field
         for field in (
@@ -241,8 +259,27 @@ def gate(composed: Any, verdicts: Any, final: bool) -> dict[str, list[dict[str, 
 
 
 def publication_body(item: dict[str, Any]) -> str:
-    parts = [text(item.get("description")), text(item.get("proposed_fix"))]
-    return "\n\n".join(part for part in parts if part)
+    severity = item.get("severity")
+    if severity not in SEVERITIES:
+        raise ValueError("severity must be blocking, suggestion, question, or nit")
+    body = text(item.get("description")) or ""
+    if not body:
+        return ""
+    prefix = re.match(
+        r"^(?:`(blocking|suggestion|question|nit)(?::`|`:)|"
+        r"\*\*(blocking|suggestion|question|nit)(?::\*\*|\*\*:)|"
+        r"(blocking|suggestion|question|nit):)\s*",
+        body,
+        re.IGNORECASE,
+    )
+    if prefix:
+        existing = next(group for group in prefix.groups() if group).lower()
+        if existing != severity:
+            raise ValueError("body prefix does not match severity")
+        body = body[prefix.end() :]
+        if not body:
+            return ""
+    return f"`{severity}`: {body}"
 
 
 def publish(quality: Any) -> dict[str, Any]:
@@ -275,7 +312,11 @@ def publish(quality: Any) -> dict[str, Any]:
         reasons: list[str] = []
         file = text(raw.get("file"))
         line = raw.get("line")
-        body = publication_body(raw)
+        try:
+            body = publication_body(raw)
+        except ValueError as exc:
+            body = ""
+            reasons.append(str(exc))
         if not file:
             reasons.append("file must be a non-empty string")
         if isinstance(line, bool) or not isinstance(line, int) or line < 1:
@@ -287,6 +328,7 @@ def publish(quality: Any) -> dict[str, Any]:
             continue
 
         finding = dict(raw)
+        finding["description"] = body
         publishable_findings.append(finding)
         comment: dict[str, Any] = {"path": file, "line": line, "body": body}
         if text(raw.get("side")):

@@ -380,6 +380,23 @@ fields_of() {
     [ "$status" -ne 0 ]
 }
 
+@test "get-review-fields: old sessions default to concise comments" {
+    local id; id=$(make_session)
+    run fields_of "$id"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.comment_style')" = "concise" ]
+}
+
+@test "get-review-fields: preserves detailed comment style" {
+    local id; id=$(make_session)
+    local session_file="$BATS_TEST_TMPDIR/sessions/review-code/$id.json"
+    jq '.comment_style = "detailed"' "$session_file" > "$BATS_TEST_TMPDIR/detailed-session.json"
+    mv "$BATS_TEST_TMPDIR/detailed-session.json" "$session_file"
+    run fields_of "$id"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.comment_style')" = "detailed" ]
+}
+
 # =============================================================================
 # get-pr-inline-comments: the narrow accessor for review-pr-output.md's
 # Generate Suggested Comments dedup step

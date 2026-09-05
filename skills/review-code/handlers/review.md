@@ -59,6 +59,7 @@ On "Cancel" in any of the prompts above: clean up the session, then stop. A work
 
 From `REVIEW_FIELDS`, extract these fields for building agent context:
 - `mode`: review mode (pr, branch, commit, range, local)
+- `comment_style`: public comment style (`concise` by default, or `detailed`); retain it through the finding quality pipeline.
 - `diff_path`: filesystem path to the diff. The bytes stay on disk; agents read them.
 - `artifacts_dir`: directory holding the diff and the agent briefing
 - `file_metadata`: metadata about changed files
@@ -432,7 +433,7 @@ Synthesize the remaining findings using extended thinking into a coherent, dedup
 
 **Comment Body Hygiene:**
 
-The `description` and `proposed_fix` text becomes the literal body of the PR review comment; keep pipeline bookkeeping out of it. No agent or model attribution ("*(corroborated by Copilot)*", "*(found by code-reviewer-security)*"), no validator verdicts ("*Downgraded from blocking: …*"), no confidence percentages or other internal scoring. Corroboration, dismissal reasoning, and confidence are synthesis-time signals: track them in your working state (or in `$debug_session_dir` artifacts when debugging), never in the body. A model name is fine when it's substantive content about the code under review ("*(the Copilot SDK rejects this header)*"); the rule targets bookkeeping, not technical claims that mention a product.
+The final `description` becomes the literal PR comment body; `proposed_fix` retains the internal fix. Keep pipeline bookkeeping out of both. No agent or model attribution ("*(corroborated by Copilot)*", "*(found by code-reviewer-security)*"), no validator verdicts ("*Downgraded from blocking: …*"), no confidence percentages or other internal scoring. Corroboration, dismissal reasoning, and confidence are synthesis-time signals: track them in your working state (or in `$debug_session_dir` artifacts when debugging), never in the body. A model name is fine when it's substantive content about the code under review ("*(the Copilot SDK rejects this header)*"); the rule targets bookkeeping, not technical claims that mention a product.
 
 **Priority ordering in the final review:**
 1. Corroborated blocking findings

@@ -30,7 +30,7 @@ its text is not carried through every earlier turn of the run.
 
 If the session has `fix: true`, place the `## Fix Summary` section (built by the fix pass in `review-fix.md`) directly after the metadata header (and after the chunked "Review Scope" note, when present) and before the per-agent sections.
 
-Compose per-agent findings from `$finding_publication.findings`, using their final `description` and `proposed_fix`. These are the only comment bodies that passed the finding contract, final comprehension gate, and executable publication boundary.
+Compose per-agent findings from `$finding_publication.findings`. Use `description` as the complete public comment, and retain full `facts` and `proposed_fix` as internal evidence in the local review. Only `description` passed the public wording checks; never append internal evidence to Suggested Comments.
 
 If `$finding_publication.withheld` is non-empty, add a `## Withheld from draft` section after the per-agent sections and before Suggested Comments. For each entry, show its location, the concrete `quality_state`, and its `reasons`. Keep enough of the technical finding for the user to repair it locally. Label it as non-publishable and never format it as a Suggested Comment. Do not silently substitute the original reviewer body.
 

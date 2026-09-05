@@ -13,6 +13,7 @@ Enumerate the surviving findings in stable review order. Assign every finding a 
   "id": 1,
   "agent": "correctness",
   "severity": "blocking",
+  "comment_style": "concise",
   "location": "path/file.rs:42",
   "file": "path/file.rs",
   "line": 42,
@@ -33,9 +34,11 @@ Enumerate the surviving findings in stable review order. Assign every finding a 
 
 `location` is the display value. `file` and `line` are the routing values used by diff mapping, draft comments, and `--fix`; keep them as separate fields through every later merge. A finding without a specific source location cannot cross the publication boundary and remains in the local review's withheld section.
 
+Set `comment_style` from the session (`concise` by default, or `detailed`) on every finding and preserve it through preflight, composition, voice, repair, and the final gate. Style changes public wording only; it never reduces the internal analysis.
+
 The facts are the source of truth. Replace internal labels such as "collector misses it" or "the group remains pending" with what happens to the request, property, value, or caller. Order `mechanism` by execution. Blocking and suggestion findings require `problem`, at least one mechanism step, `result`, and `requested_change`. Blocking findings also require `regression_case`, or `regression_rationale` when coverage does not apply. Questions and nits may leave inapplicable facts null, but `requested_change` must contain the question or small change.
 
-`description` must be a non-empty reviewer body. The contract script never generates public prose from facts. Put every citation, inline-code token, exact value, and code block that the public comment must retain into the facts or `proposed_fix`. Do not make tokens mandatory merely because they appeared in the reviewer draft.
+`description` must be a non-empty reviewer body prefixed with its `severity`: `` `blocking`: ``, `` `suggestion`: ``, `` `question`: ``, or `` `nit`: ``. The contract restores missing prefixes and rejects conflicting ones during composition and publication. The contract script never generates public prose from facts. Keep complete evidence, citations, and the concrete code fix in the internal facts and `proposed_fix`. Public bodies need the problem, relevant trigger, and requested change, plus enough explanation to connect them. Preserve the accuracy of included identifiers, values, citations, and code; do not require every internal token or code block in the public body. `description` is the complete public comment. Include a small verified code example when the fix would otherwise be ambiguous, and never append `proposed_fix` automatically.
 
 Write the array to `<artifacts_dir>/finding-contract-input.json`, then run:
 
@@ -51,7 +54,7 @@ Keep every `withheld` entry for the local review and remove it from later model 
 
 Send the validated findings directly to `comprehension-gate` before semantic composition. Give the gate only the finding objects and facts, with no diff, briefing, or source-code path. Use the same response parsing and fail-closed coverage rules as the final gate, then run `finding-comment-contract.py gate` without `--final` to produce `<artifacts_dir>/finding-preflight.json`.
 
-`PASS` findings bypass `code-reviewer-comment`. Reset their `publishable` value to false and set `quality_state` to `preflight_passed`; the final gate still decides whether they are safe to publish after the voice pass. Apply the same severity-prefix, citation, inline-code token, exact-value, code-block, requested-change, and actionable-fix preservation checks required after composition.
+`PASS` findings bypass `code-reviewer-comment`. Reset their `publishable` value to false and set `quality_state` to `preflight_passed`; the final gate still decides whether they are safe to publish after the voice pass. Apply the same style-aware meaning and included-token preservation checks required after composition. Concise preflight must reject unnecessary walkthroughs even when all facts have coverage.
 
 `REWRITE` findings go through `code-reviewer-comment` in one batch. A missing, duplicate, malformed, or error preflight verdict is a `gate_error` and stays withheld. Do not send it to the composer and do not restore the reviewer body.
 
@@ -66,7 +69,7 @@ If the preflight produced no `rewrites_needed` entries, skip the composer call a
 
 Parse by id and merge only `description` and `proposed_fix`. Ignore unknown extra ids and record a parse anomaly. Withhold each expected id that is missing, duplicated, malformed, or has a non-null `error`, using `quality_state: "composition_failed"` and the concrete reason.
 
-Accept a response only when it preserves the exact severity prefix plus every citation, inline-code token, exact value, and code block captured in the facts or `proposed_fix`. The requested change and actionable fix must remain equivalent. A failure is withheld; the reviewer draft is never restored.
+Accept a response only when it preserves the exact severity prefix, accurately states the problem and relevant trigger, and keeps the requested change and actionable fix equivalent. Included identifiers, citations, exact values, and code excerpts must stay exact, but internal tokens and code blocks need not all appear in public. Keep the full internal `proposed_fix` unchanged unless explicitly repairing its prose. A failure is withheld; the reviewer draft is never restored.
 
 Run `finding-comment-contract.py compose` again on successfully merged rewrite entries. Merge those composed entries with the preflight `PASS` entries. Set `$finding_quality` to that result, then append every earlier `invalid_contract`, `gate_error`, and `composition_failed` entry to `$finding_quality.withheld`. No later assignment may discard a withheld entry.
 
@@ -74,7 +77,7 @@ Record composer usage under `$token_usage["code-reviewer-comment"]`. In debug mo
 
 ### Voice Pass
 
-Send each finding's `id`, `severity`, `location`, `description`, and `proposed_fix` to `code-reviewer-voice`. Keep the facts and routing fields in `$finding_quality`, outside the voice payload.
+Send each finding's `id`, `severity`, `location`, `comment_style`, `description`, and `proposed_fix` to `code-reviewer-voice`. Keep the facts and routing fields in `$finding_quality`, outside the voice payload.
 
 Parse responses by id. `unchanged: true` keeps the current body. Ignore unknown ids and count them as anomalies. A missing id keeps the current body. Treat an array length difference greater than one as a failed batch and keep every current body.
 
@@ -100,7 +103,7 @@ Extract the JSON array to `<artifacts_dir>/comprehension-verdicts.json`, then ru
   > "<artifacts_dir>/finding-gate-first.json"
 ```
 
-The script accepts `PASS` only when every applicable fact has coverage and `inference_required` is false. Missing, duplicate, or malformed verdicts are withheld with `quality_state: "gate_error"`.
+The script accepts `PASS` only when the selected style's required facts have coverage and `inference_required` is false. Concise requires problem, applicable trigger, and requested change; mechanism, result, and regression coverage may be false. Detailed requires every applicable field. The model must also reject factual inconsistency, unclear action, or prose that violates the selected style. Missing, duplicate, or malformed verdicts are withheld with `quality_state: "gate_error"`.
 
 For each `rewrites_needed` entry, start a fresh `code-reviewer-comment` invocation under both harnesses. Give it the structured finding, current body, gate coverage, notes, unresolved phrases, `$diff_path`, briefing path, and file-access instructions. Never resume the original reviewer.
 
