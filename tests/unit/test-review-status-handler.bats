@@ -379,3 +379,116 @@ fields_of() {
     run fields_of "review-code-0-0"
     [ "$status" -ne 0 ]
 }
+
+# =============================================================================
+# get-pr-inline-comments: the narrow accessor for review-pr-output.md's
+# Generate Suggested Comments dedup step
+# =============================================================================
+
+# A session with a resolved thread (root + reply) and an open, outdated one,
+# plus conversation/review comments the accessor must never surface.
+make_session_with_inline_comments() {
+    export CLAUDE_SESSION_DIR="$BATS_TEST_TMPDIR/sessions"
+    local cmd_dir="$CLAUDE_SESSION_DIR/review-code"
+    mkdir -p "$cmd_dir"
+    local id="review-code-4242-1234567891"
+    jq -n '{
+        status: "ready",
+        mode: "pr",
+        pr: {
+            number: 1,
+            comments: {
+                conversation: [{author: "x", body: "LARGE_COMMENT_TEXT"}],
+                reviews: [{author: "y", body: "LGTM", state: "APPROVED"}],
+                inline: [
+                    {id: 1, author: "eve", body: "settled point", path: "foo.py", line: 10, in_reply_to_id: null, resolved: true, outdated: false},
+                    {id: 2, author: "frank", body: "a reply", path: "foo.py", line: 10, in_reply_to_id: 1, resolved: true, outdated: false},
+                    {id: 3, author: "grace", body: "still open", path: "bar.py", line: 20, in_reply_to_id: null, resolved: false, outdated: true}
+                ]
+            }
+        }
+    }' > "$cmd_dir/$id.json"
+    echo "$id"
+}
+
+inline_comments_of() {
+    CLAUDE_SESSION_DIR="$BATS_TEST_TMPDIR/sessions" "$HANDLER_SCRIPT" get-pr-inline-comments "$1"
+}
+
+@test "review-status-handler: supports get-pr-inline-comments action" {
+    run bash -c "grep -q '\"get-pr-inline-comments\")' '$HANDLER_SCRIPT'"
+    [ "$status" -eq 0 ]
+}
+
+@test "get-pr-inline-comments: requires a session ID" {
+    run "$HANDLER_SCRIPT" get-pr-inline-comments
+    [ "$status" -ne 0 ]
+}
+
+@test "get-pr-inline-comments: emits valid JSON" {
+    local id; id=$(make_session_with_inline_comments)
+    run inline_comments_of "$id"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e . > /dev/null
+}
+
+@test "get-pr-inline-comments: returns only comment roots" {
+    local id; id=$(make_session_with_inline_comments)
+    run inline_comments_of "$id"
+    [ "$(echo "$output" | jq 'length')" -eq 2 ]
+}
+
+@test "get-pr-inline-comments: drops replies" {
+    local id; id=$(make_session_with_inline_comments)
+    run inline_comments_of "$id"
+    ! echo "$output" | grep -q "a reply"
+}
+
+@test "get-pr-inline-comments: carries resolved and outdated state on each root" {
+    local id; id=$(make_session_with_inline_comments)
+    run inline_comments_of "$id"
+    [ "$(echo "$output" | jq -r '.[0].resolved')" = "true" ]
+    [ "$(echo "$output" | jq -r '.[1].outdated')" = "true" ]
+    [ "$(echo "$output" | jq -r '.[1].resolved')" = "false" ]
+}
+
+@test "get-pr-inline-comments: returns path, line, author, and body per root" {
+    local id; id=$(make_session_with_inline_comments)
+    run inline_comments_of "$id"
+    [ "$(echo "$output" | jq -r '.[0].path')" = "foo.py" ]
+    [ "$(echo "$output" | jq -r '.[0].line')" = "10" ]
+    [ "$(echo "$output" | jq -r '.[0].author')" = "eve" ]
+    [ "$(echo "$output" | jq -r '.[0].body')" = "settled point" ]
+}
+
+@test "get-pr-inline-comments: never returns conversation or review comments" {
+    local id; id=$(make_session_with_inline_comments)
+    run inline_comments_of "$id"
+    ! echo "$output" | grep -q "LARGE_COMMENT_TEXT"
+    ! echo "$output" | grep -q "LGTM"
+}
+
+@test "get-pr-inline-comments: returns an empty array when there are no inline comments" {
+    local id; id=$(make_session)
+    run inline_comments_of "$id"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -c .)" = "[]" ]
+}
+
+@test "get-pr-inline-comments: returns an empty array when the session has no pr field" {
+    export CLAUDE_SESSION_DIR="$BATS_TEST_TMPDIR/sessions"
+    local cmd_dir="$CLAUDE_SESSION_DIR/review-code"
+    mkdir -p "$cmd_dir"
+    local id="review-code-4242-1234567892"
+    echo '{"status": "ready", "mode": "branch"}' > "$cmd_dir/$id.json"
+    run inline_comments_of "$id"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -c .)" = "[]" ]
+}
+
+@test "get-pr-inline-comments: rejects a nonexistent session ID" {
+    export CLAUDE_SESSION_DIR="$BATS_TEST_TMPDIR/sessions"
+    mkdir -p "$CLAUDE_SESSION_DIR/review-code"
+    run inline_comments_of "review-code-0-0"
+    [ "$status" -ne 0 ]
+}
