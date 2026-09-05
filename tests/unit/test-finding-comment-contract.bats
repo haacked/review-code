@@ -311,9 +311,9 @@ write_verdict() {
     local publication_input="$BATS_TEST_TMPDIR/publication-input.json"
     jq -n '{
         findings: [
-            {id: 1, publishable: true, quality_state: "passed", file: "src/good.py", line: 12, side: "RIGHT", line_content: "return good", description: "`blocking`: Good body."},
+            {id: 1, severity: "blocking", publishable: true, quality_state: "passed", file: "src/good.py", line: 12, side: "RIGHT", line_content: "return good", description: "`blocking`: Good body."},
             {id: 2, publishable: false, quality_state: "rewrite_required", file: "src/unclear.py", line: 8, description: "Opaque body."},
-            {id: 3, publishable: true, quality_state: "passed", file: "", line: 0, description: "`blocking`: Missing target."}
+            {id: 3, severity: "blocking", publishable: true, quality_state: "passed", file: "", line: 0, description: "`blocking`: Missing target."}
         ],
         rewrites_needed: [],
         withheld: [
@@ -616,7 +616,7 @@ EOF
             .value as $case | ($case.after | split("\n\n")) as $paragraphs | {
                 id: .key,
                 comment_style: $style,
-                severity: "suggestion",
+                severity: $case.severity,
                 location: $case.location,
                 file: ($case.location | split(":")[0]),
                 line: ($case.location | capture(":(?<line>[0-9]+)").line | tonumber),
@@ -628,7 +628,7 @@ EOF
                     mechanism: [$case.before],
                     result: $paragraphs[0],
                     requested_change: $case.after,
-                    regression_case: null,
+                    regression_case: (if $case.severity == "blocking" then $case.after else null end),
                     regression_rationale: null
                 }
             }
@@ -662,6 +662,7 @@ EOF
             file: "src/filter.ts",
             line: 12,
             description: "",
+            severity: "blocking",
             proposed_fix: "Include both snapshots."
         }],
         withheld: [],
@@ -673,4 +674,102 @@ EOF
     [ "$status" -eq 0 ]
     [ "$(echo "$output" | jq '.comments | length')" -eq 0 ]
     [ "$(echo "$output" | jq -r '.withheld[0].quality_state')" = "publication_failed" ]
+}
+
+@test "finding contract: compose restores severity prefixes without changing prose or examples" {
+    local body='Include both snapshots.
+
+```typescript
+filters: [...before.groups, ...after.groups]
+```'
+    for style in concise detailed; do
+        for severity in blocking suggestion question nit; do
+            write_finding "$(jq -cn --arg body "$body" '$body')"
+            jq --arg severity "$severity" --arg style "$style" '.[0].severity = $severity | .[0].comment_style = $style' "$INPUT" > "$BATS_TEST_TMPDIR/prefix.json"
+
+            run "$CONTRACT" compose "$BATS_TEST_TMPDIR/prefix.json"
+
+            [ "$status" -eq 0 ]
+            [ "$(echo "$output" | jq '.withheld | length')" -eq 0 ]
+            [ "$(echo "$output" | jq -r '.findings[0].description')" = "\`$severity\`: $body" ]
+            [ "$(echo "$output" | jq -c '.findings[0].facts')" = "$(jq -c '.facts' "$FIXTURE")" ]
+        done
+    done
+}
+
+@test "finding contract: matching Markdown prefixes normalize idempotently" {
+    for severity in blocking suggestion question nit; do
+        for prefix in "$severity:" "\`$severity\`:" "\`$severity:\`" "**$severity**:" "**$severity:**"; do
+            write_finding "$(jq -cn --arg body "$prefix Keep the body and its \`inline code\`." '$body')"
+            jq --arg severity "$severity" '.[0].severity = $severity' "$INPUT" > "$BATS_TEST_TMPDIR/prefix.json"
+            "$CONTRACT" compose "$BATS_TEST_TMPDIR/prefix.json" > "$COMPOSED"
+            [ "$(jq -r '.findings[0].description' "$COMPOSED")" = "\`$severity\`: Keep the body and its \`inline code\`." ]
+            jq '.findings' "$COMPOSED" > "$INPUT"
+
+            run "$CONTRACT" compose "$INPUT"
+
+            [ "$status" -eq 0 ]
+            [ "$(echo "$output" | jq -c '.findings')" = "$(jq -c '.findings' "$COMPOSED")" ]
+        done
+    done
+}
+
+@test "finding contract: contradictory prefixes are withheld during composition" {
+    for prefix in 'nit:' '`nit`:' '`nit:`' '**nit**:' '**nit:**'; do
+        write_finding "$(jq -cn --arg body "$prefix This cannot be relabeled blocking." '$body')"
+
+        run "$CONTRACT" compose "$INPUT"
+
+        [ "$status" -eq 0 ]
+        [ "$(echo "$output" | jq '.findings | length')" -eq 0 ]
+        [ "$(echo "$output" | jq -r '.withheld[0].quality_state')" = "invalid_contract" ]
+        [ "$(echo "$output" | jq -r '.withheld[0].severity')" = "blocking" ]
+    done
+}
+
+@test "finding contract: publication restores prefixes removed by voice editing" {
+    for severity in blocking suggestion question nit; do
+        jq -n --arg severity "$severity" '{findings: [{
+            id: 1, severity: $severity, publishable: true, quality_state: "passed",
+            file: "src/filter.ts", line: 12,
+            description: "Include both snapshots.\n\n```typescript\nfilters: [...before.groups, ...after.groups]\n```"
+        }], withheld: [], rewrites_needed: []}' > "$INPUT"
+
+        run "$CONTRACT" publish "$INPUT"
+
+        [ "$status" -eq 0 ]
+        [ "$(echo "$output" | jq '.comments | length')" -eq 1 ]
+        [ "$(echo "$output" | jq -r '.comments[0].body')" = "\`$severity\`: $(jq -r '.findings[0].description' "$INPUT")" ]
+    done
+}
+
+@test "finding contract: publication rejects missing unknown and contradictory severity" {
+    for severity in null '"critical"' '"blocking"'; do
+        jq -n --argjson severity "$severity" '{findings: [{
+            id: 1, severity: $severity, publishable: true, quality_state: "passed",
+            file: "src/filter.ts", line: 12, description: "`nit`: Keep this classified correctly."
+        }], withheld: [], rewrites_needed: []}' > "$INPUT"
+        if [ "$severity" = null ]; then
+            jq 'del(.findings[0].severity)' "$INPUT" > "$BATS_TEST_TMPDIR/missing-severity.json"
+            mv "$BATS_TEST_TMPDIR/missing-severity.json" "$INPUT"
+        fi
+
+        run "$CONTRACT" publish "$INPUT"
+
+        [ "$status" -eq 0 ]
+        [ "$(echo "$output" | jq '.comments | length')" -eq 0 ]
+        [ "$(echo "$output" | jq -r '.withheld[0].quality_state')" = "publication_failed" ]
+    done
+}
+
+@test "finding contract: a prefix without a comment is withheld during composition" {
+    for prefix in 'blocking:' '`blocking`:' '`blocking:`' '**blocking**:' '**blocking:**'; do
+        write_finding "$(jq -cn --arg body "$prefix" '$body')"
+
+        run "$CONTRACT" compose "$INPUT"
+
+        [ "$status" -eq 0 ]
+        [ "$(echo "$output" | jq '.findings | length')" -eq 0 ]
+        [ "$(echo "$output" | jq -r '.withheld[0].quality_state')" = "invalid_contract" ]
+    done
 }
