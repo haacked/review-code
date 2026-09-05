@@ -44,13 +44,15 @@ Do not link:
 
 ### Generate Suggested Comments
 
-If this is a PR review and `is_own_pr` is false, generate suggested inline comments for the review file.
+If this is a PR review and `REVIEW_FIELDS.is_own_pr` is false, generate suggested inline comments for the review file.
 
-From the session data, extract:
-- `is_own_pr`: whether the current user authored the PR (defaults to false)
-- `pr.comments.inline`: existing inline comments on the PR (defaults to empty array)
+Fetch the existing inline comments to dedup against:
 
-**If `is_own_pr` is false:**
+```bash
+~/.agents/skills/review-code/scripts/review-status-handler.sh get-pr-inline-comments "<SESSION_ID>"
+```
+
+Save the output as `$inline_comments`: an array of `{path, line, author, body, resolved, outdated}`, one entry per comment thread (replies are dropped; `resolved`/`outdated` describe the thread as a whole).
 
 When combining agent findings into the review document, add a "Suggested Comments" section:
 

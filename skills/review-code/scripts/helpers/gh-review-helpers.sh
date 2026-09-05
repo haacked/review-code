@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# gh-review-helpers.sh - Read a user's pending PR review and its comments.
+# gh-review-helpers.sh - Read a PR's reviews and review threads.
 #
-# Sourced by create-draft-review.sh, which uses it to decide whether to replace
-# an existing pending review, and by amend-pending-review.sh, which uses it to
-# scope every reword and drop to the caller's own pending review.
+# get_existing_pending_review is sourced by create-draft-review.sh, which uses
+# it to decide whether to replace an existing pending review, and by
+# amend-pending-review.sh, which uses it to scope every reword and drop to the
+# caller's own pending review. fetch_review_threads is sourced by
+# resolve-review-threads.sh and pr-context.sh, which both page the same
+# reviewThreads GraphQL connection and project its fields differently.
 #
 # Everything here is read-only. Callers that mutate keep their own delete and
 # update functions, so a script that must not create or destroy a review can
@@ -77,4 +80,65 @@ get_existing_pending_review() {
                 body: .body
             }]
         }'
+}
+
+# Fetch every review thread on a PR from the reviewThreads GraphQL connection.
+# Args: $1 = owner, $2 = repo, $3 = pr_number
+# Output: JSON array of flattened thread nodes: id, isResolved, isOutdated,
+#         path, line, commentId, author, and the thread's first comment body
+#         (untruncated; callers cap it to their own needs).
+# Returns nonzero when the GraphQL fetch fails. Callers decide whether that
+# failure is fatal and how to report it, since one caller (pr-context.sh)
+# degrades to "every thread open" while the other (resolve-review-threads.sh)
+# treats it as fatal.
+#
+# `gh api graphql --paginate` walks pageInfo{hasNextPage,endCursor} itself and
+# re-issues the query with $endCursor set to the previous page's cursor — the
+# variable must be named exactly $endCursor for gh to find it. It also treats
+# a GraphQL `errors` array as a failure and exits non-zero, so no separate
+# per-page error check is needed here.
+# shellcheck disable=SC2016  # GraphQL document; $vars are GraphQL variables bound via -F/-f
+fetch_review_threads() {
+    local owner="$1" repo_name="$2" pr_number="$3"
+
+    local query='
+    query($owner: String!, $repo: String!, $number: Int!, $endCursor: String) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $number) {
+          reviewThreads(first: 100, after: $endCursor) {
+            nodes {
+              id
+              isResolved
+              isOutdated
+              path
+              line
+              comments(first: 1) {
+                nodes {
+                  databaseId
+                  body
+                  author { login }
+                }
+              }
+            }
+            pageInfo { hasNextPage endCursor }
+          }
+        }
+      }
+    }'
+
+    gh api graphql --paginate \
+        -f query="${query}" \
+        -F owner="${owner}" \
+        -F repo="${repo_name}" \
+        -F number="${pr_number}" \
+        | jq -s '
+            [ .[].data.repository.pullRequest.reviewThreads.nodes[]
+              | {
+                  id, isResolved, isOutdated, path, line,
+                  commentId: (.comments.nodes[0].databaseId // null),
+                  author: (.comments.nodes[0].author.login // null),
+                  body: (.comments.nodes[0].body // "")
+                }
+            ]
+        ' || return 1
 }

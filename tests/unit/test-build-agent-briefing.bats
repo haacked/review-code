@@ -72,6 +72,57 @@ create_test_session() {
     echo "$session_id"
 }
 
+# A session whose PR carries a resolved inline thread and an open thread with
+# a reply, to exercise the Existing Review Comments collapsing.
+create_commented_session() {
+    local session_id="review-code-99999-1234567890"
+    local cmd_dir="$CLAUDE_SESSION_DIR/review-code"
+    local artifacts="$cmd_dir/artifacts-commented"
+    mkdir -p "$artifacts"
+
+    printf '%s\n' \
+        'diff --git a/test.ts b/test.ts' \
+        'index abc..def 100644' \
+        '--- a/test.ts' \
+        '+++ b/test.ts' \
+        '@@ -1,3 +1,3 @@' \
+        ' line1' \
+        '-old line' \
+        '+new line' \
+        ' line3' \
+        > "$artifacts/diff.patch"
+
+    jq -n --arg dir "$artifacts" '{
+        status: "ready",
+        mode: "pr",
+        artifacts_dir: $dir,
+        diff_path: ($dir + "/diff.patch"),
+        review_context: "This is test review context",
+        file_metadata: {modified_files: [{path: "test.ts", is_infra_config: false}]},
+        pr: {
+            number: 3,
+            title: "Commented PR",
+            url: "https://example.com/3",
+            author: "testuser",
+            base: "main",
+            head: "feature",
+            state: "OPEN",
+            body: "body",
+            comments: {
+                conversation: [],
+                reviews: [],
+                inline: [
+                    {id: 1, author: "eve", body: "settled point", path: "test.ts", line: 1, in_reply_to_id: null, resolved: true, outdated: false},
+                    {id: 2, author: "frank", body: "root of an open thread", path: "test.ts", line: 2, in_reply_to_id: null, resolved: false, outdated: false},
+                    {id: 3, author: "grace", body: "the last reply", path: "test.ts", line: 2, in_reply_to_id: 2, resolved: false, outdated: false}
+                ]
+            }
+        }
+    }' > "$cmd_dir/$session_id.json"
+
+    echo "$session_id"
+}
+
 # A session whose files exercise all three arms of the frontend rule: an
 # extension match, a UI-root match, and a same-directory-as-.tsx match, plus a
 # backend .ts that must not match any of them.
@@ -370,4 +421,42 @@ run_briefing() {
     local id; id=$(create_test_session)
     run_briefing "$id" --agents "correctness" --diff-file "$BATS_TEST_TMPDIR/absent.patch"
     [ "$status" -ne 0 ]
+}
+
+@test "build-agent-briefing: collapses a resolved inline thread to one index line" {
+    local id; id=$(create_commented_session)
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
+    grep -q -- "- \[inline, resolved\] @eve test.ts:1: settled point" "$output/briefing.md"
+}
+
+@test "build-agent-briefing: summarizes an open thread's reply instead of dropping it" {
+    local id; id=$(create_commented_session)
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
+    grep -q -- "- \[inline\] @frank test.ts:2: root of an open thread" "$output/briefing.md"
+    grep -q -- "(1 reply, last by @grace: the last reply)" "$output/briefing.md"
+}
+
+@test "build-agent-briefing: Comment structure note explains thread collapsing" {
+    local id; id=$(create_test_session)
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
+    grep -q "A resolved thread collapses to one line" "$output/briefing.md"
+}
+
+@test "build-agent-briefing: writes the uncapped comments to comments.json" {
+    local id; id=$(create_commented_session)
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
+    [ -s "$output/comments.json" ]
+    jq -e '.inline | length == 3' "$output/comments.json"
+}
+
+@test "build-agent-briefing: the Comment structure note points to comments.json for the full text" {
+    local id; id=$(create_test_session)
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
+    grep -q "comments.json" "$output/briefing.md"
+}
+
+@test "build-agent-briefing: does not write comments.json when the PR has no comments" {
+    local id; id=$(create_frontend_session)
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
+    [ ! -e "$output/comments.json" ]
 }

@@ -12,6 +12,7 @@ set -euo pipefail
 #   get-status <session-id>    - Get status from cached session
 #   get-ready-data <session-id> - Get all data for "ready" status from cache
 #   get-review-fields <session-id> - Get only the small orchestrator-facing fields (no diff/context/PR body)
+#   get-pr-inline-comments <session-id> - Get inline comment roots (path, line, author, body, resolved, outdated)
 #   get-error-data <session-id> - Get error message from cache
 #   get-ambiguous-data <session-id> - Get disambiguation fields from cache
 #   get-prompt-data <session-id> - Get prompt fields from cache
@@ -222,6 +223,25 @@ case "${ACTION}" in
         + (if .commit then {commit} else {} end)
         + (if .range then {range} else {} end)
         + (if .area then {area} else {} end)'
+        ;;
+
+    "get-pr-inline-comments")
+        # Narrow accessor for review-pr-output.md's Generate Suggested Comments
+        # step. Returns only inline comment roots (path, line, author, body,
+        # resolved, outdated) for dedup against fresh findings; replies are
+        # dropped since they share their root's anchor and add nothing the step
+        # reads. pr.comments is excluded from get-review-fields for being large,
+        # so this is the one place the orchestrator pulls it into context.
+        SESSION_ID="${1:-}"
+        if [[ -z "${SESSION_ID}" ]]; then
+            echo "ERROR: Session ID required" >&2
+            exit 1
+        fi
+
+        session_get_all "${SESSION_ID}" | jq -c '
+            [.pr.comments.inline[]? | select(.in_reply_to_id == null) |
+                {path, line, author, body, resolved: (.resolved // false), outdated: (.outdated // false)}]
+        '
         ;;
 
     "get-find-data")

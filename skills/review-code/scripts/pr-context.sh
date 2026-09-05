@@ -25,7 +25,10 @@
 #     "comments": {
 #       "conversation": [...],  # PR discussion thread comments
 #       "reviews": [...],       # Review summaries with state
-#       "inline": [...]         # Line-level code review comments
+#       "inline": [...]         # Line-level code review comments; each
+#                                # thread's root comment is stamped with
+#                                # "resolved"/"outdated" when that state was
+#                                # fetched (replies are left as-is)
 #     }
 #   }
 
@@ -38,6 +41,9 @@ set -euo pipefail
 
 # shellcheck source=lib/helpers/gh-wrapper.sh
 source "${SCRIPT_DIR}/helpers/gh-wrapper.sh"
+
+# shellcheck source=helpers/gh-review-helpers.sh
+source "${SCRIPT_DIR}/helpers/gh-review-helpers.sh"
 
 # Check if gh is installed
 if ! command -v gh &> /dev/null; then
@@ -136,6 +142,10 @@ fetch_conversation_comments() {
 
 # Fetch inline review comments (line-level code feedback)
 # Uses paginated API to handle PRs with many review comments.
+#
+# Omits `diff_hunk`: nothing in the skill reads it back (every reviewer
+# already has the full diff), and on a busy PR it dominates the payload —
+# 76% of comments.json on a measured 163-comment PR.
 fetch_inline_comments() {
     local pr_number="$1"
     local repo_spec="$2"
@@ -145,7 +155,56 @@ fetch_inline_comments() {
     validate_repo_spec "${repo_spec}" || return 1
 
     gh api --paginate "repos/${repo_spec}/pulls/${pr_number}/comments" \
-        | jq -s 'add | [.[] | {id, author: .user.login, body, path, line, side, diff_hunk, created_at, in_reply_to_id, url: .html_url}]'
+        | jq -s 'add | [.[] | {id, author: .user.login, body, path, line, side, created_at, in_reply_to_id, url: .html_url}]'
+}
+
+# Fetch each review-comment thread's resolution state, keyed by the thread's
+# root comment id (as a string, for use as a JSON object key). The REST
+# comments endpoint fetch_inline_comments uses has no notion of thread state;
+# only the GraphQL reviewThreads connection does.
+#
+# Non-fatal by convention with the rest of this file: callers should fall
+# back to an empty object on failure rather than treat this as fatal, since
+# every comment then just renders as an open thread, same as before this
+# existed.
+fetch_review_thread_state() {
+    local pr_number="$1"
+    local repo_spec="$2"
+
+    validate_pr_number "${pr_number}" || return 1
+    validate_repo_spec "${repo_spec}" || return 1
+
+    local owner="${repo_spec%%/*}"
+    local repo_name="${repo_spec##*/}"
+
+    local nodes
+    nodes=$(fetch_review_threads "${owner}" "${repo_name}" "${pr_number}") || return 1
+
+    echo "${nodes}" | jq '
+        [ .[] | select(.commentId != null)
+          | { (.commentId | tostring): {resolved: .isResolved, outdated: .isOutdated} }
+        ] | add // {}
+    '
+}
+
+# Stamp each thread's root comment (in_reply_to_id == null) with its
+# resolution state; replies are left untouched, since format-existing-comments.sh
+# only ever reads the state off the root once it has grouped a thread. A root
+# missing from state_json (state_json is "{}" on fetch failure) defaults to
+# open: resolved=false, outdated=false.
+merge_thread_state() {
+    local inline_json="$1" state_json="$2"
+
+    jq --argjson state "${state_json}" '
+        map(
+            if .in_reply_to_id == null then
+                (.id | tostring) as $tk
+                | . + ($state[$tk] // {resolved: false, outdated: false})
+            else
+                .
+            end
+        )
+    ' <<< "${inline_json}"
 }
 
 # Fetch review summaries (approval/changes requested with body text)
@@ -317,6 +376,16 @@ main() {
             # Non-fatal: log warning but continue
             warning "Failed to fetch inline comments"
             inline_comments="[]"
+        fi
+
+        if [[ "$(echo "${inline_comments}" | jq 'length')" -gt 0 ]]; then
+            local thread_state="{}"
+            if ! thread_state=$(fetch_review_thread_state "${pr_number}" "${repo_spec}"); then
+                # Non-fatal: every comment renders as an open thread instead
+                warning "Failed to fetch review thread resolution state"
+                thread_state="{}"
+            fi
+            inline_comments=$(merge_thread_state "${inline_comments}" "${thread_state}")
         fi
     fi
 
