@@ -72,9 +72,17 @@ run_script() {
     [[ "$output" == "- [inline, resolved] @eve foo.py:10: settled point" ]]
 }
 
-@test "format-existing-comments: an outdated thread collapses to one index line" {
-    run_script '{"inline":[{"id":1,"author":"eve","body":"code moved","path":"foo.py","line":10,"in_reply_to_id":null,"resolved":false,"outdated":true}]}'
-    [[ "$output" == "- [inline, outdated] @eve foo.py:10: code moved" ]]
+@test "format-existing-comments: an outdated but unresolved thread keeps its full body" {
+    # isOutdated only means the anchor line moved, not that the issue was
+    # addressed; collapsing it the way a resolved thread collapses would lose
+    # a still-open concern.
+    run_script '{"inline":[{"id":1,"author":"eve","body":"still an open concern","path":"foo.py","line":10,"in_reply_to_id":null,"resolved":false,"outdated":true}]}'
+    [[ "$output" == "- [inline, outdated] @eve foo.py:10: still an open concern" ]]
+}
+
+@test "format-existing-comments: an outdated and resolved thread collapses like any resolved thread" {
+    run_script '{"inline":[{"id":1,"author":"eve","body":"code moved and was fixed","path":"foo.py","line":10,"in_reply_to_id":null,"resolved":true,"outdated":true}]}'
+    [[ "$output" == "- [inline, resolved] @eve foo.py:10: code moved and was fixed" ]]
 }
 
 @test "format-existing-comments: a resolved thread's replies do not appear" {
@@ -101,6 +109,31 @@ run_script() {
     [ "${#kept}" -eq 800 ]
 }
 
+@test "format-existing-comments: caps a resolved thread's index line at 100 characters" {
+    long=$(python3 -c "print('y' * 200)")
+    run_script "{\"inline\":[{\"id\":1,\"author\":\"eve\",\"body\":\"$long\",\"path\":\"foo.py\",\"line\":10,\"in_reply_to_id\":null,\"resolved\":true,\"outdated\":false}]}"
+    [ "$status" -eq 0 ]
+    body="${output#*: }"
+    [[ "$body" == *"…" ]]
+    kept="${body%…}"
+    [ "${#kept}" -eq 100 ]
+}
+
+@test "format-existing-comments: caps a reply preview at 150 characters" {
+    long=$(python3 -c "print('z' * 300)")
+    run_script "{\"inline\":[
+        {\"id\":1,\"author\":\"eve\",\"body\":\"root\",\"path\":\"foo.py\",\"line\":10,\"in_reply_to_id\":null,\"resolved\":false,\"outdated\":false},
+        {\"id\":2,\"author\":\"frank\",\"body\":\"$long\",\"path\":\"foo.py\",\"line\":10,\"in_reply_to_id\":1,\"resolved\":false,\"outdated\":false}
+    ]}"
+    [ "$status" -eq 0 ]
+    reply_line=$(echo "$output" | tail -1)
+    body="${reply_line#*last by @frank: }"
+    body="${body%)}"
+    [[ "$body" == *"…" ]]
+    kept="${body%…}"
+    [ "${#kept}" -eq 150 ]
+}
+
 @test "format-existing-comments: a resolved thread's index line uses only the first line of the body" {
     run_script '{"inline":[{"id":1,"author":"eve","body":"first line\nsecond line","path":"foo.py","line":10,"in_reply_to_id":null,"resolved":true,"outdated":false}]}'
     [[ "$output" == "- [inline, resolved] @eve foo.py:10: first line" ]]
@@ -111,4 +144,31 @@ run_script() {
     run_script '{}'
     [ "$status" -eq 0 ]
     [ -z "$output" ]
+}
+
+@test "format-existing-comments: strips a trailing carriage return from a CRLF body's first line" {
+    # GitHub review comment bodies use \r\n; splitting on \n alone leaves a
+    # stray \r that renders as a control character in the briefing.
+    local body=$'first line\r\nsecond line'
+    local json
+    json=$(jq -n --arg body "$body" '{inline: [{id: 1, author: "eve", body: $body, path: "foo.py", line: 10, in_reply_to_id: null, resolved: true, outdated: false}]}')
+    run bash -c 'echo "$1" | "$2"' -- "$json" "$SCRIPT"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "- [inline, resolved] @eve foo.py:10: first line" ]]
+    [[ "$output" != *$'\r'* ]]
+}
+
+@test "format-existing-comments: a null inline comment body does not crash the pipeline" {
+    run_script '{"inline":[{"id":1,"author":"eve","body":null,"path":"foo.py","line":10,"in_reply_to_id":null,"resolved":true,"outdated":false}]}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "- [inline, resolved] @eve foo.py:10: "* ]]
+}
+
+@test "format-existing-comments: a null reply body does not crash the reply summary" {
+    run_script '{"inline":[
+        {"id":1,"author":"eve","body":"root","path":"foo.py","line":10,"in_reply_to_id":null,"resolved":false,"outdated":false},
+        {"id":2,"author":"frank","body":null,"path":"foo.py","line":10,"in_reply_to_id":1,"resolved":false,"outdated":false}
+    ]}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"(1 reply, last by @frank: )"* ]]
 }

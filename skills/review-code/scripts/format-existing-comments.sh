@@ -9,9 +9,12 @@ set -euo pipefail
 # inline comment (with reply chains) in full. Left verbatim, a busy PR's
 # comment history dwarfs the diff it exists to give context for. This script
 # collapses each inline thread to its root comment plus a one-line summary of
-# its replies, reduces a resolved or outdated thread to a single index line
-# (the point was already settled or the code has since moved), and caps every
-# surviving body. The session file still holds the untruncated text.
+# its replies, reduces a resolved thread to a single index line (the point
+# was settled), and caps every surviving body. An outdated-but-unresolved
+# thread keeps its full body: the line moved, not necessarily the issue, and
+# a partial fix often changes the line while leaving the issue described.
+# `comments.json`, written alongside this briefing, still holds the
+# untruncated text.
 #
 # Usage:
 #   format-existing-comments.sh < comments.json
@@ -39,7 +42,8 @@ def trunc($n):
   else . end;
 
 def firstline($n):
-  (split("\n")[0]) | trunc($n);
+  ((. // "") | split("\n")) as $lines
+  | ($lines[0] // "") | rtrimstr("\r") | trunc($n);
 
 ( (.conversation // [])[] | "- [conversation] @\(.author): \(.body | trunc($body_cap))" ),
 
@@ -52,11 +56,11 @@ def firstline($n):
   | . as $thread
   | (($thread | map(select(.in_reply_to_id == null)) | first) // $thread[0]) as $root
   | ($thread | length) as $n
-  | if ($root.resolved == true or $root.outdated == true) then
-      "- [inline, \(if $root.resolved then "resolved" else "outdated" end)] @\($root.author) \($root.path):\($root.line // "?"): \($root.body | firstline($index_cap))"
+  | if $root.resolved == true then
+      "- [inline, resolved] @\($root.author) \($root.path):\($root.line // "?"): \($root.body | firstline($index_cap))"
     else
       (
-        "- [inline] @\($root.author) \($root.path):\($root.line // "?"): \($root.body | trunc($body_cap))",
+        "- [inline\(if $root.outdated == true then ", outdated" else "" end)] @\($root.author) \($root.path):\($root.line // "?"): \($root.body | trunc($body_cap))",
         (if $n > 1 then
           ($thread[-1]) as $last
           | "  (\($n - 1) repl\(if ($n - 1) == 1 then "y" else "ies" end), last by @\($last.author): \($last.body | firstline($reply_cap)))"

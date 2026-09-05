@@ -413,9 +413,13 @@ setup() {
 }
 
 @test "pr-context.sh: fetch_review_thread_state fails non-zero on a GraphQL error" {
+    # The real gh binary exits non-zero whenever a GraphQL response body
+    # carries an errors array, even alongside a 200 response; this stub
+    # matches that instead of relying on jq's incidental failure to iterate
+    # a missing .data field.
     run bash -c "
         source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh'
-        gh() { echo '{\"errors\":[{\"message\":\"boom\"}]}'; }
+        gh() { echo '{\"errors\":[{\"message\":\"boom\"}]}' >&2; return 1; }
         fetch_review_thread_state 42 'owner/repo'
     "
     [ "$status" -eq 1 ]
@@ -479,4 +483,36 @@ setup() {
     "
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.comments.inline[0].resolved == true'
+}
+
+@test "pr-context.sh: main degrades to open threads when the GraphQL fetch fails" {
+    # The non-fatal contract this file documents in three places (the
+    # fetch_review_thread_state header, the warning branch in main, and
+    # merge_thread_state's header): a failed thread-state fetch must not
+    # fail the whole PR context fetch, just leave every thread open.
+    run bash -c "
+        source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh'
+        gh() {
+            args=\"\$*\"
+            if [[ \"\$args\" == *'graphql'* ]]; then
+                echo 'gh: Could not resolve to a Repository' >&2
+                return 1
+            elif [[ \"\$args\" == *'--json reviews'* ]]; then
+                echo '{\"reviews\":[]}'
+            elif [[ \"\$args\" == *'pulls/9/comments'* ]]; then
+                echo '[{\"id\":7,\"user\":{\"login\":\"eve\"},\"body\":\"note\",\"path\":\"f.py\",\"line\":1,\"side\":\"RIGHT\",\"diff_hunk\":\"\",\"created_at\":\"now\",\"in_reply_to_id\":null,\"html_url\":\"u\"}]'
+            elif [[ \"\$args\" == *'pr view 9'* ]]; then
+                echo '{\"number\":9,\"title\":\"t\",\"body\":\"b\",\"url\":\"https://github.com/owner/repo/pull/9\",\"author\":{\"login\":\"a\"},\"headRefName\":\"h\",\"headRefOid\":\"sha\",\"baseRefName\":\"main\",\"state\":\"OPEN\",\"isCrossRepository\":false}'
+            elif [[ \"\$args\" == *'pr diff 9'* ]]; then
+                echo 'diff --git a/f.py b/f.py'
+            elif [[ \"\$args\" == *'issues/9/comments'* ]]; then
+                echo '[]'
+            else
+                echo '[]'
+            fi
+        }
+        main 'https://github.com/owner/repo/pull/9' 2>/dev/null
+    "
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.comments.inline[0].resolved == false and .comments.inline[0].outdated == false'
 }

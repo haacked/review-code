@@ -178,7 +178,7 @@ if jq -e '(.pr.comments // {}) | (( .conversation // [] ) + ( .reviews // [] ) +
     jq -c '.pr.comments // {}' "${SESSION_FILE}" | tee "${ARTIFACTS_DIR}/comments.json" \
         | "${SCRIPT_DIR}/format-existing-comments.sh" >> "${BRIEFING}"
     emit ""
-    emit "Comment structure: \`conversation\` (discussion), \`reviews\` (approve/changes), \`inline\` (line-level, one bullet per thread). A resolved or outdated thread collapses to one line; an open thread with replies shows its root comment plus a reply-count summary. Bodies are capped — the uncapped text is in \`comments.json\`, alongside this briefing."
+    emit "Comment structure: \`conversation\` (discussion), \`reviews\` (approve/changes), \`inline\` (line-level, one bullet per thread). A resolved thread collapses to one line; an open thread (marked \`outdated\` when the anchor line moved, which does not mean the issue is fixed) shows its root comment plus a reply-count summary. Bodies are capped — the uncapped text is in \`comments.json\`, alongside this briefing."
     emit ""
 fi
 

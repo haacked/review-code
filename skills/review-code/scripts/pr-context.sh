@@ -139,6 +139,10 @@ fetch_conversation_comments() {
 
 # Fetch inline review comments (line-level code feedback)
 # Uses paginated API to handle PRs with many review comments.
+#
+# Omits `diff_hunk`: nothing in the skill reads it back (every reviewer
+# already has the full diff), and on a busy PR it dominates the payload —
+# 76% of comments.json on a measured 163-comment PR.
 fetch_inline_comments() {
     local pr_number="$1"
     local repo_spec="$2"
@@ -148,7 +152,7 @@ fetch_inline_comments() {
     validate_repo_spec "${repo_spec}" || return 1
 
     gh api --paginate "repos/${repo_spec}/pulls/${pr_number}/comments" \
-        | jq -s 'add | [.[] | {id, author: .user.login, body, path, line, side, diff_hunk, created_at, in_reply_to_id, url: .html_url}]'
+        | jq -s 'add | [.[] | {id, author: .user.login, body, path, line, side, created_at, in_reply_to_id, url: .html_url}]'
 }
 
 # Fetch each review-comment thread's resolution state, keyed by the thread's

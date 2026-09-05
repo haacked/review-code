@@ -80,5 +80,3 @@ When the context includes PR comments (`$pr_comments`):
    | Unused import | @linter | Invalid | False positive - used in macro |
    ```
 6. **Focus on NEW findings** not already raised
-
-Comment structure: `conversation` (discussion), `reviews` (approve/changes), `inline` (line-level with `path`, `line`, `author`, `body`)

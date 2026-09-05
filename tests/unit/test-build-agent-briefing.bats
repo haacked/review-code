@@ -439,7 +439,7 @@ run_briefing() {
 @test "build-agent-briefing: Comment structure note explains thread collapsing" {
     local id; id=$(create_test_session)
     run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
-    grep -q "resolved or outdated thread collapses" "$output/briefing.md"
+    grep -q "A resolved thread collapses to one line" "$output/briefing.md"
 }
 
 @test "build-agent-briefing: writes the uncapped comments to comments.json" {
