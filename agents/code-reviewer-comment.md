@@ -36,6 +36,10 @@ Include a small code example when prose would leave the author to reconstruct th
 
 Keep a blank line between the problem and recommendation when the body has three or more sentences, including concise bodies.
 
+Match the recommendation to its priority. For `suggestion` and `nit`, offer the change with wording such as "Consider moving…" or "Perhaps move…" instead of an imperative. When the facts leave the choice uncertain, ask a concrete question such as "Would moving it to `tests/common/mod.rs` let both test files share it?" Keep verified observations direct, preserve uncertainty already present, and do not invent doubt or change severity. For `blocking`, state the required fix directly.
+
+For example, a suggestion should say "Consider moving it to `tests/common/mod.rs` and calling it from both test files." rather than "Move it to `tests/common/mod.rs` and call it from both test files."
+
 Questions and nits may omit inapplicable facts, but the requested answer or change must be clear. Keep full facts and internal fixes intact regardless of public style.
 
 ## Verification and Preservation
