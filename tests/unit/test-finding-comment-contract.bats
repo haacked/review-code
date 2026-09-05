@@ -219,9 +219,11 @@ write_verdict() {
     [ "$(echo "$output" | jq -r '.withheld[0].description')" = "$(jq -r '.bad_description' "$FIXTURE")" ]
 }
 
-@test "finding contract: PASS cannot override missing causal coverage" {
+@test "finding contract: detailed PASS cannot override missing causal coverage" {
     desired=$(jq -c '.desired_description' "$FIXTURE")
     write_finding "$desired"
+    jq '.[0].comment_style = "detailed"' "$INPUT" > "$BATS_TEST_TMPDIR/detailed.json"
+    mv "$BATS_TEST_TMPDIR/detailed.json" "$INPUT"
     "$CONTRACT" compose "$INPUT" > "$COMPOSED"
     write_verdict PASS false true false
 
@@ -561,4 +563,114 @@ EOF
 
     [ "$status" -eq 0 ]
     [ "$(echo "$output" | jq -r '.comments[0].line_content')" = "return good" ]
+}
+
+@test "finding contract: concise comments can omit investigation details" {
+    desired=$(jq -cn '"`blocking`: A person override for `tier` prevents a same-named group property from being loaded. Make `requires_db_property` distinguish person and group filters so person overrides satisfy only person filters."')
+    write_finding "$desired"
+    "$CONTRACT" compose "$INPUT" > "$COMPOSED"
+    write_verdict PASS false true false
+    jq '.[0].coverage.result = false | .[0].coverage.regression_case = false' "$VERDICTS" > "$BATS_TEST_TMPDIR/concise-verdict.json"
+
+    run "$CONTRACT" gate "$COMPOSED" "$BATS_TEST_TMPDIR/concise-verdict.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.findings[0].publishable')" = "true" ]
+    [ "$(echo "$output" | jq -r '.findings[0].comment_style')" = "concise" ]
+    [ "$(echo "$output" | jq -c '.findings[0].facts')" = "$(jq -c '.facts' "$FIXTURE")" ]
+}
+
+@test "finding contract: concise PASS still requires the problem trigger and suggested change" {
+    desired=$(jq -c '.desired_description' "$FIXTURE")
+    for field in problem trigger requested_change; do
+        write_finding "$desired"
+        "$CONTRACT" compose "$INPUT" > "$COMPOSED"
+        write_verdict PASS false true true
+        jq --arg field "$field" '.[0].coverage[$field] = false' "$VERDICTS" > "$BATS_TEST_TMPDIR/incomplete-verdict.json"
+
+        run "$CONTRACT" gate "$COMPOSED" "$BATS_TEST_TMPDIR/incomplete-verdict.json"
+
+        [ "$status" -eq 0 ]
+        [ "$(echo "$output" | jq '.findings | length')" -eq 0 ]
+        [ "$(echo "$output" | jq '.rewrites_needed | length')" -eq 1 ]
+    done
+}
+
+@test "finding contract: invalid comment styles are withheld" {
+    desired=$(jq -c '.desired_description' "$FIXTURE")
+    write_finding "$desired"
+    jq '.[0].comment_style = "verbose"' "$INPUT" > "$BATS_TEST_TMPDIR/invalid-style.json"
+
+    run "$CONTRACT" compose "$BATS_TEST_TMPDIR/invalid-style.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.findings | length')" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.withheld[0].quality_state')" = "invalid_contract" ]
+}
+
+@test "finding contract: accepted PR comments survive composition gate and publication unchanged" {
+    local accepted="$PROJECT_ROOT/tests/fixtures/finding-comments/pr-93773.json"
+    local gated="$BATS_TEST_TMPDIR/gated.json"
+    for style in concise detailed; do
+        jq --arg style "$style" '.cases | to_entries | map(
+            .value as $case | ($case.after | split("\n\n")) as $paragraphs | {
+                id: .key,
+                comment_style: $style,
+                severity: "suggestion",
+                location: $case.location,
+                file: ($case.location | split(":")[0]),
+                line: ($case.location | capture(":(?<line>[0-9]+)").line | tonumber),
+                description: $case.after,
+                proposed_fix: $case.before,
+                facts: {
+                    problem: $paragraphs[0],
+                    trigger: null,
+                    mechanism: [$case.before],
+                    result: $paragraphs[0],
+                    requested_change: $case.after,
+                    regression_case: null,
+                    regression_rationale: null
+                }
+            }
+        )' "$accepted" > "$INPUT"
+        "$CONTRACT" compose "$INPUT" > "$COMPOSED"
+        jq 'map({
+            id: .id,
+            coverage: {problem: true, trigger: true, mechanism: true, result: true, requested_change: true, regression_case: true},
+            inference_required: false,
+            verdict: "PASS",
+            notes: ""
+        })' "$INPUT" > "$VERDICTS"
+        "$CONTRACT" gate --final "$COMPOSED" "$VERDICTS" > "$gated"
+
+        run "$CONTRACT" publish "$gated"
+
+        [ "$status" -eq 0 ]
+        [ "$(echo "$output" | jq '.comments | length')" -eq 16 ]
+        [ "$(echo "$output" | jq -c '[.comments[].body]')" = "$(jq -c '[.cases[].after]' "$accepted")" ]
+        [ "$(echo "$output" | jq -c '[.findings[].proposed_fix]')" = "$(jq -c '[.cases[].before]' "$accepted")" ]
+        [ "$(echo "$output" | jq -c '[.findings[].facts]')" = "$(jq -c '[.[].facts]' "$INPUT")" ]
+    done
+}
+
+@test "finding contract: an internal fix cannot substitute for a missing public description" {
+    jq -n '{
+        findings: [{
+            id: 1,
+            publishable: true,
+            quality_state: "passed",
+            file: "src/filter.ts",
+            line: 12,
+            description: "",
+            proposed_fix: "Include both snapshots."
+        }],
+        withheld: [],
+        rewrites_needed: []
+    }' > "$INPUT"
+
+    run "$CONTRACT" publish "$INPUT"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.comments | length')" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.withheld[0].quality_state')" = "publication_failed" ]
 }

@@ -49,6 +49,8 @@ def validate_facts(item: dict[str, Any]) -> list[str]:
     identifier = item.get("id")
     if not valid_identifier(identifier):
         reasons.append("id must be a non-empty string or integer")
+    if item.get("comment_style", "concise") not in ("concise", "detailed"):
+        reasons.append("comment_style must be concise or detailed")
     severity = item.get("severity")
     if severity not in SEVERITIES:
         reasons.append("severity must be blocking, suggestion, question, or nit")
@@ -128,6 +130,7 @@ def compose(items: Any) -> dict[str, list[dict[str, Any]]]:
             withheld_findings.append(withheld(raw, "invalid_contract", reasons))
             continue
         finding = dict(raw)
+        finding.setdefault("comment_style", "concise")
         finding["publishable"] = False
         finding["quality_state"] = "ungated"
         findings.append(finding)
@@ -140,6 +143,12 @@ def compose(items: Any) -> dict[str, list[dict[str, Any]]]:
 
 def applicable_coverage(item: dict[str, Any]) -> list[str]:
     facts = item["facts"]
+    if item.get("comment_style", "concise") == "concise":
+        return [
+            field
+            for field in ("problem", "trigger", "requested_change")
+            if text(facts.get(field))
+        ]
     fields = [
         field
         for field in (
@@ -241,8 +250,7 @@ def gate(composed: Any, verdicts: Any, final: bool) -> dict[str, list[dict[str, 
 
 
 def publication_body(item: dict[str, Any]) -> str:
-    parts = [text(item.get("description")), text(item.get("proposed_fix"))]
-    return "\n\n".join(part for part in parts if part)
+    return text(item.get("description")) or ""
 
 
 def publish(quality: Any) -> dict[str, Any]:

@@ -235,7 +235,7 @@ Bad examples (robotic, narrating the approach, or over-explaining):
 
 **Code Suggestions:**
 
-When recommending a code change, use GitHub's suggestion syntax in the comment body:
+The published `description` is already complete. Never append `proposed_fix` or expand it with internal evidence at this stage. Include code only when it clarifies a non-obvious action. For a replacement at the comment location, use GitHub's suggestion syntax:
 
 ````markdown
 ```suggestion

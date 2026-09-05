@@ -212,7 +212,8 @@ case "${ACTION}" in
             chunk_metadata: (.chunk_metadata // null),
             chunks: (if .chunks then [.chunks[] | {id, label, files, size_kb, diff_path}] else null end),
             commit_messages_present: (has("commit_messages")),
-            adversary: (.adversary // null)
+            adversary: (.adversary // null),
+            comment_style: (.comment_style // "concise")
         }
         + ({force, draft, self, overwrite, append, full, fix} | with_entries(select(.value)))
         + (if .debug_session_dir then {debug_session_dir} else {} end)

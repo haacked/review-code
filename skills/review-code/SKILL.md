@@ -52,6 +52,7 @@ Single-agent arguments, each on local changes only:
 - `--self` - Allow creating draft review on your own PR (for testing)
 - `--overwrite` - Replace existing review file without prompting
 - `--append` - Append to existing review file without prompting. In PR mode, also resolves review threads from your previous review whose findings the author has since addressed (the code changed and the new review no longer flags them). When the previous review recorded the commit it ran at, the re-review covers only what changed since then; findings on files the delta doesn't touch carry forward. Anything uncertain (force-push, rebase, a moved base, a delta covering most of the PR) falls back to a full review and says so.
+- `--comment-style concise|detailed` - Use concise public comments by default: problem, relevant trigger, and suggested fix, with a short code example when useful. `detailed` includes the full causal explanation. Both styles retain the same internal analysis and review depth.
 - `--full` - Force a complete re-review even when an incremental one is possible.
 - `--fix` - After the review, apply fixes for findings the agent can resolve cleanly. Edits the working tree directly. Items not fixed (and the choice made on any judgment-call fixes) are listed in a Fix Summary section in the review. Not compatible with `learn` or `find`.
 - `--parent <ref>` - Override the base branch used for branch / current-branch reviews. By default the base is detected in order: the branch's open PR base (via `gh pr list`, time-bounded and skipped gracefully when gh is unavailable or offline), a recorded stack parent (Graphite or `branch.<name>.parent` in git config), then the default branch. Use `--parent` to force a different base, e.g. `--parent main`.
@@ -80,6 +81,7 @@ Examples:
 - `/review-code find 123` - Find review for PR #123
 - `/review-code learn 123` - Analyze what happened after reviewing PR #123
 - `/review-code 123 --draft -f` - Review PR, create draft review, skip confirmation
+- `/review-code 123 --comment-style detailed` - Include the full causal explanation in public comments
 - `/review-code 123 --adversary:copilot` - Review PR #123, then have Copilot double-check the findings
 
 ---
@@ -101,7 +103,7 @@ Run the parse script to determine the review mode and parameters:
 ~/.agents/skills/review-code/scripts/parse-review-arg.sh $ARGUMENTS 2>&1
 ```
 
-Save the JSON output as `PARSE_RESULT`. Reference this throughout; do not run the parse script again.
+Save the JSON output as `PARSE_RESULT`. Reference this throughout; do not run the parse script again. When a prompt below requires reinitializing with a chosen target or scope, retain `--comment-style <PARSE_RESULT.comment_style>` so the choice survives disambiguation.
 
 **Handler File Selection:**
 
