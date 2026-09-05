@@ -347,11 +347,6 @@ setup() {
 # fetch_review_thread_state / merge_thread_state
 # =============================================================================
 
-@test "pr-context.sh: fetch_review_thread_state uses graphql" {
-    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh' && declare -f fetch_review_thread_state | grep -q 'graphql'"
-    [ "$status" -eq 0 ]
-}
-
 @test "pr-context.sh: fetch_review_thread_state validates pr_number" {
     run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh' && fetch_review_thread_state 'invalid' 'owner/repo'"
     [ "$status" -eq 1 ]
@@ -381,15 +376,10 @@ setup() {
     echo "$output" | jq -e '.["5"] == {resolved: false, outdated: true}'
 }
 
-@test "pr-context.sh: fetch_review_thread_state delegates pagination to gh --paginate" {
-    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh' && declare -f fetch_review_thread_state | grep -q -- '--paginate'"
-    [ "$status" -eq 0 ]
-}
-
-@test "pr-context.sh: fetch_review_thread_state query names its cursor \$endCursor" {
-    # gh's --paginate re-issues a GraphQL query with $endCursor set to the
-    # previous page's cursor; any other variable name is silently never paged.
-    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh' && declare -f fetch_review_thread_state | grep -q 'after: \$endCursor'"
+@test "pr-context.sh: fetch_review_thread_state delegates the fetch to fetch_review_threads" {
+    # The GraphQL query and its pagination now live in gh-review-helpers.sh
+    # (see test-gh-review-helpers.bats), shared with resolve-review-threads.sh.
+    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh' && declare -f fetch_review_thread_state | grep -q 'fetch_review_threads'"
     [ "$status" -eq 0 ]
 }
 

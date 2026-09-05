@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2016  # GraphQL documents; $var are GraphQL variables bound via --arg
+# shellcheck disable=SC2016  # resolve_thread's mutation; $threadId is a GraphQL variable bound via -f
 # resolve-review-threads.sh - List and resolve GitHub PR review threads
 #
 # Self-contained vendoring of the gh-resolve-threads utility so the
@@ -36,115 +36,35 @@ source "${SCRIPT_DIR}/helpers/gh-wrapper.sh"
 # shellcheck source=helpers/pr-target.sh
 source "${SCRIPT_DIR}/helpers/pr-target.sh"
 
+# shellcheck source=helpers/gh-review-helpers.sh
+source "${SCRIPT_DIR}/helpers/gh-review-helpers.sh"
+
 # ── Thread fetching ──────────────────────────────────────────────────────────
 
-# Fetch all review threads for a PR, handling pagination.
-# Outputs a JSON array of flattened thread objects.
+# Fetch all review threads for a PR, capped and previewed for display and the
+# JSON summary. Delegates the GraphQL fetch and pagination to
+# fetch_review_threads (see helpers/gh-review-helpers.sh), which this script
+# shares with pr-context.sh.
 fetch_all_threads() {
     local owner="$1" repo_name="$2" pr_number="$3"
 
-    local query='
-    query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
-      repository(owner: $owner, name: $repo) {
-        pullRequest(number: $number) {
-          reviewThreads(first: 100, after: $cursor) {
-            nodes {
-              id
-              isResolved
-              isOutdated
-              path
-              line
-              comments(first: 1) {
-                nodes {
-                  databaseId
-                  body
-                  author { login }
-                }
-              }
-            }
-            pageInfo {
-              hasNextPage
-              endCursor
-            }
-          }
-        }
-      }
-    }
-  '
+    local nodes
+    if ! nodes=$(fetch_review_threads "$owner" "$repo_name" "$pr_number"); then
+        log_error "GraphQL query failed while fetching review threads for ${owner}/${repo_name}#${pr_number}"
+        exit 1
+    fi
 
-    local all_nodes="[]"
-    local cursor="null"
-
-    while true; do
-        local -a cursor_args=()
-        if [[ "$cursor" != "null" ]]; then
-            cursor_args+=(-f cursor="$cursor")
-        fi
-
-        local result gh_err
-        gh_err=$(mktemp)
-        result=$(gh api graphql \
-            -f query="$query" \
-            -F owner="$owner" \
-            -F repo="$repo_name" \
-            -F number="$pr_number" \
-            "${cursor_args[@]}" \
-            2> "$gh_err") || {
-            log_error "GraphQL query failed: $(
-                cat "$gh_err"
-                echo "${result}"
-            )"
-            rm -f "$gh_err"
-            exit 1
-        }
-        rm -f "$gh_err"
-
-        local parsed
-        parsed=$(echo "$result" | jq '{
-      error: (.errors[0].message // null),
-      pr_null: (.data.repository.pullRequest == null),
-      nodes: .data.repository.pullRequest.reviewThreads.nodes,
-      hasNextPage: .data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage,
-      endCursor: .data.repository.pullRequest.reviewThreads.pageInfo.endCursor
-    }')
-
-        local gql_error
-        gql_error=$(echo "$parsed" | jq -r '.error // empty')
-        if [[ -n "$gql_error" ]]; then
-            log_error "GraphQL error: ${gql_error}"
-            exit 1
-        fi
-
-        if [[ "$(echo "$parsed" | jq '.pr_null')" == "true" ]]; then
-            log_error "PR #${pr_number} not found in ${owner}/${repo_name}"
-            exit 1
-        fi
-
-        local nodes has_next end_cursor
-        nodes=$(echo "$parsed" | jq '.nodes')
-        has_next=$(echo "$parsed" | jq -r '.hasNextPage')
-        end_cursor=$(echo "$parsed" | jq -r '.endCursor')
-
-        # Flatten each thread's first comment for easier downstream use
-        all_nodes=$(echo "$all_nodes" "$nodes" | jq -s '.[0] + [.[1][] | {
+    echo "$nodes" | jq '[.[] | {
       id,
       isResolved,
       isOutdated,
       path,
       line,
-      commentId: (.comments.nodes[0].databaseId // null),
-      author: (.comments.nodes[0].author.login // null),
-      body: ((.comments.nodes[0].body // "") | .[0:1500]),
-      bodyPreview: ((.comments.nodes[0].body // "") | .[0:80])
-    }]')
-
-        if [[ "$has_next" != "true" ]]; then
-            break
-        fi
-        cursor="$end_cursor"
-    done
-
-    echo "$all_nodes"
+      commentId,
+      author,
+      body: (.body | .[0:1500]),
+      bodyPreview: (.body | .[0:80])
+    }]'
 }
 
 # Resolve a single review thread by its GraphQL node ID.

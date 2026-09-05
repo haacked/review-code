@@ -42,6 +42,9 @@ set -euo pipefail
 # shellcheck source=lib/helpers/gh-wrapper.sh
 source "${SCRIPT_DIR}/helpers/gh-wrapper.sh"
 
+# shellcheck source=helpers/gh-review-helpers.sh
+source "${SCRIPT_DIR}/helpers/gh-review-helpers.sh"
+
 # Check if gh is installed
 if ! command -v gh &> /dev/null; then
     error "gh CLI is not installed. Install it with: brew install gh"
@@ -174,41 +177,14 @@ fetch_review_thread_state() {
     local owner="${repo_spec%%/*}"
     local repo_name="${repo_spec##*/}"
 
-    # `gh api graphql --paginate` walks pageInfo{hasNextPage,endCursor} itself
-    # and re-issues the query with $endCursor set to the previous page's
-    # cursor — the variable must be named exactly `$endCursor` for gh to find
-    # it. It also treats a GraphQL `errors` array as a failure and exits
-    # non-zero, so no separate per-page error check is needed.
-    # shellcheck disable=SC2016  # GraphQL document; $vars are GraphQL variables bound via -F/-f
-    local query='
-    query($owner: String!, $repo: String!, $number: Int!, $endCursor: String) {
-      repository(owner: $owner, name: $repo) {
-        pullRequest(number: $number) {
-          reviewThreads(first: 100, after: $endCursor) {
-            nodes {
-              isResolved
-              isOutdated
-              comments(first: 1) {
-                nodes { databaseId }
-              }
-            }
-            pageInfo { hasNextPage endCursor }
-          }
-        }
-      }
-    }'
+    local nodes
+    nodes=$(fetch_review_threads "${owner}" "${repo_name}" "${pr_number}") || return 1
 
-    gh api graphql --paginate \
-        -f query="${query}" \
-        -F owner="${owner}" \
-        -F repo="${repo_name}" \
-        -F number="${pr_number}" \
-        | jq -s '
-            [ .[].data.repository.pullRequest.reviewThreads.nodes[]
-              | select(.comments.nodes[0].databaseId != null)
-              | { (.comments.nodes[0].databaseId | tostring): {resolved: .isResolved, outdated: .isOutdated} }
-            ] | add // {}
-        ' || return 1
+    echo "${nodes}" | jq '
+        [ .[] | select(.commentId != null)
+          | { (.commentId | tostring): {resolved: .isResolved, outdated: .isOutdated} }
+        ] | add // {}
+    '
 }
 
 # Stamp each thread's root comment (in_reply_to_id == null) with its
