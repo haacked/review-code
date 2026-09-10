@@ -50,6 +50,14 @@ setup() {
     [ "$status" -ne 0 ]
 }
 
+@test "chunk metadata must be an object" {
+    for metadata in '[]' '""' '0'; do
+        jq -n --argjson metadata "$metadata" '{chunk_metadata:$metadata}' > "$FIELDS"
+        run python3 "$SCRIPT" --fields "$FIELDS" --agents 'security'
+        [ "$status" -ne 0 ]
+    done
+}
+
 @test "chunked dispatch rejects missing or empty chunks" {
     for fields in \
         '{"chunk_metadata":{"chunked":true,"chunk_count":1}}' \
@@ -90,10 +98,12 @@ import pathlib
 import sys
 
 review = pathlib.Path(sys.argv[1]).read_text()
+dispatch = review.index("### Invoke Specialized Review Agents")
+coverage = review.index("### Check What Each Agent Actually Read")
 synthesis = review.index("review-synthesis.md")
 validation = review.index("review-validation.md")
 quality = review.index("### Finding Quality Pipeline")
-assert synthesis < validation < quality
+assert dispatch < coverage < synthesis < validation < quality
 PY
     [ "$status" -eq 0 ]
 }
@@ -110,6 +120,9 @@ assert "review-fix.md" not in early
 quality_stage = review.index("### Finding Quality Pipeline")
 assert review.index("review-pr-output.md", quality_stage) < review.index("review-finding-quality.md", quality_stage)
 assert review.index("review-finding-quality.md", quality_stage) < review.index("review-fix.md", quality_stage)
+fix_stage = review[review.index("### Apply Fixes (--fix flag)"):review.index("### Compose the Review Document")]
+assert 'If `REVIEW_FIELDS.fix` is true' in fix_stage
+assert "review-fix.md" in fix_stage
 PY
     [ "$status" -eq 0 ]
 }

@@ -330,7 +330,7 @@ python3 ~/.agents/skills/review-code/scripts/review-dispatch-plan.py \
 
 Stop and report any error. Retain the returned plan as `$dispatch_plan`. Choose exactly one route before invoking review agents:
 
-- `handler` is `review-chunked.md`: prepare the shared briefing below, but skip the unchunked dispatch instructions. Follow the chunk handler's per-chunk analysis and dispatch steps, using that briefing, the prepared file access instructions, and architectural context. This is the dispatch point even though the chunk handler calls it "Collect and Synthesize Results". After all chunks complete, run "Check What Each Agent Actually Read" once, including its coverage retries. That check also satisfies the chunk handler's coverage step.
+- `handler` is `review-chunked.md`: prepare the shared briefing below, but skip the unchunked dispatch instructions. Follow the chunk handler's per-chunk analysis and dispatch steps, using that briefing, the prepared file access instructions, and architectural context. After all chunks complete, run "Check What Each Agent Actually Read" once, including its coverage retries. That check also satisfies the chunk handler's coverage step.
 - `handler` is null: prepare the shared briefing, then follow the unchunked dispatch instructions below using only `$dispatch_plan.agents`.
 
 ### Invoke Specialized Review Agents

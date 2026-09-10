@@ -29,7 +29,11 @@ def main():
         areas = list(dict.fromkeys(args.agents.split()))
         if not areas or any(area not in AREAS for area in areas):
             raise ValueError("agents must name known review areas")
-        metadata = fields.get("chunk_metadata") or {}
+        metadata = fields.get("chunk_metadata")
+        if metadata is None:
+            metadata = {}
+        elif not isinstance(metadata, dict):
+            raise ValueError("chunk_metadata must be an object")
         chunked = metadata.get("chunked", False)
         if not isinstance(chunked, bool):
             raise ValueError("chunked must be a boolean")
