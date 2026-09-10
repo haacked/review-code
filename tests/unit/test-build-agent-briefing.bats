@@ -17,6 +17,14 @@ teardown() {
     rm -rf "$CLAUDE_SESSION_DIR"
 }
 
+@test "build-agent-briefing: missing previous review fails explicitly" {
+    local id
+    id=$(create_test_session)
+    run "$SCRIPT" "$id" --previous-review "$BATS_TEST_TMPDIR/missing.md"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *ERROR* ]]
+}
+
 # Build a session in the layout session-manager.sh actually uses:
 # <SESSION_DIR>/review-code/<session-id>.json, with the diff on disk and the
 # session JSON carrying only its path.
