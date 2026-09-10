@@ -87,6 +87,10 @@ def prose_status(text: str) -> str | None:
     return explicit_status
 
 
+def finding_digest(text: str) -> str:
+    return hashlib.sha256(blocks_module.normalize(text).encode()).hexdigest()[:16]
+
+
 def build(args: argparse.Namespace) -> str:
     source = Path(args.review).read_text()
     full_review = WARNING + "\n\n" + source
@@ -105,20 +109,21 @@ def build(args: argparse.Namespace) -> str:
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "full.md").write_text(full_review)
     spans = finding_spans(lines, blocks)
+    changed_paths = paths or set()
+    architectural_context = arch or ""
     posted_digests: dict[int, set[str]] = {}
     for block, (start, end) in zip(blocks, spans):
         if block["id"] is None:
             continue
         raw = "".join(lines[start:end])
-        digest = hashlib.sha256(blocks_module.normalize(raw).encode()).hexdigest()[:16]
-        posted_digests.setdefault(block["id"], set()).add(digest)
+        posted_digests.setdefault(block["id"], set()).add(finding_digest(raw))
 
     entries = []
     rendered = []
     cursor = 0
     for block, (start, end) in zip(blocks, spans):
         raw = "".join(lines[start:end])
-        digest = hashlib.sha256(blocks_module.normalize(raw).encode()).hexdigest()[:16]
+        digest = finding_digest(raw)
         identifier = (
             f"pc-{block['id']}" if block["id"] is not None else f"finding-{digest}"
         )
@@ -130,9 +135,9 @@ def build(args: argparse.Namespace) -> str:
         include_full = (
             fallback
             or status in {"withdrawn", "resolved"}
-            or block["path"] in (paths or set())
-            or block["path"] in (arch or "")
-            or any(path in raw for path in (paths or set()))
+            or block["path"] in changed_paths
+            or block["path"] in architectural_context
+            or any(path in raw for path in changed_paths)
         )
         entries.append(
             {

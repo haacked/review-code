@@ -25,6 +25,29 @@ teardown() {
     [[ "$output" == *ERROR* ]]
 }
 
+@test "build-agent-briefing: indexes a valid previous review" {
+    local id previous artifacts
+    id=$(create_test_session)
+    previous="$BATS_TEST_TMPDIR/previous.md"
+    cat > "$previous" <<'REVIEW'
+#### `test.ts:2` <!-- pc:42 NODE b:abcd -->
+
+```text
+[P1] Previous concern
+The changed value can be lost.
+```
+REVIEW
+
+    run "$SCRIPT" "$id" --previous-review "$previous" --arch-context-file "$ARCH_FILE"
+    [ "$status" -eq 0 ]
+    artifacts=$(echo "$output" | jq -r '.artifacts_dir')
+    [ -s "$artifacts/previous-review/index.json" ]
+    grep -q 'Previous concern' "$artifacts/briefing.md"
+    run python3 "$PROJECT_ROOT/skills/review-code/scripts/previous-review-context.py" get --output-dir "$artifacts" --id pc-42
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'<!-- pc:42 NODE b:abcd -->'* ]]
+}
+
 # Build a session in the layout session-manager.sh actually uses:
 # <SESSION_DIR>/review-code/<session-id>.json, with the diff on disk and the
 # session JSON carrying only its path.

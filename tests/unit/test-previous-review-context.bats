@@ -89,7 +89,7 @@ build() {
     [[ "$output" == *"QUIET_END"* ]]
 }
 
-@test "unposted identifiers survive reordering and fenced headings are ignored" {
+@test "unposted identifiers survive unrelated fenced headings" {
     build >/dev/null
     id="$(jq -r '.findings[] | select(.path == "src/quiet.py") | .id' "$OUT/previous-review/index.json")"
     cat >> "$REVIEW" <<'REVIEW'
@@ -103,7 +103,7 @@ REVIEW
     jq -e '[.findings[] | select(.path == "src/fake.py")] | length == 0' "$OUT/previous-review/index.json"
 }
 
-@test "duplicate posted IDs use order-independent identifiers" {
+@test "duplicate posted IDs produce distinct retrieval artifacts" {
     cat >> "$REVIEW" <<'REVIEW'
 
 #### `src/copy.py:4` <!-- pc:123 NODE b:def -->
@@ -115,6 +115,16 @@ Another rendering of the posted finding.
 REVIEW
     build >/dev/null
     jq -e '[.findings[] | select(.id | startswith("pc-123-"))] | length == 2' "$OUT/previous-review/index.json"
+    mapfile -t ids < <(jq -r '.findings[] | select(.id | startswith("pc-123-")) | .id' "$OUT/previous-review/index.json")
+    [ "${ids[0]}" != "${ids[1]}" ]
+    run python3 "$SCRIPT" get --output-dir "$OUT" --id "${ids[0]}"
+    [ "$status" -eq 0 ]
+    first="$output"
+    run python3 "$SCRIPT" get --output-dir "$OUT" --id "${ids[1]}"
+    [ "$status" -eq 0 ]
+    second="$output"
+    [[ "$first$second" == *"Changed detail"* ]]
+    [[ "$first$second" == *"Another rendering"* ]]
 }
 
 @test "status markers outside fences retain full reasons and quoted markers do not" {
@@ -132,12 +142,39 @@ This is fixed.
 
 ```text
 [P3] Documentation example
-An example contains *Withdrawn but remains active.
+*Withdrawn 2026-09-05: This is quoted example text.*
 ```
 REVIEW
     build >/dev/null
     jq -e '.findings[] | select(.path == "src/resolved.py") | .status == "resolved" and .full' "$OUT/previous-review/index.json"
     jq -e '.findings[] | select(.path == "src/example.py") | .status == "recorded (recheck)"' "$OUT/previous-review/index.json"
+}
+
+@test "rename diffs retain findings on the source path" {
+    cat > "$DIFF" <<'PATCH'
+diff --git a/src/quiet.py b/src/renamed.py
+similarity index 100%
+rename from src/quiet.py
+rename to src/renamed.py
+PATCH
+    run build
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"QUIET_END"* ]]
+}
+
+@test "small reviews fall back when indexing would add bytes" {
+    cat > "$REVIEW" <<'REVIEW'
+#### `src/quiet.py:1`
+
+```text
+[P3] Small concern
+One line.
+```
+REVIEW
+    run build
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"One line."* ]]
+    jq -e '.fallback == true and (.findings | all(.full))' "$OUT/previous-review/index.json"
 }
 
 @test "unknown retrieval ID fails without unrelated content" {
