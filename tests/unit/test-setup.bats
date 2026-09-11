@@ -102,6 +102,11 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
+@test "setup: installs the code-aware comment composer" {
+    run bash -c "grep -A50 'install_agents()' '$PROJECT_ROOT/bin/setup' | grep -q 'code-reviewer-comment'"
+    [ "$status" -eq 0 ]
+}
+
 # =============================================================================
 # Prerequisites checking
 # =============================================================================
@@ -213,6 +218,67 @@ setup_function_body() {
     [ "$status" -eq 0 ]
 }
 
+# The voice linter and the two scripts that call it are Python. When the copy
+# loop matched *.sh only, they were absent from the installed skill and every
+# handler step that shells out to them failed open, silently and permanently.
+@test "setup: install_skill routes the scripts dir through copy_scripts_dir" {
+    # One copy loop, so a future file-type addition is one edit rather than two
+    # that can drift.
+    run grep -q 'copy_scripts_dir "${src_dir}/scripts" ' <<< "$(setup_function_body install_skill)"
+    [ "$status" -eq 0 ]
+}
+
+@test "setup: copy_scripts_dir installs Python scripts alongside shell scripts" {
+    local src="$BATS_TEST_TMPDIR/src"
+    local dst="$BATS_TEST_TMPDIR/dst"
+    mkdir -p "$src" "$dst"
+    : > "$src/helper.sh"
+    : > "$src/linter.py"
+    : > "$src/notes.md"
+
+    eval "$(setup_function_body copy_scripts_dir)"
+    copy_scripts_dir "$src" "$dst"
+
+    [ -x "$dst/helper.sh" ]
+    [ -x "$dst/linter.py" ]
+    [ ! -e "$dst/notes.md" ]
+}
+
+@test "setup: prune_pycache clears bytecode left by an earlier install" {
+    local dir="$BATS_TEST_TMPDIR/scripts"
+    mkdir -p "$dir/__pycache__" "$dir/helpers/__pycache__"
+    : > "$dir/__pycache__/lint-comment-voice.cpython-313.pyc"
+    : > "$dir/helpers/__pycache__/lint_loader.cpython-313.pyc"
+    : > "$dir/helpers/keep.sh"
+
+    eval "$(setup_function_body prune_pycache)"
+    prune_pycache "$dir"
+
+    [ ! -d "$dir/__pycache__" ]
+    [ ! -d "$dir/helpers/__pycache__" ]
+    [ -f "$dir/helpers/keep.sh" ]
+}
+
+@test "setup: every Python entry point suppresses bytecode writes" {
+    # Belt to prune_pycache's braces: an entry point that imports the loader
+    # without this line recreates __pycache__ in the installed skill on the next
+    # review. Enumerated rather than listed, so a new script is covered.
+    while IFS= read -r script; do
+        grep -q 'sys.dont_write_bytecode = True' "$script" || {
+            echo "$(basename "$script") does not suppress bytecode writes"
+            false
+        }
+    done < <(grep -rl 'from lint_loader import' \
+        "$PROJECT_ROOT/skills/review-code/scripts" --include='*.py')
+}
+
+@test "setup: every Python script in the skill's scripts tree is installable" {
+    # Guards the reverse gap: a script added under a subdirectory the copy
+    # loops never visit would install as silently as the *.sh-only globs did.
+    run bash -c "cd '$PROJECT_ROOT/skills/review-code/scripts' && find . -name '*.py' -mindepth 2 -not -path './helpers/*' -not -path './session-hooks/*' | wc -l | tr -d ' '"
+    [[ "$output" == "0" ]]
+}
+
 @test "setup: install_skill creates .reviews directory (not reviews)" {
     body="$(setup_function_body install_skill)"
     run grep -q 'dst_dir}/\.reviews' <<< "$body"
@@ -258,6 +324,7 @@ setup_function_body() {
         SCRIPT_DIR='${TEST_TEMP_DIR}/src'
         CLAUDE_DIR='${TEST_TEMP_DIR}/dst'
         SKILL_DIR='${dst_dir}'
+        source <(sed -n '/^prune_pycache()/,/^}/p' '$PROJECT_ROOT/bin/setup')
         source <(sed -n '/^copy_scripts_dir()/,/^}/p' '$PROJECT_ROOT/bin/setup')
         source <(sed -n '/^install_skill()/,/^}/p' '$PROJECT_ROOT/bin/setup')
         install_skill
@@ -274,7 +341,7 @@ setup_function_body() {
     TEST_TEMP_DIR=$(mktemp -d)
     fake_home="${TEST_TEMP_DIR}/home"
     app_config="${fake_home}/Library/Application Support/@posthog/posthog-code/claude"
-    mkdir -p "${app_config}"
+    mkdir -p "${app_config}" "${fake_home}/.claude"
 
     run bash -c "
         set -euo pipefail
@@ -282,6 +349,10 @@ setup_function_body() {
         debug() { :; }
         warn() { :; }
         error() { :; }
+        # install_agents calls this whenever the codex CLI or config dir exists,
+        # so without the stub these tests pass or fail depending on whether the
+        # machine has Codex installed. They cover the PostHog Desktop loop.
+        install_codex_agents() { :; }
         HOME='${fake_home}'
         SCRIPT_DIR='$PROJECT_ROOT'
         CLAUDE_DIR='${fake_home}/.claude'
@@ -302,7 +373,7 @@ setup_function_body() {
 @test "setup: install_agents skips PostHog Desktop config homes that don't exist" {
     TEST_TEMP_DIR=$(mktemp -d)
     fake_home="${TEST_TEMP_DIR}/home"
-    mkdir -p "${fake_home}"
+    mkdir -p "${fake_home}" "${fake_home}/.claude"
 
     run bash -c "
         set -euo pipefail
@@ -310,6 +381,10 @@ setup_function_body() {
         debug() { :; }
         warn() { :; }
         error() { :; }
+        # install_agents calls this whenever the codex CLI or config dir exists,
+        # so without the stub these tests pass or fail depending on whether the
+        # machine has Codex installed. They cover the PostHog Desktop loop.
+        install_codex_agents() { :; }
         HOME='${fake_home}'
         SCRIPT_DIR='$PROJECT_ROOT'
         CLAUDE_DIR='${fake_home}/.claude'
@@ -1298,8 +1373,8 @@ EOF
 # Installation path tests
 # =============================================================================
 
-@test "setup: uses SKILL_DIR under ~/.claude/skills/review-code" {
-    run bash -c "grep -q 'SKILL_DIR=\"\${CLAUDE_DIR}/skills/review-code\"' '$PROJECT_ROOT/bin/setup'"
+@test "setup: uses SKILL_DIR under ~/.agents/skills/review-code" {
+    run bash -c "grep -q 'SKILL_DIR=\"\${AGENTS_DIR}/skills/review-code\"' '$PROJECT_ROOT/bin/setup'"
     [ "$status" -eq 0 ]
 }
 

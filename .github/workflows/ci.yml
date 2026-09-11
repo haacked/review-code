@@ -26,9 +26,10 @@ jobs:
         git config --global user.email "ci@github.com"
         git config --global user.name "GitHub CI"
 
-        # Install system dependencies
-        sudo apt-get update
-        sudo apt-get install -y shellcheck
+        # Install shellcheck 0.11.0 (apt has older 0.9.0, which reports different findings under bin/lint's -o all)
+        SHELLCHECK_VERSION="0.11.0"
+        curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" | tar -xJf - -C /tmp
+        sudo install -m 755 "/tmp/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
 
         # Install jq 1.7.1 (apt has older 1.6 which has syntax incompatibilities)
         JQ_VERSION="1.7.1"
@@ -38,6 +39,12 @@ jobs:
         # Install bats-core (1.11.1 includes IFS fix for test compatibility)
         sudo npm install -g bats@1.11.1
 
+        # Install ruff 0.13.0 (bin/lint checks Python with it, and treats a
+        # missing linter as a failure rather than skipping the language)
+        RUFF_VERSION="0.13.0"
+        curl -fsSL "https://github.com/astral-sh/ruff/releases/download/${RUFF_VERSION}/ruff-x86_64-unknown-linux-gnu.tar.gz" | tar -xzf - -C /tmp
+        sudo install -m 755 /tmp/ruff-x86_64-unknown-linux-gnu/ruff /usr/local/bin/ruff
+
         # Verify installations
         echo "=== Dependency Versions ==="
         bash --version | head -1
@@ -45,13 +52,14 @@ jobs:
         jq --version
         git --version
         shellcheck --version
+        ruff --version
 
     - name: Run tests
       run: |
         chmod +x bin/test
         bin/test
 
-    - name: Lint shell scripts
+    - name: Lint shell and Python scripts
       run: |
         chmod +x bin/lint
         bin/lint

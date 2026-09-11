@@ -998,3 +998,17 @@ teardown() {
     echo "$output" | jq -e 'has("diff_path")'
     [ -s "$(echo "$output" | jq -r '.diff_path')" ]
 }
+
+@test "review-orchestrator.sh: carries the default comment style" {
+    echo "change" > file.txt
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.comment_style')" = "concise" ]
+}
+
+@test "review-orchestrator.sh: carries the requested comment style" {
+    echo "change" > file.txt
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" --comment-style detailed
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.comment_style')" = "detailed" ]
+}

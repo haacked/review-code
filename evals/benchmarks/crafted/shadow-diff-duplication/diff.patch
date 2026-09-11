@@ -1,0 +1,129 @@
+diff --git a/src/flags/shadow_diff.rs b/src/flags/shadow_diff.rs
+new file mode 100644
+index 0000000..7c1d4e2
+--- /dev/null
++++ b/src/flags/shadow_diff.rs
+@@ -0,0 +1,123 @@
++use std::collections::{HashMap, HashSet};
++
++pub type FeatureFlagId = i64;
++
++#[derive(Debug, Clone, PartialEq)]
++pub struct CachedFlag {
++    pub id: FeatureFlagId,
++    pub key: String,
++    pub active: bool,
++}
++
++#[derive(Debug, Clone, PartialEq)]
++pub struct CachedCohort {
++    pub id: i32,
++    pub name: String,
++    pub version: u32,
++}
++
++#[derive(Debug, PartialEq)]
++pub enum FlagIssue {
++    MissingInCache(FeatureFlagId),
++    FieldMismatch(FeatureFlagId, &'static str),
++    StaleInCache(FeatureFlagId),
++}
++
++#[derive(Debug, PartialEq)]
++pub enum CohortIssue {
++    MissingInCache(i32),
++    FieldMismatch(i32, &'static str),
++    StaleInCache(i32),
++}
++
++/// Compare the freshly built flag payload against what the cache served.
++pub fn diff_flags(built: &[CachedFlag], live: &[CachedFlag]) -> Vec<FlagIssue> {
++    let built_by_id: HashMap<FeatureFlagId, &CachedFlag> = built.iter().map(|f| (f.id, f)).collect();
++    let live_by_id: HashMap<FeatureFlagId, &CachedFlag> = live.iter().map(|f| (f.id, f)).collect();
++
++    let mut issues = Vec::new();
++
++    for flag in built {
++        match live_by_id.get(&flag.id) {
++            None => issues.push(FlagIssue::MissingInCache(flag.id)),
++            Some(cached) => {
++                if cached.key != flag.key {
++                    issues.push(FlagIssue::FieldMismatch(flag.id, "key"));
++                }
++                if cached.active != flag.active {
++                    issues.push(FlagIssue::FieldMismatch(flag.id, "active"));
++                }
++            }
++        }
++    }
++
++    for flag in live {
++        if !built_by_id.contains_key(&flag.id) {
++            issues.push(FlagIssue::StaleInCache(flag.id));
++        }
++    }
++
++    issues.sort_by_key(flag_issue_id);
++    issues
++}
++
++/// Compare the freshly built cohort payload against what the cache served.
++pub fn diff_cohorts(built: &[CachedCohort], live: &[CachedCohort]) -> Vec<CohortIssue> {
++    let built_by_id: HashMap<i32, &CachedCohort> = built.iter().map(|c| (c.id, c)).collect();
++    let live_by_id: HashMap<i32, &CachedCohort> = live.iter().map(|c| (c.id, c)).collect();
++
++    let mut issues = Vec::new();
++
++    for cohort in built {
++        match live_by_id.get(&cohort.id) {
++            None => issues.push(CohortIssue::MissingInCache(cohort.id)),
++            Some(cached) => {
++                if cached.name != cohort.name {
++                    issues.push(CohortIssue::FieldMismatch(cohort.id, "name"));
++                }
++                if cached.version != cohort.version {
++                    issues.push(CohortIssue::FieldMismatch(cohort.id, "version"));
++                }
++            }
++        }
++    }
++
++    for cohort in live {
++        if !built_by_id.contains_key(&cohort.id) {
++            issues.push(CohortIssue::StaleInCache(cohort.id));
++        }
++    }
++
++    issues.sort_by_key(cohort_issue_id);
++    issues
++}
++
++fn flag_issue_id(issue: &FlagIssue) -> FeatureFlagId {
++    match issue {
++        FlagIssue::MissingInCache(id) => *id,
++        FlagIssue::FieldMismatch(id, _) => *id,
++        FlagIssue::StaleInCache(id) => *id,
++    }
++}
++
++fn cohort_issue_id(issue: &CohortIssue) -> i32 {
++    match issue {
++        CohortIssue::MissingInCache(id) => *id,
++        CohortIssue::FieldMismatch(id, _) => *id,
++        CohortIssue::StaleInCache(id) => *id,
++    }
++}
++
++/// Drop the cache entries the shadow diff reported as stale.
++pub fn prune_stale(cache: &mut Vec<CachedFlag>, stale: &HashSet<FeatureFlagId>) {
++    for i in 0..cache.len() {
++        if stale.contains(&cache[i].id) {
++            cache.remove(i);
++        }
++    }
++}
++
++/// Share of the built payload that disagreed with the cache, for the drift metric.
++pub fn drift_percent(issues: usize, total: usize) -> u32 {
++    ((issues * 100) / total) as u32
++}

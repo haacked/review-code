@@ -55,7 +55,7 @@ cd ~/.review-code
 
 Both methods will:
 
-- Store review outputs at `~/.claude/skills/review-code/.reviews/`
+- Store review outputs at `~/.agents/skills/review-code/.reviews/`
 - Complete installation in seconds
 
 ### Usage
@@ -190,10 +190,10 @@ Loads repo-specific workflows and requirements:
 
 ### Review Output Path
 
-Reviews are saved to `~/.claude/skills/review-code/.reviews/{org}/{repo}/{pr-number-or-branch}.md`. The directory structure is created automatically:
+Reviews are saved to `~/.agents/skills/review-code/.reviews/{org}/{repo}/{pr-number-or-branch}.md`. The directory structure is created automatically:
 
 ```text
-~/.claude/skills/review-code/.reviews/
+~/.agents/skills/review-code/.reviews/
 ├── org-name/
 │   ├── repo-name/
 │   │   ├── pr-123.md
@@ -265,8 +265,8 @@ Helper scripts and context files remain in `~/.dotfiles` for future use.
 
 ### Reviews not being saved
 
-- Reviews are written to `~/.claude/skills/review-code/.reviews/{org}/{repo}/`
-- Check the directory exists and is writable: `ls -la ~/.claude/skills/review-code/.reviews`
+- Reviews are written to `~/.agents/skills/review-code/.reviews/{org}/{repo}/`
+- Check the directory exists and is writable: `ls -la ~/.agents/skills/review-code/.reviews`
 
 ## Next Steps
 

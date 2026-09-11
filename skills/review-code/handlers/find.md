@@ -3,7 +3,7 @@
 If STATUS is "find", get the find data from the session (replace `<SESSION_ID>` with the actual session ID):
 
 ```bash
-~/.claude/skills/review-code/scripts/review-status-handler.sh get-find-data "<SESSION_ID>"
+~/.agents/skills/review-code/scripts/review-status-handler.sh get-find-data "<SESSION_ID>"
 ```
 
 Extract these fields from the JSON output:
@@ -22,7 +22,7 @@ Extract these fields from the JSON output:
 Then cleanup the session:
 
 ```bash
-~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
+~/.agents/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
 ```
 
 **Stop after presenting results. Do not proceed with review agents.**
@@ -55,7 +55,7 @@ file://$file_path
 
 Show a brief summary from `file_summary` (the first ~50 lines of the review file) and offer to open or read the full review.
 
-The merge and migrate procedures below live in `~/.claude/skills/review-code/handlers/existing-review-files.md`; Read it when an option that uses one is selected.
+The merge and migrate procedures below live in `~/.agents/skills/review-code/handlers/existing-review-files.md`; Read it when an option that uses one is selected.
 
 **If `has_branch_review` is true (both a PR review and a branch review exist):**
 

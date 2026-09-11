@@ -61,6 +61,8 @@ main() {
     full_mode=$(echo "${parse_result}" | jq -r '.full_mode // "false"')
     local fix_mode
     fix_mode=$(echo "${parse_result}" | jq -r '.fix_mode // "false"')
+    local comment_style
+    comment_style=$(echo "${parse_result}" | jq -r '.comment_style // "concise"')
     local adversary_mode
     adversary_mode=$(echo "${parse_result}" | jq -r '.adversary_mode // empty')
 
@@ -556,6 +558,7 @@ build_review_data() {
     jq_args+=(--arg append_mode "${append_mode}")
     jq_args+=(--arg full_mode "${full_mode}")
     jq_args+=(--arg fix_mode "${fix_mode}")
+    jq_args+=(--arg comment_style "${comment_style}")
     jq_args+=(--arg debug_session_dir "${DEBUG_SESSION_DIR:-}")
     jq_args+=(--argjson diff_tokens "${diff_tokens}")
     jq_args+=(--arg commit_messages "${commit_messages}")
@@ -577,6 +580,7 @@ build_review_data() {
         '{
             status: "ready",
             mode: $mode,
+            comment_style: $comment_style,
             git: $git,
             diff_path: $diff_path,
             artifacts_dir: $artifacts_dir,

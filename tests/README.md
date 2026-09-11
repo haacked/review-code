@@ -69,10 +69,6 @@ cd bats-core
 ./install.sh /usr/local
 ```
 
-## Known Issues
-
-- Empty diffs produce arrays with one empty string instead of empty arrays
-
 ## Contributing
 
 When adding new scripts:

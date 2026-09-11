@@ -17,13 +17,15 @@ create_session() {
     local diff_tokens="${1:-100}"
     local files_json="${2:-[]}"
     local has_frontend="${3:-false}"
+    local deleted_count="${4:-0}"
 
     cat > "$TMPDIR/session.json" <<ENDJSON
 {
     "diff_tokens": $diff_tokens,
     "file_metadata": {
         "modified_files": $files_json,
-        "file_count": $(echo "$files_json" | jq 'length')
+        "file_count": $(echo "$files_json" | jq 'length'),
+        "deleted_file_count": $deleted_count
     },
     "languages": {
         "has_frontend": $has_frontend
@@ -61,6 +63,36 @@ ENDJSON
     echo "$result" | jq -e '.agents | contains(["infra-config"]) | not'
 }
 
+@test "config-only selects correctness + compatibility above 2000 diff tokens" {
+    session=$(create_session 3000 '[
+        {"path":"package.json","type":"config","is_infra_config":false,"is_test":false},
+        {"path":"tsconfig.json","type":"config","is_infra_config":false,"is_test":false}
+    ]')
+
+    result=$("$SCRIPT" "$session")
+    echo "$result" | jq -e '.agents == ["correctness", "compatibility"]'
+}
+
+@test "test-only selects testing + correctness + maintainability above 2000 diff tokens" {
+    session=$(create_session 3000 '[
+        {"path":"tests/test_api.py","type":"test","is_infra_config":false,"is_test":true},
+        {"path":"tests/test_web.py","type":"test","is_infra_config":false,"is_test":true}
+    ]')
+
+    result=$("$SCRIPT" "$session")
+    echo "$result" | jq -e '.agents == ["testing", "correctness", "maintainability"]'
+}
+
+@test "migration-only selects correctness + compatibility + security above 2000 diff tokens" {
+    session=$(create_session 3000 '[
+        {"path":"migrations/001_add_index.py","type":"migration","is_infra_config":false,"is_test":false},
+        {"path":"migrations/002_backfill.py","type":"migration","is_infra_config":false,"is_test":false}
+    ]')
+
+    result=$("$SCRIPT" "$session")
+    echo "$result" | jq -e '.agents == ["correctness", "compatibility", "security"]'
+}
+
 @test "mixed infra + source includes infra-config agent" {
     session=$(create_session 800 '[
         {"path":"argocd/service/values/values.yaml","type":"config","is_infra_config":true,"is_test":false},
@@ -83,6 +115,17 @@ ENDJSON
     echo "$result" | jq -e '.agents | contains(["infra-config"])'
     echo "$result" | jq -e '.agents | contains(["correctness", "security"])'
     echo "$result" | jq -e '.exploration_depth == "thorough"'
+}
+
+@test "large infra-config change with a deleted source file uses all core agents plus infra-config" {
+    session=$(create_session 3000 '[
+        {"path":"argocd/service/values/values.prod-us.yaml","type":"config","is_infra_config":true,"is_test":false},
+        {"path":"argocd/service/values/values.prod-eu.yaml","type":"config","is_infra_config":true,"is_test":false}
+    ]' false 1)
+
+    result=$("$SCRIPT" "$session")
+    echo "$result" | jq -e '.agents == ["security", "performance", "correctness", "maintainability", "testing", "compatibility", "architecture", "infra-config"]'
+    echo "$result" | jq -e '.reasoning | contains("running all agents")'
 }
 
 @test "infra-config-only forces minimal exploration even for larger diffs (standard range)" {
@@ -127,6 +170,29 @@ ENDJSON
     result=$("$SCRIPT" "$session")
     # Should not crash and should not select infra-config
     echo "$result" | jq -e '.agents | contains(["infra-config"]) | not'
+}
+
+@test "missing languages block still classifies from the file counts" {
+    # The `// false` default on .languages.has_frontend is what keeps this a false
+    # field. Without it jq emits an empty @tsv field, which read swallows, shifting
+    # every count after it by one. This fixture is test-only, so a shifted read
+    # reports zero test files and falls through to the generic small-diff agents.
+    session_file="$TMPDIR/session.json"
+    cat > "$session_file" <<'ENDJSON'
+{
+    "diff_tokens": 200,
+    "file_metadata": {
+        "modified_files": [
+            {"path":"tests/test_api.py","type":"test","is_test":true,"is_infra_config":false},
+            {"path":"tests/test_web.py","type":"test","is_test":true,"is_infra_config":false}
+        ],
+        "file_count": 2
+    }
+}
+ENDJSON
+
+    result=$("$SCRIPT" "$session_file")
+    echo "$result" | jq -e '.agents == ["testing", "correctness", "maintainability"]'
 }
 
 @test "infra-config + deleted source file does not use infra-config-only shortcut" {

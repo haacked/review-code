@@ -25,6 +25,8 @@ ADVERSARY_CONFLICT="false"
 ADVERSARY_FLAG_SEEN="false"
 PARENT_OVERRIDE=""
 PARENT_FLAG_SEEN="false"
+COMMENT_STYLE="concise"
+COMMENT_STYLE_VALUES=()
 remaining_args=()
 expect_value=""
 
@@ -32,6 +34,7 @@ for arg_item in "$@"; do
     if [[ -n "${expect_value}" ]]; then
         case "${expect_value}" in
             parent) PARENT_OVERRIDE="${arg_item}" ;;
+            comment-style) COMMENT_STYLE_VALUES+=("${arg_item}") ;;
             *)
                 echo "Error: no handler for value-taking flag '${expect_value}'." >&2
                 exit 1
@@ -64,6 +67,10 @@ for arg_item in "$@"; do
             ADVERSARY_CONFLICT="true"
         fi
         ADVERSARY_MODE="${adversary_value}"
+    elif [[ "${arg_item}" == "--comment-style" ]]; then
+        expect_value="comment-style"
+    elif [[ "${arg_item}" == --comment-style=* ]]; then
+        COMMENT_STYLE_VALUES+=("${arg_item#--comment-style=}")
     elif [[ "${arg_item}" == "--parent" ]]; then
         PARENT_FLAG_SEEN="true"
         expect_value="parent"
@@ -402,7 +409,7 @@ build_json_output() {
     # Validate draft mode compatibility before building output
     validate_draft_mode "${mode}"
 
-    local -a jq_args=("--arg" "mode" "${mode}")
+    local -a jq_args=("--arg" "mode" "${mode}" "--arg" "comment_style" "${COMMENT_STYLE}")
     # shellcheck disable=SC2016  # $ARGS is a jq variable, not a shell variable
     local jq_filter='$ARGS.named'
 
@@ -548,6 +555,26 @@ validate_adversary_mode() {
         exit 1
     fi
     validate_not_compatible_with_learn_or_find "--adversary:${ADVERSARY_MODE}"
+}
+
+validate_comment_style() {
+    if [[ "${expect_value}" == "comment-style" ]]; then
+        build_json_error "--comment-style requires concise or detailed"
+        exit 1
+    fi
+    local value previous=""
+    for value in "${COMMENT_STYLE_VALUES[@]}"; do
+        if [[ "${value}" != "concise" && "${value}" != "detailed" ]]; then
+            build_json_error "--comment-style requires concise or detailed"
+            exit 1
+        fi
+        if [[ -n "${previous}" && "${previous}" != "${value}" ]]; then
+            build_json_error "Conflicting --comment-style values"
+            exit 1
+        fi
+        previous="${value}"
+        COMMENT_STYLE="${value}"
+    done
 }
 
 # Helper: Validate --parent received a real value, not a missing arg, empty
@@ -846,6 +873,8 @@ detect_no_arg() {
 
 # Main execution (only run if script is executed directly, not sourced)
 if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
+    validate_comment_style
+
     # Validate --parent received a real value
     validate_parent_override
 

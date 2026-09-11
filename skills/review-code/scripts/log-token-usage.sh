@@ -133,10 +133,19 @@ NORMALIZED=$(echo "${USAGE_JSON}" | jq -c '
         )
     )')
 
+# Preserve step-specific counters that usage normalization would otherwise drop.
+COUNTERS=$(echo "${USAGE_JSON}" | jq -c '
+    with_entries(
+        select(.value | type == "object")
+        | .value |= del(.total_tokens, .tool_uses, .duration_ms)
+        | select(.value | length > 0)
+    )')
+
 # agents_run defaults to the number of agents that actually reported usage,
-# which is the honest count when the caller does not supply one.
+# which is the honest count when the caller does not supply one. A step that
+# consumed no tokens reported no usage, so it does not count.
 if [[ -z "${AGENTS_RUN}" ]]; then
-    AGENTS_RUN=$(echo "${NORMALIZED}" | jq 'length')
+    AGENTS_RUN=$(echo "${NORMALIZED}" | jq '[.[] | select(.total_tokens > 0)] | length')
 fi
 
 RECORD=$(jq -nc \
@@ -155,6 +164,7 @@ RECORD=$(jq -nc \
     --arg review_mode "${REVIEW_MODE}" \
     --arg delta_from "${DELTA_FROM}" \
     --argjson usage "${NORMALIZED}" \
+    --argjson counters "${COUNTERS}" \
     '{
         reviewed_at: $reviewed_at,
         org: $org,
@@ -172,6 +182,7 @@ RECORD=$(jq -nc \
         total_tool_uses: ([$usage[].tool_uses] | add // 0),
         agents: ($usage | with_entries(.value |= .total_tokens))
     }
+    + (if ($counters | length) > 0 then {counters: $counters} else {} end)
     + (if $review_mode != "" then {review_mode: $review_mode} else {} end)
     + (if $delta_from != "" then {delta_from: $delta_from} else {} end)')
 

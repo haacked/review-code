@@ -125,7 +125,7 @@ case "${MODE}" in
         emit "**PR Details:**"
         emit "- URL: $(sget '.pr.url')"
         emit "- Author: $(sget '.pr.author')"
-        emit "- Branch: $(sget '.pr.head') → $(sget '.pr.base')"
+        emit "- Branch: $(sget '.pr.head_ref') → $(sget '.pr.base_ref')"
         emit "- Status: $(sget '.pr.state')"
         emit ""
         emit "**PR Description:**"
@@ -175,13 +175,10 @@ fi
 if jq -e '(.pr.comments // {}) | (( .conversation // [] ) + ( .reviews // [] ) + ( .inline // [] )) | length > 0' \
     "${SESSION_FILE}" > /dev/null 2>&1; then
     emit "**Existing Review Comments:**"
-    jq -r '
-        (.pr.comments.conversation // [] | map("- [conversation] @\(.author): \(.body)")),
-        (.pr.comments.reviews // [] | map("- [review/\(.state // "comment")] @\(.author): \(.body // "")")),
-        (.pr.comments.inline // [] | map("- [inline] @\(.author) \(.path):\(.line // "?"): \(.body)"))
-        | .[]' "${SESSION_FILE}" >> "${BRIEFING}"
+    jq -c '.pr.comments // {}' "${SESSION_FILE}" | tee "${ARTIFACTS_DIR}/comments.json" \
+        | "${SCRIPT_DIR}/format-existing-comments.sh" >> "${BRIEFING}"
     emit ""
-    emit "Comment structure: \`conversation\` (discussion), \`reviews\` (approve/changes), \`inline\` (line-level with \`path\`, \`line\`, \`author\`, \`body\`)"
+    emit "Comment structure: \`conversation\` (discussion), \`reviews\` (approve/changes), \`inline\` (line-level, one bullet per thread). A resolved thread collapses to one line; an open thread (marked \`outdated\` when the anchor line moved, which does not mean the issue is fixed) shows its root comment plus a reply-count summary. Bodies are capped — the uncapped text is in \`comments.json\`, alongside this briefing."
     emit ""
 fi
 
@@ -218,6 +215,9 @@ if [[ -n "${PREVIOUS_REVIEW}" && -f "${PREVIOUS_REVIEW}" ]]; then
     emit "- Add new findings discovered since last review"
     emit "- Update status if code changed"
     emit "- Mark findings as resolved if fixed"
+    emit ""
+    emit "Do NOT re-raise a finding marked \`*Withdrawn ...*\`. Those were argued"
+    emit "down by the author after the review was posted and taken off the PR."
     emit ""
 fi
 

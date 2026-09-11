@@ -42,14 +42,14 @@ Requirements: `shellcheck` (install: `brew install shellcheck`)
 
 ```text
 review-code/
-├── bin/              # Development scripts (this directory)
-│   ├── setup         # Install review-code locally
-│   ├── fmt           # Format shell scripts
-│   ├── lint          # Lint shell scripts
-│   └── helpers/      # Shared utilities for bin/ scripts
-└── lib/              # Runtime scripts (installed to ~/.claude/bin/)
-    ├── *.sh          # Helper scripts used by /review-code
-    └── helpers/      # Shared utilities for lib/ scripts
+├── bin/                          # Development scripts (this directory)
+│   ├── setup                     # Install review-code locally
+│   ├── fmt                       # Format shell scripts
+│   ├── lint                      # Lint shell scripts
+│   └── helpers/                  # Shared utilities for bin/ scripts
+└── skills/review-code/scripts/   # Runtime scripts (installed with the skill)
+    ├── *.sh                      # Helper scripts used by /review-code
+    └── helpers/                  # Shared utilities for runtime scripts
 ```
 
 ## Usage Pattern
@@ -57,11 +57,12 @@ review-code/
 When working on review-code:
 
 1. **First time setup**: `bin/setup`
-2. **Make changes**: Edit files in lib/, agents/, commands/, etc.
+2. **Make changes**: Edit files in skills/, agents/, etc.
 3. **Format**: `bin/fmt`
 4. **Lint**: `bin/lint`
 5. **Test**: Run `bin/setup` again to reinstall locally
 6. **Commit**: Commit your changes
 
-The `bin/` scripts help maintain code quality, while `lib/` contains the actual
-runtime scripts that get installed to the user's system.
+The `bin/` scripts help maintain code quality, while
+`skills/review-code/scripts/` contains the actual runtime scripts that get
+installed to the user's system.

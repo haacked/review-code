@@ -50,19 +50,27 @@ if [[ "${BASH_SOURCE[0]:-}" = "${0}" ]]; then
     mode="$1"
     shift
 
-    # Extract file pattern from remaining args if present
-    # It should be the last argument
+    # The file pattern is optional and always last, so what marks it is the
+    # argument count: each mode takes a fixed number of refs, and anything past
+    # that is the pattern.
+    #
+    # Telling the two apart by shape does not work, because a pathspec and a ref
+    # are not distinguishable that way. The old test read "contains a dot after a
+    # slash" as a path, which is also the shape of origin/main..HEAD and of a
+    # base branch like origin/release-1.0. Either one was taken as a pattern and
+    # removed from "$@", and the mode below then read a positional that was no
+    # longer there, so the script died on an unbound variable instead of
+    # diffing. A bare main..HEAD survived only because it carries no slash.
+    case "${mode}" in
+        "local") mode_args=0 ;;
+        "branch" | "branch-plus-uncommitted") mode_args=2 ;;
+        *) mode_args=1 ;;
+    esac
+
     file_pattern=""
-    if [[ $# -gt 0 ]]; then
-        # Check if last arg looks like a file pattern (not a branch/commit)
-        last_arg="${*: -1}"
-        # If it contains glob (*) or looks like a path pattern (contains / or common extensions)
-        # But exclude git ranges (contains ..)
-        if [[ "${last_arg}" == *"*"* ]] || [[ "${last_arg}" == *"/"*.* ]]; then
-            file_pattern="${last_arg}"
-            # Remove last arg from positional parameters
-            set -- "${@:1:$(($# - 1))}"
-        fi
+    if [[ $# -gt ${mode_args} ]]; then
+        file_pattern="${*: -1}"
+        set -- "${@:1:$(($# - 1))}"
     fi
 
     # Use pattern_arg to handle empty file_pattern

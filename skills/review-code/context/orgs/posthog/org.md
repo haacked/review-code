@@ -33,11 +33,12 @@ When reviewing networking, IP handling, or infrastructure-related code, consult 
   - See: `README.md` for architecture diagram
 
 - **`~/dev/posthog/charts`** - Helm charts and K8s deployment configs
-  - Contains: Contour/Envoy configuration, ingress rules, header policies
+  - Contains: Contour/Envoy configuration, ingress rules, header policies, pod lifecycle values, resource limits
   - Key files:
     - `argocd/contour/values/values.yaml` - num-trusted-hops config
     - `argocd/contour-ingress/values/values.prod-*.yaml` - routing and header policies
     - `docs/CONTOUR-GEOIP-README.md` - GeoIP and header handling
+    - `charts/posthog-rust/templates/deployment.yaml` - pod defaults for Rust services (grace period, resources; current values in `repos/charts.md`)
 
 ## Performance Guidelines
 

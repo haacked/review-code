@@ -1,0 +1,11 @@
+{
+  "id": "analytics-emitter-batching",
+  "name": "Analytics Event Emitters",
+  "description": "TypeScript module that sends analytics events to the capture and batch endpoints, with per-endpoint retry settings and a batching helper",
+  "languages": ["typescript"],
+  "frameworks": [],
+  "areas": ["maintainability", "correctness"],
+  "difficulty": "medium",
+  "expected_finding_count": 3,
+  "false_positive_trap_count": 1
+}

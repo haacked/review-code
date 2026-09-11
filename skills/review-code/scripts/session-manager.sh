@@ -15,7 +15,10 @@ set -euo pipefail
 #   session_cleanup <session-id>
 
 # Session storage directory
-SESSION_DIR="${CLAUDE_SESSION_DIR:-${HOME}/.claude/skills/review-code/.sessions}"
+_SESSION_MANAGER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=helpers/config-helpers.sh
+source "${_SESSION_MANAGER_DIR}/helpers/config-helpers.sh"
+SESSION_DIR="${CLAUDE_SESSION_DIR:-$(resolve_skill_dir)/.sessions}"
 
 # Sanitize session ID or command name to prevent path traversal
 # Args: $1 = string to sanitize

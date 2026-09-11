@@ -257,9 +257,11 @@ EOF
     diff=""
 
     result=$(echo "$diff" | "$SCRIPT")
-    # Empty diff results in empty string in arrays, not zero-length arrays
-    echo "$result" | jq -e '.languages | length <= 1'
-    echo "$result" | jq -e '.frameworks | length <= 1'
+    # The arrays have to be empty rather than [""]: printf over an empty list
+    # emits a blank line, which jq reads as a single empty-string element.
+    echo "$result" | jq -e '.languages == []'
+    echo "$result" | jq -e '.frameworks == []'
+    echo "$result" | jq -e '.file_extensions == []'
     echo "$result" | jq -e '.has_frontend == false'
 }
 

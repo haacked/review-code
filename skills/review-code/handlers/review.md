@@ -3,13 +3,13 @@
 If STATUS is "ready", get the session file path (replace `<SESSION_ID>` with the actual session ID):
 
 ```bash
-~/.claude/skills/review-code/scripts/review-status-handler.sh get-session-file "<SESSION_ID>"
+~/.agents/skills/review-code/scripts/review-status-handler.sh get-session-file "<SESSION_ID>"
 ```
 
 Save the output as `SESSION_FILE`. Then get the orchestrator-facing fields:
 
 ```bash
-~/.claude/skills/review-code/scripts/review-status-handler.sh get-review-fields "<SESSION_ID>"
+~/.agents/skills/review-code/scripts/review-status-handler.sh get-review-fields "<SESSION_ID>"
 ```
 
 Save that JSON as `REVIEW_FIELDS` and show the user `display_summary`.
@@ -18,7 +18,7 @@ Save that JSON as `REVIEW_FIELDS` and show the user `display_summary`.
 
 ### Handle Existing Review Files
 
-From `REVIEW_FIELDS`, extract `file_info`: `file_exists`, `file_path`, `has_branch_review`, `branch_review_path`, `needs_rename`, and `pr_number`. The merge and migrate procedures below live in `~/.claude/skills/review-code/handlers/existing-review-files.md`; Read it when an option that uses one is selected.
+From `REVIEW_FIELDS`, extract `file_info`: `file_exists`, `file_path`, `has_branch_review`, `branch_review_path`, `needs_rename`, and `pr_number`. The merge and migrate procedures below live in `~/.agents/skills/review-code/handlers/existing-review-files.md`; Read it when an option that uses one is selected.
 
 **If `has_branch_review` is true** (both PR and branch reviews exist):
 
@@ -52,13 +52,14 @@ First, check `REVIEW_FIELDS` for `overwrite` and `append` flags:
 On "Cancel" in any of the prompts above: clean up the session, then stop. A worktree may have been provisioned for this session; cleanup releases it instead of leaving it behind.
 
 ```bash
-~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
+~/.agents/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
 ```
 
 ### Extract Session Data
 
 From `REVIEW_FIELDS`, extract these fields for building agent context:
 - `mode`: review mode (pr, branch, commit, range, local)
+- `comment_style`: public comment style (`concise` by default, or `detailed`); retain it through the finding quality pipeline.
 - `diff_path`: filesystem path to the diff. The bytes stay on disk; agents read them.
 - `artifacts_dir`: directory holding the diff and the agent briefing
 - `file_metadata`: metadata about changed files
@@ -83,12 +84,13 @@ Some steps apply only to certain sessions, and their instructions live in separa
 
 | Condition (`REVIEW_FIELDS`) | Read this file |
 |---|---|
-| `debug_session_dir` is a non-empty string | `~/.claude/skills/review-code/handlers/review-debug.md` |
-| `chunk_metadata.chunked` is `true` | `~/.claude/skills/review-code/handlers/review-chunked.md` |
-| `adversary` is present | `~/.claude/skills/review-code/handlers/review-adversary.md` |
-| `mode` is `"pr"` | `~/.claude/skills/review-code/handlers/review-pr-output.md` |
-| `fix` is `true` | `~/.claude/skills/review-code/handlers/review-fix.md` |
-| always, at the compose step | `~/.claude/skills/review-code/handlers/review-compose.md` (Read it then, not now) |
+| `debug_session_dir` is a non-empty string | `~/.agents/skills/review-code/handlers/review-debug.md` |
+| `chunk_metadata.chunked` is `true` | `~/.agents/skills/review-code/handlers/review-chunked.md` |
+| `adversary` is present | `~/.agents/skills/review-code/handlers/review-adversary.md` |
+| `mode` is `"pr"` | `~/.agents/skills/review-code/handlers/review-pr-output.md` |
+| `fix` is `true` | `~/.agents/skills/review-code/handlers/review-fix.md` |
+| always, after finding validation | `~/.agents/skills/review-code/handlers/review-finding-quality.md` (Read it then, not now) |
+| always, at the compose step | `~/.agents/skills/review-code/handlers/review-compose.md` (Read it then, not now) |
 
 Each file states where in the flow below its steps run. If no condition holds, read nothing and continue.
 
@@ -99,7 +101,7 @@ Runs only when `append` is true in `REVIEW_FIELDS` and `file_info.file_exists` i
 A re-review normally pays full freight: every agent reads the whole diff again even when the author pushed a two-line fix. The previous review's metadata header records the SHA it was taken at, so the changes since then are computable:
 
 ```bash
-~/.claude/skills/review-code/scripts/review-delta.sh \
+~/.agents/skills/review-code/scripts/review-delta.sh \
   --review-file "<file_info.file_path>" \
   --head-sha "<pr.head_sha>" \
   --base "<pr.base>" \
@@ -117,16 +119,16 @@ Read `mode` from the JSON it prints:
 
 **Always tell the user which path this took, and for `full`, the `reason` the script gave.** A silent fallback looks identical to a delta review that found nothing, and the difference matters: a full re-review costs what it always did.
 
-**Advance the recorded SHA.** When composing the review, `review_commit` in the metadata header must be set to the head this run actually reviewed. If it keeps the old value, the next re-review computes its delta from the original SHA and the saving disappears after one round. On `--append`, update the existing header rather than adding a second one.
+**Advance the recorded SHA.** `review_commit` in the metadata header must end up at the head this run actually reviewed. If it keeps the old value, the next re-review computes its delta from the original SHA and the saving disappears after one round. On `--append`, update the existing header rather than adding a second one.
 
-**Carrying findings forward.** On the `delta` path, parse the previous review's findings and carry forward only those whose file the delta does not touch. Findings in files the delta changed are dropped and re-derived by the agents against the new code. This is deliberately conservative and it has a known limit worth stating in the review: a change in one file can invalidate a finding about a file the delta never touched. Record `review_mode: delta` and `delta_from: <sha>` in the review's metadata header so every carried-forward finding is traceable to the SHA it was derived at.
+**Carrying findings forward.** On the `delta` path the compose step loads `review-carry-forward.md`, which merges this run's sections into the existing review on disk, cuts the previous findings on files the delta touched so the agents' fresh ones stand alone, and advances the header. Never Read the previous review document: its bodies are the cost the delta path exists to avoid.
 
 ### Classify Review Scope
 
 Run the scope classifier to determine exploration depth and agent selection based on diff size and file characteristics:
 
 ```bash
-~/.claude/skills/review-code/scripts/classify-review-scope.sh "$SESSION_FILE"
+~/.agents/skills/review-code/scripts/classify-review-scope.sh "$SESSION_FILE"
 ```
 
 Parse the JSON output and store:
@@ -152,7 +154,9 @@ If you loaded `review-debug.md` (`debug_session_dir` set), store `$debug_session
 
 ### Track Token Usage
 
-Track API token consumption across all agents dispatched during the review. The Agent/Task tool returns usage metadata at the end of each response:
+Track API token consumption across all agents dispatched during the review.
+
+**Claude ($harness = `claude`):** The Agent/Task tool returns usage metadata at the end of each response:
 
 ```
 <usage>total_tokens: NNN
@@ -161,6 +165,8 @@ duration_ms: NNN</usage>
 ```
 
 Maintain a `$token_usage` map throughout the review. After each Agent/Task tool invocation completes (context explorer, review agents, chunk analyzers, finding validators), parse the `<usage>` block from its response and record `total_tokens`, `tool_uses`, and `duration_ms` keyed by agent name (e.g., `context_explorer`, `code-reviewer-security`, `chunk-1-analysis`, `validator-1`). If the usage block is absent from a response, skip that entry.
+
+**Codex ($harness = `codex`):** Codex's JSONL stream carries different signals; the response surface is what `codex exec --output-last-message` writes. Track per-agent wall-clock (time around each `agent-dispatch.sh run` call) and any token fields in the final `turn.completed` event of the JSONL stream. Codex doesn't expose tool-call counts, so record `tool_uses` only when the JSONL provides it; otherwise omit the field. Keep the same `$token_usage` map shape so the token-report rendering downstream doesn't branch on harness.
 
 ### Prepare File Access Instructions
 
@@ -194,7 +200,35 @@ No safe local checkout is available for reading PR files. This can happen becaus
 
 ### Subagent Availability
 
-The steps below spawn named subagent types: `code-review-context-explorer`, the `code-reviewer-*` reviewers, `finding-validator`, `comprehension-gate`, and `code-reviewer-voice`. Some harnesses don't register user-installed agents, so these names won't appear in the environment's available agent types. In that case, spawn a `general-purpose` agent for each invocation instead, prepending the full body of the matching agent definition (`~/.claude/agents/<subagent_type>.md`, frontmatter stripped) to the prompt. Read from `~/.claude/agents/` even when `CLAUDE_CONFIG_DIR` points elsewhere: it is the copy `bin/setup` always installs, while a redirected config home's `agents/` dir is typically what's missing or unread when this fallback applies. If the Agent tool accepts a `model` parameter, pass the definition's `model:` frontmatter value so each agent keeps its intended cost tier. Keep the same parallelism and the same finding format (it is parsed downstream), and mention the substitution once in the final output rather than per agent.
+The steps below spawn named subagent types: `code-review-context-explorer`, the domain `code-reviewer-*` reviewers, `finding-validator`, `code-reviewer-comment`, `comprehension-gate`, and `code-reviewer-voice`. How they spawn depends on the harness.
+
+**Detect the harness once, at the start of "ready":**
+
+```bash
+~/.agents/skills/review-code/scripts/helpers/agent-dispatch.sh --detect
+```
+
+This prints `claude` or `codex`. Save it as `$harness`. If the command exits non-zero (no harness detected), stop and report the error.
+
+**Claude ($harness = `claude`):** Spawn subagents via the Task tool with `subagent_type` set to the agent name (`code-review-context-explorer`, `code-reviewer-security`, etc.). If those names aren't registered in the environment, spawn `general-purpose` and prepend the full body of `~/.claude/agents/<subagent_type>.md` (frontmatter stripped) to the prompt; pass the definition's `model:` value if the Agent tool accepts it. Read from `~/.claude/agents/` even when `CLAUDE_CONFIG_DIR` points elsewhere: `bin/setup` always installs that copy, while a redirected config home's `agents/` dir is typically what's missing when this fallback applies. Findings come back in-conversation. After `synthesis`, write each agent's raw findings to `<artifacts_dir>/findings/<agent-name>.md` (one file per reviewer) using `agent-report.sh`, so the compose step can concatenate from disk instead of holding them in context.
+
+**Codex ($harness = `codex`):** Spawn subagents via the `codex` CLI — Codex has no Task tool or subagent registration inside the orchestrating process. For each agent in the plan:
+
+```bash
+~/.agents/skills/review-code/scripts/helpers/agent-dispatch.sh \
+    run <agent-name> <prompt-file> <artifacts_dir>/findings/<agent-name>.md
+```
+
+`<prompt-file>` is a markdown file you write first containing the same prompt body the Claude path would send inline. The helper shells out to `codex exec --json --sandbox read-only --output-last-message <findings-file>`, applying the model, reasoning effort, and instructions from `~/.codex/agents/<agent-name>.toml`, so the agent's final message lands directly at the findings path. Don't repeat the agent definition in the prompt file; the helper supplies it. Codex subagents cannot stream back into this conversation; all findings, architectural context, and validation notes reach us as files.
+
+Under Codex, dispatch is sequential unless you background the invocations; prefer backgrounding (`... &`) when the plan picks several reviewers so they run in parallel, then `wait` before synthesis. Track each backgrounded PID alongside the agent name so you can attribute a non-zero exit.
+
+**Codex feature gaps to disclose.** Claude-only steps are:
+- The coverage-resume bounce (per-agent Task resume isn't available)
+- Per-agent model override (the rendered TOMLs carry the mapped model; the orchestrator cannot swap mid-flight)
+- The Task tool's `<usage>` block (track wall-clock and codex's `tokens_used` from the JSONL tail instead — log what you have)
+
+Note each gap in the review's fix/limitations section if it fired. The review still produces findings; the differences are observability and iteration depth, not coverage.
 
 ### Gather Architectural Context
 
@@ -252,16 +286,19 @@ Focus on:
 Do NOT search for code callers, function patterns, or application architecture.
 
 {If exploration_depth == "minimal" (non-infra):}
-Time-box yourself to 30 seconds. Focus on understanding what changed:
-- Read only the modified files to understand their purpose and the change
-- Skip caller search, pattern search, git history, and reference implementations
+Time-box yourself to 45 seconds. Gather only context that can change the review outcome:
+- Read the modified files to identify changed symbols and newly introduced calls
+- Find direct callers of changed symbols, limiting results to the 3 most relevant callers per symbol
+- Read implementations of newly called methods when their behavior is not obvious at the call site
+- Check nearby tests and public boundaries such as APIs, schemas, events, and configuration
+- Skip broad pattern searches, reference implementations, and git history
 
 {If exploration_depth == "standard":}
 Time-box yourself to 1-2 minutes. Explore:
 - Full context of modified files
-- Related code and dependencies
-- Callers of modified functions (who calls the changed code and might be affected?)
-  (grep for function/method names, report top 3-5 callers per significantly modified function)
+- Direct callers of changed symbols, reporting the top 3-5 relevant callers per significantly modified symbol
+- Implementations of newly called methods and dependencies whose behavior is not obvious at the call site
+- Nearby tests and public boundaries such as APIs, schemas, events, and configuration
 - Skip pattern search, reference implementations, and git history
 
 {If exploration_depth == "thorough":}
@@ -310,7 +347,7 @@ Do not write it with a shell heredoc. The explorer quotes code from the PR verba
 Then build the briefing, passing the agents being dispatched so the area-scoped diffs get written:
 
 ```bash
-~/.claude/skills/review-code/scripts/build-agent-briefing.sh "$SESSION_FILE" \
+~/.agents/skills/review-code/scripts/build-agent-briefing.sh "$SESSION_FILE" \
   --arch-context-file "<artifacts_dir>/architectural-context.md" \
   --agents "<space-separated $selected_agents>"
 ```
@@ -335,7 +372,7 @@ If either file is missing or unreadable, stop immediately and reply with exactly
 $file_access_instructions
 ```
 
-**If an agent replies `BRIEFING_UNAVAILABLE`:** Read `~/.claude/skills/review-code/handlers/review-inline-fallback.md` and re-dispatch that one agent with the payload inlined. Report in the review that the fallback fired, since it means the briefing path is broken and every later run pays full freight until it is fixed.
+**If an agent replies `BRIEFING_UNAVAILABLE`:** Read `~/.agents/skills/review-code/handlers/review-inline-fallback.md` and re-dispatch that one agent with the payload inlined. Report in the review that the fallback fired, since it means the briefing path is broken and every later run pays full freight until it is fixed.
 
 ### Check What Each Agent Actually Read
 
@@ -344,10 +381,12 @@ The line counts in the agent prompt are advisory. They only help an agent that r
 After the agents return, check what they read:
 
 ```bash
-~/.claude/skills/review-code/scripts/check-diff-coverage.sh --diff-lines <diff_lines> --json
+~/.agents/skills/review-code/scripts/check-diff-coverage.sh --diff-lines <diff_lines> --json
 ```
 
 It reads this session's subagent transcripts (`--session` defaults to `$CLAUDE_CODE_SESSION_ID`) and returns per-agent coverage plus a `below_threshold` array. It exits 0 whenever it can read the transcripts; short coverage is a result, not a failure.
+
+Each agent is sized against the patch file it actually read — the chunk or scoped diff named in its own tool calls — not against one shared count. `--diff-lines` is only the fallback for an agent whose transcript names no readable patch file, so pass the full diff's line count here even for a chunked or scoped review. Same-type agents are told apart by the `diff_path` field on each row.
 
 For each agent in `below_threshold`, resume it (using its agent ID from the Task tool) and give it the `unread_ranges` the script reported:
 
@@ -385,15 +424,16 @@ Synthesize the remaining findings using extended thinking into a coherent, dedup
 **Cross-agent corroboration:** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function. Cross-model corroboration (an adversary meta-review `CONFIRMED` verdict, only when an adversary pass ran) also counts as corroboration even if only one Claude agent flagged the issue.
 
 **Filtering rules:**
+- **No ask (every severity, applied first):** drop any finding whose recommendation is that the author change nothing now, or whose trigger hasn't happened yet ("if a third caller is ever added"). Leaving a real change to the author's judgment ("your call") is fine; leaving them nothing to decide is not.
 - **Corroborated (2+ agents or chunks):** Keep even if individual confidence is below 40%.
 - **Solo finding, confidence >= 40%:** Include as-is.
 - **Solo finding, confidence < 40%:** Drop silently.
-- **Questions and nits:** Exempt from filtering. Include regardless of confidence.
+- **Questions and nits:** Exempt from the confidence filter, not from the no-ask rule. Include regardless of confidence.
 - When consolidating corroborated findings, merge into a single entry using the highest confidence value. Corroboration is synthesis-time metadata used for prioritization; never embed it in the comment body (see "Comment Body Hygiene" below).
 
 **Comment Body Hygiene:**
 
-The `description` and `proposed_fix` text becomes the literal body of the PR review comment; keep pipeline bookkeeping out of it. No agent or model attribution ("*(corroborated by Copilot)*", "*(found by code-reviewer-security)*"), no validator verdicts ("*Downgraded from blocking: …*"), no confidence percentages or other internal scoring. Corroboration, dismissal reasoning, and confidence are synthesis-time signals: track them in your working state (or in `$debug_session_dir` artifacts when debugging), never in the body. A model name is fine when it's substantive content about the code under review ("*(the Copilot SDK rejects this header)*"); the rule targets bookkeeping, not technical claims that mention a product.
+The final `description` becomes the literal PR comment body; `proposed_fix` retains the internal fix. Keep pipeline bookkeeping out of both. No agent or model attribution ("*(corroborated by Copilot)*", "*(found by code-reviewer-security)*"), no validator verdicts ("*Downgraded from blocking: …*"), no confidence percentages or other internal scoring. Corroboration, dismissal reasoning, and confidence are synthesis-time signals: track them in your working state (or in `$debug_session_dir` artifacts when debugging), never in the body. A model name is fine when it's substantive content about the code under review ("*(the Copilot SDK rejects this header)*"); the rule targets bookkeeping, not technical claims that mention a product.
 
 **Priority ordering in the final review:**
 1. Corroborated blocking findings
@@ -409,7 +449,7 @@ Before including any finding in the final review, verify it references code actu
 **Step 1: Run the position mapper.** For each agent finding that references a specific file and line, build a targets array and run:
 
 ```bash
-~/.claude/skills/review-code/scripts/diff-position-mapper.sh --diff-file "<diff_path>" <<'EOF'
+~/.agents/skills/review-code/scripts/diff-position-mapper.sh --diff-file "<diff_path>" <<'EOF'
 {"targets": [<targets array>]}
 EOF
 ```
@@ -459,70 +499,11 @@ Where `targets` contains `{"path": "<file>", "line": <number>}` objects. The dif
 
 ### Adversary Meta-Review
 
-If you loaded `review-adversary.md` (`--adversary:*` flag), run its meta-review pass here, between finding validation and the Voice Pass. Otherwise continue to the Comprehension Gate.
+If you loaded `review-adversary.md` (`--adversary:*` flag), run its meta-review pass here, between finding validation and semantic composition. Otherwise continue to the finding contract.
 
-### Comprehension Gate (Cold-Reader Check)
+### Finding Quality Pipeline
 
-Before the Voice Pass, check that every surviving comment body is understandable by someone reading only the comment: no diff, no code. A cheap cold-reader answers, per finding, what breaks and what the author should do; bodies it cannot follow bounce back to the agent that wrote them for a plain rewrite. This step changes body text only: it never drops findings, changes severity, or edits citations. The Voice Pass that follows stays as mechanical polish; this gate carries the register.
-
-**Skip conditions:** If `$selected_agents` is empty (no findings will be produced) or the surviving finding pool is empty, skip this step entirely.
-
-**Build the input.** Collect all findings that survived synthesis, validation, and the adversary meta-review. For each, include an integer `id` (sequential, starting at 1, local to this step), `severity`, `location`, `description`, `proposed_fix` (string or null), and `kind: "finding"`. Build a JSON array.
-
-**Dispatch the check.** Invoke the Task tool with subagent_type `comprehension-gate` and a prompt that embeds the JSON array inside a **four-backtick** fence tagged `json` (finding bodies typically contain triple-backtick code blocks) and reminds the agent to answer per its definition: for each item, `what_breaks` and `action` in one sentence each, a `PASS`/`REWRITE` verdict, and `notes` naming what was unclear on every `REWRITE`, returned as a four-backtick `json` fence in the same order. Save the response. Extract usage metadata and record in `$token_usage["comprehension-gate"]`.
-
-**Parse the output.** Extract the JSON array and match entries to input findings by `id`. An input `id` with no matching entry, an entry whose verdict is neither `PASS` nor `REWRITE`, or a malformed entry counts as `PASS` (fail open per finding). Ignore entries with unknown ids. If the returned array length differs from the input length by more than 1, treat the entire response as malformed and skip the rest of this step.
-
-**Handle REWRITE verdicts.** For each finding the gate marked `REWRITE`:
-
-1. Resume the agent that produced the finding (using the agent ID from the Task tool, the same mechanism as "Validate Findings Against the Diff" Step 2). If the finding has no resumable agent (for example, an adversary-added finding) or the resume errors, keep the body as-is.
-2. Send it the current `description` and `proposed_fix`, the gate's `notes`, and the gate's `what_breaks`/`action` attempts, and ask for a rewrite: lead with what breaks; one idea per sentence; a teammate who has not read the diff must be able to answer "what breaks" and "what should I do" from the body alone; preserve every `path:line` citation, identifier, number, code block, and the exact severity prefix; do not add claims, citations, or fixes that are not already in the finding; a `nit:` body stays at most 2 sentences. Ask it to return only the rewritten body and the rewritten `proposed_fix` (or null).
-3. Accept the rewrite only if the severity prefix is string-identical in form and every backtick-quoted path-shaped or line-number token from the original still appears (the Voice Pass preservation checks 1 and 2; no growth cap here, since the original author may legitimately restructure). If the reply is empty, malformed, or fails either check, keep the original and count the failure in `$token_usage["comprehension-gate"].validation_failures`.
-4. One bounce per finding. Take what comes back; never re-gate a rewrite. Record each resume's usage in `$token_usage` as `gate-bounce-{N}` (numbered sequentially).
-
-**Fail open, never block the review:** on an agent error or timeout, a JSON parse failure, or an array length off by more than 1, continue with the original findings. Verbose-but-correct beats blocked. This step runs in all review modes when findings exist; there is no mode-based guard.
-
-In debug mode, save the stage `11b2-comprehension-gate` artifacts (see `review-debug.md`).
-
-### Voice Pass (Final Rewrite)
-
-Before composing the review document, run a single voice-pass agent over the surviving findings to rewrite their `description` and `proposed_fix` text in a clean, conversational voice. The voice agent never changes severity, citations, line numbers, identifiers, numbers, or code blocks; it changes phrasing and paragraph structure, nothing else. It may unpack a dense sentence into more, plainer sentences, up to about 2x the original length.
-
-**Skip conditions:** If `$selected_agents` is empty (no findings will be produced) or the surviving finding pool is empty, skip this step entirely.
-
-**Build the input.** Collect all findings that survived synthesis, validation, and the adversary meta-review, with any comprehension-gate rewrites applied (the same pool the document composer will use). For each, include an integer `id` (sequential, starting at 1), `severity` (`blocking`/`suggestion`/`question`/`nit`), `location` (file:line or file path), `description` (the comment body, including any embedded code blocks), and `proposed_fix` (string or null). Build a JSON array.
-
-**Dispatch the rewrite.** Invoke the Task tool with subagent_type `code-reviewer-voice` and a prompt that:
-
-1. Tells the agent to rewrite the `description` and `proposed_fix` fields in conversational voice while preserving every citation, file path, line number, identifier, number, and code block exactly. Unpacking a compressed sentence into more, plainer sentences is encouraged, up to about 2x the original length; growth never licenses new claims, citations, or fixes.
-2. Tells the agent it is also responsible for paragraph structure: any body with three or more sentences must have a blank line separating the problem (what breaks and why) from the recommendation (what to do); enumerations that restate what an attached code block already shows get cut; a `nit:` body is at most two sentences. This structural responsibility does not license changing citations, code blocks, severity, or technical claims.
-3. Embeds the JSON array of findings inside a **four-backtick** fence tagged `json` (because finding bodies typically contain triple-backtick code blocks; a three-backtick wrapper would close prematurely).
-4. Reminds the agent to wrap its response in a four-backtick `json` fence in the same order as the input, with `id`, `description`, `proposed_fix`, and `unchanged` on each object.
-
-Save the agent's response. Extract usage metadata and record in `$token_usage["code-reviewer-voice"]`.
-
-**Parse the output.** Extract the JSON array from the response. For each rewritten finding, match it to the input by `id`.
-
-- If `unchanged: true` on a rewritten finding, skip validation and keep the original `description` and `proposed_fix` for that finding (the agent is signaling no improvement was needed).
-- If an input `id` has no matching rewrite, keep the original.
-- If a rewritten entry has an `id` that doesn't appear in the input, ignore that entry and count it as a parse anomaly toward the validation-failure budget below.
-- If the returned array length differs from the input array length by more than 1, treat the entire response as malformed and apply the agent-error fallback (continue with original findings).
-
-**Validate preservation.** For each rewrite where `unchanged` is `false`, accept it only if all three checks hold; otherwise keep the original and count the failure in `$token_usage["code-reviewer-voice"].validation_failures`:
-
-1. The severity prefix is string-identical in form (`` `blocking`: `` stays `` `blocking`: ``, `**blocking**:` stays `**blocking**:`).
-2. Every backtick-quoted path-shaped or line-number token from the original (`auth.py:45`, `src/foo.ts`, `:67`, `line 67`) still appears. Backtick-quoted identifiers (`OverflowError`) are exempt; skip the check when the original has no such tokens.
-3. The body grew to no more than about 2x the original length (unpacking dense sentences into plain ones may grow the body; paragraph breaks and punctuation tweaks never fail this on their own).
-
-**Fail open, never block the review:** on an agent error or timeout, a JSON parse failure, or an array length off by more than 1, continue with the original findings. If more than 50% of rewrites fail validation, discard all rewrites; the voice agent is misbehaving, and verbose comments beat wrong ones.
-
-The Voice Pass step runs in all review modes (quick and comprehensive) when findings exist. There is no mode-based guard.
-
-In debug mode, save the stage `11c-voice-rewrite` artifacts (see `review-debug.md`).
-
-### Link File References in Comment Bodies
-
-If you loaded `review-pr-output.md` (PR mode), run its "Link File References in Comment Bodies" step here, right after the Voice Pass. Other modes leave references as plain `path:line` text.
+Read `~/.agents/skills/review-code/handlers/review-finding-quality.md` and follow it now. It builds `$finding_quality`, runs PR linkification when applicable, then creates `$finding_publication` through the executable publication boundary. Continue only with `$finding_publication.findings`; carry every `$finding_publication.withheld` entry into the local review.
 
 ### Apply Fixes (--fix flag)
 
@@ -530,14 +511,14 @@ If you loaded `review-fix.md` (session has `fix: true`), apply fixes per its ins
 
 ### Compose the Review Document
 
-Read `~/.claude/skills/review-code/handlers/review-compose.md` and follow it to build and save the review document.
+Read `~/.agents/skills/review-code/handlers/review-compose.md` and follow it to build and save the review document.
 
 ### Log Token Usage
 
 After saving the review, append a record to the central token-usage log. Pass the raw `$token_usage` map; the script computes the sums, which is what keeps `agents_run` and `total_tokens` honest:
 
 ```bash
-~/.claude/skills/review-code/scripts/log-token-usage.sh \
+~/.agents/skills/review-code/scripts/log-token-usage.sh \
   --review-file "$review_file" \
   --usage '<$token_usage as a JSON object, agent key to total_tokens>' \
   --org "<org>" --repo "<repo>" --mode "<mode>" --identifier "<pr number or branch>" \
@@ -560,7 +541,7 @@ If you loaded `review-pr-output.md` (PR mode), run its remaining steps now, in o
 After the review is complete, clean up the session (replace `<SESSION_ID>` with the actual session ID):
 
 ```bash
-~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
+~/.agents/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
 ```
 
 This removes the temporary session files and frees up disk space.

@@ -1,12 +1,12 @@
 ## Apply Fixes
 
-Loaded when the session JSON has `fix: true`. This pass runs after the Voice Pass (and the "Link File References" step when it ran), immediately before "Compose the Review Document": apply fixes for the surviving findings.
+Loaded when the session JSON has `fix: true`. This pass runs after semantic composition, the Voice Pass, the final Comprehension Gate, and any file-reference links. It runs immediately before "Compose the Review Document" and applies fixes only for publishable findings.
 
 The goal: act like a principal engineer doing a careful local cleanup pass. Fix what's clearly right; explain what you skipped or where you had to make a judgment call. The fix step never posts to GitHub: it edits the working tree only.
 
 **Preconditions:**
 
-1. The surviving finding pool is non-empty. If it's empty, skip the fix step and note "No findings to fix" in the Fix Summary section of the review document.
+1. `$finding_publication.findings` contains at least one entry. If not, skip the fix step and note "No findings to fix" in the Fix Summary section of the review document.
 2. A writable working tree contains the reviewed code. Decide using this table:
 
    | `mode`                               | `file_ref` set? | `git.local_clone` set? | Apply fixes? | Target / reason it's skipped |
@@ -24,7 +24,7 @@ If any precondition fails, skip applying fixes but still produce the Fix Summary
 
 **Classification (per finding):**
 
-For each finding that survived synthesis, validation, the adversary meta-review, and voice pass, classify it into one of three buckets. The finding has `severity` (blocking/suggestion/nit/question), `file`, `line`, `description`, `proposed_fix`, and `confidence`.
+For each finding in `$finding_publication.findings`, classify it into one of three buckets. The executable publication boundary has already required `publishable: true`, a non-empty body, and valid routing. Each finding has `severity` (blocking/suggestion/nit/question), `file`, `line`, `description`, `proposed_fix`, and `confidence`.
 
 - **`fix_high_confidence`**: apply without commentary in the summary. All of:
   - One of: `severity` is `blocking` or `suggestion` and `confidence >= 80%`; OR `severity` is `nit` and `proposed_fix` is a single-line or single-identifier change.
@@ -51,7 +51,7 @@ When two findings conflict (different fixes proposed for the same lines), pick t
 
 **Applying fixes:**
 
-Maintain a `$fix_outcomes` map keyed by finding `id` (the voice-pass step mints sequential integer ids on each finding) with shape `{ status, file, line, severity, description, reason?, choice? }` where:
+Maintain a `$fix_outcomes` map keyed by finding `id` (the finding contract assigns sequential integer ids) with shape `{ status, file, line, severity, description, reason?, choice? }` where:
 - `status` is the bucket name: `fix_high_confidence`, `fix_with_judgment`, or `skip`.
 - `reason` is required when `status` is `skip`.
 - `choice` is required when `status` is `fix_with_judgment` and explains the option taken and the alternatives considered.

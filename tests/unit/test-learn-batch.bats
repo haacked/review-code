@@ -108,8 +108,8 @@ teardown() {
 
 @test "learn-batch.sh: returns empty JSON array when no review root exists" {
     # Create a config pointing to non-existent review root
-    mkdir -p "$TEST_DIR/.claude/skills/review-code"
-    echo "REVIEW_ROOT_PATH=$TEST_DIR/nonexistent" > "$TEST_DIR/.claude/skills/review-code/.env"
+    mkdir -p "$TEST_DIR/.agents/skills/review-code"
+    echo "REVIEW_ROOT_PATH=$TEST_DIR/nonexistent" > "$TEST_DIR/.agents/skills/review-code/.env"
 
     # Override HOME to use our test config
     HOME="$TEST_DIR" run "$PROJECT_ROOT/skills/review-code/scripts/learn-batch.sh"
@@ -122,8 +122,8 @@ teardown() {
     mkdir -p "$MOCK_REVIEW_ROOT/testorg/testrepo"
 
     # Create config pointing to our mock review root
-    mkdir -p "$TEST_DIR/.claude/skills/review-code"
-    echo "REVIEW_ROOT_PATH=$MOCK_REVIEW_ROOT" > "$TEST_DIR/.claude/skills/review-code/.env"
+    mkdir -p "$TEST_DIR/.agents/skills/review-code"
+    echo "REVIEW_ROOT_PATH=$MOCK_REVIEW_ROOT" > "$TEST_DIR/.agents/skills/review-code/.env"
 
     HOME="$TEST_DIR" run "$PROJECT_ROOT/skills/review-code/scripts/learn-batch.sh"
     [ "$status" -eq 0 ]
@@ -131,8 +131,8 @@ teardown() {
 }
 
 @test "learn-batch.sh: produces valid JSON output" {
-    mkdir -p "$TEST_DIR/.claude/skills/review-code"
-    echo "REVIEW_ROOT_PATH=$MOCK_REVIEW_ROOT" > "$TEST_DIR/.claude/skills/review-code/.env"
+    mkdir -p "$TEST_DIR/.agents/skills/review-code"
+    echo "REVIEW_ROOT_PATH=$MOCK_REVIEW_ROOT" > "$TEST_DIR/.agents/skills/review-code/.env"
 
     HOME="$TEST_DIR" run "$PROJECT_ROOT/skills/review-code/scripts/learn-batch.sh"
     [ "$status" -eq 0 ]
@@ -195,8 +195,8 @@ teardown() {
 # =============================================================================
 
 @test "learn-batch.sh: handles missing analyzed.json gracefully" {
-    mkdir -p "$TEST_DIR/.claude/skills/review-code"
-    echo "REVIEW_ROOT_PATH=$MOCK_REVIEW_ROOT" > "$TEST_DIR/.claude/skills/review-code/.env"
+    mkdir -p "$TEST_DIR/.agents/skills/review-code"
+    echo "REVIEW_ROOT_PATH=$MOCK_REVIEW_ROOT" > "$TEST_DIR/.agents/skills/review-code/.env"
 
     # Ensure no analyzed.json exists
     rm -f "$MOCK_LEARNINGS_DIR/analyzed.json"

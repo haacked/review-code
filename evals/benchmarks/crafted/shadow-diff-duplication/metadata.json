@@ -1,0 +1,11 @@
+{
+  "id": "shadow-diff-duplication",
+  "name": "Shadow Diff Duplication",
+  "description": "Rust module that compares freshly built feature flag and cohort payloads against what the cache served, then prunes stale entries and reports drift",
+  "languages": ["rust"],
+  "frameworks": [],
+  "areas": ["correctness", "maintainability"],
+  "difficulty": "medium",
+  "expected_finding_count": 2,
+  "false_positive_trap_count": 1
+}

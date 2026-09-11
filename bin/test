@@ -7,41 +7,45 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# Colors
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+# shellcheck source=helpers/_utils.sh
+source "${SCRIPT_DIR}/helpers/_utils.sh"
 
-echo -e "${GREEN}Running review-code tests...${NC}\n"
+print_color green "Running review-code tests…"
+echo
 
 # Check if bats is installed
-if ! command -v bats > /dev/null 2>&1; then
-    echo -e "${RED}Error: bats is not installed${NC}"
+if ! command_exists bats; then
+    error "bats is not installed"
     echo "Install with: brew install bats-core"
     exit 1
 fi
 
 # Run unit tests
-echo -e "${YELLOW}=== Unit Tests ===${NC}"
+print_color yellow "=== Unit Tests ==="
 if bats "${ROOT_DIR}/tests/unit/"*.bats; then
-    echo -e "\n${GREEN}✓ All unit tests passed!${NC}\n"
+    echo
+    success "All unit tests passed!"
+    echo
 else
-    echo -e "\n${RED}✗ Some unit tests failed${NC}\n"
+    echo
+    print_color red "✗ Some unit tests failed"
     exit 1
 fi
 
 # Run integration tests if they exist
 if [[ -d "${ROOT_DIR}/tests/integration" ]] && [[ -n "$(ls -A "${ROOT_DIR}/tests/integration"/*.bats 2> /dev/null)" ]]; then
-    echo -e "${YELLOW}=== Integration Tests ===${NC}"
+    print_color yellow "=== Integration Tests ==="
     if bats "${ROOT_DIR}/tests/integration/"*.bats; then
-        echo -e "\n${GREEN}✓ All integration tests passed!${NC}\n"
+        echo
+        success "All integration tests passed!"
+        echo
     else
-        echo -e "\n${RED}✗ Some integration tests failed${NC}\n"
+        echo
+        print_color red "✗ Some integration tests failed"
         exit 1
     fi
 fi
 
-echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}All tests passed! ✓${NC}"
-echo -e "${GREEN}========================================${NC}"
+print_color green "========================================"
+success "All tests passed!"
+print_color green "========================================"

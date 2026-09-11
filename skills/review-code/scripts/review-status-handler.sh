@@ -12,6 +12,7 @@ set -euo pipefail
 #   get-status <session-id>    - Get status from cached session
 #   get-ready-data <session-id> - Get all data for "ready" status from cache
 #   get-review-fields <session-id> - Get only the small orchestrator-facing fields (no diff/context/PR body)
+#   get-pr-inline-comments <session-id> - Get inline comment roots (path, line, author, body, resolved, outdated)
 #   get-error-data <session-id> - Get error message from cache
 #   get-ambiguous-data <session-id> - Get disambiguation fields from cache
 #   get-prompt-data <session-id> - Get prompt fields from cache
@@ -34,8 +35,8 @@ find_orchestrator() {
         echo "${SCRIPT_DIR}/review-orchestrator.sh"
     elif [[ -f "${SCRIPT_DIR}/../review-orchestrator.sh" ]]; then
         echo "${SCRIPT_DIR}/../review-orchestrator.sh"
-    elif [[ -f ~/.claude/skills/review-code/scripts/review-orchestrator.sh ]]; then
-        echo ~/.claude/skills/review-code/scripts/review-orchestrator.sh
+    elif [[ -f "$(resolve_skill_dir)/scripts/review-orchestrator.sh" ]]; then
+        echo "$(resolve_skill_dir)/scripts/review-orchestrator.sh"
     else
         echo "ERROR: Cannot find review-orchestrator.sh" >&2
         exit 1
@@ -211,17 +212,37 @@ case "${ACTION}" in
             chunk_metadata: (.chunk_metadata // null),
             chunks: (if .chunks then [.chunks[] | {id, label, files, size_kb, diff_path}] else null end),
             commit_messages_present: (has("commit_messages")),
-            adversary: (.adversary // null)
+            adversary: (.adversary // null),
+            comment_style: (.comment_style // "concise")
         }
         + ({force, draft, self, overwrite, append, full, fix} | with_entries(select(.value)))
         + (if .debug_session_dir then {debug_session_dir} else {} end)
-        + (if .pr then {pr: {number: .pr.number, title: .pr.title, author: .pr.author, url: .pr.url, base: .pr.base, head: .pr.head, head_sha: .pr.head_sha, linked_issues: [.pr.linked_issues[]? | {number, title}]}, reviewer_username, is_own_pr} else {} end)
+        + (if .pr then {pr: {number: .pr.number, title: .pr.title, author: .pr.author, url: .pr.url, base: .pr.base_ref, head: .pr.head_ref, head_sha: .pr.head_sha, linked_issues: [.pr.linked_issues[]? | {number, title}]}, reviewer_username, is_own_pr} else {} end)
         + (if .branch then {branch} else {} end)
         + (if .base_branch then {base_branch} else {} end)
         + (if .base_source then {base_source} else {} end)
         + (if .commit then {commit} else {} end)
         + (if .range then {range} else {} end)
         + (if .area then {area} else {} end)'
+        ;;
+
+    "get-pr-inline-comments")
+        # Narrow accessor for review-pr-output.md's Generate Suggested Comments
+        # step. Returns only inline comment roots (path, line, author, body,
+        # resolved, outdated) for dedup against fresh findings; replies are
+        # dropped since they share their root's anchor and add nothing the step
+        # reads. pr.comments is excluded from get-review-fields for being large,
+        # so this is the one place the orchestrator pulls it into context.
+        SESSION_ID="${1:-}"
+        if [[ -z "${SESSION_ID}" ]]; then
+            echo "ERROR: Session ID required" >&2
+            exit 1
+        fi
+
+        session_get_all "${SESSION_ID}" | jq -c '
+            [.pr.comments.inline[]? | select(.in_reply_to_id == null) |
+                {path, line, author, body, resolved: (.resolved // false), outdated: (.outdated // false)}]
+        '
         ;;
 
     "get-find-data")

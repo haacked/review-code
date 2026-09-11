@@ -74,8 +74,11 @@ EOF
     [ "$status" -eq 0 ]
 }
 
-@test "resolve-review-threads: query requests comment author login" {
-    run bash -c "grep -q 'author { login }' '$SCRIPT'"
+@test "resolve-review-threads: fetch_all_threads delegates the fetch to fetch_review_threads" {
+    # The GraphQL query (which requests the comment author login) and its
+    # pagination now live in gh-review-helpers.sh, shared with pr-context.sh's
+    # fetch_review_thread_state (see test-gh-review-helpers.bats).
+    run bash -c "source '$SCRIPT' && declare -f fetch_all_threads | grep -q 'fetch_review_threads'"
     [ "$status" -eq 0 ]
 }
 

@@ -158,6 +158,48 @@ teardown() {
     grep -q "newer" "$wt_path/file.txt"
 }
 
+@test "pr-worktree provision: REVIEW_CODE_PR_SHA checks out that commit, not the PR head" {
+    run bash -c "'$SCRIPT' provision \"\$@\" 2>/dev/null" _ myorg myrepo 42 "$CLONE_DIR"
+    [ "$status" -eq 0 ]
+    local wt_path pinned
+    wt_path=$(echo "$output" | jq -r '.worktree_path')
+    pinned=$(git -C "$CLONE_DIR" rev-parse refs/review-code/pr/42)
+
+    # The author pushes a correction on top of the commit the diff was captured
+    # at, which is what makes an unpinned checkout show the wrong content.
+    local seed2="$TEST_DIR/seed2"
+    git clone --quiet "$BARE_ORIGIN" "$seed2"
+    git -C "$seed2" config commit.gpgsign false
+    git -C "$seed2" config user.email "test@example.com"
+    git -C "$seed2" config user.name "Test User"
+    git -C "$seed2" fetch --quiet origin "refs/pull/42/head:pr42"
+    git -C "$seed2" checkout --quiet pr42
+    echo "newer" >> "$seed2/file.txt"
+    git -C "$seed2" commit --quiet -am "second pr commit"
+    git -C "$seed2" push --quiet origin "HEAD:refs/pull/42/head"
+    rm -rf "$seed2"
+
+    export REVIEW_CODE_PR_SHA="$pinned"
+    run bash -c "'$SCRIPT' provision \"\$@\" 2>/dev/null" _ myorg myrepo 42 "$CLONE_DIR"
+    unset REVIEW_CODE_PR_SHA
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.ref')" = "$pinned" ]
+    ! grep -q "newer" "$wt_path/file.txt"
+}
+
+@test "pr-worktree provision: fails when REVIEW_CODE_PR_SHA is unreachable from the PR ref" {
+    # A dangling commit: real object, on no branch and no PR ref.
+    local unreachable
+    unreachable=$(git -C "$CLONE_DIR" commit-tree -m unrelated \
+        "$(git -C "$CLONE_DIR" rev-parse HEAD^{tree})")
+
+    export REVIEW_CODE_PR_SHA="$unreachable"
+    run bash -c "'$SCRIPT' provision \"\$@\" 2>&1" _ myorg myrepo 42 "$CLONE_DIR"
+    unset REVIEW_CODE_PR_SHA
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"not reachable"* ]]
+}
+
 @test "pr-worktree provision: falls back to unfiltered fetch when --filter=blob:none fails" {
     # Wrap `git` via PATH so fetches that include --filter=blob:none fail, but
     # every other git invocation (including the retry without --filter) passes

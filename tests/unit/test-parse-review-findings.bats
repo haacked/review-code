@@ -487,3 +487,410 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *"sourced ok"* ]]
 }
+
+# =============================================================================
+# Spans (--with-spans)
+# =============================================================================
+
+@test "parse-review-findings.sh: default output carries no span fields" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `auth.py:45`
+
+SQL injection vulnerability
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0] | has("start_line") | not' > /dev/null
+    echo "$output" | jq -e '.[0] | has("deletable") | not' > /dev/null
+}
+
+@test "parse-review-findings.sh: --with-spans reports the finding's line range" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `auth.py:45`
+
+SQL injection vulnerability
+
+#### `auth.py:60`
+
+Second finding
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --with-spans "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].start_line == 3' > /dev/null
+    echo "$output" | jq -e '.[0].end_line == 5' > /dev/null
+    echo "$output" | jq -e '.[0].deletable == true' > /dev/null
+    echo "$output" | jq -e '.[1].start_line == 7' > /dev/null
+}
+
+@test "parse-review-findings.sh: a span stops before the next heading, container headings included" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `auth.py:45`
+
+SQL injection vulnerability
+
+### Nits
+
+#### `docs/readme.md:3`
+
+Typo
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --with-spans "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    # ends at line 5, so cutting it leaves "### Nits" on line 7 in place
+    echo "$output" | jq -e '.[0].end_line == 5' > /dev/null
+}
+
+
+@test "parse-review-findings.sh: a Location-line finding is reported as not deletable" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+**Location**: `auth.py:45`
+
+SQL injection vulnerability
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --with-spans "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].deletable == false' > /dev/null
+}
+
+@test "parse-review-findings.sh: a description stops where the span stops" {
+    # The span and the description must end at the same place. When they did
+    # not, cutting a finding's span left the tail of its body in the document
+    # for the finding above it to absorb on the next parse.
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `auth.py:45`
+
+Body of the finding.
+
+---
+
+Prose after the thematic break.
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --with-spans "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].end_line == 5' > /dev/null
+    echo "$output" | jq -e '.[0].description == "Body of the finding."' > /dev/null
+}
+
+# =============================================================================
+# Fenced code blocks
+#
+# Fence tracking decides what counts as a finding at all, so it applies to
+# every caller, not just --with-spans. These run in default mode except where
+# the assertion is itself about a span.
+# =============================================================================
+
+@test "parse-review-findings.sh: headings inside a code block are not findings" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `auth.py:45`
+
+The review format looks like this:
+
+```markdown
+#### `example.py:12`
+
+Example finding
+```
+
+Real body text.
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'length == 1' > /dev/null
+    echo "$output" | jq -e '.[0].file == "auth.py"' > /dev/null
+}
+
+@test "parse-review-findings.sh: a suggestion block nested in a text block does not desync fences" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `auth.py:45`
+
+```text
+suggestion: use a constant-time compare
+
+```suggestion
+hmac.compare_digest(a, b)
+```
+```
+
+#### `auth.py:80`
+
+Second finding, after the nested fences.
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'length == 2' > /dev/null
+    echo "$output" | jq -e '.[1].line == 80' > /dev/null
+}
+
+@test "parse-review-findings.sh: a tilde fence nested in a backtick fence does not close it" {
+    # Only a delimiter of the same marker character closes a block, so the
+    # inner ~~~ must not reopen the document to heading parsing. Tracking depth
+    # alone would end the outer block here and read the example as a finding.
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `auth.py:45`
+
+```text
+~~~
+#### `fake.py:99`
+~~~
+```
+
+#### `auth.py:80`
+
+Second finding.
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'length == 2' > /dev/null
+    echo "$output" | jq -e '[.[].file] == ["auth.py", "auth.py"]' > /dev/null
+    echo "$output" | jq -e '[.[].line] == [45, 80]' > /dev/null
+}
+
+@test "parse-review-findings.sh: a # comment inside a code block does not end a span" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `auth.py:45`
+
+Use a constant-time compare:
+
+```bash
+# not a heading
+compare a b
+```
+
+Trailing prose.
+
+## Testing Review
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --with-spans "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'length == 1' > /dev/null
+    echo "$output" | jq -e '.[0].end_line == 12' > /dev/null
+}
+
+# =============================================================================
+# Withdrawn findings
+# =============================================================================
+
+@test "parse-review-findings.sh: skips a finding withdrawn on its heading" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `src/auth.ts:42` <!-- pc:777 PRRC_aaa withdrawn:2026-08-25 -->
+
+The token check is wrong.
+
+*Withdrawn 2026-08-25: author showed it was already handled*
+
+---
+
+#### `src/db.py:12` <!-- pc:888 PRRC_bbb -->
+
+N+1 query here.
+
+---
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq 'length')" -eq 1 ]
+    [ "$(echo "$output" | jq -r '.[0].file')" = "src/db.py" ]
+}
+
+@test "parse-review-findings.sh: --include-withdrawn returns it with a flag" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `src/auth.ts:42` <!-- pc:777 PRRC_aaa withdrawn:2026-08-25 -->
+
+The token check is wrong.
+
+---
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --include-withdrawn "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq 'length')" -eq 1 ]
+    [ "$(echo "$output" | jq -r '.[0].withdrawn')" = "true" ]
+}
+
+@test "parse-review-findings.sh: skips a finding marked withdrawn by hand" {
+    # A review never posted as a draft has no heading annotation to stamp.
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `src/auth.ts:42`
+
+The token check is wrong.
+
+*Withdrawn 2026-08-25: author showed it was already handled*
+
+---
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq 'length')" -eq 0 ]
+}
+
+@test "parse-review-findings.sh: a quoted Withdrawn line does not retire a finding" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `src/auth.ts:42`
+
+```text
+The docs show the marker as:
+
+*Withdrawn 2026-01-01: example*
+
+which is what to write.
+```
+
+---
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq 'length')" -eq 1 ]
+}
+
+@test "parse-review-findings.sh: a live finding reports withdrawn false" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `src/auth.ts:42`
+
+The token check is wrong.
+
+---
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$(echo "$output" | jq -r '.[0].withdrawn')" = "false" ]
+}
+
+@test "parse-review-findings.sh: prose on a heading does not retire a finding" {
+    # Only the token inside the pc annotation retires a finding. An unanchored
+    # match would let this heading silently drop a live finding.
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `src/auth.ts:42` (withdrawn: still under discussion)
+
+The token check is wrong.
+
+---
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq 'length')" -eq 1 ]
+}
+
+# =============================================================================
+# The withdrawal reason travels as a field, not as description text
+# =============================================================================
+
+@test "parse-review-findings.sh: a withdrawn finding carries its reason as a field" {
+    review="$TEST_DIR/review.md"
+    cat > "$review" << 'DOC'
+# Review
+
+## Suggested Comments
+
+#### `src/auth.ts:42`
+
+```text
+Validate the token first.
+```
+
+*Withdrawn 2026-08-25: author showed the guard is unreachable*
+
+---
+DOC
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --include-withdrawn "$review"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.[0].withdrawn_reason')" = "author showed the guard is unreachable" ]
+}
+
+# The marker describes the finding rather than being part of it. Left in the
+# description it reads as the tail of the finding text, and the learning pass
+# quotes descriptions back at the user.
+@test "parse-review-findings.sh: the withdrawal marker stays out of the description" {
+    review="$TEST_DIR/review.md"
+    cat > "$review" << 'DOC'
+# Review
+
+## Suggested Comments
+
+#### `src/auth.ts:42`
+
+```text
+Validate the token first.
+```
+
+*Withdrawn 2026-08-25: author showed the guard is unreachable*
+
+---
+DOC
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --include-withdrawn "$review"
+    [ "$status" -eq 0 ]
+    [[ "$(echo "$output" | jq -r '.[0].description')" != *"Withdrawn"* ]]
+    [[ "$(echo "$output" | jq -r '.[0].description')" == *"Validate the token first."* ]]
+}
+
+@test "parse-review-findings.sh: a live finding reports an empty withdrawal reason" {
+    review="$TEST_DIR/review.md"
+    cat > "$review" << 'DOC'
+# Review
+
+## Suggested Comments
+
+#### `src/auth.ts:42`
+
+```text
+Validate the token first.
+```
+
+---
+DOC
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$review"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.[0].withdrawn')" = "false" ]
+    [ "$(echo "$output" | jq -r '.[0].withdrawn_reason')" = "" ]
+}
+
+# A marker with no reason after the date must not store the date as the reason.
+@test "parse-review-findings.sh: a reasonless withdrawal leaves the field empty" {
+    review="$TEST_DIR/review.md"
+    cat > "$review" << 'DOC'
+# Review
+
+## Suggested Comments
+
+#### `src/auth.ts:42`
+
+```text
+Validate the token first.
+```
+
+*Withdrawn 2026-08-25*
+
+---
+DOC
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" --include-withdrawn "$review"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.[0].withdrawn')" = "true" ]
+    [ "$(echo "$output" | jq -r '.[0].withdrawn_reason')" = "" ]
+}

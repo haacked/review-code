@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #/ Usage: bin/lint [options]
-#/ Description: Lints shell scripts for quality and potential issues
+#/ Description: Lints shell and Python scripts for quality and potential issues
 #/ Options:
 #/   -v, --verbose  Verbose output
 
@@ -8,55 +8,29 @@ source bin/helpers/_utils.sh
 set_source_and_root_dir
 parse_common_args "$@"
 
-print_color blue "Linting shell scripts…"
+print_color blue "Linting scripts…"
 
 success_status=true
 
-# Check for shellcheck
+# Check for both linters up front. A missing linter is a failure rather than a
+# skipped language, so say which one is missing instead of letting it surface
+# later as "Linting found issues".
 if ! command_exists shellcheck; then
     fatal "shellcheck not found - install with: brew install shellcheck"
 fi
 
-# Every shell script in the repo. This is a superset of bin/fmt's
-# files_to_format, which still misses bin/helpers, the session hooks, and
-# tests; aligning fmt means reformatting those files, so it is left for its own
-# change. Tests under tests/unit and tests/integration are .bats, a dialect
-# this tool cannot parse, so bin/test covers those instead.
-shell_files=(
-    bin/*
-    bin/helpers/*.sh
-    skills/review-code/scripts/*.sh
-    skills/review-code/scripts/helpers/*.sh
-    skills/review-code/scripts/session-hooks/*.sh
-    evals/scripts/*.sh
-    evals/scripts/helpers/*.sh
-    tests/*.sh
-    tests/helpers/*.sh
-    tests/helpers/*.bash
-    *.sh
-)
+if ! command_exists ruff; then
+    fatal "ruff not found - install with: brew install ruff"
+fi
 
-actual_files=()
-for pattern in "${shell_files[@]}"; do
-    for file in ${pattern}; do
-        if [[ -f "${file}" ]] && [[ ! "${file}" =~ \.md$ ]]; then
-            # A .sh or .bash extension is enough on its own; the bats helpers
-            # under tests/ use .bash and are sourced, so they are never
-            # executable. Anything else has to declare a bash shebang, which is
-            # what keeps non-shell entries in bin/ out.
-            if [[ "${file}" == *.sh || "${file}" == *.bash ]] || { [[ -x "${file}" ]] && head -1 "${file}" | grep -q '^#!/.*bash'; }; then
-                actual_files+=("${file}")
-            fi
-        fi
-    done
-done
+collect_shell_files
 
-if [[ ${#actual_files[@]} -eq 0 ]]; then
+if [[ ${#shell_files[@]} -eq 0 ]]; then
     warning "No shell scripts found to lint"
     exit 0
 fi
 
-print_color blue "Found ${#actual_files[@]} shell scripts"
+print_color blue "Found ${#shell_files[@]} shell scripts"
 
 # Run shellcheck with strict settings.
 #
@@ -72,8 +46,20 @@ print_color blue "Found ${#actual_files[@]} shell scripts"
 #   yields an empty string the caller already handles. Every occurrence anyone
 #   has reviewed ended in a per-file disable with that same reason, so exclude
 #   them once here rather than repeating the directive in forty files.
-if ! run_command "shellcheck -x -o all -P SCRIPTDIR -e SC1091,SC2250,SC2310,SC2312 ${actual_files[*]}" "Running shellcheck"; then
+if ! run_command "shellcheck -x -o all -P SCRIPTDIR -e SC1091,SC2250,SC2310,SC2312 ${shell_files[*]}" "Running shellcheck"; then
     success_status=false
+fi
+
+# Lint Python with ruff. The two pipeline scripts insert their helpers
+# directory on sys.path before importing from it, so E402 (import not at top of
+# file) is the module-loading idiom here rather than a defect.
+collect_python_files
+
+if [[ ${#python_files[@]} -gt 0 ]]; then
+    print_color blue "Found ${#python_files[@]} Python scripts"
+    if ! run_command "ruff check ${python_files[*]}" "Running ruff"; then
+        success_status=false
+    fi
 fi
 
 if ${success_status}; then

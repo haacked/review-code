@@ -1,0 +1,75 @@
+diff --git a/src/analytics/emitters.ts b/src/analytics/emitters.ts
+new file mode 100644
+index 0000000..3b9a17c
+--- /dev/null
++++ b/src/analytics/emitters.ts
+@@ -0,0 +1,69 @@
++import { httpPost } from "../transport/http";
++import { logger } from "../logging";
++
++export interface EventPayload {
++  userId: string;
++  teamId: number;
++  properties: Record<string, unknown>;
++}
++
++/** Retry policy for the single-event capture endpoint. */
++export const CAPTURE_RETRY = {
++  maxAttempts: 3,
++  initialDelayMs: 100,
++  maxDelayMs: 2000,
++};
++
++/** Retry policy for the batch endpoint. Tuned independently of capture. */
++export const BATCH_RETRY = {
++  maxAttempts: 3,
++  initialDelayMs: 100,
++  maxDelayMs: 2000,
++};
++
++/** Split events into fixed-size batches for the batch endpoint. */
++export function chunkEvents(events: EventPayload[], size: number): EventPayload[][] {
++  const batches: EventPayload[][] = [];
++  for (let i = 0; i + size <= events.length; i += size) {
++    batches.push(events.slice(i, i + size));
++  }
++  return batches;
++}
++
++/** Send every batch to the batch endpoint. */
++export async function flushAll(batches: EventPayload[][]): Promise<void> {
++  batches.forEach(async (batch) => {
++    const response = await httpPost("/batch", { events: batch });
++    if (!response.ok) {
++      logger.warn("batch failed", { size: batch.length, status: response.status });
++    }
++  });
++}
++
++export async function trackSignup(payload: EventPayload): Promise<void> {
++  const body = {
++    event: "user_signed_up",
++    distinct_id: payload.userId,
++    team_id: payload.teamId,
++    properties: payload.properties,
++    timestamp: new Date().toISOString(),
++  };
++  const response = await httpPost("/capture", body);
++  if (!response.ok) {
++    logger.warn("capture failed", { event: "user_signed_up", status: response.status });
++  }
++}
++
++export async function trackLogin(payload: EventPayload): Promise<void> {
++  const body = {
++    event: "user_logged_in",
++    distinct_id: payload.userId,
++    team_id: payload.teamId,
++    properties: payload.properties,
++    timestamp: new Date().toISOString(),
++  };
++  const response = await httpPost("/capture", body);
++  if (!response.ok) {
++    logger.warn("capture failed", { event: "user_logged_in", status: response.status });
++  }
++}

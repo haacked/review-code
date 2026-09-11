@@ -342,3 +342,167 @@ setup() {
     [ "$status" -eq 0 ]
     [ "$(echo "$output" | tail -1)" = "[]" ]
 }
+
+# =============================================================================
+# fetch_review_thread_state / merge_thread_state
+# =============================================================================
+
+@test "pr-context.sh: fetch_review_thread_state validates pr_number" {
+    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh' && fetch_review_thread_state 'invalid' 'owner/repo'"
+    [ "$status" -eq 1 ]
+}
+
+@test "pr-context.sh: fetch_review_thread_state validates repo_spec" {
+    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh' && fetch_review_thread_state '123' 'invalid'"
+    [ "$status" -eq 1 ]
+}
+
+@test "pr-context.sh: fetch_review_thread_state keys the result by root comment id" {
+    run bash -c "
+        source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh'
+        gh() {
+            echo '{\"data\":{\"repository\":{\"pullRequest\":{\"reviewThreads\":{
+                \"nodes\":[
+                    {\"isResolved\":true,\"isOutdated\":false,\"comments\":{\"nodes\":[{\"databaseId\":4}]}},
+                    {\"isResolved\":false,\"isOutdated\":true,\"comments\":{\"nodes\":[{\"databaseId\":5}]}}
+                ],
+                \"pageInfo\":{\"hasNextPage\":false,\"endCursor\":null}
+            }}}}}'
+        }
+        fetch_review_thread_state 42 'owner/repo'
+    "
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.["4"] == {resolved: true, outdated: false}'
+    echo "$output" | jq -e '.["5"] == {resolved: false, outdated: true}'
+}
+
+@test "pr-context.sh: fetch_review_thread_state delegates the fetch to fetch_review_threads" {
+    # The GraphQL query and its pagination now live in gh-review-helpers.sh
+    # (see test-gh-review-helpers.bats), shared with resolve-review-threads.sh.
+    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh' && declare -f fetch_review_thread_state | grep -q 'fetch_review_threads'"
+    [ "$status" -eq 0 ]
+}
+
+@test "pr-context.sh: fetch_review_thread_state merges multiple pages into one map" {
+    # A real --paginate call streams one JSON document per page to stdout from
+    # a single gh invocation; a bash stub can't drive gh's own re-request
+    # loop, so this mock reproduces that output shape directly instead of
+    # trying to simulate the loop.
+    run bash -c "
+        source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh'
+        gh() {
+            printf '%s\n' '{\"data\":{\"repository\":{\"pullRequest\":{\"reviewThreads\":{\"nodes\":[{\"isResolved\":true,\"isOutdated\":false,\"comments\":{\"nodes\":[{\"databaseId\":1}]}}],\"pageInfo\":{\"hasNextPage\":true,\"endCursor\":\"NEXT\"}}}}}}'
+            printf '%s\n' '{\"data\":{\"repository\":{\"pullRequest\":{\"reviewThreads\":{\"nodes\":[{\"isResolved\":false,\"isOutdated\":false,\"comments\":{\"nodes\":[{\"databaseId\":2}]}}],\"pageInfo\":{\"hasNextPage\":false,\"endCursor\":null}}}}}}'
+        }
+        fetch_review_thread_state 42 'owner/repo'
+    "
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '(keys | length) == 2'
+    echo "$output" | jq -e '.["1"].resolved == true'
+    echo "$output" | jq -e '.["2"].resolved == false'
+}
+
+@test "pr-context.sh: fetch_review_thread_state fails non-zero on a GraphQL error" {
+    # The real gh binary exits non-zero whenever a GraphQL response body
+    # carries an errors array, even alongside a 200 response; this stub
+    # matches that instead of relying on jq's incidental failure to iterate
+    # a missing .data field.
+    run bash -c "
+        source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh'
+        gh() { echo '{\"errors\":[{\"message\":\"boom\"}]}' >&2; return 1; }
+        fetch_review_thread_state 42 'owner/repo'
+    "
+    [ "$status" -eq 1 ]
+}
+
+@test "pr-context.sh: merge_thread_state stamps a root comment from state" {
+    run bash -c "
+        source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh'
+        merge_thread_state '[{\"id\":1,\"in_reply_to_id\":null}]' '{\"1\":{\"resolved\":true,\"outdated\":false}}'
+    "
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].resolved == true and .[0].outdated == false'
+}
+
+@test "pr-context.sh: merge_thread_state leaves a reply untouched" {
+    # format-existing-comments.sh only ever reads resolved/outdated off a
+    # thread's root after grouping, so stamping a reply too would be state
+    # nothing reads, carried into the session file for no reason.
+    run bash -c "
+        source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh'
+        merge_thread_state '[{\"id\":1,\"in_reply_to_id\":null},{\"id\":2,\"in_reply_to_id\":1}]' '{\"1\":{\"resolved\":true,\"outdated\":false}}'
+    "
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[1] == {id: 2, in_reply_to_id: 1}'
+}
+
+@test "pr-context.sh: merge_thread_state defaults to open when state is unavailable" {
+    run bash -c "
+        source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh'
+        merge_thread_state '[{\"id\":1,\"in_reply_to_id\":null}]' '{}'
+    "
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.[0].resolved == false and .[0].outdated == false'
+}
+
+@test "pr-context.sh: main merges thread state into inline comments" {
+    run bash -c "
+        source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh'
+        gh() {
+            args=\"\$*\"
+            if [[ \"\$args\" == *'graphql'* ]]; then
+                echo '{\"data\":{\"repository\":{\"pullRequest\":{\"reviewThreads\":{
+                    \"nodes\":[{\"isResolved\":true,\"isOutdated\":false,\"comments\":{\"nodes\":[{\"databaseId\":7}]}}],
+                    \"pageInfo\":{\"hasNextPage\":false,\"endCursor\":null}
+                }}}}}'
+            elif [[ \"\$args\" == *'--json reviews'* ]]; then
+                echo '{\"reviews\":[]}'
+            elif [[ \"\$args\" == *'pulls/9/comments'* ]]; then
+                echo '[{\"id\":7,\"user\":{\"login\":\"eve\"},\"body\":\"note\",\"path\":\"f.py\",\"line\":1,\"side\":\"RIGHT\",\"diff_hunk\":\"\",\"created_at\":\"now\",\"in_reply_to_id\":null,\"html_url\":\"u\"}]'
+            elif [[ \"\$args\" == *'pr view 9'* ]]; then
+                echo '{\"number\":9,\"title\":\"t\",\"body\":\"b\",\"url\":\"https://github.com/owner/repo/pull/9\",\"author\":{\"login\":\"a\"},\"headRefName\":\"h\",\"headRefOid\":\"sha\",\"baseRefName\":\"main\",\"state\":\"OPEN\",\"isCrossRepository\":false}'
+            elif [[ \"\$args\" == *'pr diff 9'* ]]; then
+                echo 'diff --git a/f.py b/f.py'
+            elif [[ \"\$args\" == *'issues/9/comments'* ]]; then
+                echo '[]'
+            else
+                echo '[]'
+            fi
+        }
+        main 'https://github.com/owner/repo/pull/9'
+    "
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.comments.inline[0].resolved == true'
+}
+
+@test "pr-context.sh: main degrades to open threads when the GraphQL fetch fails" {
+    # The non-fatal contract this file documents in three places (the
+    # fetch_review_thread_state header, the warning branch in main, and
+    # merge_thread_state's header): a failed thread-state fetch must not
+    # fail the whole PR context fetch, just leave every thread open.
+    run bash -c "
+        source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh'
+        gh() {
+            args=\"\$*\"
+            if [[ \"\$args\" == *'graphql'* ]]; then
+                echo 'gh: Could not resolve to a Repository' >&2
+                return 1
+            elif [[ \"\$args\" == *'--json reviews'* ]]; then
+                echo '{\"reviews\":[]}'
+            elif [[ \"\$args\" == *'pulls/9/comments'* ]]; then
+                echo '[{\"id\":7,\"user\":{\"login\":\"eve\"},\"body\":\"note\",\"path\":\"f.py\",\"line\":1,\"side\":\"RIGHT\",\"diff_hunk\":\"\",\"created_at\":\"now\",\"in_reply_to_id\":null,\"html_url\":\"u\"}]'
+            elif [[ \"\$args\" == *'pr view 9'* ]]; then
+                echo '{\"number\":9,\"title\":\"t\",\"body\":\"b\",\"url\":\"https://github.com/owner/repo/pull/9\",\"author\":{\"login\":\"a\"},\"headRefName\":\"h\",\"headRefOid\":\"sha\",\"baseRefName\":\"main\",\"state\":\"OPEN\",\"isCrossRepository\":false}'
+            elif [[ \"\$args\" == *'pr diff 9'* ]]; then
+                echo 'diff --git a/f.py b/f.py'
+            elif [[ \"\$args\" == *'issues/9/comments'* ]]; then
+                echo '[]'
+            else
+                echo '[]'
+            fi
+        }
+        main 'https://github.com/owner/repo/pull/9' 2>/dev/null
+    "
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.comments.inline[0].resolved == false and .comments.inline[0].outdated == false'
+}

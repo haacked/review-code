@@ -19,6 +19,11 @@ set -euo pipefail
 #     "review_commit": "abc123...",           (optional: enables drift detection)
 #     "original_diff": "diff --git ...",      (optional: original diff for content matching)
 #     "original_diff_path": "/path/diff.patch",  (optional: same diff as a file, preferred)
+#     "review_file": "/path/pr-123.md",       (optional: records each posted comment's
+#                                              id in that file, so a later session can
+#                                              reword one comment instead of re-reviewing)
+#     "append": true,                         (optional: retain pending comments outside the delta)
+#     "delta_paths": ["src/changed.ts"],       (required when append is true)
 #     "comments": [
 #       {"path": "src/auth.ts", "line": 42, "side": "RIGHT", "body": "Consider...", "line_content": "    some_code()"},
 #       {"path": "src/utils.ts", "line": 15, "side": "RIGHT", "body": "This could..."}
@@ -36,7 +41,8 @@ set -euo pipefail
 #     "inline_count": 5,
 #     "summary_count": 2,
 #     "replaced_existing": true,
-#     "drift_detected": false
+#     "drift_detected": false,
+#     "annotated_count": 5                    (comments whose id was recorded in review_file)
 #   }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -46,53 +52,8 @@ source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 source "${SCRIPT_DIR}/helpers/json-helpers.sh"
 # shellcheck source=lib/helpers/gh-wrapper.sh
 source "${SCRIPT_DIR}/helpers/gh-wrapper.sh"
-
-# Fetch existing pending review and its comments
-# Args: $1 = owner, $2 = repo, $3 = pr_number, $4 = reviewer_username
-# Output: JSON with review_id and comments, or null if no pending review
-get_existing_pending_review() {
-    local owner="$1"
-    local repo="$2"
-    local pr_number="$3"
-    local reviewer="$4"
-
-    # Get all reviews for this PR
-    local reviews
-    reviews=$(gh api "repos/${owner}/${repo}/pulls/${pr_number}/reviews" --paginate 2> /dev/null || echo "[]")
-
-    # Find pending review from this user
-    local pending_review
-    pending_review=$(echo "${reviews}" | jq -r --arg user "${reviewer}" \
-        '[.[] | select(.state == "PENDING" and .user.login == $user)] | first // null')
-
-    if [[ "${pending_review}" == "null" ]]; then
-        echo "null"
-        return
-    fi
-
-    local review_id
-    review_id=$(echo "${pending_review}" | jq -r '.id')
-
-    # Fetch comments for this pending review
-    local comments
-    comments=$(gh api "repos/${owner}/${repo}/pulls/${pr_number}/reviews/${review_id}/comments" --paginate 2> /dev/null || echo "[]")
-
-    # Return review info with comments
-    jq -n \
-        --argjson review "${pending_review}" \
-        --argjson comments "${comments}" \
-        '{
-            review_id: $review.id,
-            body: $review.body,
-            comments: [$comments[] | {
-                id: .id,
-                path: .path,
-                line: (.line // .original_line // .position),
-                position: .position,
-                body: .body
-            }]
-        }'
-}
+# shellcheck source=helpers/gh-review-helpers.sh
+source "${SCRIPT_DIR}/helpers/gh-review-helpers.sh"
 
 # Delete a pending review
 # Args: $1 = owner, $2 = repo, $3 = pr_number, $4 = review_id
@@ -155,15 +116,18 @@ main() {
     validate_json "${input}" || exit 1
 
     # Extract fields
-    local owner repo pr_number reviewer summary comments unmapped_comments review_commit
+    local owner repo pr_number reviewer summary comments unmapped_comments review_commit review_file append delta_paths
     owner=$(echo "${input}" | jq -r '.owner')
     repo=$(echo "${input}" | jq -r '.repo')
     pr_number=$(echo "${input}" | jq -r '.pr_number')
     reviewer=$(echo "${input}" | jq -r '.reviewer_username')
     summary=$(echo "${input}" | jq -r '.summary // ""')
     review_commit=$(echo "${input}" | jq -r '.review_commit // ""')
+    review_file=$(echo "${input}" | jq -r '.review_file // ""')
     comments=$(echo "${input}" | jq -c '.comments // []')
     unmapped_comments=$(echo "${input}" | jq -c '.unmapped_comments // []')
+    append=$(echo "${input}" | jq -r '.append // false')
+    delta_paths=$(echo "${input}" | jq -c '.delta_paths // []')
 
     # Validate required fields early, before any network calls
     require_field "${owner}" "owner" || exit 1
@@ -202,15 +166,63 @@ main() {
         fi
     fi
 
+    # Check for an existing pending review before validation so append reviews can
+    # retain its comments on files outside the delta.
+    local existing_review
+    if ! existing_review=$(get_existing_pending_review "${owner}" "${repo}" "${pr_number}" "${reviewer}"); then
+        jq -n '{success: false, error: "Failed to read the existing pending review"}'
+        exit 1
+    fi
+
+    if [[ "${append}" == "true" ]]; then
+        if [[ "$(echo "${delta_paths}" | jq -r 'type')" != "array" ]] || [[ "$(echo "${delta_paths}" | jq 'length')" -eq 0 ]]; then
+            error "Append draft input requires a non-empty delta_paths array"
+            exit 1
+        fi
+        if [[ "${existing_review}" != "null" ]]; then
+            local preserved_comments
+            preserved_comments=$(jq -n \
+                --argjson review "${existing_review}" \
+                --argjson delta_paths "${delta_paths}" \
+                '[
+                    $review.comments[]
+                    | select(.path as $path | ($delta_paths | index($path) | not))
+                    | {path, body}
+                        + (if .position != null then {position} else {line} end)
+                ]')
+            comments=$(jq -n \
+                --argjson preserved "${preserved_comments}" \
+                --argjson current "${comments}" \
+                '$preserved + $current')
+        fi
+    fi
+
     # Validate comments have required fields, filter invalid ones, and strip to API fields.
     # Single pass: partition into valid and invalid, then extract counts and filtered items.
     local validation_result
     validation_result=$(echo "${comments}" | jq -c '
+        def is_non_empty_string:
+            if type == "string" then length > 0 else false end;
+        def is_positive_integer:
+            if type == "number" then . > 0 and . == floor else false end;
         def is_valid:
-            .path != null and .line != null and .body != null and
-            (.side == null or .side == "LEFT" or .side == "RIGHT");
+            (.path | is_non_empty_string) and
+            (.body | is_non_empty_string) and
+            (if .position != null then
+                (.position | is_positive_integer)
+             else
+                (.line | is_positive_integer) and
+                (.side == null or .side == "LEFT" or .side == "RIGHT")
+             end);
         {
-            valid: [.[] | select(is_valid) | {path, line, body} + (if .side then {side: .side} else {} end)],
+            valid: [
+                .[] | select(is_valid)
+                | if .position != null then
+                    {path, position, body}
+                  else
+                    {path, line, body} + (if .side then {side: .side} else {} end)
+                  end
+            ],
             invalid: [.[] | select(is_valid | not)]
         }')
     comments=$(echo "${validation_result}" | jq -c '.valid')
@@ -218,14 +230,10 @@ main() {
     invalid_count=$(echo "${validation_result}" | jq '.invalid | length')
 
     if [[ "${invalid_count}" -gt 0 ]]; then
-        warning "${invalid_count} comments filtered out due to missing required fields or invalid side value"
+        warning "${invalid_count} comments filtered out due to missing or invalid required fields"
         echo "Filtered comments:" >&2
         echo "${validation_result}" | jq -c '.invalid[]' >&2
     fi
-
-    # Check for existing pending review
-    local existing_review
-    existing_review=$(get_existing_pending_review "${owner}" "${repo}" "${pr_number}" "${reviewer}")
 
     local replaced_existing="false"
 
@@ -276,9 +284,31 @@ main() {
     local inline_count
     inline_count=$(echo "${comments}" | jq 'length')
 
+    # Record which comment each finding produced, so a later session can reword
+    # one without re-running the review. The POST returns only the review, so
+    # the ids come from a follow-up read. Annotation failures are reported but
+    # never fail the run: the review is already posted by this point, and a
+    # missing id costs a reword, not the review.
+    local annotated_count=0
+    if [[ -n "${review_file}" && -f "${review_file}" ]]; then
+        local posted_comments annotate_result
+        posted_comments=$(gh api "repos/${owner}/${repo}/pulls/${pr_number}/reviews/${review_id}/comments" --paginate 2> /dev/null || echo "[]")
+        annotate_result=$(echo "${posted_comments}" | "${SCRIPT_DIR}/review-comment-blocks.py" annotate \
+            --review-file "${review_file}" \
+            --review-id "${review_id}" \
+            --posted-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" 2> /dev/null || echo '{}')
+        annotated_count=$(echo "${annotate_result}" | jq -r '.annotated // 0')
+        local annotate_error
+        annotate_error=$(echo "${annotate_result}" | jq -r '.error // ""')
+        if [[ -n "${annotate_error}" ]]; then
+            warning "Could not record comment ids in ${review_file}: ${annotate_error}"
+        fi
+    fi
+
     # Return success result
     jq -n \
         --argjson success true \
+        --argjson annotated_count "${annotated_count}" \
         --argjson review_id "${review_id}" \
         --arg review_url "${review_url}" \
         --argjson inline_count "${inline_count}" \
@@ -292,7 +322,8 @@ main() {
             inline_count: $inline_count,
             summary_count: $summary_count,
             replaced_existing: $replaced_existing,
-            drift_detected: $drift_detected
+            drift_detected: $drift_detected,
+            annotated_count: $annotated_count
         }'
 }
 

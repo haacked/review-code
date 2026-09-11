@@ -2,13 +2,18 @@
 name: review-code
 description: Run specialized code review agents on code changes or pull requests
 argument-hint: [find|learn|pr|commit|branch|range|area]
-allowed-tools: Bash(~/.claude/skills/review-code/scripts/*:*), Read(~/.claude/**), Write(~/.claude/skills/review-code/.learnings/*), Edit(~/.claude/skills/review-code/.learnings/*)
+allowed-tools: Bash(~/.agents/skills/review-code/scripts/*:*), Read(~/.claude/**), Read(~/.agents/**), Write(~/.agents/skills/review-code/.learnings/*), Edit(~/.agents/skills/review-code/.learnings/*)
+metadata:
+  execution-tier: deep
 hooks:
+  # Claude Code only: Codex parses but does not enforce hooks, and has no
+  # per-skill tool scoping. bin/setup installs a global SessionStart hook for
+  # Claude; Codex users skip the /clear resume flow.
   PreToolUse:
     - matcher: Bash
       hooks:
         - type: command
-          command: ~/.claude/skills/review-code/scripts/review-safety-hook.sh
+          command: ~/.agents/skills/review-code/scripts/review-safety-hook.sh
 ---
 
 Run specialized code review agent(s) with comprehensive context on local changes or pull requests.
@@ -47,6 +52,7 @@ Single-agent arguments, each on local changes only:
 - `--self` - Allow creating draft review on your own PR (for testing)
 - `--overwrite` - Replace existing review file without prompting
 - `--append` - Append to existing review file without prompting. In PR mode, also resolves review threads from your previous review whose findings the author has since addressed (the code changed and the new review no longer flags them). When the previous review recorded the commit it ran at, the re-review covers only what changed since then; findings on files the delta doesn't touch carry forward. Anything uncertain (force-push, rebase, a moved base, a delta covering most of the PR) falls back to a full review and says so.
+- `--comment-style concise|detailed` - Use concise public comments by default: problem, relevant trigger, and suggested fix, with a short code example when useful. `detailed` includes the full causal explanation. Both styles retain the same internal analysis and review depth.
 - `--full` - Force a complete re-review even when an incremental one is possible.
 - `--fix` - After the review, apply fixes for findings the agent can resolve cleanly. Edits the working tree directly. Items not fixed (and the choice made on any judgment-call fixes) are listed in a Fix Summary section in the review. Not compatible with `learn` or `find`.
 - `--parent <ref>` - Override the base branch used for branch / current-branch reviews. By default the base is detected in order: the branch's open PR base (via `gh pr list`, time-bounded and skipped gracefully when gh is unavailable or offline), a recorded stack parent (Graphite or `branch.<name>.parent` in git config), then the default branch. Use `--parent` to force a different base, e.g. `--parent main`.
@@ -75,6 +81,7 @@ Examples:
 - `/review-code find 123` - Find review for PR #123
 - `/review-code learn 123` - Analyze what happened after reviewing PR #123
 - `/review-code 123 --draft -f` - Review PR, create draft review, skip confirmation
+- `/review-code 123 --comment-style detailed` - Include the full causal explanation in public comments
 - `/review-code 123 --adversary:copilot` - Review PR #123, then have Copilot double-check the findings
 
 ---
@@ -83,9 +90,9 @@ Examples:
 
 Uses session-based caching to run the orchestrator once and reuse data across bash invocations. This reduces token usage by ~60%.
 
-**Safety model:** GitHub review writes go only through the sanctioned scripts (`create-draft-review.sh`, `submit-review.sh`); a PreToolUse hook blocks direct `gh pr review` and review-API calls. Two rules the hook can't enforce:
+**Safety model:** GitHub review writes go only through the sanctioned scripts (`create-draft-review.sh`, `amend-pending-review.sh`, `submit-review.sh`); a PreToolUse hook blocks direct `gh pr review`, review-API calls, and review-comment mutations on either transport. Two rules the hook can't enforce:
 
-- Never submit a review on the user's behalf. Submitting requires their explicit instruction; if you can't amend a pending review, ask before doing anything that would submit it.
+- Never submit a review on the user's behalf. Submitting requires their explicit instruction. To correct a comment on a review already posted, amend it: `handlers/amend-pending-review.md` covers rewording and dropping without re-running the review. Submitting is never the way to fix a wrong comment.
 - When a step fails (session init, script error, API error), stop and report the failure instead of improvising a workaround. In particular, never post findings as a regular PR comment: that publishes immediately instead of staying pending.
 
 ### Step 1: Parse Arguments
@@ -93,19 +100,19 @@ Uses session-based caching to run the orchestrator once and reuse data across ba
 Run the parse script to determine the review mode and parameters:
 
 ```bash
-~/.claude/skills/review-code/scripts/parse-review-arg.sh $ARGUMENTS 2>&1
+~/.agents/skills/review-code/scripts/parse-review-arg.sh $ARGUMENTS 2>&1
 ```
 
-Save the JSON output as `PARSE_RESULT`. Reference this throughout; do not run the parse script again.
+Save the JSON output as `PARSE_RESULT`. Reference this throughout; do not run the parse script again. When a prompt below requires reinitializing with a chosen target or scope, retain `--comment-style <PARSE_RESULT.comment_style>` so the choice survives disambiguation.
 
 **Handler File Selection:**
 
 When directed to load a handler, select the file based on `PARSE_RESULT`:
 
 - If `mode` is `"error"`: No handler needed (error flow handles it)
-- If `mode` is `"learn"`: Read `~/.claude/skills/review-code/handlers/learn.md`
-- If `find_mode` is `"true"`: Read `~/.claude/skills/review-code/handlers/find.md`
-- Otherwise: Read `~/.claude/skills/review-code/handlers/review.md`
+- If `mode` is `"learn"`: Read `~/.agents/skills/review-code/handlers/learn.md`
+- If `find_mode` is `"true"`: Read `~/.agents/skills/review-code/handlers/find.md`
+- Otherwise: Read `~/.agents/skills/review-code/handlers/review.md`
 
 Use the Read tool to load the selected handler file, then follow its instructions.
 
@@ -122,7 +129,7 @@ Code reviews are context-heavy and work best with a fresh context.
 **Check the pending-clear marker first.** A global `SessionStart` hook with `matcher: "startup|clear"` (installed by `bin/setup`) writes this marker on a fresh `claude` launch or whenever the user runs `/clear`. If the user just cleared and re-invoked `/review-code`, the marker tells us to skip the prompt so we don't loop.
 
 ```bash
-~/.claude/skills/review-code/scripts/clear-marker.sh check
+~/.agents/skills/review-code/scripts/clear-marker.sh check
 ```
 
 If the output is `skip`, proceed directly to Step 3; the user already cleared.
@@ -138,7 +145,7 @@ If the output is `skip`, proceed directly to Step 3; the user already cleared.
 If user selects the "Stop here" option:
 - Record the original arguments so the SessionStart hook can resume them after `/clear`:
   ```bash
-  ~/.claude/skills/review-code/scripts/pending-resume.sh set-string "$ARGUMENTS"
+  ~/.agents/skills/review-code/scripts/pending-resume.sh set-string "$ARGUMENTS"
   ```
 - Tell the user to run `/clear`, then send any message (e.g. `go`) so the SessionStart hook can resume the review with fresh context. When `$ARGUMENTS` is non-empty, mention the args explicitly (e.g. "I'll resume `/review-code 55298 --draft`"); when empty, say "I'll resume `/review-code` (default review)".
 - Stop here. The SessionStart hook on `/clear` writes the skip-prompt marker and injects an instruction so the next message auto-runs the review.
@@ -150,13 +157,13 @@ If user selects "No, continue anyway", proceed to Step 3.
 Initialize the review session by running the orchestrator and caching the result:
 
 ```bash
-~/.claude/skills/review-code/scripts/review-status-handler.sh init $ARGUMENTS
+~/.agents/skills/review-code/scripts/review-status-handler.sh init $ARGUMENTS
 ```
 
 Save the output as `SESSION_ID`; you'll need it for all subsequent operations. Then get the status:
 
 ```bash
-~/.claude/skills/review-code/scripts/review-status-handler.sh get-status "<SESSION_ID>"
+~/.agents/skills/review-code/scripts/review-status-handler.sh get-status "<SESSION_ID>"
 ```
 
 Save the output as `STATUS`. The `--force`/`-f` flags are handled automatically; when present, the session data will include `"force": true`.
@@ -177,13 +184,13 @@ In all handlers below, substitute the actual `SESSION_ID` value when calling scr
 If STATUS is "error", get the error message:
 
 ```bash
-~/.claude/skills/review-code/scripts/review-status-handler.sh get-error-data "<SESSION_ID>"
+~/.agents/skills/review-code/scripts/review-status-handler.sh get-error-data "<SESSION_ID>"
 ```
 
 Display the error to the user. Then clean up the session:
 
 ```bash
-~/.claude/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
+~/.agents/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"
 ```
 
 Stop. Do not proceed with review.
@@ -193,7 +200,7 @@ Stop. Do not proceed with review.
 If STATUS is "ambiguous", get the disambiguation data:
 
 ```bash
-~/.claude/skills/review-code/scripts/review-status-handler.sh get-ambiguous-data "<SESSION_ID>"
+~/.agents/skills/review-code/scripts/review-status-handler.sh get-ambiguous-data "<SESSION_ID>"
 ```
 
 Save the JSON output. Extract the fields: `arg`, `ref_type`, `is_branch`, `is_current`, `base_branch`.
@@ -226,7 +233,7 @@ After user selects, re-run orchestrator with appropriate argument.
 If STATUS is "prompt", get the prompt data:
 
 ```bash
-~/.claude/skills/review-code/scripts/review-status-handler.sh get-prompt-data "<SESSION_ID>"
+~/.agents/skills/review-code/scripts/review-status-handler.sh get-prompt-data "<SESSION_ID>"
 ```
 
 Save the JSON output. Extract the fields: `current_branch`, `base_branch`, `has_uncommitted`.
@@ -245,7 +252,7 @@ After user selects, cleanup the old session and re-initialize with the chosen mo
 If STATUS is "prompt_pull", get the pull prompt data:
 
 ```bash
-~/.claude/skills/review-code/scripts/review-status-handler.sh get-prompt-pull-data "<SESSION_ID>"
+~/.agents/skills/review-code/scripts/review-status-handler.sh get-prompt-pull-data "<SESSION_ID>"
 ```
 
 Save the JSON output. Extract the fields: `branch`, `associated_pr` (defaults to "none").
