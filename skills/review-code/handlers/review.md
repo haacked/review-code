@@ -87,12 +87,10 @@ Some steps apply only to certain sessions, and their instructions live in separa
 | `debug_session_dir` is a non-empty string | `~/.agents/skills/review-code/handlers/review-debug.md` |
 | `chunk_metadata.chunked` is `true` | `~/.agents/skills/review-code/handlers/review-chunked.md` |
 | `adversary` is present | `~/.agents/skills/review-code/handlers/review-adversary.md` |
-| `mode` is `"pr"` | `~/.agents/skills/review-code/handlers/review-pr-output.md` |
-| `fix` is `true` | `~/.agents/skills/review-code/handlers/review-fix.md` |
 | always, after finding validation | `~/.agents/skills/review-code/handlers/review-finding-quality.md` (Read it then, not now) |
 | always, at the compose step | `~/.agents/skills/review-code/handlers/review-compose.md` (Read it then, not now) |
 
-Each file states where in the flow below its steps run. If no condition holds, read nothing and continue.
+Each file states where in the flow below its steps run. If no condition holds, read nothing and continue. Retain `mode` and `fix` from `REVIEW_FIELDS`; load PR output and fix procedures at their stages below. Fix eligibility is checked before any edits by the fix handler.
 
 ### Decide Whether This Is a Re-review
 
@@ -318,23 +316,25 @@ Time-box yourself to 2-3 minutes of exploration.
 
 Save the explorer's output as `$architectural_context`. Extract usage metadata from the response and record in `$token_usage["context_explorer"]`.
 
+### Choose Review Dispatch
+
+Write the compact orchestration fields directly to disk, then generate the dispatch plan:
+
+```bash
+~/.agents/skills/review-code/scripts/review-status-handler.sh \
+  get-review-fields "<SESSION_ID>" > "<artifacts_dir>/review-fields.json"
+python3 ~/.agents/skills/review-code/scripts/review-dispatch-plan.py \
+  --fields "<artifacts_dir>/review-fields.json" \
+  --agents "<space-separated $selected_agents>" \
+  --review-mode "<$review_mode, default full>"
+```
+
+Stop and report any error. Retain the returned plan as `$dispatch_plan`. Choose exactly one route before invoking review agents:
+
+- `handler` is `review-chunked.md`: prepare the shared briefing below, but skip the unchunked dispatch instructions. Follow the chunk handler's per-chunk analysis and dispatch steps, using that briefing, the prepared file access instructions, and architectural context. After all chunks complete, run "Check What Each Agent Actually Read" once, including its coverage retries. That check also satisfies the chunk handler's coverage step.
+- `handler` is null: prepare the shared briefing, then follow the unchunked dispatch instructions below using only `$dispatch_plan.agents`.
+
 ### Invoke Specialized Review Agents
-
-Invoke the agents determined by the scope classification. If an area was specified, invoke only that agent. Otherwise, invoke all agents in `$selected_agents` in parallel (plus the frontend agent if `languages.has_frontend` is true and "frontend" is in `$selected_agents`).
-
-**Agent selection:**
-
-| Area | `subagent_type` | Focus |
-|------|----------------|-------|
-| security | code-reviewer-security | Vulnerabilities, exploits, security hardening |
-| performance | code-reviewer-performance | Bottlenecks, inefficiencies, optimization |
-| correctness | code-reviewer-correctness | Intent verification, integration boundaries |
-| maintainability | code-reviewer-maintainability | Readability, simplicity, long-term code health |
-| testing | code-reviewer-testing | Test coverage, quality, edge cases |
-| compatibility | code-reviewer-compatibility | Backwards compatibility with shipped code |
-| architecture | code-reviewer-architecture | Necessity, patterns, code reuse, simplicity, solution proportionality |
-| infra-config | code-reviewer-infra-config | Cross-env consistency, route/service correctness, operational safety, config validation |
-| *(frontend detected)* | code-reviewer-frontend | React/TS patterns, components, state, a11y |
 
 **Build the shared briefing once, then point every agent at it.**
 
@@ -355,6 +355,8 @@ Then build the briefing, passing the agents being dispatched so the area-scoped 
 It writes `briefing.md` and — when those agents run — `diff-frontend.patch` and `diff-infra-config.patch`, each holding only that agent's file types plus a list of the paths left out. It exits non-zero if any output is missing or empty. **If it fails, stop and report the failure. Do not dispatch agents at an unreadable briefing**: an agent that cannot read its briefing finds nothing, which looks exactly like clean code.
 
 It prints JSON: `artifacts_dir`, `diff_path`, `briefing_lines`, `diff_lines`, and a `scoped_diffs` map of line counts. Keep those — the agent prompt needs them.
+
+For the unchunked route only, invoke every entry in `$dispatch_plan.agents` whose `area` remains in `$selected_agents` after applying the scoped-diff filter below. Each entry supplies the `area` and `subagent_type`; do not derive either value again.
 
 **The prompt for each agent** is then short. Substitute the agent's own diff file: `diff-frontend.patch` for frontend and `diff-infra-config.patch` for infra-config when `scoped_diffs` lists them, otherwise the `diff_path` the script returned. Use the returned `diff_path` rather than the literal `diff.patch`: on a delta re-review it points at the delta, and naming `diff.patch` there would hand every unscoped agent the whole PR while the run reports itself as incremental.
 
@@ -400,102 +402,11 @@ If the script errors (no transcripts yet, unreadable directory), say so in the r
 
 ### Collect and Synthesize Results
 
-After all review agents complete, extract usage metadata from each agent's response and record in `$token_usage` keyed by agent type (e.g., `$token_usage["code-reviewer-security"]`).
-
-**Chunked review dispatch:** If you loaded `review-chunked.md` (large diff split into chunks), dispatch per its instructions instead — per-chunk analysis, then chunk x agent combinations — and merge all findings into a single pool for the synthesis below.
-
-**Pre-synthesis scope filter**
-
-After all agent results are collected (including all chunks in chunked mode), apply this filter before synthesis:
-
-1. **Build the in-scope file list.** Let `IN_SCOPE_PATHS` be the set of file paths from `file_metadata.modified_files[].path`. These are the only files the PR is considered to touch for this filter.
-
-2. **For each finding, check whether it is located at a specific file.** A finding has a specific file location if it names a path as the target of the issue (e.g., `src/api/views.py:42`, a section header like `#### src/api/views.py`, or an explicit `path:` field). Passing mentions of a filename inside prose (e.g., "This pattern is also used in `utils/helpers.py`") do not count.
-
-3. **Apply the rule:**
-   - Finding is located at a file **in** `IN_SCOPE_PATHS`: keep it.
-   - Finding is located at a file **not in** `IN_SCOPE_PATHS`: drop it silently.
-   - Finding has **no specific file location** (e.g., a general architectural observation): keep it.
-
-This filter reduces noise before the expensive extended-thinking synthesis step. Line-level precision is handled later by the "Validate Findings Against the Diff" step.
-
-Synthesize the remaining findings using extended thinking into a coherent, deduplicated review document. Apply confidence-based filtering and cross-agent corroboration before producing the final output.
-
-**Cross-agent corroboration:** Two findings are corroborated if they reference the same file within 10 lines, or the same logical concern in the same function. Cross-model corroboration (an adversary meta-review `CONFIRMED` verdict, only when an adversary pass ran) also counts as corroboration even if only one Claude agent flagged the issue.
-
-**Filtering rules:**
-- **No ask (every severity, applied first):** drop any finding whose recommendation is that the author change nothing now, or whose trigger hasn't happened yet ("if a third caller is ever added"). Leaving a real change to the author's judgment ("your call") is fine; leaving them nothing to decide is not.
-- **Corroborated (2+ agents or chunks):** Keep even if individual confidence is below 40%.
-- **Solo finding, confidence >= 40%:** Include as-is.
-- **Solo finding, confidence < 40%:** Drop silently.
-- **Questions and nits:** Exempt from the confidence filter, not from the no-ask rule. Include regardless of confidence.
-- When consolidating corroborated findings, merge into a single entry using the highest confidence value. Corroboration is synthesis-time metadata used for prioritization; never embed it in the comment body (see "Comment Body Hygiene" below).
-
-**Comment Body Hygiene:**
-
-The final `description` becomes the literal PR comment body; `proposed_fix` retains the internal fix. Keep pipeline bookkeeping out of both. No agent or model attribution ("*(corroborated by Copilot)*", "*(found by code-reviewer-security)*"), no validator verdicts ("*Downgraded from blocking: …*"), no confidence percentages or other internal scoring. Corroboration, dismissal reasoning, and confidence are synthesis-time signals: track them in your working state (or in `$debug_session_dir` artifacts when debugging), never in the body. A model name is fine when it's substantive content about the code under review ("*(the Copilot SDK rejects this header)*"); the rule targets bookkeeping, not technical claims that mention a product.
-
-**Priority ordering in the final review:**
-1. Corroborated blocking findings
-2. Solo blocking findings (>= 70% confidence)
-3. Corroborated suggestions
-4. Solo suggestions (>= 40% confidence)
-5. Questions and nits
+Read `~/.agents/skills/review-code/handlers/review-synthesis.md` and follow it after dispatch and coverage checks finish for either route.
 
 ### Validate Findings Against the Diff
 
-Before including any finding in the final review, verify it references code actually in the diff (across all chunks if chunked). This catches wrong line numbers, findings about unrelated files, and stale references.
-
-**Step 1: Run the position mapper.** For each agent finding that references a specific file and line, build a targets array and run:
-
-```bash
-~/.agents/skills/review-code/scripts/diff-position-mapper.sh --diff-file "<diff_path>" <<'EOF'
-{"targets": [<targets array>]}
-EOF
-```
-
-Where `targets` contains `{"path": "<file>", "line": <number>}` objects. The diff comes from the file, so it never passes through this conversation.
-
-**Step 2: Handle results.** Check the `mappings` array in the output:
-
-- **Has `side` field** (line is in the diff): Include the finding as-is.
-- **Error: `"line not in diff"`** (file is in the diff but line is outside any hunk):
-  1. Resume the agent that produced this finding (using the agent ID from the Task tool).
-  2. Ask: "Your finding at `<file>:<line>` references a line outside the changed hunks in the diff. Is this finding still relevant to the changes (e.g., the issue interacts with the changed code), or should it be dropped?"
-  3. Include only if the agent confirms relevance and provides justification.
-- **Error: `"file not in diff"`**: Drop the finding silently. The pre-synthesis scope filter is the primary gate for this; the position mapper serves as a backstop for any that slip through.
-
-**Step 3: Verify factual claims.** For any remaining finding that claims a bug or incorrect behavior:
-
-- **If `blocking:`**: Invoke the Task tool with `subagent_type` "finding-validator" for each blocking finding, using this prompt:
-
-  ````
-  Validate this blocking finding from a code review.
-
-  **Finding:**
-  - **Source agent:** $agent_name
-  - **Location:** $file:$line
-  - **Confidence:** $confidence%
-  - **Description:** $finding_description
-  - **Proposed fix:**
-  $proposed_fix
-
-  **Code context from the diff:**
-  ```
-  $relevant_diff_snippet
-  ```
-
-  $file_access_instructions
-
-  Read the file at `$file` (around line `$line`) and determine whether this finding is real or a false positive. Try to disprove it. Respond with CONFIRMED or DISMISSED and your reasoning.
-  ````
-
-  Dispatch all blocking finding validations **in parallel**. Extract usage metadata from each validator's response and record in `$token_usage` as `validator-{N}` (numbered sequentially). For each result:
-  - **DISMISSED**: downgrade to `suggestion:`. If the validator's reasoning sharpens the technical content (a missing condition, a corrected line number), fold that into the body as if it were original analysis. Do not embed validator attribution like "*Downgraded from blocking: …*"; the body must stay free of pipeline metadata (see "Comment Body Hygiene").
-  - **CONFIRMED**: keep as `blocking:`.
-  - **Unreachable or errors**: keep the finding as-is.
-
-- **Otherwise** (non-blocking findings): Use the Read tool to verify the claim is accurate before including it.
+Read `~/.agents/skills/review-code/handlers/review-validation.md` and follow it before the adversary pass and finding quality pipeline.
 
 ### Adversary Meta-Review
 
@@ -503,11 +414,13 @@ If you loaded `review-adversary.md` (`--adversary:*` flag), run its meta-review 
 
 ### Finding Quality Pipeline
 
+If `mode` is `"pr"`, Read `~/.agents/skills/review-code/handlers/review-pr-output.md` now so its linkification procedure is available before the publication boundary.
+
 Read `~/.agents/skills/review-code/handlers/review-finding-quality.md` and follow it now. It builds `$finding_quality`, runs PR linkification when applicable, then creates `$finding_publication` through the executable publication boundary. Continue only with `$finding_publication.findings`; carry every `$finding_publication.withheld` entry into the local review.
 
 ### Apply Fixes (--fix flag)
 
-If you loaded `review-fix.md` (session has `fix: true`), apply fixes per its instructions now, before composing the review document.
+If `REVIEW_FIELDS.fix` is true, Read `~/.agents/skills/review-code/handlers/review-fix.md` now and follow its eligibility checks and fix procedure before composing the review document.
 
 ### Compose the Review Document
 

@@ -6,6 +6,8 @@ setup() {
     export PROJECT_ROOT
     HANDLER_SCRIPT="$PROJECT_ROOT/skills/review-code/scripts/review-status-handler.sh"
     export HANDLER_SCRIPT
+    DISPATCH_SCRIPT="$PROJECT_ROOT/skills/review-code/scripts/review-dispatch-plan.py"
+    export DISPATCH_SCRIPT
 }
 
 # =============================================================================
@@ -299,6 +301,18 @@ fields_of() {
     [ "$(echo "$output" | jq -r '.append')" = "true" ]
 }
 
+@test "get-review-fields: preserves degraded base lookup" {
+    local id; id=$(make_session)
+    local session_file="$BATS_TEST_TMPDIR/sessions/review-code/$id.json"
+    jq '.base_lookup_degraded = "true"' "$session_file" > "$session_file.tmp"
+    mv "$session_file.tmp" "$session_file"
+
+    run fields_of "$id"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.base_lookup_degraded')" = "true" ]
+}
+
 @test "get-review-fields: returns PR identity without the PR body" {
     local id; id=$(make_session)
     run fields_of "$id"
@@ -319,6 +333,20 @@ fields_of() {
     [ "$(echo "$output" | jq -r '.chunks[0].diff_path')" = "/tmp/artifacts/chunk-1.patch" ]
     [ "$(echo "$output" | jq -r '.chunks[0].label')" = "backend" ]
     ! echo "$output" | grep -q "SECRET_CHUNK_BYTES"
+}
+
+@test "get-review-fields: output selects chunked dispatch" {
+    local id; id=$(make_session)
+    local session_file="$BATS_TEST_TMPDIR/sessions/review-code/$id.json"
+    local fields="$BATS_TEST_TMPDIR/review-fields.json"
+    jq '.chunk_metadata = {chunked: true, reason: "large diff", chunk_count: 1}' "$session_file" > "$session_file.tmp"
+    mv "$session_file.tmp" "$session_file"
+
+    fields_of "$id" > "$fields"
+    run python3 "$DISPATCH_SCRIPT" --fields "$fields" --agents 'security correctness'
+
+    [ "$status" -eq 0 ]
+    [ "$(printf '%s' "$output" | jq -c .)" = '{"handler":"review-chunked.md","agents":[]}' ]
 }
 
 @test "get-review-fields: returns linked issue identity without issue bodies" {

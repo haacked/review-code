@@ -221,6 +221,7 @@ case "${ACTION}" in
         + (if .branch then {branch} else {} end)
         + (if .base_branch then {base_branch} else {} end)
         + (if .base_source then {base_source} else {} end)
+        + (if .base_lookup_degraded then {base_lookup_degraded} else {} end)
         + (if .commit then {commit} else {} end)
         + (if .range then {range} else {} end)
         + (if .area then {area} else {} end)'

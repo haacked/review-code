@@ -6,7 +6,7 @@ Loaded when the session JSON's `chunk_metadata.chunked` is `true`: the diff was 
 
 "This is a large PR ({chunk_metadata.reason}). Splitting into {chunk_count} chunks for focused review."
 
-**Chunked agent dispatch** (runs at the "Collect and Synthesize Results" step, replacing the single-pass dispatch):
+**Chunked agent dispatch** (runs at the "Choose Review Dispatch" step, replacing the single-pass dispatch):
 
 1. **Per-chunk analysis:**
 
