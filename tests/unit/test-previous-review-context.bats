@@ -150,6 +150,22 @@ REVIEW
     jq -e '.findings[] | select(.path == "src/example.py") | .status == "recorded (recheck)"' "$OUT/previous-review/index.json"
 }
 
+@test "withdrawn heading annotations retain the complete finding" {
+    cat >> "$REVIEW" <<'REVIEW'
+
+#### `src/annotated.py:6` <!-- pc:456 NODE b:abcd withdrawn:2026-09-05 -->
+
+```text
+[P2] Annotated withdrawal
+ANNOTATED_WITHDRAWAL_DETAIL
+```
+REVIEW
+    run build
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"ANNOTATED_WITHDRAWAL_DETAIL"* ]]
+    jq -e '.findings[] | select(.path == "src/annotated.py") | .status == "withdrawn" and .full' "$OUT/previous-review/index.json"
+}
+
 @test "rename diffs retain findings on the source path" {
     cat > "$DIFF" <<'PATCH'
 diff --git a/src/quiet.py b/src/renamed.py

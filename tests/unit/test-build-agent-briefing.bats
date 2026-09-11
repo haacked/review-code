@@ -48,6 +48,26 @@ REVIEW
     [[ "$output" == *'<!-- pc:42 NODE b:abcd -->'* ]]
 }
 
+@test "build-agent-briefing: missing architectural context falls back to the full previous review" {
+    local id previous artifacts
+    id=$(create_test_session)
+    previous="$BATS_TEST_TMPDIR/previous.md"
+    cat > "$previous" <<'REVIEW'
+#### `quiet.ts:2`
+
+```text
+[P2] Quiet concern
+The complete finding remains available.
+```
+REVIEW
+
+    run "$SCRIPT" "$id" --previous-review "$previous" --arch-context-file "$BATS_TEST_TMPDIR/missing-arch.md"
+    [ "$status" -eq 0 ]
+    artifacts=$(echo "$output" | jq -r '.artifacts_dir')
+    grep -q 'The complete finding remains available.' "$artifacts/briefing.md"
+    jq -e '.fallback == true' "$artifacts/previous-review/index.json"
+}
+
 # Build a session in the layout session-manager.sh actually uses:
 # <SESSION_DIR>/review-code/<session-id>.json, with the diff on disk and the
 # session JSON carrying only its path.

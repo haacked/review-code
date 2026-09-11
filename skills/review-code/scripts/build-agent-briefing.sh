@@ -209,7 +209,7 @@ fi
 if [[ -n "${PREVIOUS_REVIEW}" ]]; then
     emit "**Previous Review:**"
     previous_args=(--review "${PREVIOUS_REVIEW}" --diff "${DIFF_PATH}" --output-dir "${ARTIFACTS_DIR}")
-    if [[ -n "${ARCH_CONTEXT_FILE}" ]]; then
+    if [[ -f "${ARCH_CONTEXT_FILE}" ]]; then
         previous_args+=(--arch-context "${ARCH_CONTEXT_FILE}")
     fi
     python3 "${SCRIPT_DIR}/previous-review-context.py" build "${previous_args[@]}" >> "${BRIEFING}"

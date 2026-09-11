@@ -131,7 +131,11 @@ def build(args: argparse.Namespace) -> str:
             identifier += f"-{digest}"
         artifact = directory / f"{identifier}.md"
         artifact.write_text(WARNING + "\n\n" + raw)
-        status = prose_status(raw) or "recorded (recheck)"
+        status = (
+            "withdrawn"
+            if block["withdrawn"]
+            else prose_status(raw) or "recorded (recheck)"
+        )
         include_full = (
             fallback
             or status in {"withdrawn", "resolved"}
