@@ -301,6 +301,18 @@ fields_of() {
     [ "$(echo "$output" | jq -r '.append')" = "true" ]
 }
 
+@test "get-review-fields: preserves degraded base lookup" {
+    local id; id=$(make_session)
+    local session_file="$BATS_TEST_TMPDIR/sessions/review-code/$id.json"
+    jq '.base_lookup_degraded = "true"' "$session_file" > "$session_file.tmp"
+    mv "$session_file.tmp" "$session_file"
+
+    run fields_of "$id"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.base_lookup_degraded')" = "true" ]
+}
+
 @test "get-review-fields: returns PR identity without the PR body" {
     local id; id=$(make_session)
     run fields_of "$id"

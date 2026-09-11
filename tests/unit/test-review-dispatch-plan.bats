@@ -22,10 +22,17 @@ setup() {
 }
 
 @test "chunked review selects its handler without ordinary agent invocations" {
-    printf '%s\n' '{"chunk_metadata":{"chunked":true,"chunk_count":2},"chunks":[{"id":1,"diff_path":"one.patch"},{"id":2,"diff_path":"two.patch"}]}' > "$FIELDS"
+    printf '%s\n' '{"chunk_metadata":{"chunked":true,"chunk_count":2},"chunks":[{"id":1,"label":"backend","files":["a.py"],"diff_path":"one.patch"},{"id":2,"label":"frontend","files":["b.ts"],"diff_path":"two.patch"}]}' > "$FIELDS"
     run python3 "$SCRIPT" --fields "$FIELDS" --agents 'security correctness'
     [ "$status" -eq 0 ]
     [ "$(printf '%s' "$output" | jq -c .)" = '{"handler":"review-chunked.md","agents":[]}' ]
+}
+
+@test "delta review ignores full-review chunks" {
+    printf '%s\n' '{"chunk_metadata":{"chunked":true,"chunk_count":1},"chunks":[{"id":1,"label":"full review","files":["a.py"],"diff_path":"full.patch"}]}' > "$FIELDS"
+    run python3 "$SCRIPT" --fields "$FIELDS" --agents 'security correctness' --review-mode delta
+    [ "$status" -eq 0 ]
+    [ "$(printf '%s' "$output" | jq -c .)" = '{"handler":null,"agents":[{"area":"security","subagent_type":"code-reviewer-security"},{"area":"correctness","subagent_type":"code-reviewer-correctness"}]}' ]
 }
 
 @test "unknown areas cannot become dispatch invocations" {
@@ -80,6 +87,27 @@ setup() {
     done
 }
 
+@test "chunked dispatch rejects malformed chunk records" {
+    for chunk in \
+        '{}' \
+        '{"id":1,"label":"backend","files":["a.py"]}' \
+        '{"id":1,"label":"backend","files":["a.py"],"diff_path":""}' \
+        '{"id":1,"label":"","files":["a.py"],"diff_path":"one.patch"}' \
+        '{"id":1,"label":"backend","files":[],"diff_path":"one.patch"}'; do
+        jq -n --argjson chunk "$chunk" '{chunk_metadata:{chunked:true,chunk_count:1},chunks:[$chunk]}' > "$FIELDS"
+        run python3 "$SCRIPT" --fields "$FIELDS" --agents 'security'
+        [ "$status" -ne 0 ]
+    done
+}
+
+@test "chunked dispatch requires sequential chunk IDs" {
+    for ids in '[1,1]' '[0,1]' '[2,1]'; do
+        jq -n --argjson ids "$ids" '{chunk_metadata:{chunked:true,chunk_count:2},chunks:[$ids[] | {id:.,label:"chunk",files:["a.py"],diff_path:"one.patch"}]}' > "$FIELDS"
+        run python3 "$SCRIPT" --fields "$FIELDS" --agents 'security'
+        [ "$status" -ne 0 ]
+    done
+}
+
 @test "review handler chooses routing before specialized dispatch" {
     run python3 - "$PROJECT_ROOT/skills/review-code/handlers/review.md" <<'PY'
 import pathlib
@@ -88,6 +116,7 @@ import sys
 review = pathlib.Path(sys.argv[1]).read_text()
 assert review.index("### Choose Review Dispatch") < review.index("### Invoke Specialized Review Agents")
 assert "review-chunked.md" in review[review.index("### Choose Review Dispatch"):review.index("### Invoke Specialized Review Agents")]
+assert '--review-mode "<$review_mode, default full>"' in review
 PY
     [ "$status" -eq 0 ]
 }

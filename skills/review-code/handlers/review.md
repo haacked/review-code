@@ -325,7 +325,8 @@ Write the compact orchestration fields directly to disk, then generate the dispa
   get-review-fields "<SESSION_ID>" > "<artifacts_dir>/review-fields.json"
 python3 ~/.agents/skills/review-code/scripts/review-dispatch-plan.py \
   --fields "<artifacts_dir>/review-fields.json" \
-  --agents "<space-separated $selected_agents>"
+  --agents "<space-separated $selected_agents>" \
+  --review-mode "<$review_mode, default full>"
 ```
 
 Stop and report any error. Retain the returned plan as `$dispatch_plan`. Choose exactly one route before invoking review agents:
