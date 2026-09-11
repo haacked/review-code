@@ -206,9 +206,13 @@ if [[ -n "${REVIEW_CONTEXT}" ]]; then
 fi
 
 # ------------------------------------------------------------- previous review
-if [[ -n "${PREVIOUS_REVIEW}" && -f "${PREVIOUS_REVIEW}" ]]; then
+if [[ -n "${PREVIOUS_REVIEW}" ]]; then
     emit "**Previous Review:**"
-    cat "${PREVIOUS_REVIEW}" >> "${BRIEFING}"
+    previous_args=(--review "${PREVIOUS_REVIEW}" --diff "${DIFF_PATH}" --output-dir "${ARTIFACTS_DIR}")
+    if [[ -f "${ARCH_CONTEXT_FILE}" ]]; then
+        previous_args+=(--arch-context "${ARCH_CONTEXT_FILE}")
+    fi
+    python3 "${SCRIPT_DIR}/previous-review-context.py" build "${previous_args[@]}" >> "${BRIEFING}"
     emit ""
     emit "IMPORTANT: Build upon the previous review. Do not duplicate findings. You may:"
     emit "- Reference previous findings: \"As noted in the previous review…\""
