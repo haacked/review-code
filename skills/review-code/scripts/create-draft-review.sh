@@ -8,6 +8,9 @@ set -euo pipefail
 #
 # Usage:
 #   echo '<json_input>' | create-draft-review.sh
+#   create-draft-review.sh < review.json
+#
+# The script rejects all command-line arguments.
 #
 # Input JSON:
 #   {
@@ -108,6 +111,12 @@ create_pending_review() {
 }
 
 main() {
+    if [[ $# -gt 0 ]]; then
+        error "This script accepts no command-line arguments. Pass review JSON on stdin."
+        echo "Usage: create-draft-review.sh < review.json" >&2
+        exit 2
+    fi
+
     # Read input JSON from stdin
     local input
     input=$(cat)

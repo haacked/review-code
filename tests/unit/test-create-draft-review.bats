@@ -37,6 +37,44 @@ EOF
     chmod +x "$MOCK_DIR/gh"
 }
 
+create_argument_validation_fixture() {
+    DRAFT_INPUT="$MOCK_DIR/input.json"
+    DRAFT_STDERR="$MOCK_DIR/stderr"
+    GH_CALLS="$MOCK_DIR/gh-calls"
+    export DRAFT_STDERR GH_CALLS
+    echo '{"owner":"org","repo":"test","pr_number":1,"reviewer_username":"user","summary":"Test review","comments":[]}' > "$DRAFT_INPUT"
+
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+echo "$*" >> "$GH_CALLS"
+if [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[{"id":11111,"state":"PENDING","user":{"login":"user"},"body":"old"}]'
+elif [[ "$*" == *"/reviews/11111/comments"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method DELETE"* ]]; then
+    echo '{}'
+elif [[ "$*" == *"--method POST"* ]]; then
+    cat > /dev/null
+    echo '{"id":22222,"body":"new"}'
+else
+    exit 1
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+}
+
+assert_arguments_rejected() {
+    run bash -c '"$@" 2> "$DRAFT_STDERR"' _ "$SCRIPT" "$@" < "$DRAFT_INPUT"
+
+    [ ! -s "$GH_CALLS" ]
+    [ "$status" -eq 2 ]
+    [ -z "$output" ]
+    local stderr
+    stderr=$(< "$DRAFT_STDERR")
+    [[ "$stderr" == *"This script accepts no command-line arguments. Pass review JSON on stdin."* ]]
+    [[ "$stderr" == *"Usage: create-draft-review.sh < review.json"* ]]
+}
+
 # =============================================================================
 # Script structure tests
 # =============================================================================
@@ -102,6 +140,62 @@ EOF
 # =============================================================================
 # Input validation tests
 # =============================================================================
+
+@test "create-draft-review: rejects unsupported flags before any GitHub call" {
+    create_argument_validation_fixture
+
+    local argument
+    for argument in --dry-run --unknown -x --dry-run=true --owner=org --help -h; do
+        assert_arguments_rejected "$argument"
+    done
+}
+
+@test "create-draft-review: rejects positional and empty arguments before any GitHub call" {
+    create_argument_validation_fixture
+
+    local argument
+    for argument in "$DRAFT_INPUT" '{"owner":"org","repo":"test"}' '' -- -; do
+        assert_arguments_rejected "$argument"
+    done
+}
+
+@test "create-draft-review: rejects malformed argument lists before any GitHub call" {
+    create_argument_validation_fixture
+
+    assert_arguments_rejected --owner
+    assert_arguments_rejected --dry-run true
+    assert_arguments_rejected --owner org --repo test
+    assert_arguments_rejected "$DRAFT_INPUT" --dry-run
+    assert_arguments_rejected -- --dry-run
+}
+
+@test "create-draft-review: rejects arguments before reading stdin" {
+    create_argument_validation_fixture
+    STDIN_READ_LOG="$MOCK_DIR/stdin-read"
+    export STDIN_READ_LOG
+    cat > "$MOCK_DIR/cat" << 'EOF'
+#!/bin/bash
+echo read >> "$STDIN_READ_LOG"
+exit 91
+EOF
+    chmod +x "$MOCK_DIR/cat"
+
+    assert_arguments_rejected --dry-run
+
+    [ ! -e "$STDIN_READ_LOG" ]
+}
+
+@test "create-draft-review: accepts stdin JSON without command-line arguments" {
+    create_argument_validation_fixture
+
+    run "$SCRIPT" < "$DRAFT_INPUT"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"review_id": 22222'* ]]
+    [[ "$output" == *'"replaced_existing": true'* ]]
+    grep -q -- '--method DELETE' "$GH_CALLS"
+    grep -q -- '--method POST' "$GH_CALLS"
+}
 
 @test "create-draft-review: rejects invalid JSON input" {
     run bash -c "echo 'not json' | '$SCRIPT'"
