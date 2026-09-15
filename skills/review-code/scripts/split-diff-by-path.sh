@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=helpers/git-diff-paths.sh
+source "${SCRIPT_DIR}/helpers/git-diff-paths.sh"
+
 # split-diff-by-path.sh - Extract the hunks for a set of paths from a unified diff.
 #
 # The frontend and infra-config reviewers only look at their own file types, so
@@ -10,9 +15,16 @@ set -euo pipefail
 #
 # Usage:
 #   printf '%s\n' path1 path2 | split-diff-by-path.sh <input-diff> <output-diff>
+#   jq -r '.paths[] | @json' | split-diff-by-path.sh --json-paths <input-diff> <output-diff>
 #
 # Exits non-zero when no requested path appears in the diff, so the caller can
 # fall back to the full diff rather than hand an agent an empty review.
+
+JSON_PATHS=false
+if [[ "${1:-}" == "--json-paths" ]]; then
+    JSON_PATHS=true
+    shift
+fi
 
 INPUT="${1:-}"
 OUTPUT="${2:-}"
@@ -27,25 +39,17 @@ if [[ ! -f "${INPUT}" ]]; then
     exit 1
 fi
 
-WANTED=$(cat)
-if [[ -z "${WANTED}" ]]; then
-    exit 1
-fi
-
-printf '%s\n' "${WANTED}" | awk -v out="${OUTPUT}" '
-    NR == FNR { wanted[$0] = 1; next }
+LC_ALL=C awk -v out="${OUTPUT}" -v json_paths="${JSON_PATHS}" "$(git_diff_path_functions)"'
+    FILENAME == "-" { wanted[$0] = 1; next }
 
     /^diff --git / {
-        # Match on " b/" (with leading space) rather than taking the last field:
-        # a path containing spaces would otherwise be truncated to its last word
-        # and silently dropped. Same idiom as chunk-diff.sh.
-        match($0, / b\/(.+)$/)
-        path = (RSTART > 0) ? substr($0, RSTART + 3) : "unknown"
-        keep = (path in wanted)
+        path = diff_header_path($0)
+        key = json_paths == "true" ? json_quote(path) : path
+        keep = (key in wanted)
         if (keep) {
             matched++
         } else {
-            others = others (others == "" ? "" : ", ") path
+            others = others (others == "" ? "" : ", ") key
         }
     }
 

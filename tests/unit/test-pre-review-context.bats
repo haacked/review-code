@@ -354,7 +354,7 @@ EOF
     echo "$result" | jq -e '.modified_files[0].path == "backend/api.py"'
 }
 
-@test "deleted file increments deleted_file_count and is excluded from modified_files" {
+@test "mixed additions modifications and deletions all receive metadata" {
     diff=$(cat <<'EOF'
 diff --git a/backend/old_module.py b/backend/old_module.py
 deleted file mode 100644
@@ -367,14 +367,163 @@ diff --git a/backend/api.py b/backend/api.py
 +++ b/backend/api.py
 @@ -1,0 +1,1 @@
 +print("hello")
+diff --git a/backend/new_module.py b/backend/new_module.py
+new file mode 100644
+--- /dev/null
++++ b/backend/new_module.py
+@@ -0,0 +1 @@
++new_value = 1
 EOF
 )
 
     result=$(echo "$diff" | "$SCRIPT")
-    # Deleted file counted
     echo "$result" | jq -e '.deleted_file_count == 1'
-    # Modified files contains only the added/modified file, not the deleted one
-    echo "$result" | jq -e '.file_count == 1'
-    echo "$result" | jq -e '.modified_files | length == 1'
-    echo "$result" | jq -e '.modified_files[0].path == "backend/api.py"'
+    echo "$result" | jq -e '.file_count == 3 and (.modified_files | length == 3)'
+    echo "$result" | jq -e '.modified_files | map({path, deleted}) == [
+        {path: "backend/old_module.py", deleted: true},
+        {path: "backend/api.py", deleted: false},
+        {path: "backend/new_module.py", deleted: false}
+    ]'
+}
+
+@test "deleted Terraform and Terragrunt files retain infrastructure metadata" {
+    diff=$(for path in stacks/main.tf stacks/variables.tfvars stacks/terragrunt.hcl; do
+        printf '%s\n' "diff --git a/$path b/$path" 'deleted file mode 100644' \
+            "--- a/$path" '+++ /dev/null' '@@ -1 +0,0 @@' '-region = "us-east-1"'
+    done)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.file_count == 3 and .deleted_file_count == 3'
+    echo "$result" | jq -e '.has_config == true and .has_infra_config == true'
+    echo "$result" | jq -e '.modified_files | length == 3 and all(.deleted == true and .type == "config" and .is_infra_config == true)'
+}
+
+@test "Terragrunt configuration is infrastructure when added" {
+    diff=$(printf '%s\n' 'diff --git a/stacks/terragrunt.hcl b/stacks/terragrunt.hcl' \
+        'new file mode 100644' '--- /dev/null' '+++ b/stacks/terragrunt.hcl' \
+        '@@ -0,0 +1 @@' '+include "root" {}')
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.modified_files[0] | .deleted == false and .type == "config" and .is_infra_config == true'
+}
+
+@test "deleted source tests migrations and config retain their classifications" {
+    diff=$(for path in backend/api.py backend/tests/test_api.py backend/migrations/0001_initial.py package.json; do
+        printf '%s\n' "diff --git a/$path b/$path" 'deleted file mode 100644' \
+            "--- a/$path" '+++ /dev/null' '@@ -1 +0,0 @@' '-old content'
+    done)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.file_count == 4 and .deleted_file_count == 4'
+    echo "$result" | jq -e '.has_tests and .has_migrations and .has_config'
+    echo "$result" | jq -e '[.modified_files[].type] == ["source", "test", "migration", "config"]'
+    echo "$result" | jq -e '.modified_files[0] | .language == "python" and (.likely_test_path | endswith("test_api.py"))'
+    echo "$result" | jq -e '.modified_files[1].is_test == true'
+}
+
+@test "empty and binary deletions count without text diff headers" {
+    diff=$(cat <<'EOF'
+diff --git a/stacks/empty.tf b/stacks/empty.tf
+deleted file mode 100644
+index e69de29..0000000
+diff --git a/assets/logo.png b/assets/logo.png
+deleted file mode 100644
+index abcdef1..0000000
+Binary files a/assets/logo.png and /dev/null differ
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.file_count == 2 and .deleted_file_count == 2'
+    echo "$result" | jq -e '.modified_files | map({path, deleted}) == [
+        {path: "stacks/empty.tf", deleted: true},
+        {path: "assets/logo.png", deleted: true}
+    ]'
+    echo "$result" | jq -e '.modified_files[0].is_infra_config == true'
+}
+
+@test "mode changes and pure renames count once without text diff headers" {
+    diff=$(cat <<'EOF'
+diff --git a/bin/run.sh b/bin/run.sh
+old mode 100644
+new mode 100755
+diff --git a/old.tf b/stacks/new.tf
+similarity index 100%
+rename from old.tf
+rename to stacks/new.tf
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.file_count == 2 and .deleted_file_count == 0'
+    echo "$result" | jq -e '.modified_files | map({path, deleted}) == [
+        {path: "bin/run.sh", deleted: false},
+        {path: "stacks/new.tf", deleted: false}
+    ]'
+}
+
+@test "diff header text inside a hunk does not create file metadata" {
+    diff=$(cat <<'EOF'
+diff --git a/docs/example.patch b/docs/example.patch
+--- a/docs/example.patch
++++ b/docs/example.patch
+@@ -1,2 +1,4 @@
+ existing example
++++ b/not-a-real-file.tf
++++ /dev/null
+ final line
+EOF
+)
+
+    result=$(echo "$diff" | "$SCRIPT")
+    echo "$result" | jq -e '.file_count == 1 and .deleted_file_count == 0'
+    echo "$result" | jq -e '.modified_files[0].path == "docs/example.patch"'
+}
+
+@test "quoted empty deletion decodes the Git path without text headers" {
+    local repo="$BATS_TEST_TMPDIR/repo"
+    git init -q "$repo"
+    touch "$repo/café.tf"
+    git -C "$repo" add .
+    rm "$repo/café.tf"
+
+    result=$(git -C "$repo" -c core.quotePath=true diff --no-ext-diff --no-renames --src-prefix=a/ --dst-prefix=b/ | "$SCRIPT")
+
+    echo "$result" | jq -e '.file_count == 1 and .deleted_file_count == 1'
+    echo "$result" | jq -e '.modified_files[0] | .path == "café.tf" and .deleted == true and .is_infra_config == true'
+}
+
+assert_control_path_metadata() {
+    local deleted_path="$1"
+    local repo="$BATS_TEST_TMPDIR/repo"
+    local patch="$BATS_TEST_TMPDIR/diff.patch"
+    git init -q "$repo"
+    printf '%s\n' 'retired = True' > "$repo/$deleted_path"
+    printf '%s\n' 'value = 1' > "$repo/stable.py"
+    git -C "$repo" add .
+    rm "$repo/$deleted_path"
+    printf '%s\n' 'value = 2' > "$repo/stable.py"
+    git -C "$repo" -c core.quotePath=true diff --no-ext-diff --no-renames --src-prefix=a/ --dst-prefix=b/ > "$patch"
+
+    run "$SCRIPT" < "$patch"
+
+    [ "$status" -eq 0 ]
+    printf '%s\n' "$output" | jq -e '.file_count == 2 and .deleted_file_count == 1'
+    printf '%s\n' "$output" | jq -e --arg deleted_path "$deleted_path" '
+        (.modified_files | map({path, deleted}) | sort_by(.path)) == ([
+            {path: $deleted_path, deleted: true},
+            {path: "stable.py", deleted: false}
+        ] | sort_by(.path))'
+}
+
+@test "quoted tab filename produces valid metadata beside a modified file" {
+    assert_control_path_metadata $'a\tretired.py'
+}
+
+@test "quoted carriage return filename produces valid metadata beside a modified file" {
+    assert_control_path_metadata $'a\rretired.tf'
+}
+
+@test "quoted newline filename preserves one metadata record beside a modified file" {
+    assert_control_path_metadata $'a\nretired.py'
 }
