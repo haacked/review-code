@@ -10,6 +10,7 @@
 #
 # Actions:
 #   save  - Write content to {debug_dir}/{stage}/{filename}
+#   copy  - Copy a review session artifact to {debug_dir}/{stage}/{filename}
 #   time  - Append ndjson timing event to {debug_dir}/timing.ndjson
 #   stats - Write stats JSON to {debug_dir}/{stage}/stats.json
 #
@@ -66,12 +67,12 @@ main() {
     fi
 
     case "${action}" in
-        save)
+        save | copy)
             local filename
             filename=$(echo "${input}" | jq -r '.filename // ""') || exit 0
 
             if [[ -z "${stage}" ]] || [[ -z "${filename}" ]]; then
-                echo "Warning: save requires stage and filename" >&2
+                echo "Warning: ${action} requires stage and filename" >&2
                 exit 0
             fi
 
@@ -81,13 +82,41 @@ main() {
                 exit 0
             fi
 
-            # Content needs separate extraction (can contain tabs/newlines)
-            local content
-            content=$(echo "${input}" | jq -r '.content // ""') || exit 0
-
             local stage_dir="${debug_dir}/${stage}"
             mkdir -p "${stage_dir}"
-            printf '%s' "${content}" > "${stage_dir}/${filename}"
+
+            if [[ "${action}" == "save" ]]; then
+                # Content needs separate extraction (can contain tabs/newlines)
+                local content
+                content=$(echo "${input}" | jq -r '.content // ""') || exit 0
+                printf '%s' "${content}" > "${stage_dir}/${filename}"
+            else
+                local source_path
+                source_path=$(echo "${input}" | jq -r '.source_path // ""') || exit 0
+                if [[ ! -f "${source_path}" ]]; then
+                    echo "Warning: copy source does not exist: ${source_path}" >&2
+                    exit 0
+                fi
+
+                local canonical_source
+                canonical_source=$(realpath "${source_path}") || exit 0
+                local source_allowed="false"
+                local session_root canonical_root
+                for session_root in "${HOME}/.agents/skills/review-code/.sessions" "${CLAUDE_SESSION_DIR:-}"; do
+                    [[ -n "${session_root}" && -d "${session_root}" ]] || continue
+                    canonical_root=$(cd "${session_root}" && pwd -P)
+                    if [[ "${canonical_source}" == "${canonical_root}/"* ]]; then
+                        source_allowed="true"
+                        break
+                    fi
+                done
+                if [[ "${source_allowed}" != "true" ]]; then
+                    echo "Warning: copy source is outside the review session directory" >&2
+                    exit 0
+                fi
+
+                cp "${canonical_source}" "${stage_dir}/${filename}"
+            fi
             ;;
 
         time)

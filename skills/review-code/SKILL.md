@@ -2,7 +2,7 @@
 name: review-code
 description: Run specialized code review agents on code changes or pull requests
 argument-hint: [find|learn|pr|commit|branch|range|area]
-allowed-tools: Bash(~/.agents/skills/review-code/scripts/*:*), Read(~/.claude/**), Read(~/.agents/**), Write(~/.agents/skills/review-code/.learnings/*), Edit(~/.agents/skills/review-code/.learnings/*)
+allowed-tools: Bash(~/.agents/skills/review-code/scripts/*:*), Read(~/.claude/**), Read(~/.agents/**), Write(~/.agents/skills/review-code/.learnings/*), Write(~/.agents/skills/review-code/.sessions/**), Edit(~/.agents/skills/review-code/.learnings/*)
 metadata:
   execution-tier: deep
 hooks:

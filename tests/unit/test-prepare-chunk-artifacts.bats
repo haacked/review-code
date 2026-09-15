@@ -137,6 +137,34 @@ PY
     [ "$status" -eq 0 ]
 }
 
+@test "skill permits Claude to write review session artifacts" {
+    run python3 - "$PROJECT_ROOT" <<'PY'
+import sys
+from pathlib import Path
+text = (Path(sys.argv[1]) / "skills/review-code/SKILL.md").read_text()
+frontmatter = text.split("---", 2)[1]
+assert "Write(~/.agents/skills/review-code/.sessions/**)" in frontmatter
+PY
+    [ "$status" -eq 0 ]
+}
+
+@test "debug instructions copy saved context and chunk analyses by path" {
+    run python3 - "$PROJECT_ROOT" <<'PY'
+import sys
+from pathlib import Path
+text = (Path(sys.argv[1]) / "skills/review-code/handlers/review-debug.md").read_text()
+context_line = next(line for line in text.splitlines() if line.startswith("- **08-context-explorer**"))
+chunk_line = next(line for line in text.splitlines() if line.startswith("- **09-per-chunk-analysis**"))
+assert "$architectural_context_path" in context_line
+assert "$architectural_context" not in context_line.replace("$architectural_context_path", "")
+assert '"action":"copy"' in context_line
+assert "$chunk.analysis_path" in chunk_line
+assert '"action":"copy"' in chunk_line
+assert "result (`$architectural_context`)" not in context_line
+PY
+    [ "$status" -eq 0 ]
+}
+
 @test "handler instructions distinguish Claude write fallback from Codex captured output" {
     run python3 - "$PROJECT_ROOT" <<'PY'
 import sys

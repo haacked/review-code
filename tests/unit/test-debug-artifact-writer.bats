@@ -11,6 +11,9 @@ setup() {
     mkdir -p "$TEST_DEBUG_BASE"
     TEST_DEBUG_DIR="$TEST_DEBUG_BASE/test-session-$$"
     mkdir -p "$TEST_DEBUG_DIR"
+
+    TEST_SESSION_DIR="$BATS_TEST_TMPDIR/.agents/skills/review-code/.sessions/review-code/artifacts-test-$$"
+    mkdir -p "$TEST_SESSION_DIR"
 }
 
 # Helper: run the script with HOME overridden to match TEST_DEBUG_DIR's prefix
@@ -62,6 +65,62 @@ _run_writer() {
     local saved
     saved=$(cat "$TEST_DEBUG_DIR/test-stage/exact.txt")
     [ "$saved" = "hello world" ]
+}
+
+@test "debug-artifact-writer: copy preserves file content exactly" {
+    local source="$TEST_SESSION_DIR/context result.md"
+    printf 'first line\nsecond "quoted" line\n$literal `command` \\ tail\n' > "$source"
+
+    _run_writer "jq -n --arg dir '$TEST_DEBUG_DIR' --arg source '$source' \
+        '{\"action\":\"copy\",\"debug_dir\":\$dir,\"stage\":\"08-context-explorer\",\"filename\":\"result.md\",\"source_path\":\$source}' \
+        | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+    cmp "$source" "$TEST_DEBUG_DIR/08-context-explorer/result.md"
+}
+
+@test "debug-artifact-writer: copy rejects source outside review session directory" {
+    local source="$BATS_TEST_TMPDIR/outside-session.md"
+    printf 'must not copy\n' > "$source"
+
+    _run_writer "jq -n --arg dir '$TEST_DEBUG_DIR' --arg source '$source' \
+        '{\"action\":\"copy\",\"debug_dir\":\$dir,\"stage\":\"08-context-explorer\",\"filename\":\"result.md\",\"source_path\":\$source}' \
+        | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+    [ ! -e "$TEST_DEBUG_DIR/08-context-explorer/result.md" ]
+}
+
+@test "debug-artifact-writer: copy rejects symlink to source outside review session directory" {
+    local outside_source="$BATS_TEST_TMPDIR/outside-session.md"
+    local source="$TEST_SESSION_DIR/result.md"
+    printf 'must not copy\n' > "$outside_source"
+    ln -s "$outside_source" "$source"
+
+    _run_writer "jq -n --arg dir '$TEST_DEBUG_DIR' --arg source '$source' \
+        '{\"action\":\"copy\",\"debug_dir\":\$dir,\"stage\":\"08-context-explorer\",\"filename\":\"result.md\",\"source_path\":\$source}' \
+        | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+    [ ! -e "$TEST_DEBUG_DIR/08-context-explorer/result.md" ]
+}
+
+@test "debug-artifact-writer: copy rejects missing source nonfatally" {
+    local source="$TEST_SESSION_DIR/missing.md"
+
+    _run_writer "jq -n --arg dir '$TEST_DEBUG_DIR' --arg source '$source' \
+        '{\"action\":\"copy\",\"debug_dir\":\$dir,\"stage\":\"09-per-chunk-analysis\",\"filename\":\"chunk-1-result.md\",\"source_path\":\$source}' \
+        | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+    [ ! -e "$TEST_DEBUG_DIR/09-per-chunk-analysis/chunk-1-result.md" ]
+}
+
+@test "debug-artifact-writer: copy rejects unsafe destination nonfatally" {
+    local source="$TEST_SESSION_DIR/result.md"
+    printf 'safe source\n' > "$source"
+
+    _run_writer "jq -n --arg dir '$TEST_DEBUG_DIR' --arg source '$source' \
+        '{\"action\":\"copy\",\"debug_dir\":\$dir,\"stage\":\"../escape\",\"filename\":\"result.md\",\"source_path\":\$source}' \
+        | '$SCRIPT'"
+    [ "$status" -eq 0 ]
+    [ ! -e "$TEST_DEBUG_DIR/../escape/result.md" ]
 }
 
 # =============================================================================
