@@ -14,6 +14,19 @@ worktree_root() {
     echo "${REVIEW_CODE_WORKTREE_DIR:-$(resolve_skill_dir)/.worktrees}"
 }
 
+# Worktree root used before commit 182bbfa (#118) renamed it to .worktrees.
+# That commit changed three code files and moved nothing on disk, so an install
+# predating it still has its checkouts here and nothing has touched them since.
+# The name has no dot, so skill scanners that skip dot-directories count every
+# file in it against the skill's file budget.
+#
+# Ignores REVIEW_CODE_WORKTREE_DIR. An override names one directory that #118
+# left alone, so it is both the root in use and free of leftovers; the
+# hardcoded path is the only root that can hold pre-rename checkouts.
+legacy_worktree_root() {
+    echo "$(resolve_skill_dir)/worktrees"
+}
+
 # Path leaf relative to worktree_root, e.g. "acme/widget/pr-7". Lowercases org
 # and repo so the on-disk layout is stable regardless of caller casing.
 worktree_leaf_for() {

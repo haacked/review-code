@@ -808,9 +808,76 @@ migrate_state_dirs() {
     fi
 }
 
+# Collect the PR review worktree directories under one root into the global
+# REVIEW_WORKTREES array. A global, not stdout: these paths end up inside
+# printed `rm -rf` commands, and command substitution would strip a trailing
+# newline from a directory name and let an embedded one split a path in two.
+REVIEW_WORKTREES=()
+find_worktrees_under_root() {
+    local worktree_root_dir="$1"
+    local depth="$2"
+
+    REVIEW_WORKTREES=()
+    [[ -d "${worktree_root_dir}" ]] || return 0
+    local wt
+    while IFS= read -r -d '' wt; do
+        REVIEW_WORKTREES+=("${wt}")
+    done < <(find "${worktree_root_dir}" -mindepth "${depth}" -maxdepth "${depth}" -type d -name 'pr-*' -print0 2> /dev/null || true)
+}
+
+# Print each worktree in REVIEW_WORKTREES, then the commands that remove them
+# under the given caption. Set omit_plain_rm when the caller follows this with a
+# command that deletes the whole root, which already covers every `rm -rf` here;
+# the `git worktree remove` commands still print, because a plain delete of a
+# registered worktree leaves git holding a registration.
+print_worktree_removals() {
+    local caption="$1"
+    local omit_plain_rm="${2:-}"
+
+    local wt gitdir_line clone
+    local -a removals=()
+    for wt in "${REVIEW_WORKTREES[@]}"; do
+        clone=""
+        gitdir_line=""
+        if [[ -f "${wt}/.git" ]]; then
+            # The .git file contains: gitdir: <clone>/.git/worktrees/<name>
+            # `|| true` keeps the line when the file has no trailing newline;
+            # read assigns it and still returns 1 at EOF.
+            read -r gitdir_line < "${wt}/.git" || true
+            gitdir_line="${gitdir_line#gitdir: }"
+            clone="${gitdir_line%/.git/worktrees/*}"
+        fi
+        if [[ -n "${clone}" && -d "${clone}" ]]; then
+            echo "    ${wt}"
+            # `worktree prune` can't help: it only drops registrations whose
+            # directory is gone, and everything here is still on disk.
+            removals+=("$(printf 'git -C %q worktree remove --force --force %q' "${clone}" "${wt}")")
+        else
+            if [[ -n "${clone}" ]]; then
+                # The pointer parses but names a clone that has since been
+                # moved or deleted, so `git -C "${clone}"` would exit 128.
+                # git still holds a registration, which is why this doesn't
+                # claim the worktree is unregistered.
+                echo "    ${wt}  (owning clone ${clone} is gone)"
+            else
+                # No .git pointer, so git doesn't know about this one at all.
+                echo "    ${wt}  (not a registered worktree)"
+            fi
+            if [[ -z "${omit_plain_rm}" ]]; then
+                removals+=("$(printf 'rm -rf %q' "${wt}")")
+            fi
+        fi
+    done
+    echo "${caption}"
+    if [[ "${#removals[@]}" -gt 0 ]]; then
+        printf '    %s\n' "${removals[@]}"
+    fi
+}
+
 # Report PR review worktrees present under the skill's worktree root.
 # Includes both active (in-flight reviews) and orphan (crashed reviews) entries
-# — distinguishing them reliably would require cross-referencing live sessions.
+# (distinguishing them reliably would require cross-referencing live sessions).
+# Also reports the pre-#118 root, which nothing writes to any more.
 # Doesn't auto-delete; the user decides whether to remove one.
 check_orphan_worktrees() {
     # Source the layout helper for the one-place-only definition of the
@@ -818,60 +885,60 @@ check_orphan_worktrees() {
     # shellcheck source=../skills/review-code/scripts/helpers/worktree-layout.sh
     source "${SCRIPT_DIR}/skills/review-code/scripts/helpers/worktree-layout.sh"
 
-    local worktree_root_dir
-    worktree_root_dir="$(worktree_root)"
-    [[ -d "${worktree_root_dir}" ]] || return 0
-
     local depth
     depth="$(worktree_layout_depth)"
 
-    # NUL-delimited: these paths end up inside printed `rm -rf` commands, and a
-    # newline in a directory name would otherwise split one into two.
-    local -a worktrees=()
-    while IFS= read -r -d '' wt; do
-        worktrees+=("${wt}")
-    done < <(find "${worktree_root_dir}" -mindepth "${depth}" -maxdepth "${depth}" -type d -name 'pr-*' -print0 2> /dev/null || true)
-
-    local count="${#worktrees[@]}"
-    if [[ "${count}" -gt 0 ]]; then
+    local worktree_root_dir
+    worktree_root_dir="$(worktree_root)"
+    find_worktrees_under_root "${worktree_root_dir}" "${depth}"
+    if [[ "${#REVIEW_WORKTREES[@]}" -gt 0 ]]; then
         echo ""
-        warn "Found ${count} review worktree(s) under ${worktree_root_dir}."
+        warn "Found ${#REVIEW_WORKTREES[@]} review worktree(s) under ${worktree_root_dir}."
         echo "  These are reused on subsequent reviews of the same PR; crashed reviews may leave behind entries."
-        local wt gitdir_line clone
-        local -a removals=()
-        for wt in "${worktrees[@]}"; do
-            clone=""
-            gitdir_line=""
-            if [[ -f "${wt}/.git" ]]; then
-                # The .git file contains: gitdir: <clone>/.git/worktrees/<name>
-                # `|| true` keeps the line when the file has no trailing newline;
-                # read assigns it and still returns 1 at EOF.
-                read -r gitdir_line < "${wt}/.git" || true
-                gitdir_line="${gitdir_line#gitdir: }"
-                clone="${gitdir_line%/.git/worktrees/*}"
-            fi
-            if [[ -n "${clone}" && -d "${clone}" ]]; then
-                echo "    ${wt}"
-                # `worktree prune` can't help: it only drops registrations whose
-                # directory is gone, and everything here is still on disk.
-                removals+=("$(printf 'git -C %q worktree remove --force --force %q' "${clone}" "${wt}")")
-            else
-                if [[ -n "${clone}" ]]; then
-                    # The pointer parses but names a clone that has since been
-                    # moved or deleted, so `git -C "${clone}"` would exit 128.
-                    # git still holds a registration, which is why this doesn't
-                    # claim the worktree is unregistered.
-                    echo "    ${wt}  (owning clone ${clone} is gone)"
-                else
-                    # No .git pointer, so git doesn't know about this one at all.
-                    echo "    ${wt}  (not a registered worktree)"
-                fi
-                removals+=("$(printf 'rm -rf %q' "${wt}")")
-            fi
-        done
-        echo "  To clean up (discards uncommitted work; an entry may belong to a review running right now):"
-        printf '    %s\n' "${removals[@]}"
+        print_worktree_removals "  To clean up (discards uncommitted work; an entry may belong to a review running right now):"
     fi
+
+    check_legacy_worktree_root "${depth}"
+}
+
+# Report the worktree root used before #118 renamed it to .worktrees. Nothing
+# has written there since, so every file under it is dead weight that a skill
+# scanner ignoring dot-directories still counts against the file budget.
+check_legacy_worktree_root() {
+    local depth="$1"
+
+    local legacy_root
+    legacy_root="$(legacy_worktree_root)"
+    [[ -d "${legacy_root}" ]] || return 0
+
+    # A REVIEW_CODE_WORKTREE_DIR pointed at the old name makes the two roots one
+    # directory that the scan above already covered. Compare resolved paths, not
+    # spellings: a trailing slash, a `..`, or a worktrees -> .worktrees symlink
+    # all name the same directory, and reporting it here would hand the user
+    # `rm -rf` on the root their reviews are running in. The current root can be
+    # absent on a fresh install, which leaves current_real empty and differing.
+    local legacy_real current_real
+    legacy_real="$(cd "${legacy_root}" && pwd -P)"
+    current_real="$(cd "$(worktree_root)" 2> /dev/null && pwd -P)" || current_real=""
+    [[ "${legacy_real}" != "${current_real}" ]] || return 0
+
+    echo ""
+    warn "Found the pre-rename worktree root at ${legacy_root}."
+    echo "  Nothing writes there: #118 moved review worktrees to .worktrees."
+    echo "  Its name has no leading dot, so skill scanners that skip dot-directories"
+    echo "  count every file under it against this skill's file budget."
+
+    find_worktrees_under_root "${legacy_root}" "${depth}"
+    if [[ "${#REVIEW_WORKTREES[@]}" -gt 0 ]]; then
+        # No warning about an in-flight review: nothing has written here since
+        # the rename, so no review owns any of these.
+        print_worktree_removals "  To clean up (discards uncommitted work):" omit_plain_rm
+    else
+        echo "  To clean up:"
+    fi
+    # Deleting the checkouts leaves the root itself, and the root is the
+    # directory a scanner walks, so it needs its own command.
+    printf '    %s\n' "$(printf 'rm -rf %q' "${legacy_root}")"
 }
 
 check_old_installation() {
