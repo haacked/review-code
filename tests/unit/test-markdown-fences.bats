@@ -44,6 +44,8 @@ PY
     run python3 - <<'PY'
 from helpers.markdown_fences import FENCE, walk_fences
 
+assert [kind for _, _, kind in walk_fences(["``", "~~"])] == ["prose", "prose"]
+
 for marker in ["`", "~"]:
     for indent in range(4):
         opening = " " * indent + marker * 3 + "text"
