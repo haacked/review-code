@@ -44,6 +44,17 @@ set -euo pipefail
 #     "drift_detected": false,
 #     "annotated_count": 5                    (comments whose id was recorded in review_file)
 #   }
+#
+# If the review is created but its comment ids cannot all be recorded, the
+# script exits nonzero and returns the created review metadata:
+#   {
+#     "success": false,
+#     "error": "...",
+#     "review_id": 12345,
+#     "review_url": "https://github.com/org/repo/pull/123#pullrequestreview-12345",
+#     "inline_count": 5,
+#     "annotated_count": 4
+#   }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/helpers/error-helpers.sh
