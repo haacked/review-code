@@ -11,7 +11,7 @@ Loaded when the session JSON's `chunk_metadata.chunked` is `true`: the diff was 
 1. **Prepare artifacts, then analyze each chunk:**
 
    ```bash
-   python3 ~/.agents/skills/review-code/scripts/prepare-chunk-artifacts.py "$SESSION_FILE"
+   ~/.agents/skills/review-code/scripts/prepare-chunk-artifacts.py "$SESSION_FILE"
    ```
 
    Require success before dispatch. Keep the returned `manifest_path` and `chunks` entries. Each entry includes `metadata_path`, `analysis_path`, and `diff_lines`. The helper writes metadata for only that chunk's files and a compact cross-chunk manifest with file ownership and artifact paths. It does not copy architectural context or analysis bodies.
