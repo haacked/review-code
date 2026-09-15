@@ -176,11 +176,16 @@ If `$finding_publication.all_withheld` is true, keep `$selected_indices` empty a
 EOF
 ```
 
-3. **Build the draft input executable**: Use `jq -n` to write `<artifacts_dir>/draft-assembly-input.json` with the complete `$finding_publication`, `$selected_indices`, the mapper's `mappings` array, and a `context` object containing the session values shown below. For a delta review, include `append: true` and `original_diff_path: $diff_path`; the executable derives the touched paths used to preserve pending comments on untouched files.
-
-Run:
+3. **Assemble the draft input**: Write `<artifacts_dir>/draft-context.json` as an object containing the session values shown in step 4, excluding `comments` and `unmapped_comments`. For a delta review, include `append: true` and `original_diff_path: $diff_path` in that context; the executable derives the touched paths used to preserve pending comments on untouched files. The assembly input has four top-level keys: `publication` (the complete `$finding_publication` object), `selected_indices` (an integer array), `mappings` (the mapper's array), and `context` (the session object). Build it from the saved files and run:
 
 ```bash
+jq -n \
+  --slurpfile publication "<artifacts_dir>/finding-publication.json" \
+  --slurpfile selected_indices "<artifacts_dir>/draft-selected-indices.json" \
+  --slurpfile mapper "<artifacts_dir>/draft-mappings.json" \
+  --slurpfile context "<artifacts_dir>/draft-context.json" \
+  '{publication: $publication[0], selected_indices: $selected_indices[0], mappings: $mapper[0].mappings, context: $context[0]}' \
+  > "<artifacts_dir>/draft-assembly-input.json"
 ~/.agents/skills/review-code/scripts/finding-comment-contract.py draft \
   "<artifacts_dir>/draft-assembly-input.json" \
   > "<artifacts_dir>/draft-input.json"

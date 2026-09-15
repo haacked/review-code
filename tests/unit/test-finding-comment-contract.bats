@@ -203,6 +203,71 @@ write_verdict() {
     [ "$(echo "$output" | jq -r '.withheld[0].publishable')" = "false" ]
 }
 
+@test "finding contract: every coverage key is required even in concise mode" {
+    desired=$(jq -c '.desired_description' "$FIXTURE")
+    write_finding "$desired"
+    "$CONTRACT" compose "$INPUT" > "$COMPOSED"
+    write_verdict PASS false true true
+
+    for field in problem trigger mechanism result requested_change regression_case; do
+        jq --arg field "$field" '.[0].coverage |= del(.[$field])' "$VERDICTS" > "$BATS_TEST_TMPDIR/incomplete.json"
+
+        run "$CONTRACT" gate "$COMPOSED" "$BATS_TEST_TMPDIR/incomplete.json"
+
+        [ "$status" -eq 0 ]
+        [ "$(echo "$output" | jq '.findings | length')" -eq 0 ]
+        [ "$(echo "$output" | jq '.rewrites_needed | length')" -eq 0 ]
+        [ "$(echo "$output" | jq -r '.withheld[0].quality_state')" = "gate_error" ]
+    done
+}
+
+@test "finding contract: regression alias is a malformed gate response" {
+    desired=$(jq -c '.desired_description' "$FIXTURE")
+    write_finding "$desired"
+    "$CONTRACT" compose "$INPUT" > "$COMPOSED"
+    write_verdict PASS false true true
+    jq '.[0].coverage |= (.regression = .regression_case | del(.regression_case))' "$VERDICTS" > "$BATS_TEST_TMPDIR/alias.json"
+
+    run "$CONTRACT" gate --final "$COMPOSED" "$BATS_TEST_TMPDIR/alias.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.findings | length')" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.withheld[0].quality_state')" = "gate_error" ]
+}
+
+@test "finding contract: unknown coverage keys are a malformed gate response" {
+    desired=$(jq -c '.desired_description' "$FIXTURE")
+    write_finding "$desired"
+    "$CONTRACT" compose "$INPUT" > "$COMPOSED"
+    write_verdict PASS false true true
+    jq '.[0].coverage.regression = true' "$VERDICTS" > "$BATS_TEST_TMPDIR/extra.json"
+
+    run "$CONTRACT" gate --final "$COMPOSED" "$BATS_TEST_TMPDIR/extra.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.findings | length')" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.withheld[0].quality_state')" = "gate_error" ]
+}
+
+@test "finding contract: coverage values must be booleans including optional facts" {
+    desired=$(jq -c '.desired_description' "$FIXTURE")
+    write_finding "$desired"
+    "$CONTRACT" compose "$INPUT" > "$COMPOSED"
+    write_verdict PASS false true true
+
+    for field in problem regression_case; do
+        for value in '"true"' 1 null; do
+            jq --arg field "$field" --argjson value "$value" '.[0].coverage[$field] = $value' "$VERDICTS" > "$BATS_TEST_TMPDIR/nonboolean.json"
+
+            run "$CONTRACT" gate --final "$COMPOSED" "$BATS_TEST_TMPDIR/nonboolean.json"
+
+            [ "$status" -eq 0 ]
+            [ "$(echo "$output" | jq '.findings | length')" -eq 0 ]
+            [ "$(echo "$output" | jq -r '.withheld[0].quality_state')" = "gate_error" ]
+        done
+    done
+}
+
 @test "finding contract: a final rewrite verdict is withheld instead of restoring the original" {
     bad=$(jq -c '.bad_description' "$FIXTURE")
     write_finding "$bad"

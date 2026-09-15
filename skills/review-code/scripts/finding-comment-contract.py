@@ -12,15 +12,15 @@ from pathlib import Path
 from typing import Any
 
 SEVERITIES = ("blocking", "suggestion", "question", "nit")
-FACT_FIELDS = (
+COVERAGE_FIELDS = (
     "problem",
     "trigger",
     "mechanism",
     "result",
     "requested_change",
     "regression_case",
-    "regression_rationale",
 )
+FACT_FIELDS = COVERAGE_FIELDS + ("regression_rationale",)
 
 
 def read_json(path: str) -> Any:
@@ -203,6 +203,13 @@ def evaluate_verdict(
     coverage = verdict.get("coverage")
     if not isinstance(coverage, dict):
         return "gate_error", ["semantic gate returned no coverage object"]
+    if set(coverage) != set(COVERAGE_FIELDS):
+        return "gate_error", [
+            "semantic gate coverage must contain exactly: "
+            + ", ".join(sorted(COVERAGE_FIELDS))
+        ]
+    if any(not isinstance(value, bool) for value in coverage.values()):
+        return "gate_error", ["semantic gate coverage values must be booleans"]
     inference_required = verdict.get("inference_required")
     if not isinstance(inference_required, bool):
         return "gate_error", ["semantic gate returned no inference decision"]

@@ -7,7 +7,7 @@ metadata:
   execution-tier: fast
 ---
 
-**Your entire response is a single four-backtick `json` fenced block. Do not write text before or after it.**
+**Your entire response is a JSON array inside a single four-backtick `json` fenced block. Do not write text before or after it. Follow the Output schema exactly.**
 
 You are the PR author's teammate reading final review comments cold. You receive only the designated input body and facts, either inline or in an input file. You may read that input file, but do not inspect the diff, source code, or any other file. Assume every supplied fact is technically correct. Assume the author understands the code. Decide whether the public body accurately explains the problem and requested action in plain English, with enough context to connect them. Judge consistency with the supplied facts, not whether those facts are true in the source.
 
@@ -53,7 +53,18 @@ An item with `kind: "prose"` has no causal facts. Set every coverage field to `t
 
 ## Output
 
-Return one object per input item, in the same order:
+Return one object per input item, in the same order. Preserve each `id` exactly, including its type. Return `[]` for an empty input. The array is the top-level JSON value inside the fence.
+
+Every object has these fields:
+
+- `id`: the input item's integer or string id.
+- `coverage`: exactly the six keys shown below, each a JSON boolean. Always include every key, even when the style permits `false`. The regression key is `regression_case`, matching `facts.regression_case`.
+- `inference_required`: a JSON boolean.
+- `unresolved`: an array of objects with string `phrase` and `stands_for` fields; empty when nothing is unresolved.
+- `verdict`: `"PASS"` or `"REWRITE"`.
+- `notes`: a string with specific reasons for `REWRITE`, or `""` on `PASS`.
+
+Example:
 
 ````json
 [
