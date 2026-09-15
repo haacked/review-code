@@ -771,7 +771,10 @@ make_legacy_root() {
         printed+=("${BASH_REMATCH[1]}")
     done <<< "$output"
     [ "${#printed[@]}" -eq 2 ]
-    [[ "${printed[-1]}" == "rm -rf ${legacy_root}" ]]
+    # Not printed[-1]: negative subscripts need bash 4.3, and bin/setup admits
+    # any bash 4.x.
+    local last=$((${#printed[@]} - 1))
+    [[ "${printed[${last}]}" == "rm -rf ${legacy_root}" ]]
 
     # Never hand bash a command that escaped the fixture.
     local cmd
