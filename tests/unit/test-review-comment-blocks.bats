@@ -219,6 +219,48 @@ annotate() {
     [[ "$output" != *'"error": null'* ]]
 }
 
+@test "read: nested fences preserve the complete body and quoted headings" {
+    cat > "$REVIEW" <<'EOF'
+#### `src/example.py:12` <!-- pc:777 PRRC_aaa -->
+
+   ~~~~text
+The example includes Markdown:
+~~~markdown
+#### `docs/quoted.md:9` <!-- pc:888 PRRC_bbb -->
+~~~
+`````
+~~~~ trailing text
+BODY_END
+  ~~~~~
+
+#### `src/next.py:13` <!-- pc:999 PRRC_ccc -->
+
+```text
+The next body.
+```
+EOF
+    run python3 "$SCRIPT" read --review-file "$REVIEW"
+    [ "$status" -eq 0 ]
+    jq -e '.comments | length == 2' <<<"$output"
+    jq -e '.comments[0] | .id == 777 and (.body | contains("#### `docs/quoted.md:9`")) and (.body | endswith("BODY_END"))' <<<"$output"
+    jq -e '.comments[1] | .id == 999 and .body == "The next body."' <<<"$output"
+}
+
+@test "body_span returns no range for an unterminated fence or an intervening boundary" {
+    run python3 - "$SCRIPT" <<'PY'
+import runpy
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(sys.argv[1]).parent))
+body_span = runpy.run_path(sys.argv[1])["body_span"]
+assert body_span(["heading", "````text", "body", "```", "# quoted"], 1) == (None, None)
+for boundary in ["# Next section", "---"]:
+    assert body_span(["heading", "", boundary, "```text", "other", "```"], 1) == (None, None)
+PY
+    [ "$status" -eq 0 ]
+}
+
 # =============================================================================
 # set-body
 # =============================================================================

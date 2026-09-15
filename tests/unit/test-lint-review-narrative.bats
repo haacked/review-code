@@ -192,6 +192,54 @@ EOF
     [[ "$(echo "$output" | field "['count']")" == "0" ]]
 }
 
+@test "lint-review-narrative: nested examples cannot end a finding or change report lines" {
+    write_review <<'EOF'
+## Testing Review
+
+`blocking`: replace the call.
+
+````markdown
+```diff
+--- a/cache.py
+## Overview
+```
+```` trailing text
+---
+`````
+
+This leverages the existing channel.
+
+---
+
+The cache leverages the helper.
+EOF
+    run "$NARRATIVE" "$REVIEW"
+    [ "$status" -eq 0 ]
+    jq -e '.count == 1 and .warnings[0].line == 18 and .warnings[0].category == "ai_vocabulary"' <<<"$output"
+}
+
+@test "lint-review-narrative: nested Lint notes headings survive annotation" {
+    write_review <<'EOF'
+## Overview
+
+The cache clears on write.
+
+~~~~markdown
+~~~
+## Lint notes
+Keep the quoted notes.
+~~~
+~~~~~
+
+The cache clears on read.
+EOF
+    before="$(checksum "$REVIEW")"
+    run "$NARRATIVE" --annotate "$REVIEW"
+    [ "$status" -eq 0 ]
+    jq -e '.count == 0 and .annotated == false' <<<"$output"
+    [ "$before" = "$(checksum "$REVIEW")" ]
+}
+
 # Reviews separate the severity token with an em dash as often as with a colon.
 # A colon-only opener left those bodies read as narrative, and their own em dash
 # came back as a warning against prose the voice pass had already gated.

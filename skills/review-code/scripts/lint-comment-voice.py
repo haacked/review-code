@@ -23,6 +23,11 @@ import sys
 from pathlib import Path
 from typing import Iterable, TypedDict
 
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parent / "helpers"))
+
+from markdown_fences import walk_fences  # noqa: E402
+
 # Rules drawn from agents/code-reviewer-voice.md, limited to what a regex can
 # judge without reading the surrounding code. Each pattern is prose-only: code,
 # URLs, and severity prefixes are masked before these run.
@@ -184,7 +189,6 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     for category, patterns in RAW_PATTERNS.items()
 }
 
-FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 METADATA_COMMENT = re.compile(r"<!--\s*review-metadata(?:\s[^-]*)?.*?-->", re.S)
 # Structural Markdown that should never be read as prose: section headers,
 # table rows and separators, horizontal rules, and boilerplate labels that name
@@ -252,16 +256,8 @@ def prose_lines(text: str) -> Iterable[tuple[int, str, str]]:
     # Newlines are preserved so reported line numbers still point at the file.
     text = METADATA_COMMENT.sub(lambda m: "\n" * m.group(0).count("\n"), text)
 
-    fence = ""
-    for line_number, line in enumerate(text.splitlines(), start=1):
-        marker = FENCE.match(line)
-        token = marker.group(1) if marker else ""
-        if fence:
-            if marker and token.startswith(fence) and not line[marker.end() :].strip():
-                fence = ""
-            continue
-        if token:
-            fence = token
+    for index, line, kind in walk_fences(text.splitlines()):
+        if kind != "prose":
             continue
 
         if (
@@ -273,7 +269,7 @@ def prose_lines(text: str) -> Iterable[tuple[int, str, str]]:
             continue
 
         prose = URL.sub("", INLINE_CODE.sub("", strip_severity_prefix(line)))
-        yield line_number, line, prose
+        yield index + 1, line, prose
 
 
 def strip_severity_prefix(prose: str) -> str:
