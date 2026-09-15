@@ -198,7 +198,8 @@ def evaluate_verdict(
 ) -> tuple[str, list[str]]:
     if verdict is None:
         return "gate_error", ["semantic gate returned no unique verdict"]
-    if verdict.get("verdict") not in {"PASS", "REWRITE"}:
+    verdict_value = verdict.get("verdict")
+    if not isinstance(verdict_value, str) or verdict_value not in {"PASS", "REWRITE"}:
         return "gate_error", ["semantic gate returned an invalid verdict"]
     coverage = verdict.get("coverage")
     if not isinstance(coverage, dict):
@@ -213,11 +214,21 @@ def evaluate_verdict(
     inference_required = verdict.get("inference_required")
     if not isinstance(inference_required, bool):
         return "gate_error", ["semantic gate returned no inference decision"]
+    unresolved = verdict.get("unresolved")
+    if not isinstance(unresolved, list) or any(
+        not isinstance(item, dict)
+        or not isinstance(item.get("phrase"), str)
+        or not isinstance(item.get("stands_for"), str)
+        for item in unresolved
+    ):
+        return "gate_error", ["semantic gate returned invalid unresolved phrases"]
+    if not isinstance(verdict.get("notes"), str):
+        return "gate_error", ["semantic gate returned invalid notes"]
 
     uncovered = [
         field for field in applicable_coverage(item) if coverage.get(field) is not True
     ]
-    if verdict["verdict"] == "PASS" and not inference_required and not uncovered:
+    if verdict_value == "PASS" and not inference_required and not uncovered:
         return "passed", []
 
     reasons = []
@@ -225,7 +236,7 @@ def evaluate_verdict(
         reasons.append(f"body does not explicitly cover: {', '.join(uncovered)}")
     if inference_required:
         reasons.append("body requires the reader to infer a causal relationship")
-    if verdict["verdict"] == "REWRITE":
+    if verdict_value == "REWRITE":
         reasons.append(
             text(verdict.get("notes")) or "semantic gate requested a rewrite"
         )

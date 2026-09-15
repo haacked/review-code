@@ -44,6 +44,7 @@ write_verdict() {
                 regression_case: true
             },
             inference_required: $inference_required,
+            unresolved: [],
             verdict: $verdict,
             notes: (if $verdict == "PASS" then "" else "The causal relationship is not explicit." end)
         }]' > "$VERDICTS"
@@ -178,6 +179,7 @@ write_verdict() {
         id: 2,
         coverage: {problem: true, trigger: true, mechanism: true, result: true, requested_change: true, regression_case: true},
         inference_required: false,
+        unresolved: [],
         verdict: "PASS",
         notes: ""
     }]' > "$VERDICTS"
@@ -265,6 +267,53 @@ write_verdict() {
             [ "$(echo "$output" | jq '.findings | length')" -eq 0 ]
             [ "$(echo "$output" | jq -r '.withheld[0].quality_state')" = "gate_error" ]
         done
+    done
+}
+
+@test "finding contract: every top-level verdict field is required" {
+    desired=$(jq -c '.desired_description' "$FIXTURE")
+    write_finding "$desired"
+    "$CONTRACT" compose "$INPUT" > "$COMPOSED"
+    write_verdict PASS false true true
+
+    for field in verdict coverage inference_required unresolved notes; do
+        jq --arg field "$field" '.[0] |= del(.[$field])' "$VERDICTS" > "$BATS_TEST_TMPDIR/missing-verdict-field.json"
+
+        run "$CONTRACT" gate "$COMPOSED" "$BATS_TEST_TMPDIR/missing-verdict-field.json"
+
+        [ "$status" -eq 0 ]
+        [ "$(echo "$output" | jq '.findings | length')" -eq 0 ]
+        [ "$(echo "$output" | jq '.rewrites_needed | length')" -eq 0 ]
+        [ "$(echo "$output" | jq -r '.withheld[0].quality_state')" = "gate_error" ]
+    done
+}
+
+@test "finding contract: top-level verdict fields must use their declared types" {
+    desired=$(jq -c '.desired_description' "$FIXTURE")
+    write_finding "$desired"
+    "$CONTRACT" compose "$INPUT" > "$COMPOSED"
+    write_verdict PASS false true true
+
+    for filter in \
+        '.[0].verdict = 1' \
+        '.[0].verdict = []' \
+        '.[0].verdict = {}' \
+        '.[0].inference_required = "false"' \
+        '.[0].unresolved = {}' \
+        '.[0].unresolved = [null]' \
+        '.[0].unresolved = [{phrase: "ambiguous"}]' \
+        '.[0].unresolved = [{stands_for: "the concrete behavior"}]' \
+        '.[0].unresolved = [{phrase: 1, stands_for: "the concrete behavior"}]' \
+        '.[0].unresolved = [{phrase: "ambiguous", stands_for: 1}]' \
+        '.[0].notes = null'; do
+        jq "$filter" "$VERDICTS" > "$BATS_TEST_TMPDIR/malformed-verdict-field.json"
+
+        run "$CONTRACT" gate "$COMPOSED" "$BATS_TEST_TMPDIR/malformed-verdict-field.json"
+
+        [ "$status" -eq 0 ]
+        [ "$(echo "$output" | jq '.findings | length')" -eq 0 ]
+        [ "$(echo "$output" | jq '.rewrites_needed | length')" -eq 0 ]
+        [ "$(echo "$output" | jq -r '.withheld[0].quality_state')" = "gate_error" ]
     done
 }
 
@@ -703,6 +752,7 @@ EOF
             id: .id,
             coverage: {problem: true, trigger: true, mechanism: true, result: true, requested_change: true, regression_case: true},
             inference_required: false,
+            unresolved: [],
             verdict: "PASS",
             notes: ""
         })' "$INPUT" > "$VERDICTS"

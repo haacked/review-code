@@ -22,18 +22,6 @@ PY
 }
 
 @test "handler contracts: documented agent-report helper preserves raw findings" {
-    helper=$(
-        python3 - "$SKILL/handlers/review.md" "$SKILL" << 'PY'
-import re
-import sys
-from pathlib import Path
-
-document, skill = sys.argv[1:]
-match = re.search(r"`(~/.agents/skills/review-code/scripts/[^`]*agent-report\.sh)(?: |`)", Path(document).read_text())
-assert match, "review handler must name the installed agent-report helper path"
-print(match[1].replace("~/.agents/skills/review-code", skill))
-PY
-    )
     cat > "$ARTIFACTS/raw.md" << 'EOF'
 #### `src/example.py:42`
 
@@ -45,8 +33,10 @@ Use `$value` without expanding it.
 
 Location: src/example.py:42 | Confidence: 95%
 EOF
+    extract_documented_block "$SKILL/handlers/review.md" bash agent-report.sh \
+        | sed 's/<agent-name>/correctness/g' > "$ARTIFACTS/agent-report.sh"
 
-    run bash -c '"$1" "$2" < "$3"' _ "$helper" "$ARTIFACTS/findings/correctness.md" "$ARTIFACTS/raw.md"
+    run bash -e "$ARTIFACTS/agent-report.sh" < "$ARTIFACTS/raw.md"
 
     [ "$status" -eq 0 ]
     cmp "$ARTIFACTS/raw.md" "$ARTIFACTS/findings/correctness.md"
