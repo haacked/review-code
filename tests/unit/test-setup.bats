@@ -545,8 +545,13 @@ run_migrate_state_dirs() {
 
 # Extract and run check_orphan_worktrees from bin/setup against a temp worktree
 # root. SCRIPT_DIR points at the repo so the function finds worktree-layout.sh.
+# HOME is redirected at a scratch directory the caller can populate: the legacy
+# root resolves through resolve_skill_dir, so the real HOME would leak a
+# developer's own pre-rename worktrees into every assertion here.
 run_check_orphan_worktrees() {
     local root="$1"
+    local fake_home="${2:-${TEST_TEMP_DIR}/fakehome}"
+    mkdir -p "${fake_home}"
     run bash -c "
         set -euo pipefail
         info() { :; }
@@ -554,10 +559,25 @@ run_check_orphan_worktrees() {
         warn() { echo \"\$*\"; }
         error() { echo \"\$*\"; }
         SCRIPT_DIR='${PROJECT_ROOT}'
+        HOME='${fake_home}'
         REVIEW_CODE_WORKTREE_DIR='${root}'
-        source <(sed -n '/^check_orphan_worktrees()/,/^}/p' '$PROJECT_ROOT/bin/setup')
+        source <(sed -n \
+            -e '/^REVIEW_WORKTREES=()/p' \
+            -e '/^find_worktrees_under_root()/,/^}/p' \
+            -e '/^print_worktree_removals()/,/^}/p' \
+            -e '/^check_orphan_worktrees()/,/^}/p' \
+            -e '/^check_legacy_worktree_root()/,/^}/p' \
+            '$PROJECT_ROOT/bin/setup')
         check_orphan_worktrees
     "
+}
+
+# Create the pre-rename worktree root inside a fake HOME and echo its path.
+make_legacy_root() {
+    local fake_home="$1"
+    local legacy_root="${fake_home}/.agents/skills/review-code/worktrees"
+    mkdir -p "${legacy_root}"
+    echo "${legacy_root}"
 }
 
 @test "setup: check_orphan_worktrees suggests a command that removes a locked, dirty worktree" {
@@ -693,6 +713,201 @@ run_check_orphan_worktrees() {
 
     [ "$status" -eq 0 ]
     [ -z "$output" ]
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
+@test "setup: check_orphan_worktrees clears a registered worktree under the pre-rename root" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    local clone="${TEST_TEMP_DIR}/clone"
+    git init --quiet "${clone}"
+    git -C "${clone}" config commit.gpgsign false
+    git -C "${clone}" config user.email "test@example.com"
+    git -C "${clone}" config user.name "Test User"
+    echo "hello" > "${clone}/file.txt"
+    git -C "${clone}" add file.txt
+    git -C "${clone}" commit --quiet -m "initial"
+
+    local root="${TEST_TEMP_DIR}/worktrees"
+    mkdir -p "${root}"
+    local fake_home="${TEST_TEMP_DIR}/fakehome"
+    local legacy_root
+    legacy_root="$(make_legacy_root "${fake_home}")"
+
+    # The realistic leftover. #118 changed three code files and moved nothing on
+    # disk, so a checkout provisioned before it still has a live .git pointer
+    # into a clone that still exists. Locked and dirty on top, the way a crashed
+    # review leaves one.
+    local wt="${legacy_root}/myorg/myrepo/pr-67468"
+    mkdir -p "$(dirname "${wt}")"
+    git -C "${clone}" worktree add --detach --quiet "${wt}" HEAD
+    git -C "${clone}" worktree lock "${wt}" --reason "locked by external tool"
+    rm -f "${wt}/file.txt"
+
+    # The .git pointer records the resolved path (mktemp -d hands out a
+    # symlinked /var/… path on macOS), and the printed command has to match it.
+    local clone_real
+    clone_real=$(cd "${clone}" && pwd -P)
+
+    run_check_orphan_worktrees "${root}" "${fake_home}"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"${legacy_root}"* ]]
+    [[ "$output" == *"${wt}"* ]]
+    [[ "$output" == *"git -C ${clone_real} "* ]]
+
+    # Deleting the root covers this path already, so a per-entry rm is a line
+    # the user runs for nothing.
+    [[ "$output" != *"rm -rf ${wt}"* ]]
+    # Nothing has written here since the rename, so no review owns this one and
+    # the in-flight warning the current root carries would misread.
+    [[ "$output" != *"running right now"* ]]
+
+    # The root must go last: a git command against a worktree already deleted by
+    # an earlier line would exit non-zero and strand the registration.
+    local -a printed=()
+    local line
+    while IFS= read -r line; do
+        [[ "${line}" =~ ^[[:space:]]+((git|rm)[[:space:]].*)$ ]] || continue
+        printed+=("${BASH_REMATCH[1]}")
+    done <<< "$output"
+    [ "${#printed[@]}" -eq 2 ]
+    [[ "${printed[-1]}" == "rm -rf ${legacy_root}" ]]
+
+    # Never hand bash a command that escaped the fixture.
+    local cmd
+    for cmd in "${printed[@]}"; do
+        [[ "${cmd}" == *"${TEST_TEMP_DIR}"* ]]
+        run bash -c "${cmd}"
+        [ "$status" -eq 0 ]
+    done
+
+    [ ! -d "${legacy_root}" ]
+    # A plain delete of a registered worktree would leave this behind.
+    run git -C "${clone}" worktree list --porcelain
+    [[ "$output" != *"${wt}"* ]]
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
+@test "setup: check_orphan_worktrees reports an unregistered directory under the pre-rename root" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    local root="${TEST_TEMP_DIR}/worktrees"
+    mkdir -p "${root}"
+    local fake_home="${TEST_TEMP_DIR}/fakehome"
+    local legacy_root
+    legacy_root="$(make_legacy_root "${fake_home}")"
+
+    # The owning clone was re-cloned or moved away at some point, so git has no
+    # record of this one and only the root removal can clear it.
+    local wt="${legacy_root}/myorg/myrepo/pr-67468"
+    mkdir -p "${wt}"
+    echo "leftover" > "${wt}/stale-artifact"
+
+    run_check_orphan_worktrees "${root}" "${fake_home}"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"${wt}"* ]]
+    [[ "$output" == *"not a registered worktree"* ]]
+    [[ "$output" != *"rm -rf ${wt}"* ]]
+    [[ "$output" != *"running right now"* ]]
+
+    run bash -c "$(grep -o "rm -rf .*${legacy_root}\$" <<< "$output" | tail -1)"
+    [ "$status" -eq 0 ]
+    [ ! -d "${legacy_root}" ]
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
+@test "setup: check_orphan_worktrees reports an empty pre-rename root" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    local root="${TEST_TEMP_DIR}/worktrees"
+    mkdir -p "${root}"
+    local fake_home="${TEST_TEMP_DIR}/fakehome"
+    local legacy_root
+    legacy_root="$(make_legacy_root "${fake_home}")"
+
+    # Holding no checkouts doesn't make it harmless: the directory itself is
+    # what the scanner walks, so an empty one still has to be named.
+    run_check_orphan_worktrees "${root}" "${fake_home}"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"${legacy_root}"* ]]
+
+    run bash -c "$(grep -o "rm -rf .*${legacy_root}\$" <<< "$output" | tail -1)"
+    [ "$status" -eq 0 ]
+    [ ! -d "${legacy_root}" ]
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
+@test "setup: check_orphan_worktrees is silent when no pre-rename root exists" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    local root="${TEST_TEMP_DIR}/worktrees"
+    mkdir -p "${root}"
+    local fake_home="${TEST_TEMP_DIR}/fakehome"
+    mkdir -p "${fake_home}/.agents/skills/review-code"
+
+    run_check_orphan_worktrees "${root}" "${fake_home}"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
+@test "setup: check_orphan_worktrees spots the two roots are one directory through a trailing slash" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    local fake_home="${TEST_TEMP_DIR}/fakehome"
+    local legacy_root
+    legacy_root="$(make_legacy_root "${fake_home}")"
+    mkdir -p "${legacy_root}/myorg/myrepo/pr-9"
+
+    # Same directory, different spelling. Comparing the strings would report it
+    # as a leftover and hand the user `rm -rf` on the root in active use.
+    run_check_orphan_worktrees "${legacy_root}/" "${fake_home}"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"pre-rename worktree root"* ]]
+    # Anchored: the current root's own scan prints a per-entry rm under this
+    # path, and a substring test would match that and pass for the wrong reason.
+    run grep -qE "^[[:space:]]*rm -rf ${legacy_root}/?\$" <<< "$output"
+    [ "$status" -ne 0 ]
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
+@test "setup: check_orphan_worktrees spots the two roots are one directory through a symlink" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    local fake_home="${TEST_TEMP_DIR}/fakehome"
+    local skill_dir="${fake_home}/.agents/skills/review-code"
+    mkdir -p "${skill_dir}/.worktrees/myorg/myrepo/pr-9"
+    # A compatibility symlink left by someone smoothing over the rename by hand.
+    ln -s ".worktrees" "${skill_dir}/worktrees"
+
+    run_check_orphan_worktrees "${skill_dir}/.worktrees" "${fake_home}"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"pre-rename worktree root"* ]]
+    # Deleting the symlink is harmless, but the caption claiming nothing writes
+    # there would be describing the live root.
+    run grep -qE "^[[:space:]]*rm -rf ${skill_dir}/worktrees/?\$" <<< "$output"
+    [ "$status" -ne 0 ]
+
+    rm -rf "${TEST_TEMP_DIR}"
+}
+
+@test "setup: check_orphan_worktrees reports a worktree once when both roots are one directory" {
+    TEST_TEMP_DIR=$(mktemp -d)
+    local fake_home="${TEST_TEMP_DIR}/fakehome"
+    local legacy_root
+    legacy_root="$(make_legacy_root "${fake_home}")"
+
+    # REVIEW_CODE_WORKTREE_DIR pointed at the old name makes the two roots the
+    # same directory, and reporting it twice would read as two leftovers.
+    local wt="${legacy_root}/myorg/myrepo/pr-9"
+    mkdir -p "${wt}"
+
+    run_check_orphan_worktrees "${legacy_root}" "${fake_home}"
+    [ "$status" -eq 0 ]
+    # Count the reports, not the lines naming the path: a registered worktree
+    # names it on both its listing line and its `git worktree remove` line.
+    [ "$(grep -c "review worktree(s) under\|pre-rename worktree root" <<< "$output")" -eq 1 ]
+    [[ "$output" != *"pre-rename worktree root"* ]]
 
     rm -rf "${TEST_TEMP_DIR}"
 }

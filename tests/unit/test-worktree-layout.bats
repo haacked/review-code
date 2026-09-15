@@ -18,6 +18,21 @@ setup() {
     [ "$output" = "$HOME/.agents/skills/review-code/.worktrees" ]
 }
 
+@test "legacy_worktree_root: is the pre-#118 sibling of the current root" {
+    unset REVIEW_CODE_WORKTREE_DIR
+    run legacy_worktree_root
+    [ "$status" -eq 0 ]
+    [ "$output" = "$HOME/.agents/skills/review-code/worktrees" ]
+}
+
+@test "legacy_worktree_root: ignores REVIEW_CODE_WORKTREE_DIR" {
+    # An override names a directory #118 left alone, so it holds no leftovers.
+    # Letting it move this path would point cleanup at the root in active use.
+    REVIEW_CODE_WORKTREE_DIR="$BATS_TEST_TMPDIR/elsewhere" run legacy_worktree_root
+    [ "$status" -eq 0 ]
+    [ "$output" = "$HOME/.agents/skills/review-code/worktrees" ]
+}
+
 @test "worktree_root: falls back to ~/.claude/skills/review-code/.worktrees on legacy installs" {
     unset REVIEW_CODE_WORKTREE_DIR
     # resolve_skill_dir prefers the canonical location; create only the
