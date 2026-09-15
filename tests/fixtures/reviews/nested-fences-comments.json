@@ -1,0 +1,30 @@
+[
+  {
+    "id": 777,
+    "node_id": "PRRC_aaa",
+    "path": "src/auth.ts",
+    "line": 42,
+    "body": "Validate the token first."
+  },
+  {
+    "id": 888,
+    "node_id": "PRRC_bbb",
+    "path": "src/db.py",
+    "line": 12,
+    "body": "Keep the query inside the transaction:\n\n```python\nwith transaction.atomic():\n    save()\n```\n\nOtherwise the update can commit alone."
+  },
+  {
+    "id": 999,
+    "node_id": "PRRC_ccc",
+    "path": "docs/example.md",
+    "line": 9,
+    "body": "Keep this Markdown example intact:\n\n````markdown\n#### `quoted/path.py:9`\n\n```python\nsave()\n```\n````\n\nThe surrounding text belongs to the same comment."
+  },
+  {
+    "id": 1000,
+    "node_id": "PRRC_ddd",
+    "path": "src/after.ts",
+    "line": 25,
+    "body": "Check the result before returning."
+  }
+]

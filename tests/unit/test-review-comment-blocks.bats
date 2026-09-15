@@ -123,6 +123,49 @@ annotate() {
     [[ "$output" == *'999'* ]]
 }
 
+@test "annotate: longer outer fences preserve nested code and surrounding findings" {
+    local fixture_dir="$PROJECT_ROOT/tests/fixtures/reviews"
+    cp "$fixture_dir/nested-fences.md" "$REVIEW"
+    before=$("$PARSER" "$REVIEW" | jq -S -c '[.[] | {agent, file, line, description}]')
+
+    run bash -c 'python3 "$1" annotate --review-file "$2" < "$3"' _ \
+        "$SCRIPT" "$REVIEW" "$fixture_dir/nested-fences-comments.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated')" -eq 8 ]
+    [ "$(echo "$output" | jq '.unmatched | length')" -eq 0 ]
+    [ "$(grep -Ec '^#### `[^`]+` <!-- pc:[0-9]+ PRRC_[a-z]+ b:[0-9a-f]{8} -->$' "$REVIEW")" -eq 8 ]
+    [ "$(grep -c '^#### `quoted/path.py:9`$' "$REVIEW")" -eq 2 ]
+
+    actual=$(python3 "$SCRIPT" read --review-file "$REVIEW" | jq -S -c '[.comments[] | {id, node_id, path, line, body}] | sort_by(.id)')
+    expected=$(jq -S -c 'sort_by(.id)' "$fixture_dir/nested-fences-comments.json")
+    [ "$actual" = "$expected" ]
+    after=$("$PARSER" "$REVIEW" | jq -S -c '[.[] | {agent, file, line, description}]')
+    [ "$before" = "$after" ]
+}
+
+@test "annotate: counts posted comments separately from repeated finding blocks" {
+    local fixture_dir="$PROJECT_ROOT/tests/fixtures/reviews"
+    cp "$fixture_dir/nested-fences.md" "$REVIEW"
+    run bash -c 'python3 "$1" annotate --review-file "$2" < "$3"' _ \
+        "$SCRIPT" "$REVIEW" "$fixture_dir/nested-fences-comments.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated')" -eq 8 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 4 ]
+}
+
+@test "annotate: repeated blocks cannot hide an unmatched posted comment" {
+    write_duplicated_review
+    run annotate
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated')" -eq 2 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 1 ]
+    [ "$(echo "$output" | jq -c '[.unmatched[].id]')" = '[888]' ]
+    [ "$(grep -c 'pc:777 PRRC_aaa' "$REVIEW")" -eq 2 ]
+}
+
 # =============================================================================
 # Metadata header
 # =============================================================================

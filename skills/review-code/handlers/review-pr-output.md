@@ -72,9 +72,9 @@ When combining agent findings into the review document, add a "Suggested Comment
    - **Build upon existing**: Existing comment is related but incomplete
    - **Already covered**: Existing comment fully addresses the finding
 
-4. **Format the section** following this structure:
+4. **Format the section** following this structure. Apply the fence-length rule in `review-compose.md` to every body in New Comments and Build Upon Existing. The three-backtick body fences below are examples for bodies without inner fences:
 
-```markdown
+````markdown
 ---
 
 ## Suggested Comments
@@ -129,7 +129,7 @@ List findings where existing comments are sufficient:
 | New comments | X |
 | Build upon existing | Y |
 | Already covered | Z |
-```
+````
 
 5. **Append to review file**: Add the "Suggested Comments" section after the main review content. On the `delta` path it goes into the append file instead, alongside the rest of what this run composed (see `review-carry-forward.md`).
 
