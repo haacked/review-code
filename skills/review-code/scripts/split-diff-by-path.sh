@@ -42,20 +42,31 @@ fi
 LC_ALL=C awk -v out="${OUTPUT}" -v json_paths="${JSON_PATHS}" "$(git_diff_path_functions)"'
     FILENAME == "-" { wanted[$0] = 1; next }
 
-    /^diff --git / {
-        path = diff_header_path($0)
+    function emit_block(key) {
+        if (block == "") return
         key = json_paths == "true" ? json_quote(path) : path
-        keep = (key in wanted)
-        if (keep) {
+        if (key in wanted) {
+            printf "%s", block > out
             matched++
         } else {
             others = others (others == "" ? "" : ", ") key
         }
+        block = ""
     }
 
-    keep { print > out }
+    /^diff --git / {
+        emit_block()
+        path = diff_header_path($0)
+        block = $0 ORS
+        next
+    }
+
+    /^rename to / { path = diff_rename_path($0) }
+
+    { block = block $0 ORS }
 
     END {
+        emit_block()
         if (matched == 0) { exit 1 }
         if (others != "") {
             print "" > out

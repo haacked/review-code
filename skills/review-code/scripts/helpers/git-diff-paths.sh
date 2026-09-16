@@ -78,5 +78,38 @@ git_diff_path_functions() {
         sub(/[[:space:]]*$/, "", line)
         return substr(decode_git_path(line), 3)
     }
+
+    function diff_rename_path(line) {
+        return decode_git_path(substr(line, 11))
+    }
 AWK
+}
+
+git_diff_paths() {
+    LC_ALL=C awk "$(git_diff_path_functions)"'
+        function emit_file() {
+            if (path != "") printf "%s%c%s%c", deleted ? "true" : "false", 0, path, 0
+        }
+        /^diff --git / {
+            emit_file()
+            old_path = ""
+            deleted = in_hunk = 0
+            path = diff_header_path($0)
+            next
+        }
+        /^@@/ { in_hunk = 1 }
+        in_hunk { next }
+        /^deleted file mode / { deleted = 1 }
+        /^rename to / { path = diff_rename_path($0) }
+        /^--- "?a\// { old_path = diff_marker_path($0) }
+        /^\+\+\+ / {
+            if ($0 ~ /^\+\+\+ \/dev\/null([[:space:]]|$)/) {
+                path = old_path
+                deleted = 1
+            } else if ($0 ~ /^\+\+\+ "?b\//) {
+                path = diff_marker_path($0)
+            }
+        }
+        END { emit_file() }
+    '
 }

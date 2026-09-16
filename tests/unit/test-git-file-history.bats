@@ -177,6 +177,27 @@ teardown() {
     echo "$output" | jq -e '."second.txt"' > /dev/null
 }
 
+@test "git-file-history.sh: null-delimited input preserves newline paths and adjacent files" {
+    local path=$'retired\ncomponent.py'
+    printf '%s\n' 'retired = True' > "$path"
+    git add -- "$path"
+    git commit -m "Add newline path"
+
+    run bash -c 'printf "%s\0" "$1" file.txt | "$PROJECT_ROOT/skills/review-code/scripts/git-file-history.sh" --null' _ "$path"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e --arg path "$path" '
+        (keys | sort) == ([$path, "file.txt"] | sort)
+        and (.[$path] | .recent_commits == 1 and .recent_authors == 1 and .last_modified != null)
+        and .["file.txt"].recent_commits == 1
+    '
+}
+
+@test "git-file-history.sh: empty null-delimited input produces an empty object" {
+    run bash -c 'printf "" | "$PROJECT_ROOT/skills/review-code/scripts/git-file-history.sh" --null'
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '. == {}'
+}
+
 @test "git-file-history.sh: last_modified is a date string for tracked files" {
     run bash -c 'echo "file.txt" | "$PROJECT_ROOT/skills/review-code/scripts/git-file-history.sh"'
     [ "$status" -eq 0 ]

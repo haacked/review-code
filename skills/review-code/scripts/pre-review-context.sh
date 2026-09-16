@@ -163,31 +163,7 @@ while IFS= read -r -d '' deleted && IFS= read -r -d '' file; do
 
     printf '%s\0%s\0%s\0%s\0%s\0%s\0%s\0' \
         "${file}" "${deleted}" "${file_type}" "${language}" "${is_test}" "${is_infra_config}" "${likely_test_path}"
-done < <(LC_ALL=C awk "$(git_diff_path_functions)"'
-            function emit_file() {
-                if (path != "") printf "%s%c%s%c", deleted ? "true" : "false", 0, path, 0
-            }
-            /^diff --git / {
-                emit_file()
-                old_path = ""
-                deleted = in_hunk = 0
-                path = diff_header_path($0)
-                next
-            }
-            /^@@/ { in_hunk = 1 }
-            in_hunk { next }
-            /^deleted file mode / { deleted = 1 }
-            /^--- "?a\// { old_path = diff_marker_path($0) }
-            /^\+\+\+ / {
-                if ($0 ~ /^\+\+\+ \/dev\/null([[:space:]]|$)/) {
-                    path = old_path
-                    deleted = 1
-                } else if ($0 ~ /^\+\+\+ "?b\//) {
-                    path = diff_marker_path($0)
-                }
-            }
-            END { emit_file() }
-    ') | jq -Rs '
+done < <(git_diff_paths) | jq -Rs '
         split("\u0000")[:-1]
         | [range(0; length; 7) as $i | {
             path: .[$i],

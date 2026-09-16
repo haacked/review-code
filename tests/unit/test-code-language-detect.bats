@@ -40,6 +40,21 @@ EOF
     echo "$result" | jq -e '.file_extensions | contains([".tsx"])'
 }
 
+@test "detects TypeScript and frontend from a real quoted deletion" {
+    local repo="$BATS_TEST_TMPDIR/repo"
+    git init -q "$repo"
+    mkdir "$repo/frontend"
+    printf '%s\n' 'export const label = "retired"' > "$repo/frontend/café.tsx"
+    git -C "$repo" add .
+    rm "$repo/frontend/café.tsx"
+    git -C "$repo" -c core.quotePath=true diff --no-ext-diff --no-renames --src-prefix=a/ --dst-prefix=b/ > "$BATS_TEST_TMPDIR/deletion.patch"
+    grep -q '^--- "a/frontend/' "$BATS_TEST_TMPDIR/deletion.patch"
+
+    run bash -c '"$1" < "$2"' _ "$SCRIPT" "$BATS_TEST_TMPDIR/deletion.patch"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.languages == ["typescript"] and .file_extensions == [".tsx"] and .has_frontend == true'
+}
+
 @test "detects React framework from import statement" {
     diff=$(cat <<'EOF'
 diff --git a/Component.tsx b/Component.tsx

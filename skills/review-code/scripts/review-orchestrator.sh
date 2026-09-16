@@ -305,7 +305,7 @@ build_review_data() {
     # Compute git history metrics for modified files (only when inside a git repo)
     local git_history='{}'
     if [[ "${in_git_repo}" == "true" ]]; then
-        git_history=$(echo "${file_metadata}" | jq -r '.modified_files[].path' | "${SCRIPT_DIR}/git-file-history.sh")
+        git_history=$(echo "${file_metadata}" | jq -jr '.modified_files[] | .path, "\u0000"' | "${SCRIPT_DIR}/git-file-history.sh" --null)
 
         # Validate git_history is valid JSON (safety check)
         if ! echo "${git_history}" | jq empty 2> /dev/null; then

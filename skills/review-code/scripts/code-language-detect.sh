@@ -21,6 +21,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/helpers/debug-helpers.sh
 source "${SCRIPT_DIR}/helpers/debug-helpers.sh"
+# shellcheck source=helpers/git-diff-paths.sh
+source "${SCRIPT_DIR}/helpers/git-diff-paths.sh"
 
 debug_time "03-language-detection" "start"
 
@@ -29,18 +31,13 @@ diff_content=$(cat)
 
 debug_save "03-language-detection" "diff-input.txt" "${diff_content}"
 
-# Extract file paths from diff
-# Format: +++ b/path/to/file.ext or --- a/path/to/file.ext
-# grep returns 1 if no matches (which is fine), but we want to catch real errors
-file_paths=$(echo "${diff_content}" | { grep -E "^(\+\+\+|---) [ab]/" || test $? = 1; } | sed 's/^... [ab]\///; s/[[:space:]]*$//')
-
 # Detect languages from file extensions using associative arrays for O(1) lookups
 declare -A seen_languages
 declare -A seen_frameworks
 declare -A seen_extensions
 has_frontend=false
 
-while IFS= read -r file; do
+while IFS= read -r -d '' _deleted && IFS= read -r -d '' file; do
     [[ -z "${file}" ]] && continue
 
     # Extract extension
@@ -115,7 +112,7 @@ while IFS= read -r file; do
             has_frontend=true
             ;;
     esac
-done <<< "${file_paths}"
+done < <(printf '%s' "${diff_content}" | git_diff_paths)
 
 # Convert associative arrays to indexed arrays for JSON output
 languages=("${!seen_languages[@]}")

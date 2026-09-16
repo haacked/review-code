@@ -63,6 +63,65 @@ build_selected_briefing() {
     [ "$status" -eq 0 ]
 }
 
+write_real_rename_diff() {
+    local repo="$BATS_TEST_TMPDIR/repo" destination="$1"
+    git init -q "$repo"
+    mkdir "$repo/old b"
+    printf '%s\n' 'count = 1' > "$repo/old b/foo.tf"
+    git -C "$repo" add .
+    git -C "$repo" -c commit.gpgsign=false -c user.name="Test User" -c user.email="test@example.com" commit -qm "Add infrastructure"
+    git -C "$repo" mv 'old b/foo.tf' "$destination"
+    git -C "$repo" -c core.quotePath=true diff --cached --find-renames=100% --no-ext-diff --src-prefix=a/ --dst-prefix=b/ > "$ARTIFACTS/diff.patch"
+    grep -q '^similarity index 100%$' "$ARTIFACTS/diff.patch"
+    ! grep -q '^--- ' "$ARTIFACTS/diff.patch"
+}
+
+@test "pure rename with b slash in the old path records the destination metadata" {
+    write_real_rename_diff new.tf
+    prepare_session false
+
+    jq -e '.file_metadata | .file_count == 1 and .deleted_file_count == 0 and .modified_files == [{path: "new.tf", deleted: false, type: "config", language: "unknown", is_test: false, is_infra_config: true, likely_test_path: ""}]' "$SESSION_FILE"
+}
+
+@test "pure rename with b slash in the old path retains the complete scoped patch" {
+    write_real_rename_diff new.tf
+
+    run bash -c 'printf "%s\n" new.tf | "$1/split-diff-by-path.sh" "$2/diff.patch" "$2/diff-infra-config.patch"' _ "$SCRIPTS" "$ARTIFACTS"
+    [ "$status" -eq 0 ]
+    cmp "$ARTIFACTS/diff.patch" "$ARTIFACTS/diff-infra-config.patch"
+}
+
+@test "pure rename to a quoted destination retains metadata and the scoped patch" {
+    write_real_rename_diff 'café.tf'
+    prepare_session false
+
+    jq -e '.file_metadata.modified_files | map(.path) == ["café.tf"]' "$SESSION_FILE"
+    build_selected_briefing
+
+    jq -e '.agents == ["infra-config"]' "$BATS_TEST_TMPDIR/classification.json"
+    cmp "$ARTIFACTS/diff.patch" "$ARTIFACTS/diff-infra-config.patch"
+}
+
+@test "quoted frontend deletion selects the frontend reviewer from detected languages" {
+    local repo="$BATS_TEST_TMPDIR/repo"
+    git init -q "$repo"
+    mkdir "$repo/frontend"
+    printf '%s\n' 'export const label = "retired"' > "$repo/frontend/café.tsx"
+    git -C "$repo" add .
+    rm "$repo/frontend/café.tsx"
+    git -C "$repo" -c core.quotePath=true diff --no-ext-diff --no-renames --src-prefix=a/ --dst-prefix=b/ > "$ARTIFACTS/diff.patch"
+    prepare_session false
+    "$SCRIPTS/code-language-detect.sh" < "$ARTIFACTS/diff.patch" > "$BATS_TEST_TMPDIR/languages.json"
+    jq --slurpfile languages "$BATS_TEST_TMPDIR/languages.json" '.languages = $languages[0] | .diff_tokens = 800' "$SESSION_FILE" > "$BATS_TEST_TMPDIR/session.json"
+    mv "$BATS_TEST_TMPDIR/session.json" "$SESSION_FILE"
+
+    build_selected_briefing
+
+    jq -e '.file_metadata.modified_files | any(.path == "frontend/café.tsx" and .deleted == true and .language == "typescript")' "$SESSION_FILE"
+    jq -e '.agents | contains(["frontend"])' "$BATS_TEST_TMPDIR/classification.json"
+    cmp "$ARTIFACTS/diff.patch" "$ARTIFACTS/diff-frontend.patch"
+}
+
 @test "deletion pipeline sends every Terraform and Terragrunt deletion to infra-config" {
     for path in stacks/main.tf stacks/terragrunt.hcl; do
         printf '%s\n' "diff --git a/$path b/$path" 'deleted file mode 100644' \

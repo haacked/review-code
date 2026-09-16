@@ -3,9 +3,10 @@
 #
 # Usage:
 #   echo -e "path/to/file1\npath/to/file2" | git-file-history.sh
+#   printf 'path/to/file1\0path/to/file2\0' | git-file-history.sh --null
 #
 # Input:
-#   Newline-delimited file paths on stdin
+#   Newline-delimited file paths on stdin, or NUL-delimited paths with --null
 #
 # Output (JSON):
 #   {
@@ -37,12 +38,23 @@ MAX_FILES=50
 main() {
     validate_git_repo
 
+    local delimiter=$'\n'
+    if [[ "${1:-}" == "--null" ]]; then
+        delimiter=''
+        shift
+    fi
+
+    if [[ $# -gt 0 ]]; then
+        echo "Usage: git-file-history.sh [--null]" >&2
+        exit 1
+    fi
+
     local file_count=0
 
     # Build ndjson (one object per file), then merge into a single object
     local ndjson=""
 
-    while IFS= read -r file_path; do
+    while IFS= read -r -d "${delimiter}" file_path; do
         [[ -z "${file_path}" ]] && continue
 
         file_count=$((file_count + 1))
