@@ -17,15 +17,13 @@ create_session() {
     local diff_tokens="${1:-100}"
     local files_json="${2:-[]}"
     local has_frontend="${3:-false}"
-    local deleted_count="${4:-0}"
 
     cat > "$TMPDIR/session.json" <<ENDJSON
 {
     "diff_tokens": $diff_tokens,
     "file_metadata": {
         "modified_files": $files_json,
-        "file_count": $(echo "$files_json" | jq 'length'),
-        "deleted_file_count": $deleted_count
+        "file_count": $(echo "$files_json" | jq 'length')
     },
     "languages": {
         "has_frontend": $has_frontend
@@ -120,8 +118,9 @@ ENDJSON
 @test "large infra-config change with a deleted source file uses all core agents plus infra-config" {
     session=$(create_session 3000 '[
         {"path":"argocd/service/values/values.prod-us.yaml","type":"config","is_infra_config":true,"is_test":false},
-        {"path":"argocd/service/values/values.prod-eu.yaml","type":"config","is_infra_config":true,"is_test":false}
-    ]' false 1)
+        {"path":"argocd/service/values/values.prod-eu.yaml","type":"config","is_infra_config":true,"is_test":false},
+        {"path":"backend/old.py","type":"source","is_infra_config":false,"is_test":false,"deleted":true}
+    ]' false)
 
     result=$("$SCRIPT" "$session")
     echo "$result" | jq -e '.agents == ["security", "performance", "correctness", "maintainability", "testing", "compatibility", "architecture", "infra-config"]'
@@ -196,9 +195,6 @@ ENDJSON
 }
 
 @test "infra-config + deleted source file does not use infra-config-only shortcut" {
-    # Simulates: 2 infra-config files modified + 1 source file deleted.
-    # pre-review-context.sh only captures modified files, so deleted_file_count must be
-    # set explicitly here to reflect what the script would produce from the diff.
     session_file="$TMPDIR/session.json"
     cat > "$session_file" <<ENDJSON
 {
@@ -206,9 +202,10 @@ ENDJSON
     "file_metadata": {
         "modified_files": [
             {"path":"argocd/contour-ingress/values/values.prod-us.yaml","type":"config","is_infra_config":true,"is_test":false},
-            {"path":"argocd/contour-ingress/values/values.prod-eu.yaml","type":"config","is_infra_config":true,"is_test":false}
+            {"path":"argocd/contour-ingress/values/values.prod-eu.yaml","type":"config","is_infra_config":true,"is_test":false},
+            {"path":"backend/old.py","type":"source","is_infra_config":false,"is_test":false,"deleted":true}
         ],
-        "file_count": 2,
+        "file_count": 3,
         "deleted_file_count": 1
     },
     "languages": {
@@ -224,4 +221,30 @@ ENDJSON
     echo "$result" | jq -e '.agents | contains(["correctness"])'
     # infra-config agent must still be included so the infra changes are reviewed
     echo "$result" | jq -e '.agents | contains(["infra-config"])'
+}
+
+@test "infra-only deletions select infra-config exactly once at every diff size" {
+    for tokens in 200 1500 3000; do
+        session=$(create_session "$tokens" '[
+            {"path":"stacks/main.tf","type":"config","is_infra_config":true,"is_test":false,"deleted":true},
+            {"path":"stacks/terragrunt.hcl","type":"config","is_infra_config":true,"is_test":false,"deleted":true}
+        ]' false)
+
+        result=$("$SCRIPT" "$session")
+        echo "$result" | jq -e '.agents == ["infra-config"] and .exploration_depth == "minimal"'
+    done
+}
+
+@test "large deletion-only config tests and migrations keep their specialized reviewers" {
+    for file_type in config test migration; do
+        files=$(jq -nc --arg type "$file_type" '[{path: "deleted-file", type: $type, deleted: true, is_infra_config: false}]')
+        session=$(create_session 3000 "$files" false)
+        result=$("$SCRIPT" "$session")
+        case "$file_type" in
+            config) expected='["correctness", "compatibility"]' ;;
+            test) expected='["testing", "correctness", "maintainability"]' ;;
+            migration) expected='["correctness", "compatibility", "security"]' ;;
+        esac
+        echo "$result" | jq -e --argjson expected "$expected" '.agents == $expected'
+    done
 }

@@ -26,7 +26,7 @@ if [[ ! -f "${session_file}" ]]; then
 fi
 
 # Extract classification inputs from session JSON (single jq invocation, no eval)
-read -r diff_tokens file_count has_frontend test_count config_count migration_count infra_config_count deleted_count < <(
+read -r diff_tokens file_count has_frontend test_count config_count migration_count infra_config_count < <(
     jq -r '
         (.file_metadata.modified_files // []) as $files |
         [
@@ -36,8 +36,7 @@ read -r diff_tokens file_count has_frontend test_count config_count migration_co
             ([$files[] | select((.type == "test") or (.is_test == true))] | length),
             ([$files[] | select(.type == "config")] | length),
             ([$files[] | select(.type == "migration")] | length),
-            ([$files[] | select(.is_infra_config == true)] | length),
-            (.file_metadata.deleted_file_count // 0)
+            ([$files[] | select(.is_infra_config == true)] | length)
         ] | @tsv
     ' "${session_file}"
 )
@@ -59,24 +58,21 @@ reasoning=""
 
 # Infra-config-only changes always use the infra-config agent regardless of diff size.
 # This branch must come before the diff_tokens >= 2000 check to avoid being shadowed.
-# Guard against deleted_count > 0: pre-review-context.sh only parses added/modified files,
-# so deleted source files won't appear in modified_files. If deletions are present alongside
-# infra-config modifications, fall through to normal agent selection to ensure deletions get reviewed.
-if [[ "${infra_config_count}" -gt 0 ]] && [[ "${infra_config_count}" -eq "${file_count}" ]] && [[ "${deleted_count}" -eq 0 ]]; then
+if [[ "${infra_config_count}" -gt 0 ]] && [[ "${infra_config_count}" -eq "${file_count}" ]]; then
     # Infra-config only (Helm, Terraform, ArgoCD, K8s, CI/CD)
     agents=("infra-config")
     exploration_depth="minimal"
     reasoning="Infra-config-only change (${diff_tokens} diff tokens, ${infra_config_count} infra config files): infra-config agent"
-elif [[ "${config_count}" -gt 0 ]] && [[ "${config_count}" -eq "${file_count}" ]] && { [[ "${deleted_count}" -eq 0 ]] || [[ "${diff_tokens}" -lt 2000 ]]; }; then
+elif [[ "${config_count}" -gt 0 ]] && [[ "${config_count}" -eq "${file_count}" ]]; then
     # Config-only (note: .md/docs files are classified as source, so this branch only matches
     # changes where all modified files are config files)
     agents=("correctness" "compatibility")
     reasoning="Config-only change (${diff_tokens} diff tokens, ${config_count} config, ${file_count} total files): correctness + compatibility"
-elif [[ "${test_count}" -gt 0 ]] && [[ "${test_count}" -eq "${file_count}" ]] && { [[ "${deleted_count}" -eq 0 ]] || [[ "${diff_tokens}" -lt 2000 ]]; }; then
+elif [[ "${test_count}" -gt 0 ]] && [[ "${test_count}" -eq "${file_count}" ]]; then
     # Test-only changes
     agents=("testing" "correctness" "maintainability")
     reasoning="Test-only change (${diff_tokens} diff tokens, ${test_count} test files): testing + correctness + maintainability"
-elif [[ "${migration_count}" -gt 0 ]] && [[ "${migration_count}" -eq "${file_count}" ]] && { [[ "${deleted_count}" -eq 0 ]] || [[ "${diff_tokens}" -lt 2000 ]]; }; then
+elif [[ "${migration_count}" -gt 0 ]] && [[ "${migration_count}" -eq "${file_count}" ]]; then
     # Migration-only
     agents=("correctness" "compatibility" "security")
     reasoning="Migration-only change (${diff_tokens} diff tokens, ${migration_count} migration files): correctness + compatibility + security"
@@ -84,9 +80,9 @@ elif [[ "${diff_tokens}" -ge 2000 ]]; then
     agents=("${all_agents[@]}")
     reasoning="Medium or large diff (${diff_tokens} diff tokens, ${file_count} files): running all agents"
 elif [[ "${file_count}" -eq 0 ]] && [[ "${diff_tokens}" -gt 0 ]]; then
-    # No file metadata (likely a deletions-only PR) - run all core agents to avoid under-reviewing
+    # Missing metadata cannot establish which reviewers cover the diff.
     agents=("${all_agents[@]}")
-    reasoning="No file metadata (${diff_tokens} diff tokens, possible deletions-only change): running all agents"
+    reasoning="No file metadata (${diff_tokens} diff tokens): running all agents"
 elif [[ "${diff_tokens}" -lt 500 ]]; then
     # Tiny source change: core agents only
     agents=("correctness" "security" "testing" "architecture")
@@ -101,10 +97,7 @@ else
     reasoning="Small source change (${diff_tokens} diff tokens, ${file_count} files): focused agents"
 fi
 
-# Add infra-config agent when infra files are present but the infra-config-only shortcut wasn't
-# taken. That covers two cases: mixed infra + non-infra modified files, and infra-only modified
-# files that have accompanying deletions (deleted_count > 0 caused the shortcut to be skipped).
-if [[ "${infra_config_count}" -gt 0 ]] && { [[ "${infra_config_count}" -lt "${file_count}" ]] || [[ "${deleted_count}" -gt 0 ]]; }; then
+if [[ "${infra_config_count}" -gt 0 ]] && [[ "${infra_config_count}" -lt "${file_count}" ]]; then
     agents+=("infra-config")
 fi
 

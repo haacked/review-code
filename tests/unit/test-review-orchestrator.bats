@@ -67,6 +67,31 @@ teardown() {
     echo "$output" | jq -e '.status == "ready"'
 }
 
+@test "review-orchestrator.sh: newline deletion retains history alongside another changed file" {
+    local path=$'retired\ncomponent.py' author
+    for author in 1 2 3; do
+        printf 'revision = %s\n' "$author" > "$path"
+        git add -- "$path"
+        git -c user.name="Author $author" -c user.email="author$author@example.com" commit -m "Update retired component"
+    done
+    rm -- "$path"
+    printf '%s\n' 'changed' > file.txt
+
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e --arg path "$path" '
+        .file_metadata |
+        .file_count == 2 and .deleted_file_count == 1 and .has_high_churn_files == true
+        and (.modified_files | map(.path) | sort) == ([$path, "file.txt"] | sort)
+        and (.modified_files | any(
+            .path == $path and .deleted == true
+            and (.git_history | .recent_commits == 3 and .recent_authors == 3 and .high_churn == true and .last_modified != null)))
+        and (.modified_files | any(
+            .path == "file.txt" and .deleted == false
+            and (.git_history | .recent_commits == 1 and .recent_authors == 1 and .high_churn == false and .last_modified != null)))
+    '
+}
+
 # Shape-only tests for the jq expression that handle_pr_review uses to build
 # the cross-repo git_context. These invoke the jq expression directly rather
 # than handle_pr_review itself (which needs a gh stub), so they catch typos

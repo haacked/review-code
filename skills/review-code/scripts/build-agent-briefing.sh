@@ -240,12 +240,12 @@ write_scoped_diff() {
     local name="$1" filter="$2"
     local out="${ARTIFACTS_DIR}/diff-${name}.patch"
     local paths
-    paths=$(jq -r "${filter}" "${SESSION_FILE}" | sort -u)
+    paths=$(jq -r "${filter} | @json" "${SESSION_FILE}" | sort -u)
     if [[ -z "${paths}" ]]; then
         echo "NOTE: no ${name} files matched; ${name} agent is skipped" >&2
         return 1
     fi
-    "${SCRIPT_DIR}/split-diff-by-path.sh" "${DIFF_PATH}" "${out}" <<< "${paths}"
+    "${SCRIPT_DIR}/split-diff-by-path.sh" --json-paths "${DIFF_PATH}" "${out}" <<< "${paths}"
 }
 
 if [[ " ${AGENTS} " == *" frontend "* ]]; then

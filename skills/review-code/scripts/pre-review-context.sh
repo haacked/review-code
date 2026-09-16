@@ -12,6 +12,7 @@
 #     "modified_files": [
 #       {
 #         "path": "backend/api/auth.py",
+#         "deleted": false,
 #         "type": "source",
 #         "language": "python",
 #         "is_test": false,
@@ -29,24 +30,23 @@
 
 set -euo pipefail
 
-# Read diff from stdin
-diff_content=$(cat)
-
-# Extract file paths from diff
-# Format: +++ b/path/to/file.ext
-file_paths=$(echo "${diff_content}" | { grep -E "^\+\+\+ b/" || test $? = 1; } | sed 's/^+++ b\///; s/[[:space:]]*$//')
-
-# Count deleted files (diff entries where the target is /dev/null)
-deleted_file_count=$(echo "${diff_content}" | { grep -cE "^\+\+\+ /dev/null" || test $? = 1; })
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=helpers/git-diff-paths.sh
+source "${SCRIPT_DIR}/helpers/git-diff-paths.sh"
 
 # Detect file type and generate metadata
-# Output newline-delimited JSON, capture for single jq processing
-file_metadata_ndjson=$(while IFS= read -r file; do
+# Git paths cannot contain NUL, so the parser uses it to preserve control characters.
+while IFS= read -r -d '' deleted && IFS= read -r -d '' file; do
     [[ -z "${file}" ]] && continue
 
     # Extract components
-    basename=$(basename "${file}")
-    dirname=$(dirname "${file}")
+    basename="${file##*/}"
+    if [[ "${file}" == */* ]]; then
+        dirname="${file%/*}"
+    else
+        dirname="."
+    fi
     ext="${file##*.}"
 
     # Determine language
@@ -101,7 +101,7 @@ file_metadata_ndjson=$(while IFS= read -r file; do
     fi
 
     # Files that are always both config and infra-config
-    if [[ "${basename}" =~ \.tf(vars)?$ ]] \
+    if [[ "${basename}" =~ \.(tf(vars)?|hcl)$ ]] \
         || [[ "${basename}" =~ ^(Dockerfile|Jenkinsfile)$ ]] \
         || [[ "${basename}" =~ ^(docker-compose)\.ya?ml$ ]] \
         || [[ "${basename}" =~ ^\.gitlab-ci\.yml$ ]]; then
@@ -161,24 +161,25 @@ file_metadata_ndjson=$(while IFS= read -r file; do
         esac
     fi
 
-    # Build newline-delimited JSON (one object per line)
-    # Escape quotes and backslashes for JSON safety
-    safe_path=$(printf '%s' "${file}" | sed 's/\\/\\\\/g; s/"/\\"/g')
-    safe_test_path=$(printf '%s' "${likely_test_path}" | sed 's/\\/\\\\/g; s/"/\\"/g')
-
-    printf '{"path":"%s","type":"%s","language":"%s","is_test":%s,"is_infra_config":%s,"likely_test_path":"%s"}\n' \
-        "${safe_path}" "${file_type}" "${language}" "${is_test}" "${is_infra_config}" "${safe_test_path}"
-
-done <<< "${file_paths}")
-
-# Build final JSON output with single jq call
-# Convert newline-delimited JSON to array and calculate metadata
-echo "${file_metadata_ndjson}" | jq -s --argjson deleted_count "${deleted_file_count}" '{
-    modified_files: .,
-    file_count: length,
-    deleted_file_count: $deleted_count,
-    has_tests: (map(select(.is_test == true)) | length > 0),
-    has_migrations: (map(select(.type == "migration")) | length > 0),
-    has_config: (map(select(.type == "config")) | length > 0),
-    has_infra_config: (map(select(.is_infra_config == true)) | length > 0)
-}'
+    printf '%s\0%s\0%s\0%s\0%s\0%s\0%s\0' \
+        "${file}" "${deleted}" "${file_type}" "${language}" "${is_test}" "${is_infra_config}" "${likely_test_path}"
+done < <(git_diff_paths) | jq -Rs '
+        split("\u0000")[:-1]
+        | [range(0; length; 7) as $i | {
+            path: .[$i],
+            deleted: (.[($i + 1)] == "true"),
+            type: .[$i + 2],
+            language: .[$i + 3],
+            is_test: (.[($i + 4)] == "true"),
+            is_infra_config: (.[($i + 5)] == "true"),
+            likely_test_path: .[$i + 6]
+        }]
+        | {
+            modified_files: ., file_count: length,
+            deleted_file_count: (map(select(.deleted)) | length),
+            has_tests: any(.is_test),
+            has_migrations: any(.type == "migration"),
+            has_config: any(.type == "config"),
+            has_infra_config: any(.is_infra_config)
+        }
+    '
