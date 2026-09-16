@@ -83,7 +83,18 @@ Parse responses by id. `unchanged: true` keeps the current body. Ignore unknown 
 
 For each rewrite, require the identical severity prefix, every backtick-quoted path or line token from the current body, and every code block. Limit growth to about twice the original length. Rejecting a voice rewrite restores the pre-voice body. If more than half fail, discard the whole voice batch.
 
-Run `~/.agents/skills/review-code/scripts/gate-voice-lint.py` over all surviving bodies. For warned ids, ask the same voice agent once to repair the flagged sentence. Claude may resume the voice task. Codex must dispatch a fresh, self-contained `code-reviewer-voice` prompt because it has no resume state. Recheck preservation and lint once. A remaining warning restores the pre-voice body. A missing linter or linter error leaves the accepted voice bodies unchanged.
+Merge the accepted voice bodies into `$finding_quality.findings` and save the full object as `<artifacts_dir>/finding-quality-voiced.json`. The linter takes a bare array of `{id, description, proposed_fix}` objects; `proposed_fix` may be null. Extract that array and run:
+
+```bash
+jq '[.findings[] | {id, description, proposed_fix}]' \
+  "<artifacts_dir>/finding-quality-voiced.json" \
+  > "<artifacts_dir>/voice-lint-input.json"
+~/.agents/skills/review-code/scripts/gate-voice-lint.py \
+  "<artifacts_dir>/voice-lint-input.json" \
+  > "<artifacts_dir>/voice-lint-result.json"
+```
+
+Read `warned_ids` and `error` from the result; the linter exits zero even on errors. For warned ids, ask the same voice agent once to repair the flagged sentence. Claude may resume the voice task. Codex must dispatch a fresh, self-contained `code-reviewer-voice` prompt because it has no resume state. Recheck preservation, regenerate the array from the repaired bodies, and lint once. A remaining warning restores the pre-voice body. A missing linter or non-null `error` leaves the accepted voice bodies unchanged.
 
 Record voice usage, preservation failures, and `{total_tokens: 0, checked, clean, warned, bounced, reverted}` under the existing `$token_usage` keys. In debug mode, save `11c-voice-rewrite` and `11c2-voice-lint` artifacts.
 
@@ -94,7 +105,7 @@ Merge accepted voice bodies into `$finding_quality.findings`. Write the full obj
 - **Claude:** start a Task with subagent_type `comprehension-gate` and the input.
 - **Codex:** point a self-contained prompt at `<artifacts_dir>/comprehension-input.json`, then run `agent-dispatch.sh run comprehension-gate <prompt-file> <artifacts_dir>/comprehension-output.md`. The gate may read that input file, but receives no diff or source-code path.
 
-Extract the JSON array to `<artifacts_dir>/comprehension-verdicts.json`, then run:
+Require the `comprehension-gate` agent's Output schema for both preflight and final verdicts. Write only the parsed JSON array, without Markdown fences, to `<artifacts_dir>/comprehension-verdicts.json`. Each entry must preserve its input `id` and contain `verdict`, `coverage`, `inference_required`, `unresolved`, and `notes`. Coverage has exactly six boolean keys: `problem`, `trigger`, `mechanism`, `result`, `requested_change`, and `regression_case`. Then run:
 
 ```bash
 ~/.agents/skills/review-code/scripts/finding-comment-contract.py gate \
@@ -103,7 +114,7 @@ Extract the JSON array to `<artifacts_dir>/comprehension-verdicts.json`, then ru
   > "<artifacts_dir>/finding-gate-first.json"
 ```
 
-The script accepts `PASS` only when the selected style's required facts have coverage and `inference_required` is false. Concise requires problem, applicable trigger, and requested change; mechanism, result, and regression coverage may be false. Detailed requires every applicable field. The model must also reject factual inconsistency, unclear action, or prose that violates the selected style. Missing, duplicate, or malformed verdicts are withheld with `quality_state: "gate_error"`.
+The script accepts `PASS` only when the selected style's required facts have coverage and `inference_required` is false. Concise requires problem, applicable trigger, and requested change; mechanism, result, and regression coverage may be false. Detailed requires every applicable field. The model must also reject factual inconsistency, unclear action, or prose that violates the selected style. Missing, duplicate, or malformed verdicts are withheld with `quality_state: "gate_error"`. Missing or extra coverage keys and non-boolean values are malformed in either style.
 
 For each `rewrites_needed` entry, start a fresh `code-reviewer-comment` invocation under both harnesses. Give it the structured finding, current body, gate coverage, notes, unresolved phrases, `$diff_path`, briefing path, and file-access instructions. Never resume the original reviewer.
 

@@ -327,6 +327,7 @@ EOF
         id: 90970,
         coverage: {problem: true, trigger: true, mechanism: true, result: true, requested_change: true, regression_case: true},
         inference_required: false,
+        unresolved: [],
         verdict: "PASS",
         notes: ""
     }]' > "$verdicts"

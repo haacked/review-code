@@ -214,6 +214,7 @@ MOCKEOF
         id: 90970,
         coverage: {problem: false, trigger: true, mechanism: false, result: true, requested_change: true, regression_case: true},
         inference_required: true,
+        unresolved: [{phrase: "cross-property causal chain", stands_for: "why one override prevents another property from loading"}],
         verdict: "REWRITE",
         notes: "The body makes the reader infer the cross-property causal chain."
     }]' > "$INITIAL_VERDICTS"
@@ -256,6 +257,7 @@ MOCKEOF
         id: 90970,
         coverage: {problem: true, trigger: true, mechanism: true, result: true, requested_change: true, regression_case: true},
         inference_required: false,
+        unresolved: [],
         verdict: "PASS",
         notes: ""
     }]' > "$FINAL_VERDICTS"
