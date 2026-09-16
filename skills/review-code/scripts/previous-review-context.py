@@ -11,6 +11,11 @@ from pathlib import Path
 import re
 import sys
 
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parent / "helpers"))
+
+from markdown_fences import walk_fences  # noqa: E402
+
 spec = importlib.util.spec_from_file_location(
     "review_comment_blocks", Path(__file__).with_name("review-comment-blocks.py")
 )
@@ -36,22 +41,11 @@ def delta_paths(text: str) -> set[str] | None:
 
 
 def finding_spans(lines: list[str], blocks: list[dict]) -> list[tuple[int, int]]:
-    headings = []
-    fence = ""
-    for index, line in enumerate(lines):
-        marker = blocks_module.FENCE.match(line)
-        if fence:
-            if (
-                marker
-                and marker.group(1).startswith(fence)
-                and not line[marker.end() :].strip()
-            ):
-                fence = ""
-            continue
-        if marker:
-            fence = marker.group(1)
-        elif re.match(r"^#{1,6}\s", line):
-            headings.append(index)
+    headings = [
+        index
+        for index, line, kind in walk_fences(lines)
+        if kind == "prose" and re.match(r"^#{1,6}\s", line)
+    ]
     return [
         (block["index"], next((i for i in headings if i > block["index"]), len(lines)))
         for block in blocks
@@ -61,19 +55,8 @@ def finding_spans(lines: list[str], blocks: list[dict]) -> list[tuple[int, int]]
 def prose_status(text: str) -> str | None:
     statuses = set()
     explicit_status = None
-    fence = ""
-    for line in text.splitlines():
-        marker = blocks_module.FENCE.match(line)
-        if fence:
-            if (
-                marker
-                and marker.group(1).startswith(fence)
-                and not line[marker.end() :].strip()
-            ):
-                fence = ""
-            continue
-        if marker:
-            fence = marker.group(1)
+    for _, line, kind in walk_fences(text.splitlines()):
+        if kind != "prose":
             continue
         match = STATUS_MARKER.match(line)
         if match:

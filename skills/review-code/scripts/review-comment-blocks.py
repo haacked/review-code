@@ -61,7 +61,10 @@ import re
 import sys
 from pathlib import Path
 
-FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parent / "helpers"))
+
+from markdown_fences import walk_fences  # noqa: E402
 
 # Mirrors finding_header_re in parse-review-findings.sh, plus a trailing group
 # so an annotation already present is replaced instead of doubled.
@@ -121,16 +124,8 @@ def find_blocks(lines: list[str]) -> list[dict]:
     the wrong comment id to it.
     """
     blocks: list[dict] = []
-    fence = ""
-    for index, line in enumerate(lines):
-        marker = FENCE.match(line)
-        token = marker.group(1) if marker else ""
-        if fence:
-            if marker and token.startswith(fence) and not line[marker.end() :].strip():
-                fence = ""
-            continue
-        if token:
-            fence = token
+    for index, line, kind in walk_fences(lines):
+        if kind != "prose":
             continue
         match = HEADING.match(line)
         if match:
@@ -163,21 +158,16 @@ def body_span(lines: list[str], start: int) -> tuple[int | None, int | None]:
     That fence is the comment text. A heading or thematic break reached before
     any fence means the finding has no comment body.
     """
-    fence = ""
     open_at = None
-    for offset, line in enumerate(lines[start:], start=start):
-        marker = FENCE.match(line)
-        token = marker.group(1) if marker else ""
-        if not fence:
-            if token:
-                fence = token
-                open_at = offset + 1
-                continue
-            if line.startswith("#") or line.strip().startswith("---"):
-                return None, None
-            continue
-        if marker and token.startswith(fence) and not line[marker.end() :].strip():
-            return open_at, offset
+    for index, line, kind in walk_fences(lines[start:]):
+        if kind == "open":
+            open_at = start + index + 1
+        elif kind == "close":
+            return open_at, start + index
+        elif kind == "prose" and (
+            line.startswith("#") or line.strip().startswith("---")
+        ):
+            return None, None
     return None, None
 
 

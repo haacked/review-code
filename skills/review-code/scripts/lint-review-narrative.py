@@ -46,6 +46,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent / "helpers"))
 
 from lint_loader import load_linter  # noqa: E402
+from markdown_fences import walk_fences  # noqa: E402
 
 NOTES_HEADING = "## Lint notes"
 DEFAULT_PER_CATEGORY_LIMIT = 5
@@ -81,40 +82,15 @@ def result(path, *, count=0, annotated=False, warnings=(), error=None) -> dict:
     }
 
 
-def outside_fences(linter, lines: list[str]):
-    """Yield (index, line) for every line outside a fenced code block."""
-    fence = ""
-    for index, line in enumerate(lines):
-        marker = linter.FENCE.match(line)
-        token = marker.group(1) if marker else ""
-        if fence:
-            if marker and token.startswith(fence) and not line[marker.end() :].strip():
-                fence = ""
-            continue
-        if token:
-            fence = token
-            continue
-        yield index, line
-
-
 def mask_non_narrative(linter, lines: list[str]) -> list[str]:
     """Blank every line that is not narrative prose, preserving line count."""
     masked = [""] * len(lines)
     in_section = False
     in_finding = False
-    fence = ""
     paragraph_start = True
 
-    for index, line in enumerate(lines):
-        marker = linter.FENCE.match(line)
-        token = marker.group(1) if marker else ""
-
-        if fence:
-            if marker and token.startswith(fence) and not line[marker.end() :].strip():
-                fence = ""
-            paragraph_start = False
-        elif token:
-            fence = token
+    for index, line, kind in walk_fences(lines):
+        if kind != "prose":
             paragraph_start = False
         elif linter.HEADING.match(line):
             # A heading always ends a finding block. An H2 or H3 naming a
@@ -155,7 +131,7 @@ def collect(linter, lines: list[str], limit: int) -> tuple[list[dict], dict[str,
     return [linter.trim_warning(item) for item in kept], suppressed
 
 
-def find_notes_heading(linter, lines: list[str]) -> int | None:
+def find_notes_heading(lines: list[str]) -> int | None:
     """Locate a real Lint notes heading, ignoring one quoted inside a fence.
 
     A finding body can quote a markdown file that contains this heading. Without
@@ -165,8 +141,8 @@ def find_notes_heading(linter, lines: list[str]) -> int | None:
     return next(
         (
             index
-            for index, line in outside_fences(linter, lines)
-            if NOTES_SECTION.match(line)
+            for index, line, kind in walk_fences(lines)
+            if kind == "prose" and NOTES_SECTION.match(line)
         ),
         None,
     )
@@ -211,7 +187,7 @@ def annotate(
     warnings: list[dict],
     suppressed: dict[str, int],
 ) -> bool:
-    start = find_notes_heading(linter, lines)
+    start = find_notes_heading(lines)
     # Nothing to say and nothing stale to remove: leave the file alone rather
     # than rewriting it, which would normalize its line endings and its
     # trailing newline for no reason.

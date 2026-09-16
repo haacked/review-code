@@ -59,6 +59,35 @@ EOF
     [[ "$output" == "[]" ]]
 }
 
+@test "lint-comment-voice: nested fences stay masked and prose keeps its line number" {
+    run "$LINTER" - <<'EOF'
+   ````markdown
+```python
+The cache leverages the helper.
+```
+~~~~
+```` trailing text
+This is a comprehensive rewrite.
+  `````
+The cache leverages the helper.
+EOF
+    [ "$status" -eq 0 ]
+    jq -se 'length == 1 and .[0].line == 9 and .[0].category == "ai_vocabulary"' <<<"$output"
+}
+
+@test "lint-comment-voice: an unterminated fence masks prose through EOF" {
+    run "$LINTER" - <<'EOF'
+The cache clears on write.
+~~~python
+The cache leverages the helper.
+```
+~~~ trailing text
+This is a comprehensive rewrite.
+EOF
+    [ "$status" -eq 0 ]
+    [[ "$output" == "[]" ]]
+}
+
 @test "lint-comment-voice: inline code is ignored" {
     run "$LINTER" - <<'EOF'
 `nit`: Call `cache.invalidate — fast path` directly here instead.

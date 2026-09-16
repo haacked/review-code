@@ -199,3 +199,51 @@ REVIEW
     [ "$status" -ne 0 ]
     [[ "$output" != *"Changed detail"* ]]
 }
+
+@test "nested examples keep quoted headings and statuses inside the finding" {
+    cat >> "$REVIEW" <<'REVIEW'
+
+#### `src/nested.py:6`
+
+````text
+[P2] Nested example
+```markdown
+#### `src/fake.py:99`
+*Withdrawn 2026-09-05: Only quoted text.*
+**Status**: quoted status
+```
+```` trailing text
+## Quoted section
+NESTED_END
+`````
+*Resolved 2026-09-05: The actual resolution.*
+REVIEW
+    build >/dev/null
+    jq -e '.findings | length == 5' "$OUT/previous-review/index.json"
+    jq -e '.findings[] | select(.path == "src/nested.py") | .status == "resolved" and .full' "$OUT/previous-review/index.json"
+    id="$(jq -r '.findings[] | select(.path == "src/nested.py") | .id' "$OUT/previous-review/index.json")"
+    run python3 "$SCRIPT" get --output-dir "$OUT" --id "$id"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'#### `src/fake.py:99`'* ]]
+    [[ "$output" == *"NESTED_END"* ]]
+    [[ "$output" == *"The actual resolution."* ]]
+}
+
+@test "an unterminated fence keeps later headings and statuses quoted" {
+    cat >> "$REVIEW" <<'REVIEW'
+
+#### `src/unfinished.py:7`
+
+~~~~text
+[P2] Unfinished example
+~~~
+#### `src/fake.py:99`
+*Resolved 2026-09-05: Only quoted text.*
+UNFINISHED_END
+REVIEW
+    run build
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"UNFINISHED_END"* ]]
+    jq -e '.fallback == true and (.findings | length == 5)' "$OUT/previous-review/index.json"
+    jq -e '.findings[] | select(.path == "src/unfinished.py") | .status == "recorded (recheck)"' "$OUT/previous-review/index.json"
+}
