@@ -32,6 +32,8 @@ If the session has `fix: true`, place the `## Fix Summary` section (built by the
 
 Compose per-agent findings from `$finding_publication.findings`. Use `description` as the complete public comment, and retain full `facts` and `proposed_fix` as internal evidence in the local review. Only `description` passed the public wording checks; never append internal evidence to Suggested Comments.
 
+**Fence finding bodies safely.** Wrap each body in a backtick fence, both in the per-agent sections and Suggested Comments. Use at least three backticks, and one more than the longest run of backticks anywhere in that body. Use the same number for the opening `text` fence and its closing fence. A body containing a three-backtick Python block needs at least four backticks around it; a body containing four backticks needs at least five. Preserve the body and its inner fences verbatim. Keep the finding heading outside the outer fence so the annotator can attach the posted-comment marker.
+
 If `$finding_publication.withheld` is non-empty, add a `## Withheld from draft` section after the per-agent sections and before Suggested Comments. For each entry, show its location, the concrete `quality_state`, and its `reasons`. Keep enough of the technical finding for the user to repair it locally. Label it as non-publishable and never format it as a Suggested Comment. Do not silently substitute the original reviewer body.
 
 Include the metadata header at the top of the file:

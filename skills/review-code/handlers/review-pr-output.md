@@ -72,9 +72,9 @@ When combining agent findings into the review document, add a "Suggested Comment
    - **Build upon existing**: Existing comment is related but incomplete
    - **Already covered**: Existing comment fully addresses the finding
 
-4. **Format the section** following this structure:
+4. **Format the section** following this structure. Apply the fence-length rule in `review-compose.md` to every body in New Comments and Build Upon Existing. The three-backtick body fences below are examples for bodies without inner fences:
 
-```markdown
+````markdown
 ---
 
 ## Suggested Comments
@@ -129,7 +129,7 @@ List findings where existing comments are sufficient:
 | New comments | X |
 | Build upon existing | Y |
 | Already covered | Z |
-```
+````
 
 5. **Append to review file**: Add the "Suggested Comments" section after the main review content. On the `delta` path it goes into the append file instead, alongside the rest of what this run composed (see `review-carry-forward.md`).
 
@@ -282,18 +282,23 @@ To reword or drop a comment later, read
 ~/.agents/skills/review-code/handlers/amend-pending-review.md.
 ```
 
-If failed, show the error and suggest using the review file manually.
+If failed, follow the matching case under Error handling. A result with `review_id` means that this run created the draft. A result without `review_id` does not prove that no pending draft exists.
 
 **Error handling:**
 - **Not PR mode**: "The --draft flag only works when reviewing a pull request"
 - **Own PR**: "Cannot create draft review on your own pull request"
 - **No mappable comments**: Create review with summary only, warn user
+- **Annotation failure after creation**:
+  1. Tell the user that the pending draft exists at `review_url`
+  2. Show that `annotated_count` of `inline_count` comment ids were recorded locally
+  3. Tell them that the local review file needs annotation repair before the amendment tools can use it
+  4. **Stop here.** Do not suggest reposting or creating another review because the pending draft already contains the comments.
 - **API failure (HTTP 422, etc.)**:
   1. Display the error message to the user
   2. Tell them: "Draft review creation failed. The review has been saved to the markdown file."
-  3. Suggest: "You can copy comments from the review file and post them manually on GitHub."
+  3. Warn that an earlier pending review can remain if replacement failed before the POST
   4. Clean up the session: `~/.agents/skills/review-code/scripts/review-status-handler.sh cleanup "<SESSION_ID>"`
-  5. **Stop here.** Do not post the findings any other way: a regular PR comment or a direct `gh pr review` call publishes immediately instead of staying pending (and the PreToolUse hook blocks the direct calls regardless).
+  5. **Stop here.** Do not suggest posting the findings manually. A regular PR comment or a direct `gh pr review` call publishes immediately instead of staying pending (and the PreToolUse hook blocks the direct calls regardless).
 
 ### Amending a Draft After It Is Posted
 

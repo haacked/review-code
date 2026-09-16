@@ -29,9 +29,9 @@ Subcommands:
 
   annotate   Record ids after a draft post. Reads the posted comments as JSON on
              stdin (as GET /pulls/{n}/reviews/{id}/comments returns them).
-             Fails open: the review is already posted by the time this runs, so
-             an internal failure is reported and exits 0 rather than turning a
-             successful post into a script error.
+             Reports internal failures in JSON and exits 0 because the review
+             already exists. The posting wrapper returns an annotation failure
+             with the created review metadata.
 
   read       Emit the recorded blocks as JSON. Nothing in the pipeline calls
              this; it is the way to inspect what a review file has recorded,
@@ -418,6 +418,13 @@ def cmd_annotate(args, lines: list[str], path: Path) -> dict:
         write_atomic(path, lines, "pc-ids")
     return {
         "annotated": len(pairs),
+        "annotated_comments": len(
+            {
+                comment["id"]
+                for comment in pairs.values()
+                if comment.get("id") is not None
+            }
+        ),
         "unmatched": unmatched,
         "header_updated": header_updated,
     }
@@ -583,9 +590,10 @@ COMMANDS = {
     "withdraw": cmd_withdraw,
 }
 
-# annotate runs after the review is already on GitHub, where a hard failure
-# would misreport a successful post. read and set-body drive an amend, where a
-# silent empty result would let the caller act on the wrong thing.
+# annotate reports failures in JSON and exits 0 because the review already
+# exists. create-draft-review.sh returns an annotation failure with the created
+# review metadata. read and set-body drive an amend. A silent empty result
+# could let the caller act on the wrong thing.
 FAIL_OPEN = {"annotate"}
 
 

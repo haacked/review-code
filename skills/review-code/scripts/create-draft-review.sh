@@ -47,6 +47,17 @@ set -euo pipefail
 #     "drift_detected": false,
 #     "annotated_count": 5                    (comments whose id was recorded in review_file)
 #   }
+#
+# If the review is created but its comment ids cannot all be recorded, the
+# script exits nonzero and returns the created review metadata:
+#   {
+#     "success": false,
+#     "error": "...",
+#     "review_id": 12345,
+#     "review_url": "https://github.com/org/repo/pull/123#pullrequestreview-12345",
+#     "inline_count": 5,
+#     "annotated_count": 4
+#   }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/helpers/error-helpers.sh
@@ -293,30 +304,29 @@ main() {
     local inline_count
     inline_count=$(echo "${comments}" | jq 'length')
 
-    # Record which comment each finding produced, so a later session can reword
-    # one without re-running the review. The POST returns only the review, so
-    # the ids come from a follow-up read. Annotation failures are reported but
-    # never fail the run: the review is already posted by this point, and a
-    # missing id costs a reword, not the review.
-    local annotated_count=0
-    if [[ -n "${review_file}" && -f "${review_file}" ]]; then
+    # Return the created review metadata when annotation fails.
+    local annotated_count=0 annotation_failure=""
+    if [[ -n "${review_file}" ]]; then
         local posted_comments annotate_result
         posted_comments=$(gh api "repos/${owner}/${repo}/pulls/${pr_number}/reviews/${review_id}/comments" --paginate 2> /dev/null || echo "[]")
         annotate_result=$(echo "${posted_comments}" | "${SCRIPT_DIR}/review-comment-blocks.py" annotate \
             --review-file "${review_file}" \
             --review-id "${review_id}" \
-            --posted-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" 2> /dev/null || echo '{}')
-        annotated_count=$(echo "${annotate_result}" | jq -r '.annotated // 0')
-        local annotate_error
-        annotate_error=$(echo "${annotate_result}" | jq -r '.error // ""')
-        if [[ -n "${annotate_error}" ]]; then
-            warning "Could not record comment ids in ${review_file}: ${annotate_error}"
+            --posted-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" 2> /dev/null || echo '{"error":"Comment annotation failed"}')
+        annotated_count=$(echo "${annotate_result}" | jq -r '.annotated_comments // 0')
+        local annotator_error
+        annotator_error=$(echo "${annotate_result}" | jq -r '.error // ""')
+        if [[ "${annotated_count}" -ne "${inline_count}" || -n "${annotator_error}" ]]; then
+            annotation_failure="Draft review ${review_id} was created, but recorded comment ids for ${annotated_count} of ${inline_count} inline comments in ${review_file}. Repair the annotations before retrying."
+            if [[ -n "${annotator_error}" ]]; then
+                annotation_failure+=" ${annotator_error}"
+            fi
+            error "${annotation_failure}"
         fi
     fi
 
-    # Return success result
     jq -n \
-        --argjson success true \
+        --arg error "${annotation_failure}" \
         --argjson annotated_count "${annotated_count}" \
         --argjson review_id "${review_id}" \
         --arg review_url "${review_url}" \
@@ -325,7 +335,7 @@ main() {
         --argjson replaced_existing "${replaced_existing}" \
         --argjson drift_detected "${drift_detected}" \
         '{
-            success: $success,
+            success: ($error == ""),
             review_id: $review_id,
             review_url: $review_url,
             inline_count: $inline_count,
@@ -333,7 +343,8 @@ main() {
             replaced_existing: $replaced_existing,
             drift_detected: $drift_detected,
             annotated_count: $annotated_count
-        }'
+        } + (if $error == "" then {} else {error: $error} end)'
+    [[ -z "${annotation_failure}" ]]
 }
 
 # Only run main if script is executed directly (not sourced)

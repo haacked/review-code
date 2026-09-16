@@ -1219,3 +1219,144 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *'"annotated_count": 0'* ]]
 }
+
+prepare_annotation_case() {
+    ANNOTATION_REVIEW="$MOCK_DIR/pr-1.md"
+    ANNOTATION_INPUT="$MOCK_DIR/input.json"
+    POSTED_COMMENTS="$MOCK_DIR/posted-comments.json"
+    ANNOTATION_ERROR="$MOCK_DIR/annotation-error.log"
+    COMMENTS_READ_FAIL=false
+    export POSTED_COMMENTS COMMENTS_READ_FAIL
+    cp "$FIXTURES_DIR/nested-fences.md" "$ANNOTATION_REVIEW"
+    cp "$FIXTURES_DIR/nested-fences-comments.json" "$POSTED_COMMENTS"
+    jq -n --arg review_file "$ANNOTATION_REVIEW" --slurpfile posted "$POSTED_COMMENTS" '{
+        owner: "org", repo: "test", pr_number: 1, reviewer_username: "user",
+        summary: "Test review", review_file: $review_file,
+        comments: [$posted[0][] | {path, line, body, side: "RIGHT"}]
+    }' > "$ANNOTATION_INPUT"
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews/99999/comments"* ]]; then
+    if [[ "$COMMENTS_READ_FAIL" == true ]]; then
+        echo 'Could not read posted comments' >&2
+        exit 1
+    fi
+    cat "$POSTED_COMMENTS"
+elif [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    echo '{"id": 99999}'
+else
+    echo '[]'
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+}
+
+run_annotation_case() {
+    run bash -c '"$1" < "$2" 2> "$3"' _ "$SCRIPT" "$ANNOTATION_INPUT" "$ANNOTATION_ERROR"
+}
+
+assert_annotation_failure() {
+    local inline_count="$1" annotated_count="$2"
+    [ "$status" -ne 0 ]
+    [ "$(echo "$output" | jq -r '.success')" = false ]
+    [ "$(echo "$output" | jq '.review_id')" -eq 99999 ]
+    [ "$(echo "$output" | jq -r '.review_url')" = 'https://github.com/org/test/pull/1#pullrequestreview-99999' ]
+    [ "$(echo "$output" | jq '.inline_count')" -eq "$inline_count" ]
+    [ "$(echo "$output" | jq '.annotated_count')" -eq "$annotated_count" ]
+    echo "$output" | jq -e '.error | type == "string" and length > 0' > /dev/null
+    [[ "$(echo "$output" | jq -r '.error' | tr '[:upper:]' '[:lower:]')" == *draft* ]]
+}
+
+@test "create-draft-review: counts nested fenced comments once across repeated findings" {
+    prepare_annotation_case
+    run_annotation_case
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.success')" = true ]
+    [ "$(echo "$output" | jq '.inline_count')" -eq 4 ]
+    [ "$(echo "$output" | jq '.annotated_count')" -eq 4 ]
+    [ "$(grep -c 'pc:' "$ANNOTATION_REVIEW")" -eq 8 ]
+}
+
+@test "create-draft-review: partial annotation fails and preserves recorded ids" {
+    prepare_annotation_case
+    jq '.comments += [{path: "src/missing.py", line: 90, body: "Missing finding."}]' \
+        "$ANNOTATION_INPUT" > "$MOCK_DIR/updated-input.json"
+    mv "$MOCK_DIR/updated-input.json" "$ANNOTATION_INPUT"
+    jq '. += [{id: 1001, node_id: "PRRC_eee", path: "src/missing.py", line: 90, body: "Missing finding."}]' \
+        "$POSTED_COMMENTS" > "$MOCK_DIR/updated-comments.json"
+    mv "$MOCK_DIR/updated-comments.json" "$POSTED_COMMENTS"
+
+    run_annotation_case
+
+    assert_annotation_failure 5 4
+    [ "$(grep -c 'pc:' "$ANNOTATION_REVIEW")" -eq 8 ]
+    grep -q '^review_id: 99999$' "$ANNOTATION_REVIEW"
+}
+
+@test "create-draft-review: repeated blocks cannot mask a missing comment annotation" {
+    prepare_annotation_case
+    jq '.[0:1] + [{id: 1001, node_id: "PRRC_eee", path: "src/missing.py", line: 90, body: "Missing finding."}]' \
+        "$POSTED_COMMENTS" > "$MOCK_DIR/updated-comments.json"
+    mv "$MOCK_DIR/updated-comments.json" "$POSTED_COMMENTS"
+    jq --slurpfile posted "$POSTED_COMMENTS" '.comments = [$posted[0][] | {path, line, body}]' \
+        "$ANNOTATION_INPUT" > "$MOCK_DIR/updated-input.json"
+    mv "$MOCK_DIR/updated-input.json" "$ANNOTATION_INPUT"
+
+    run_annotation_case
+
+    assert_annotation_failure 2 1
+    [ "$(grep -c 'pc:777 PRRC_aaa' "$ANNOTATION_REVIEW")" -eq 2 ]
+}
+
+@test "create-draft-review: reports the created draft when fetching posted ids fails" {
+    prepare_annotation_case
+    COMMENTS_READ_FAIL=true
+
+    run_annotation_case
+
+    assert_annotation_failure 4 0
+}
+
+@test "create-draft-review: reports the created draft when posted ids are empty" {
+    prepare_annotation_case
+    echo '[]' > "$POSTED_COMMENTS"
+
+    run_annotation_case
+
+    assert_annotation_failure 4 0
+}
+
+@test "create-draft-review: reports the created draft when the annotator returns an error" {
+    prepare_annotation_case
+    printf '\377\376\375\n' > "$ANNOTATION_REVIEW"
+
+    run_annotation_case
+
+    assert_annotation_failure 4 0
+}
+
+@test "create-draft-review: reports the created draft when the review file is missing" {
+    prepare_annotation_case
+    rm "$ANNOTATION_REVIEW"
+
+    run_annotation_case
+
+    assert_annotation_failure 4 0
+}
+
+@test "create-draft-review: annotation remains optional for inline comments" {
+    prepare_annotation_case
+    jq 'del(.review_file)' "$ANNOTATION_INPUT" > "$MOCK_DIR/updated-input.json"
+    mv "$MOCK_DIR/updated-input.json" "$ANNOTATION_INPUT"
+    COMMENTS_READ_FAIL=true
+
+    run_annotation_case
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.success')" = true ]
+    [ "$(echo "$output" | jq '.inline_count')" -eq 4 ]
+    [ "$(echo "$output" | jq '.annotated_count')" -eq 0 ]
+}
