@@ -101,7 +101,7 @@ Then ask who else reads the destination. A stored value outlives the request tha
 **Example finding:**
 
 ```text
-`blocking`: The gate now stores `serializer.validated_data` instead of `request.data` at `feature_flag.py:212`, and the column behind it is a `JSONField`. DRF has already coerced the fields by that point, so `validated_data` carries `datetime` objects where `request.data` carried ISO strings, and the write raises `TypeError: Object of type datetime is not JSON serializable`. Every save of a gated flag returns a 500, so the feature is unusable rather than degraded. Keep `request.data` for the stored payload, or serialize the validated values before the write.
+`blocking`: The gate now stores `serializer.validated_data` instead of `request.data` at `feature_flag.py:212`, and the column behind it is a `JSONField`. DRF has already coerced the fields by that point, so a writable `DateTimeField` arrives as a `datetime` where `request.data` carried an ISO string, and the write raises `TypeError: Object of type datetime is not JSON serializable`. Any save whose payload echoes back a timestamp that is set fails with a 500, while a save where that field is still null succeeds, so the failure looks arbitrary to the author. Keep `request.data` for the stored payload, make the server-owned fields read-only, or encode the validated values before the write.
 ```
 
 Location: `feature_flag.py:212` | Confidence: 90%
