@@ -86,6 +86,26 @@ Code that looks correct in isolation may fail at runtime because it doesn't matc
 
 Location: `test_utils.rs:insert_new_team_in_redis` | Confidence: 95%
 
+**Data Source Swaps:**
+
+When a diff changes where a value comes from, the destination usually stays the same, so the new source has to fit it. A swap to a different variable, table, request attribute, serializer stage, or service can hand the destination a different type, a different shape, or weaker guarantees than the old source did. Verify all three match before the value reaches the same destination.
+
+**Swaps that change the payload:**
+- Parsed JSON vs deserialized objects (a serializer's `validated_data` holds coerced Python objects; `request.data` holds JSON primitives)
+- Plaintext vs encrypted
+- Filtered vs unfiltered
+- Validated vs raw
+
+Then ask who else reads the destination. A stored value outlives the request that wrote it, so other readers, later serializers, and migrations get the new shape too, and one of them may be the thing that breaks.
+
+**Example finding:**
+
+```text
+`blocking`: The gate now stores `serializer.validated_data` instead of `request.data` at `feature_flag.py:212`, and the column behind it is a `JSONField`. DRF has already coerced the fields by that point, so a writable `DateTimeField` arrives as a `datetime` where `request.data` carried an ISO string, and the write raises `TypeError: Object of type datetime is not JSON serializable`. Any save whose payload echoes back a timestamp that is set fails with a 500, while a save where that field is still null succeeds, so the failure looks arbitrary to the author. Keep `request.data` for the stored payload, make the server-owned fields read-only, or encode the validated values before the write.
+```
+
+Location: `feature_flag.py:212` | Confidence: 90%
+
 ### 3. Basic Logic Correctness (Critical)
 
 **Does the code do what it's supposed to do within its own scope?**
