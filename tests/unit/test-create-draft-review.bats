@@ -376,7 +376,7 @@ if [[ "$*" == *"/reviews --paginate"* ]]; then
 elif [[ "$*" == *"/reviews/11111/comments"* ]]; then
     echo '[]'
 elif [[ "$*" == *"--method DELETE"* ]]; then
-    echo '{}'
+    echo '{"id": 11111, "state": "PENDING", "body": "old"}'
 elif [[ "$*" == *"--method POST"* ]]; then
     echo '{"id": 22222, "body": "new"}'
 else
@@ -386,10 +386,11 @@ EOF
     chmod +x "$MOCK_DIR/gh"
 
     local input='{"owner": "org", "repo": "test", "pr_number": 1, "reviewer_username": "user", "summary": "New review", "comments": []}'
-    run bash -c "echo '$input' | '$SCRIPT'"
+    run bash -c "echo '$input' | '$SCRIPT' 2>/dev/null"
     [ "$status" -eq 0 ]
-    [[ "$output" == *'"success": true'* ]]
-    [[ "$output" == *'"replaced_existing": true'* ]]
+    [ "$(echo "$output" | jq -s 'length')" -eq 1 ]
+    echo "$output" | jq -e '.success == true'
+    echo "$output" | jq -e '.replaced_existing == true'
 }
 
 @test "create-draft-review: append preserves pending comments on untouched files" {

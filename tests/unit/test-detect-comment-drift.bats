@@ -531,6 +531,40 @@ EOF
 # Integration with original_diff tests
 # =============================================================================
 
+@test "detect-comment-drift: keeps a blank-line comment on a file the new commits left unchanged" {
+    # src/utils.ts has the same hunks in both diffs, and its line 4 is a blank added line.
+    create_mock_gh "def456" "$FIXTURES_DIR/drift-updated.diff"
+
+    local original_diff
+    original_diff=$(cat "$FIXTURES_DIR/drift-original.diff")
+    local tmpinput
+    tmpinput=$(mktemp)
+
+    jq -n \
+        --arg diff "$original_diff" \
+        '{
+            owner: "org",
+            repo: "repo",
+            pr_number: 42,
+            review_commit: "abc123",
+            original_diff: $diff,
+            comments: [{
+                path: "src/utils.ts",
+                line: 4,
+                side: "RIGHT",
+                body: "Anchored on a blank line"
+            }]
+        }' > "$tmpinput"
+
+    run bash -c "cat '$tmpinput' | '$SCRIPT' 2>/dev/null"
+    rm -f "$tmpinput"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.unmapped_comments | length == 0'
+    echo "$output" | jq -e '.comments | length == 1'
+    echo "$output" | jq -e '.comments[0].line == 4'
+    echo "$output" | jq -e '.comments[0].remapped == false'
+}
+
 @test "detect-comment-drift: extracts line_content from original_diff when not on comment" {
     create_mock_gh "def456" "$FIXTURES_DIR/drift-updated.diff"
 
