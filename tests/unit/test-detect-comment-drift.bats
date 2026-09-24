@@ -565,6 +565,26 @@ EOF
     echo "$output" | jq -e '.comments[0].remapped == false'
 }
 
+@test "detect-comment-drift: file_hunks decodes a quoted path with a space" {
+    local diff_file="$BATS_TEST_TMPDIR/quoted-path.diff"
+    printf '%s\n' \
+        'diff --git "a/weird name.py" "b/weird name.py"' \
+        'index 1111111..2222222 100644' \
+        '--- "a/weird name.py"' \
+        '+++ "b/weird name.py"' \
+        '@@ -1,2 +1,2 @@' \
+        ' a = 1' \
+        '-b = 2' \
+        '+b = 3' > "$diff_file"
+
+    run bash -c "
+        source '$SCRIPT'
+        file_hunks \"\$(cat '$diff_file')\" 'weird name.py'
+    "
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"+b = 3"* ]]
+}
+
 @test "detect-comment-drift: extracts line_content from original_diff when not on comment" {
     create_mock_gh "def456" "$FIXTURES_DIR/drift-updated.diff"
 

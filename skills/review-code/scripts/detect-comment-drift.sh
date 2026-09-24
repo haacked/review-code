@@ -41,6 +41,8 @@ source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 source "${SCRIPT_DIR}/helpers/json-helpers.sh"
 # shellcheck source=lib/helpers/gh-wrapper.sh
 source "${SCRIPT_DIR}/helpers/gh-wrapper.sh"
+# shellcheck source=lib/helpers/git-diff-paths.sh
+source "${SCRIPT_DIR}/helpers/git-diff-paths.sh"
 
 # Fetch the current HEAD commit SHA for a PR
 # Args: $1 = owner, $2 = repo, $3 = pr_number
@@ -263,10 +265,9 @@ file_hunks() {
     local diff="$1"
     local target_path="$2"
 
-    echo "${diff}" | awk -v target_path="${target_path}" '
+    echo "${diff}" | awk -v target_path="${target_path}" "$(git_diff_path_functions)"'
     /^diff --git/ {
-        idx = match($0, / b\//)
-        in_file = (idx > 0 && substr($0, idx + 3) == target_path)
+        in_file = (diff_header_path($0) == target_path)
         in_hunk = 0
         next
     }
