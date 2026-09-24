@@ -41,6 +41,8 @@ source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 source "${SCRIPT_DIR}/helpers/json-helpers.sh"
 # shellcheck source=lib/helpers/gh-wrapper.sh
 source "${SCRIPT_DIR}/helpers/gh-wrapper.sh"
+# shellcheck source=lib/helpers/git-diff-paths.sh
+source "${SCRIPT_DIR}/helpers/git-diff-paths.sh"
 
 # Fetch the current HEAD commit SHA for a PR
 # Args: $1 = owner, $2 = repo, $3 = pr_number
@@ -254,6 +256,26 @@ find_line_in_diff() {
     echo "${best_match}"
 }
 
+# Print a file's hunks from a diff, from its first @@ header to the next file.
+# The index line is left out because it changes whenever any commit touches the
+# PR, even when this file's changes are identical.
+# Args: $1 = diff, $2 = file path
+# Output: the hunk lines, or nothing if the file is not in the diff
+file_hunks() {
+    local diff="$1"
+    local target_path="$2"
+
+    echo "${diff}" | awk -v target_path="${target_path}" "$(git_diff_path_functions)"'
+    /^diff --git/ {
+        in_file = (diff_header_path($0) == target_path)
+        in_hunk = 0
+        next
+    }
+    in_file && /^@@/ { in_hunk = 1 }
+    in_file && in_hunk { print }
+    '
+}
+
 # Check whether a file appears in the diff
 # Args: $1 = diff, $2 = file path
 # Output: "true" or "false"
@@ -281,6 +303,18 @@ remap_comment() {
     read -r path line line_content < <(
         echo "${comment}" | jq -r '[.path, (.line | tostring), (.line_content // "")] | @tsv'
     )
+
+    # A file whose hunks are identical in both diffs kept every line where it
+    # was. This also keeps comments on blank lines, which content matching
+    # cannot find.
+    if [[ -n "${original_diff}" ]]; then
+        local original_hunks
+        original_hunks=$(file_hunks "${original_diff}" "${path}")
+        if [[ -n "${original_hunks}" ]] && [[ "${original_hunks}" == "$(file_hunks "${current_diff}" "${path}")" ]]; then
+            echo "${comment}" | jq '. + {remapped: false}'
+            return 0
+        fi
+    fi
 
     # If line_content wasn't provided, try to extract it from the original diff
     if [[ -z "${line_content}" ]] && [[ -n "${original_diff}" ]]; then

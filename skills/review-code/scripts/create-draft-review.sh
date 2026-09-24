@@ -77,7 +77,7 @@ delete_pending_review() {
     local pr_number="$3"
     local review_id="$4"
 
-    gh api --method DELETE "repos/${owner}/${repo}/pulls/${pr_number}/reviews/${review_id}" 2> /dev/null || {
+    gh api --method DELETE "repos/${owner}/${repo}/pulls/${pr_number}/reviews/${review_id}" > /dev/null 2>&1 || {
         warning "Failed to delete existing pending review ${review_id}"
         return 1
     }

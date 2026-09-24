@@ -679,6 +679,84 @@ EOF
     [ "$(echo "$output" | jq -r '.comments[0].line_content')" = "return good" ]
 }
 
+@test "finding contract: draft assembly moves a blank-line anchor to the next line with code" {
+    local draft_input="$BATS_TEST_TMPDIR/draft-blank-anchor.json"
+    local diff_file="$BATS_TEST_TMPDIR/blank-anchor.patch"
+    printf '%s\n' \
+        'diff --git a/tests/test_keys.py b/tests/test_keys.py' \
+        'index 1111111..2222222 100644' \
+        '--- a/tests/test_keys.py' \
+        '+++ b/tests/test_keys.py' \
+        '@@ -20,2 +20,5 @@' \
+        '     assert key.scopes == scopes' \
+        ' ' \
+        '+' \
+        '+    def test_roll(self):' \
+        '+        key = make_key()' > "$diff_file"
+    jq -n --arg diff "$diff_file" '{
+        publication: {
+            comments: [
+                {path: "tests/test_keys.py", line: 21, body: "Blank context anchor."},
+                {path: "tests/test_keys.py", line: 22, body: "Blank added anchor."}
+            ],
+            unmapped_comments: []
+        },
+        selected_indices: [0, 1],
+        mappings: [
+            {path: "tests/test_keys.py", line: 21, side: "RIGHT"},
+            {path: "tests/test_keys.py", line: 22, side: "RIGHT"}
+        ],
+        context: {
+            owner: "org",
+            repo: "repo",
+            pr_number: 42,
+            reviewer_username: "reviewer",
+            original_diff_path: $diff
+        }
+    }' > "$draft_input"
+
+    run "$CONTRACT" draft "$draft_input"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -c '[.comments[].line]')" = "[23,23]" ]
+    [ "$(echo "$output" | jq -r '.comments[0].line_content')" = "    def test_roll(self):" ]
+    [ "$(echo "$output" | jq -r '.comments[1].line_content')" = "    def test_roll(self):" ]
+}
+
+@test "finding contract: draft assembly keeps a blank-line anchor that carries a suggestion" {
+    local draft_input="$BATS_TEST_TMPDIR/draft-blank-suggestion.json"
+    local diff_file="$BATS_TEST_TMPDIR/blank-suggestion.patch"
+    printf '%s\n' \
+        'diff --git a/src/app.py b/src/app.py' \
+        'index 1111111..2222222 100644' \
+        '--- a/src/app.py' \
+        '+++ b/src/app.py' \
+        '@@ -40,1 +40,3 @@' \
+        '     x = load()' \
+        '+' \
+        '+    return x' > "$diff_file"
+    jq -n --arg diff "$diff_file" '{
+        publication: {
+            comments: [{path: "src/app.py", line: 41, body: "Validate first.\n\n```suggestion\n    validate(x)\n```"}],
+            unmapped_comments: []
+        },
+        selected_indices: [0],
+        mappings: [{path: "src/app.py", line: 41, side: "RIGHT"}],
+        context: {
+            owner: "org",
+            repo: "repo",
+            pr_number: 42,
+            reviewer_username: "reviewer",
+            original_diff_path: $diff
+        }
+    }' > "$draft_input"
+
+    run "$CONTRACT" draft "$draft_input"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.comments[0].line')" -eq 41 ]
+}
+
 @test "finding contract: concise comments can omit investigation details" {
     desired=$(jq -cn '"`blocking`: A person override for `tier` prevents a same-named group property from being loaded. Make `requires_db_property` distinguish person and group filters so person overrides satisfy only person filters."')
     write_finding "$desired"

@@ -437,6 +437,25 @@ def parse_diff(path: str) -> tuple[dict[tuple[str, int], str], list[str]]:
     return contents, paths
 
 
+def nearest_code_line(
+    contents: dict[tuple[str, int], str], path: str, line: int
+) -> int | None:
+    """Return the closest line with code in the same run of diff lines.
+
+    GitHub shows a comment on a blank line apart from the code it is about.
+    Drift remapping also cannot find a blank line by its text. The search looks
+    forward first because a reviewer's line range usually starts on the blank
+    line above the code.
+    """
+    for step in (1, -1):
+        candidate = line + step
+        while (path, candidate) in contents:
+            if contents[(path, candidate)].strip():
+                return candidate
+            candidate += step
+    return None
+
+
 def draft(draft_input: Any) -> dict[str, Any]:
     if not isinstance(draft_input, dict):
         raise ValueError("draft input must be an object")
@@ -521,6 +540,19 @@ def draft(draft_input: Any) -> dict[str, Any]:
         line_contents, delta_paths = parse_diff(diff_path)
         for comment in comments:
             line_content = line_contents.get((comment["path"], comment["line"]))
+            if (
+                line_content is not None
+                and not line_content.strip()
+                and comment.get("side", "RIGHT") == "RIGHT"
+                # A suggestion block replaces the anchored line. Moving the anchor would replace code.
+                and "```suggestion" not in comment["body"]
+            ):
+                code_line = nearest_code_line(
+                    line_contents, comment["path"], comment["line"]
+                )
+                if code_line is not None:
+                    comment["line"] = code_line
+                    line_content = line_contents[(comment["path"], code_line)]
             if line_content is not None:
                 comment["line_content"] = line_content
     if result.get("append") is True:
