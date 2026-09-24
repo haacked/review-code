@@ -95,6 +95,8 @@ Uses session-based caching to run the orchestrator once and reuse data across ba
 - Never submit a review on the user's behalf. Submitting requires their explicit instruction. To correct a comment on a review already posted, amend it: `handlers/amend-pending-review.md` covers rewording and dropping without re-running the review. Submitting is never the way to fix a wrong comment.
 - When a step fails (session init, script error, API error), stop and report the failure instead of improvising a workaround. In particular, never post findings as a regular PR comment: that publishes immediately instead of staying pending.
 
+Callers may set `REVIEW_CODE_REVIEW_DIR`, `CLAUDE_SESSION_DIR`, and `REVIEW_CODE_WORKTREE_DIR` to keep reports, sessions, and temporary checkouts in separate locations for each run. Use the paths returned by the scripts, including `file_path` and `artifacts_dir`. Leave those overrides in the environment for every script and subagent.
+
 ### Step 1: Parse Arguments
 
 Run the parse script to determine the review mode and parameters:
