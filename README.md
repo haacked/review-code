@@ -515,7 +515,7 @@ Callers that need separate temporary state for each review can set these environ
 | `REVIEW_CODE_MARKER_DIR` | Context-clear and resume markers |
 | `REVIEW_CODE_HOOK_LOG` | Session-start hook log (a file path) |
 
-These settings apply to Claude Code and Codex. Callers own the temporary directories and must copy reports they want to keep before removing them.
+These settings apply to Claude Code and Codex, except `REVIEW_CODE_HOOK_LOG`, which applies only to Claude Code. Callers own the temporary directories and must copy reports they want to keep before removing them.
 
 
 ## Testing
