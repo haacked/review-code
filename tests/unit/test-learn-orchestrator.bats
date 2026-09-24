@@ -8,6 +8,9 @@ setup() {
     # Create a temporary directory for testing
     TEST_DIR=$(mktemp -d)
     export TEST_DIR
+    export HOME="$TEST_DIR/home"
+    export REVIEW_CODE_REVIEW_DIR="$TEST_DIR/reviews"
+    mkdir -p "$HOME" "$REVIEW_CODE_REVIEW_DIR"
 
     # Create a mock git repository for testing (suppress output)
     TEST_REPO=$(mktemp -d)

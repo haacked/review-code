@@ -58,7 +58,7 @@ resolve_skill_dir() {
 # Returns:
 #   The review root path on stdout
 get_review_root() {
-    echo "$(resolve_skill_dir)/.reviews"
+    echo "${REVIEW_CODE_REVIEW_DIR:-$(resolve_skill_dir)/.reviews}"
 }
 
 # Get the context path (where context files are stored)

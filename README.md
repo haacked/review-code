@@ -503,6 +503,21 @@ Reviews are saved to `~/.agents/skills/review-code/.reviews/{org}/{repo}/{pr-num
 
 Like the other runtime-state directories (`.learnings/`, `.sessions/`, `.worktrees/`), the reviews directory is dot-prefixed so skill scanners that ignore dot-directories don't count review outputs against the skill's file budget.
 
+Set `REVIEW_CODE_REVIEW_DIR` to use another report root. The scripts retain the `{org}/{repo}/{identifier}.md` layout under that root, and token usage is logged there. An unset or empty value uses the default location above.
+
+Callers that need separate temporary state for each review can set these environment variables to directories owned by that run:
+
+| Variable | Files |
+| --- | --- |
+| `REVIEW_CODE_REVIEW_DIR` | Review reports and token usage log |
+| `CLAUDE_SESSION_DIR` | Session records and generated review artifacts |
+| `REVIEW_CODE_WORKTREE_DIR` | Temporary PR checkouts |
+| `REVIEW_CODE_MARKER_DIR` | Context-clear and resume markers |
+| `REVIEW_CODE_HOOK_LOG` | Session-start hook log (a file path) |
+
+These settings apply to Claude Code and Codex, except `REVIEW_CODE_HOOK_LOG`, which applies only to Claude Code. Callers own the temporary directories and must copy reports they want to keep before removing them.
+
+
 ## Testing
 
 The review-code shell scripts have automated test coverage using [BATS](https://github.com/bats-core/bats-core).
