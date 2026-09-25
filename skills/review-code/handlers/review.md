@@ -164,7 +164,7 @@ duration_ms: NNN</usage>
 
 Maintain a `$token_usage` map throughout the review. After each Agent/Task tool invocation completes (context explorer, review agents, chunk analyzers, finding validators), parse the `<usage>` block from its response and record `total_tokens`, `tool_uses`, and `duration_ms` keyed by agent name (e.g., `context_explorer`, `code-reviewer-security`, `chunk-1-analysis`, `validator-1`). If the usage block is absent from a response, skip that entry.
 
-**Codex ($harness = `codex`):** Codex's JSONL stream carries different signals; the response surface is what `codex exec --output-last-message` writes. Track per-agent wall-clock (time around each `agent-dispatch.sh run` call) and any token fields in the final `turn.completed` event of the JSONL stream. Codex doesn't expose tool-call counts, so record `tool_uses` only when the JSONL provides it; otherwise omit the field. Keep the same `$token_usage` map shape so the token-report rendering downstream doesn't branch on harness.
+**Codex ($harness = `codex`):** Track per-agent wall-clock time around each `agent-dispatch.sh run` call. Its compact result includes the final `turn.completed` usage when available; record `input_tokens + output_tokens` as `total_tokens` and retain any other token fields. Do not read the saved event log into the conversation. Codex doesn't expose tool-call counts, so record `tool_uses` only when the result provides it; otherwise omit the field. Keep the same `$token_usage` map shape so the token-report rendering downstream doesn't branch on harness.
 
 ### Prepare File Access Instructions
 

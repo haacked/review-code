@@ -114,7 +114,9 @@ codex "${codex_args[@]}" "$(cat "${INSTRUCTIONS_FILE}")
 
 $(cat "${PROMPT_FILE}")" > "${EVENTS_FILE}" || EXIT_CODE=$?
 
+usage=$(jq -c 'select(.type == "turn.completed" and (.usage | type == "object")) | .usage' "${EVENTS_FILE}" | tail -n 1) || usage=""
 jq -nc --arg output_file "${OUTPUT_FILE}" --arg events_file "${EVENTS_FILE}" \
-    --argjson exit_code "${EXIT_CODE}" \
-    '{output_file: $output_file, events_file: $events_file, exit_code: $exit_code}'
+    --argjson exit_code "${EXIT_CODE}" --argjson usage "${usage:-null}" \
+    '{output_file: $output_file, events_file: $events_file, exit_code: $exit_code}
+     + (if $usage == null then {} else {usage: $usage} end)'
 exit "${EXIT_CODE}"

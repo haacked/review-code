@@ -195,7 +195,8 @@ MOCKEOF
     jq -cn --rawfile report "$CODEX_AGENT_RESPONSE_FILE" '
         {type: "thread.started", thread_id: "test-thread"},
         {type: "item.completed", item: {type: "agent_message", text: $report}},
-        {type: "turn.completed", usage: {input_tokens: 100, output_tokens: 50}}
+        {type: "turn.completed", usage: {input_tokens: 40, output_tokens: 20}},
+        {type: "turn.completed", usage: {input_tokens: 100, cached_input_tokens: 10, output_tokens: 50}}
     ' > "$CODEX_AGENT_EVENTS_FILE"
     create_mock_codex
 
@@ -209,7 +210,8 @@ MOCKEOF
     [ "$(jq -r '.output_file' <<< "$output")" = "$OUTPUT_FILE" ]
     [ "$(jq -r '.events_file' <<< "$output")" = "$OUTPUT_FILE.events.jsonl" ]
     [ "$(jq '.exit_code' <<< "$output")" -eq 0 ]
-    [ "$(jq -c 'keys' <<< "$output")" = '["events_file","exit_code","output_file"]' ]
+    [ "$(jq -c '.usage' <<< "$output")" = '{"input_tokens":100,"cached_input_tokens":10,"output_tokens":50}' ]
+    [ "$(jq -c 'keys' <<< "$output")" = '["events_file","exit_code","output_file","usage"]' ]
 }
 
 @test "codex-exec-agent: mirrors codex's exit code" {
