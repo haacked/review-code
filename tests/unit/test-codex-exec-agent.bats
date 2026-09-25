@@ -59,6 +59,9 @@ create_mock_codex() {
 # Generated stub codex executable; see tests/unit/test-codex-exec-agent.bats.
 printf '%s\n' "\${@:1:\$# - 1}" > "\$CODEX_ARGS_LOG"
 printf '%s' "\${!#}" > "\$CODEX_PROMPT_LOG"
+if [ -n "\${CODEX_AGENT_EVENTS_FILE:-}" ]; then
+    cat "\$CODEX_AGENT_EVENTS_FILE"
+fi
 if [ -n "\${CODEX_AGENT_RESPONSE_FILE:-}" ]; then
     previous=""
     for argument in "\$@"; do
@@ -178,11 +181,52 @@ MOCKEOF
     [ -d "$(dirname "$OUTPUT_FILE")" ]
 }
 
+@test "codex-exec-agent: saves JSONL events without exposing the investigation in stdout" {
+    write_agent_toml code-reviewer-security gpt-5.6-sol high
+    OUTPUT_FILE="$TMP_DIR/output artifacts/security.json"
+    CODEX_AGENT_RESPONSE_FILE="$TMP_DIR/report.json"
+    CODEX_AGENT_EVENTS_FILE="$TMP_DIR/events.jsonl"
+    export CODEX_AGENT_RESPONSE_FILE CODEX_AGENT_EVENTS_FILE
+    jq -n '{
+        investigation: ("INVESTIGATION_ONLY: inspected callers and retry behavior.\n" * 1000),
+        findings: "",
+        coverage: {files_read: ["src/main.py"], gaps: []}
+    }' > "$CODEX_AGENT_RESPONSE_FILE"
+    jq -cn --rawfile report "$CODEX_AGENT_RESPONSE_FILE" '
+        {type: "thread.started", thread_id: "test-thread"},
+        {type: "item.completed", item: {type: "agent_message", text: $report}},
+        {type: "turn.completed", usage: {input_tokens: 100, output_tokens: 50}}
+    ' > "$CODEX_AGENT_EVENTS_FILE"
+    create_mock_codex
+
+    run "$SCRIPT" code-reviewer-security "$PROMPT_FILE" "$OUTPUT_FILE"
+
+    [ "$status" -eq 0 ]
+    cmp "$CODEX_AGENT_RESPONSE_FILE" "$OUTPUT_FILE"
+    cmp "$CODEX_AGENT_EVENTS_FILE" "$OUTPUT_FILE.events.jsonl"
+    [[ "$output" != *'INVESTIGATION_ONLY'* ]]
+    [[ "$output" != *$'\n'* ]]
+    [ "$(jq -r '.output_file' <<< "$output")" = "$OUTPUT_FILE" ]
+    [ "$(jq -r '.events_file' <<< "$output")" = "$OUTPUT_FILE.events.jsonl" ]
+    [ "$(jq '.exit_code' <<< "$output")" -eq 0 ]
+    [ "$(jq -c 'keys' <<< "$output")" = '["events_file","exit_code","output_file"]' ]
+}
+
 @test "codex-exec-agent: mirrors codex's exit code" {
     write_agent_toml code-reviewer-security gpt-5.6-sol high
+    CODEX_AGENT_EVENTS_FILE="$TMP_DIR/failed-events.jsonl"
+    export CODEX_AGENT_EVENTS_FILE
+    printf '{"type":"turn.failed","error":{"message":"INVESTIGATION_ONLY: request failed"}}\n' > "$CODEX_AGENT_EVENTS_FILE"
     create_mock_codex 3
+
     run "$SCRIPT" code-reviewer-security "$PROMPT_FILE" "$OUTPUT_FILE"
+
     [ "$status" -eq 3 ]
+    cmp "$CODEX_AGENT_EVENTS_FILE" "$OUTPUT_FILE.events.jsonl"
+    [[ "$output" != *'INVESTIGATION_ONLY'* ]]
+    [ "$(jq -r '.output_file' <<< "$output")" = "$OUTPUT_FILE" ]
+    [ "$(jq -r '.events_file' <<< "$output")" = "$OUTPUT_FILE.events.jsonl" ]
+    [ "$(jq '.exit_code' <<< "$output")" -eq 3 ]
 }
 
 @test "codex-exec-agent: a gate rewrite uses a fresh semantic composer and publishes its body" {

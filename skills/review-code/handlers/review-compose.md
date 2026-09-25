@@ -28,6 +28,19 @@ its text is not carried through every earlier turn of the run.
 
 **For area-specific reviews**, include only that area's findings.
 
+Before linking evidence, retain the split reviewer reports beside the review so session cleanup cannot remove them:
+
+```bash
+for report_path in "<artifacts_dir>/reports/"*.json; do
+    [[ -f "$report_path" ]] || continue
+    report_name="$(basename "$report_path" .json)"
+    python3 ~/.agents/skills/review-code/scripts/reviewer-report.py \
+      --input "$report_path" --output-dir "${review_file}.artifacts/<SESSION_ID>" --name "$report_name" || exit 1
+done
+```
+
+Require every copy to succeed. Link each agent's retained investigation and coverage artifacts from its section, using the returned paths. Include every unresolved coverage gap. Do not read or copy the investigation text into the conversation to write the review.
+
 If the session has `fix: true`, place the `## Fix Summary` section (built by the fix pass in `review-fix.md`) directly after the metadata header (and after the chunked "Review Scope" note, when present) and before the per-agent sections.
 
 Compose per-agent findings from `$finding_publication.findings`. Use `description` as the complete public comment, and retain full `facts` and `proposed_fix` as internal evidence in the local review. Only `description` passed the public wording checks; never append internal evidence to Suggested Comments.
@@ -36,18 +49,16 @@ Compose per-agent findings from `$finding_publication.findings`. Use `descriptio
 
 If `$finding_publication.withheld` is non-empty, add a `## Withheld from draft` section after the per-agent sections and before Suggested Comments. For each entry, show its location, the concrete `quality_state`, and its `reasons`. Keep enough of the technical finding for the user to repair it locally. Label it as non-publishable and never format it as a Suggested Comment. Do not silently substitute the original reviewer body.
 
-Include the metadata header at the top of the file:
+For a new review, include the metadata header below at the top of the file. For a full `--append` review, append the new sections without another header; preserve the existing header. The shared writer records the review identity after saving.
 
 ```html
 <!-- review-metadata
-reviewed_at: <current ISO 8601 timestamp>
 mode: <mode>
 pr_number: <pr_number if applicable>
 org: <org>
 repo: <repo>
 base_branch: <base_branch if branch mode, omit otherwise>
 base_source: <base_source if branch mode, omit otherwise>
-review_commit: <pr.head_sha if PR mode, omit otherwise>
 scope:
   exploration_depth: <exploration_depth>
   agents_run: <$selected_agents as comma-separated list>
@@ -63,7 +74,7 @@ diff_tokens: <diff_tokens from session data>
 
 The `token_usage` block records per-step token consumption (agents, context explorer, validators, and other steps) and the aggregate total. Always include the `total` field as the sum of all steps in `$token_usage`.
 
-This metadata is used by the learning system to determine when the review was created. The `review_commit` field records the PR's HEAD SHA at review time, enabling drift detection when creating draft reviews later and giving the next re-review the point to compute its delta from. On `--append`, update the existing header in place; a second header would leave the stale SHA first in the file, where `review-delta.sh` reads it. On the `delta` path the merge script writes the header, so skip it (see below). The `diff_tokens` field is an estimated token count of the diff (~4 chars per token).
+The shared metadata writer records `reviewed_at` for the learning system and `review_commit` for draft drift detection and the next delta review. It updates one header in place and rejects duplicate headers. On the `delta` path, the merge script calls the same writer, so skip the full-review command below. `diff_tokens` estimates the diff size at roughly four characters per token.
 
 If `mode` is `branch` and `base_source` is not `"default"`, add a scope note directly under the metadata header (before the Fix Summary and any chunked "Review Scope" note) so the reader can tell at a glance what the diff was compared against:
 
@@ -79,7 +90,17 @@ An Overview paragraph in the right register reads like:
 
 **On the `delta` path** (`$review_mode` is `delta`), everything above still governs what you compose, but not where it goes: Read `~/.agents/skills/review-code/handlers/review-carry-forward.md` and follow it instead of saving over `$review_file`. Do not Read the existing review.
 
-Save the complete review to `$review_file`.
+Save the complete review to `$review_file`, or append the new sections for a full `--append` review. Then record its identity with the shared writer:
+
+```bash
+metadata_args=(--file "$review_file" --set "reviewed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" --set review_mode=full)
+if [[ -n "$review_commit" ]]; then
+    metadata_args+=(--set "review_commit=$review_commit")
+fi
+~/.agents/skills/review-code/scripts/update-review-metadata.sh "${metadata_args[@]}"
+```
+
+Set `$review_commit` to the reviewed PR head SHA in PR mode, or to an empty string otherwise. Require the command to succeed before continuing to linting or PR output. It also removes stale `delta_from` metadata on a full review.
 
 **Lint the narrative.** With the file on disk, run the linter over its narrative prose. It reads the Overview and the per-agent summaries and skips finding bodies, which the voice pass already gated. It records what it finds as a `## Lint notes` section at the end of the file and never edits the prose:
 

@@ -21,25 +21,61 @@ print(matches[0].replace("~/.agents/skills/review-code", skill).replace("<artifa
 PY
 }
 
-@test "handler contracts: documented agent-report helper preserves raw findings" {
-    cat > "$ARTIFACTS/raw.md" << 'EOF'
-#### `src/example.py:42`
+@test "handler contracts: documented reviewer report command separates evidence from findings" {
+    report_path="$ARTIFACTS/report.json"
+    report_name="correctness"
+    jq -n '{investigation: "Full investigation", findings: "Complete findings", coverage: {files_read: ["src/example.py"], gaps: []}}' > "$report_path"
+    extract_documented_block "$SKILL/handlers/reviewer-output.md" bash reviewer-report.py > "$ARTIFACTS/report.sh"
 
-```text
-`blocking`: Preserve the original `value` and its paragraph breaks.
-
-Use `$value` without expanding it.
-```
-
-Location: src/example.py:42 | Confidence: 95%
-EOF
-    extract_documented_block "$SKILL/handlers/review.md" bash agent-report.sh \
-        | sed 's/<agent-name>/correctness/g' > "$ARTIFACTS/agent-report.sh"
-
-    run bash -e "$ARTIFACTS/agent-report.sh" < "$ARTIFACTS/raw.md"
+    run env report_path="$report_path" report_name="$report_name" bash -e "$ARTIFACTS/report.sh"
 
     [ "$status" -eq 0 ]
-    cmp "$ARTIFACTS/raw.md" "$ARTIFACTS/findings/correctness.md"
+    [ "$(cat "$ARTIFACTS/findings/correctness.md")" = "Complete findings" ]
+    [ "$(cat "$ARTIFACTS/investigations/correctness.md")" = "Full investigation" ]
+    [[ "$output" != *"Full investigation"* ]]
+}
+
+@test "handler contracts: full append advances existing metadata through the shared writer" {
+    review_file="$ARTIFACTS/review.md"
+    cat > "$review_file" << 'EOF'
+<!-- review-metadata
+review_commit: old-head
+reviewed_at: 2026-01-01T00:00:00Z
+review_mode: delta
+delta_from: older-head
+custom: keep
+-->
+# Earlier findings
+
+# Appended full review
+EOF
+    extract_documented_block "$SKILL/handlers/review-compose.md" bash metadata_args > "$ARTIFACTS/metadata.sh"
+
+    run env review_file="$review_file" review_commit=new-head bash -e "$ARTIFACTS/metadata.sh"
+
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^<!-- review-metadata$' "$review_file")" -eq 1 ]
+    grep -Fxq 'review_commit: new-head' "$review_file"
+    grep -Fxq 'review_mode: full' "$review_file"
+    grep -Fxq 'custom: keep' "$review_file"
+    grep -Fxq '# Earlier findings' "$review_file"
+    grep -Fxq '# Appended full review' "$review_file"
+    ! grep -q '^delta_from:' "$review_file"
+}
+
+@test "handler contracts: retained reviewer evidence survives session cleanup" {
+    review_file="$BATS_TEST_TMPDIR/saved review.md"
+    mkdir -p "$ARTIFACTS/reports"
+    jq -n '{investigation: "Evidence", findings: "Finding", coverage: {files_read: ["a.py"], gaps: ["Cannot verify b.py"]}}' > "$ARTIFACTS/reports/security.json"
+    extract_documented_block "$SKILL/handlers/review-compose.md" bash reviewer-report.py \
+        | sed 's/<SESSION_ID>/session-123/g' > "$ARTIFACTS/retain.sh"
+
+    run env review_file="$review_file" bash -e "$ARTIFACTS/retain.sh"
+
+    [ "$status" -eq 0 ]
+    rm -rf "$ARTIFACTS"
+    [ "$(cat "${review_file}.artifacts/session-123/investigations/security.md")" = "Evidence" ]
+    jq -e '.gaps == ["Cannot verify b.py"]' "${review_file}.artifacts/session-123/coverage/security.json"
 }
 
 @test "handler contracts: documented voice lint command projects the findings array" {

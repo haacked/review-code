@@ -1,8 +1,7 @@
 #!/usr/bin/env bats
 # Tests for uninstall.sh
 #
-# Note: The uninstall script no longer uses config files.
-# It uses fixed paths under ~/.claude/skills/review-code/
+# The standalone installer must also work after the source repo is gone.
 
 setup() {
     PROJECT_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
@@ -136,16 +135,6 @@ setup() {
 # Script removal tests
 # =============================================================================
 
-@test "uninstall.sh: removes skill directory" {
-    run bash -c "grep -A30 'remove_skill()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'skills/review-code'"
-    [ "$status" -eq 0 ]
-}
-
-@test "uninstall.sh: uses rm -rf for skill directory" {
-    run bash -c "grep -A30 'remove_skill()' '$PROJECT_ROOT/uninstall.sh' | grep 'skills/review-code' | grep -q 'rm -rf'"
-    [ "$status" -eq 0 ]
-}
-
 @test "uninstall.sh: removes uninstall script itself" {
     run bash -c "grep -A50 'remove_skill()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'uninstall-review-code.sh'"
     [ "$status" -eq 0 ]
@@ -169,22 +158,8 @@ setup() {
 # Path tests
 # =============================================================================
 
-@test "uninstall.sh: uses fixed SKILL_DIR path" {
-    run bash -c "grep -q 'SKILL_DIR=\"\${CLAUDE_DIR}/skills/review-code\"' '$PROJECT_ROOT/uninstall.sh'"
-    [ "$status" -eq 0 ]
-}
-
 @test "uninstall.sh: uses fixed dot-prefixed REVIEWS_DIR path" {
     run bash -c "grep -q 'REVIEWS_DIR=\"\${SKILL_DIR}/\.reviews\"' '$PROJECT_ROOT/uninstall.sh'"
-    [ "$status" -eq 0 ]
-}
-
-@test "uninstall.sh: backs up every review dir that has content" {
-    # reviews/ (pre-migration installs or stale-session strays) and .reviews/
-    # can both hold content at once; each populated dir must feed the backup.
-    run bash -c "grep -qF 'for review_candidate in \"\${SKILL_DIR}/reviews\" \"\${REVIEWS_DIR}\"' '$PROJECT_ROOT/uninstall.sh'"
-    [ "$status" -eq 0 ]
-    run bash -c "grep -qF 'REVIEW_DIRS+=(\"\${review_candidate}\")' '$PROJECT_ROOT/uninstall.sh'"
     [ "$status" -eq 0 ]
 }
 
@@ -253,4 +228,157 @@ setup() {
 @test "uninstall.sh: shows reinstall instructions" {
     run bash -c "grep -A50 '^main()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'To reinstall'"
     [ "$status" -eq 0 ]
+}
+
+prepare_standalone_uninstall() {
+    UNINSTALL_HOME="$BATS_TEST_TMPDIR/home"
+    UNINSTALL_CANONICAL="$UNINSTALL_HOME/.agents/skills/review-code"
+    UNINSTALL_SCRIPT="$UNINSTALL_HOME/.agents/bin/uninstall-review-code.sh"
+    mkdir -p "$UNINSTALL_CANONICAL" "$(dirname "$UNINSTALL_SCRIPT")"
+    cp "$PROJECT_ROOT/uninstall.sh" "$UNINSTALL_SCRIPT"
+    echo "installed skill" > "$UNINSTALL_CANONICAL/SKILL.md"
+}
+
+run_standalone_uninstall() {
+    run env HOME="$UNINSTALL_HOME" CODEX_HOME="${1:-$UNINSTALL_HOME/.codex}" bash "$UNINSTALL_SCRIPT" <<< "y"
+}
+
+write_managed_codex_agent() {
+    printf '%s\n' '# Managed by bin/install-codex.sh from the review-code repo.' 'name = "reviewer"' > "$1"
+}
+
+@test "uninstall.sh: standalone removal backs up canonical reviews and removes its own script" {
+    prepare_standalone_uninstall
+    local legacy="$UNINSTALL_HOME/.claude/skills/review-code"
+    mkdir -p "$(dirname "$legacy")" "$UNINSTALL_CANONICAL/.reviews/org/repo" "$UNINSTALL_CANONICAL/reviews/org/repo"
+    ln -s "$UNINSTALL_CANONICAL" "$legacy"
+    echo "current review" > "$UNINSTALL_CANONICAL/.reviews/org/repo/current.md"
+    echo "visible review" > "$UNINSTALL_CANONICAL/reviews/org/repo/visible.md"
+    echo "older copy" > "$UNINSTALL_CANONICAL/reviews/org/repo/current.md"
+
+    run_standalone_uninstall
+    [ "$status" -eq 0 ]
+
+    [ ! -e "$UNINSTALL_CANONICAL" ]
+    [ ! -L "$legacy" ]
+    [ ! -e "$UNINSTALL_SCRIPT" ]
+    local backups=("$UNINSTALL_HOME"/review-code-backup-*)
+    [ "${#backups[@]}" -eq 1 ]
+    [ "$(cat "${backups[0]}/reviews/org/repo/current.md")" = "current review" ]
+    [ "$(cat "${backups[0]}/reviews/org/repo/visible.md")" = "visible review" ]
+}
+
+@test "uninstall.sh: standalone removal backs up a legacy real-directory installation" {
+    prepare_standalone_uninstall
+    rm -rf "$UNINSTALL_CANONICAL"
+    local legacy="$UNINSTALL_HOME/.claude/skills/review-code"
+    mkdir -p "$legacy/.reviews/org/repo" "$legacy/reviews/org/repo"
+    echo "current review" > "$legacy/.reviews/org/repo/current.md"
+    echo "legacy review" > "$legacy/reviews/org/repo/legacy.md"
+    echo "older copy" > "$legacy/reviews/org/repo/current.md"
+
+    run_standalone_uninstall
+    [ "$status" -eq 0 ]
+
+    [ ! -e "$legacy" ]
+    local backups=("$UNINSTALL_HOME"/review-code-backup-*)
+    [ "${#backups[@]}" -eq 1 ]
+    [ "$(cat "${backups[0]}/reviews/org/repo/current.md")" = "current review" ]
+    [ "$(cat "${backups[0]}/reviews/org/repo/legacy.md")" = "legacy review" ]
+}
+
+@test "uninstall.sh: backs up reviews from canonical and legacy directories together" {
+    prepare_standalone_uninstall
+    local legacy="$UNINSTALL_HOME/.claude/skills/review-code"
+    mkdir -p "$legacy/.reviews/org/repo" "$UNINSTALL_CANONICAL/.reviews/org/repo"
+    echo "legacy review" > "$legacy/.reviews/org/repo/legacy.md"
+    echo "canonical review" > "$UNINSTALL_CANONICAL/.reviews/org/repo/canonical.md"
+
+    run_standalone_uninstall
+    [ "$status" -eq 0 ]
+
+    local backups=("$UNINSTALL_HOME"/review-code-backup-*)
+    [ "${#backups[@]}" -eq 1 ]
+    [ "$(cat "${backups[0]}/reviews/org/repo/legacy.md")" = "legacy review" ]
+    [ "$(cat "${backups[0]}/reviews/org/repo/canonical.md")" = "canonical review" ]
+}
+
+@test "uninstall.sh: leaves a Claude skill link targeting a foreign installation intact" {
+    prepare_standalone_uninstall
+    local legacy="$UNINSTALL_HOME/.claude/skills/review-code"
+    local foreign="$UNINSTALL_HOME/foreign-skill"
+    mkdir -p "$(dirname "$legacy")" "$foreign"
+    echo "foreign skill" > "$foreign/SKILL.md"
+    echo "foreign config" > "$foreign/.env"
+    ln -s "$foreign" "$legacy"
+
+    run_standalone_uninstall
+    [ "$status" -eq 0 ]
+
+    [ -L "$legacy" ]
+    [ "$(readlink "$legacy")" = "$foreign" ]
+    [ "$(cat "$foreign/SKILL.md")" = "foreign skill" ]
+    [ "$(cat "$foreign/.env")" = "foreign config" ]
+    [ ! -e "$UNINSTALL_CANONICAL" ]
+}
+
+@test "uninstall.sh: removes dangling Claude compatibility links targeting canonical" {
+    prepare_standalone_uninstall
+    rm -rf "$UNINSTALL_CANONICAL"
+    local legacy="$UNINSTALL_HOME/.claude/skills/review-code"
+    mkdir -p "$(dirname "$legacy")"
+    ln -s "$UNINSTALL_CANONICAL" "$legacy"
+
+    run_standalone_uninstall
+    [ "$status" -eq 0 ]
+    [ ! -L "$legacy" ]
+    [ ! -e "$UNINSTALL_SCRIPT" ]
+}
+
+@test "uninstall.sh: removes owned Codex agents while preserving foreign files and links" {
+    prepare_standalone_uninstall
+    local codex_dir="$UNINSTALL_HOME/.codex"
+    local staging="$codex_dir/.review-code-agents"
+    local agents="$codex_dir/agents"
+    local foreign="$UNINSTALL_HOME/foreign-agent.toml"
+    mkdir -p "$staging" "$agents"
+    write_managed_codex_agent "$staging/code-reviewer-security.toml"
+    write_managed_codex_agent "$agents/code-reviewer-correctness.toml"
+    ln -s "$staging/code-reviewer-security.toml" "$agents/code-reviewer-security.toml"
+    ln -s "$staging/retired-reviewer.toml" "$agents/retired-reviewer.toml"
+    echo "foreign agent" > "$foreign"
+    ln -s "$foreign" "$agents/code-reviewer-performance.toml"
+    echo "user-authored agent" > "$agents/code-reviewer-testing.toml"
+    echo "user-authored staging file" > "$staging/custom.toml"
+
+    run_standalone_uninstall
+    [ "$status" -eq 0 ]
+
+    [ ! -L "$agents/code-reviewer-security.toml" ]
+    [ ! -L "$agents/retired-reviewer.toml" ]
+    [ ! -e "$agents/code-reviewer-correctness.toml" ]
+    [ ! -e "$staging/code-reviewer-security.toml" ]
+    [ -L "$agents/code-reviewer-performance.toml" ]
+    [ "$(cat "$foreign")" = "foreign agent" ]
+    [ "$(cat "$agents/code-reviewer-testing.toml")" = "user-authored agent" ]
+    [ "$(cat "$staging/custom.toml")" = "user-authored staging file" ]
+}
+
+@test "uninstall.sh: honors CODEX_HOME without removing agents in the default home" {
+    prepare_standalone_uninstall
+    local codex_dir="$UNINSTALL_HOME/custom codex"
+    local staging="$codex_dir/.review-code-agents"
+    local agents="$codex_dir/agents"
+    local default_agents="$UNINSTALL_HOME/.codex/agents"
+    mkdir -p "$staging" "$agents" "$default_agents"
+    write_managed_codex_agent "$staging/code-reviewer-security.toml"
+    ln -s "$staging/code-reviewer-security.toml" "$agents/code-reviewer-security.toml"
+    write_managed_codex_agent "$default_agents/code-reviewer-security.toml"
+
+    run_standalone_uninstall "$codex_dir"
+    [ "$status" -eq 0 ]
+
+    [ ! -L "$agents/code-reviewer-security.toml" ]
+    [ ! -e "$staging/code-reviewer-security.toml" ]
+    [ -f "$default_agents/code-reviewer-security.toml" ]
 }

@@ -39,6 +39,7 @@ REPO_DIR="."
 BASE_REF=""
 OUT_PATH=""
 MAX_FRACTION="0.5"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -105,13 +106,10 @@ if [[ -z "${BASE_REF}" ]]; then
 fi
 
 # Recover the last-reviewed SHA from the review document when not given directly.
-if [[ -z "${REVIEW_COMMIT}" && -n "${REVIEW_FILE}" ]]; then
-    if [[ -f "${REVIEW_FILE}" ]]; then
-        # Scoped to the metadata comment block, matching learn-from-pr.sh, so a
-        # later mention of "review_commit:" in the review body cannot be read as
-        # the header value.
-        REVIEW_COMMIT=$(sed -n '/review-metadata/,/-->/{ /review_commit:/{ s/.*review_commit: *//; p; q; }; }' \
-            "${REVIEW_FILE}" | tr -d '[:space:]')
+if [[ -z "${REVIEW_COMMIT}" && -f "${REVIEW_FILE}" ]]; then
+    if ! REVIEW_COMMIT=$("${SCRIPT_DIR}/update-review-metadata.sh" --file "${REVIEW_FILE}" --get review_commit); then
+        emit full "Invalid review metadata; reviewing the full diff."
+        exit 0
     fi
 fi
 

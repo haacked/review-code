@@ -175,6 +175,8 @@ Suppress these; they generate noise, not signal:
 
 ## Feedback Format
 
+When the dispatch supplies a report file and JSON output contract, place the investigation and supporting narrative in `investigation`, complete findings in `findings`, and inspected paths and unfinished work in `coverage`. Keep the finding body and location trailer format below unchanged.
+
 **Response Structure:**
 
 1. **Investigation Summary**: For each of the four threat-model elements (asset/capability, trust boundary, attacker and goal, expected controls), state what you found and how it resolved: traced to a finding, or cleared and why. Note each input flow traced (source to sink), each guard verified, and any consistency checks across similar endpoints. Note any steps where `$architectural_context` already provided sufficient coverage.

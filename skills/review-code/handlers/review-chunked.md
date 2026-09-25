@@ -56,10 +56,10 @@ Loaded when the session JSON's `chunk_metadata.chunked` is `true`: the diff was 
      If you notice issues that may interact with code in other chunks, flag them as questions.
      ```
    - Everything else comes from the shared `briefing.md`, exactly as in an unchunked review. Do not inline architectural context or chunk analyses into prompts.
-   - Dispatch all applicable (chunk x agent) combinations in parallel using the harness method in `review.md`. For Claude, apply the named reviewer fallback from "Subagent Availability" when needed. For Codex, use `agent-dispatch.sh run <agent-name> <prompt-file> <artifacts_dir>/findings/chunk-<index>-<agent-name>.md` with distinct prompt and output paths per combination.
+   - Dispatch all applicable (chunk x agent) combinations in parallel using the harness method in `review.md`. For Claude, apply the named reviewer fallback from "Subagent Availability" when needed. For Codex, use `agent-dispatch.sh run <agent-name> <prompt-file> <artifacts_dir>/reports/chunk-<index>-<agent-name>.json` with distinct prompt and output paths per combination.
    - If a reviewer reports `BRIEFING_UNAVAILABLE`, repair its missing artifact and re-dispatch that combination. If file delivery remains unavailable, use `review-inline-fallback.md` for that reviewer and include its chunk analysis and manifest in the fallback. Do not accept an unavailable result as a clean review.
 
-3. After all tasks complete, merge all findings into a single pool for synthesis.
+3. Split each domain reviewer report using `reviewer-output.md`. Merge only the extracted findings into the synthesis pool and retain all coverage gaps and investigation paths. Do not read the raw reports or investigation summaries into the conversation.
 
 **Check per-chunk coverage.** Run the coverage check from `review.md` once for the whole review, not once per chunk:
 

@@ -127,7 +127,7 @@ teardown() {
     grep -q "^---$" "$TEST_DIR/review.md"
     # the appended section lands after the carried-forward content
     [ "$(grep -n 'Typo in the heading' "$TEST_DIR/review.md" | cut -d: -f1)" -lt \
-      "$(grep -n 'Re-review at deadbee' "$TEST_DIR/review.md" | cut -d: -f1)" ]
+        "$(grep -n 'Re-review at deadbee' "$TEST_DIR/review.md" | cut -d: -f1)" ]
 }
 
 @test "carry-forward-findings.sh: advances the metadata header" {
@@ -140,6 +140,57 @@ teardown() {
     grep -q "^review_mode: delta$" "$TEST_DIR/review.md"
     grep -q "^delta_from: aaaaaaa$" "$TEST_DIR/review.md"
     [ "$(grep -c '^review_commit:' "$TEST_DIR/review.md")" -eq 1 ]
+}
+
+@test "carry-forward-findings.sh: creates missing metadata when advancing the review" {
+    sed '1,/^-->$/d' "$TEST_DIR/review.md" > "$TEST_DIR/no-header.md"
+
+    run "$SCRIPT" --review-file "$TEST_DIR/no-header.md" --delta-diff "$TEST_DIR/delta.patch" \
+        --head-sha bbbbbbb --delta-from aaaaaaa
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.header_updated == true' > /dev/null
+    [ "$(head -n 1 "$TEST_DIR/no-header.md")" = '<!-- review-metadata' ]
+    grep -q '^review_commit: bbbbbbb$' "$TEST_DIR/no-header.md"
+    grep -q '^review_mode: delta$' "$TEST_DIR/no-header.md"
+    grep -q '^delta_from: aaaaaaa$' "$TEST_DIR/no-header.md"
+    grep -q 'Missing input validation on the forwarded header.' "$TEST_DIR/no-header.md"
+}
+
+@test "carry-forward-findings.sh: advances real metadata without changing a fenced example" {
+    cat > "$TEST_DIR/quoted.md" << 'EOF'
+```markdown
+<!-- review-metadata
+review_commit: 1111111
+-->
+```
+
+EOF
+    cat "$TEST_DIR/quoted.md" "$TEST_DIR/review.md" > "$TEST_DIR/combined.md"
+    mv "$TEST_DIR/combined.md" "$TEST_DIR/review.md"
+
+    run "$SCRIPT" --review-file "$TEST_DIR/review.md" --delta-diff "$TEST_DIR/delta.patch" \
+        --head-sha bbbbbbb --delta-from aaaaaaa
+    [ "$status" -eq 0 ]
+
+    python3 - "$TEST_DIR/quoted.md" "$TEST_DIR/review.md" << 'PY'
+from pathlib import Path
+import sys
+
+quoted, after = (Path(path).read_bytes() for path in sys.argv[1:])
+assert after.startswith(quoted)
+assert b"review_commit: bbbbbbb\n" in after[len(quoted):]
+assert b"review_commit: aaaaaaa\n" not in after[len(quoted):]
+PY
+}
+
+@test "carry-forward-findings.sh: duplicate metadata prevents pruning or appending" {
+    printf '\n<!-- review-metadata\nreview_commit: ccccccc\n-->\n' >> "$TEST_DIR/review.md"
+    cp "$TEST_DIR/review.md" "$TEST_DIR/before.md"
+
+    run "$SCRIPT" --review-file "$TEST_DIR/review.md" --delta-diff "$TEST_DIR/delta.patch" \
+        --append-file "$TEST_DIR/append.md" --head-sha bbbbbbb --delta-from aaaaaaa
+    [ "$status" -ne 0 ]
+    cmp -s "$TEST_DIR/before.md" "$TEST_DIR/review.md"
 }
 
 @test "carry-forward-findings.sh: --dry-run leaves the review file alone" {

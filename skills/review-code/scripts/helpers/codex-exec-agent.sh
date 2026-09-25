@@ -108,6 +108,13 @@ if [[ -n "${AGENT_EFFORT}" ]]; then
     codex_args+=(-c "model_reasoning_effort=${AGENT_EFFORT}")
 fi
 
+EVENTS_FILE="${OUTPUT_FILE}.events.jsonl"
+EXIT_CODE=0
 codex "${codex_args[@]}" "$(cat "${INSTRUCTIONS_FILE}")
 
-$(cat "${PROMPT_FILE}")"
+$(cat "${PROMPT_FILE}")" > "${EVENTS_FILE}" || EXIT_CODE=$?
+
+jq -nc --arg output_file "${OUTPUT_FILE}" --arg events_file "${EVENTS_FILE}" \
+    --argjson exit_code "${EXIT_CODE}" \
+    '{output_file: $output_file, events_file: $events_file, exit_code: $exit_code}'
+exit "${EXIT_CODE}"

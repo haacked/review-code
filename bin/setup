@@ -283,6 +283,14 @@ merge_legacy_skill_dir() {
     local old_dir="$1"
     local new_dir="$2"
 
+    local configured_worktree_root
+    configured_worktree_root="$(
+        source "${SCRIPT_DIR}/skills/review-code/scripts/helpers/worktree-layout.sh"
+        worktree_root "${new_dir}"
+    )"
+    python3 "${SCRIPT_DIR}/bin/migrate-review-worktrees.py" \
+        "${old_dir}" "${new_dir}" "${configured_worktree_root}"
+
     mkdir -p "${new_dir}"
 
     # Move learnings (user-authored content); existing files in the canonical
@@ -314,12 +322,9 @@ merge_legacy_skill_dir() {
         done < <(cd "${old_dir}/.reviews" && find . -type f)
     fi
 
-    # Move sessions and worktrees (live state).
-    for sub in .sessions .worktrees; do
-        if [[ -d "${old_dir}/${sub}" && ! -e "${new_dir}/${sub}" ]]; then
-            mv "${old_dir}/${sub}" "${new_dir}/${sub}"
-        fi
-    done
+    if [[ -d "${old_dir}/.sessions" && ! -e "${new_dir}/.sessions" ]]; then
+        mv "${old_dir}/.sessions" "${new_dir}/.sessions"
+    fi
 
     # Move repos.conf (user's clone map).
     if [[ -f "${old_dir}/repos.conf" && ! -e "${new_dir}/repos.conf" ]]; then

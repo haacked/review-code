@@ -141,11 +141,23 @@ validate_args() {
     fi
 }
 
-worktree_is_registered() {
+registered_worktree_path() {
     local clone="$1"
     local path="$2"
-    git -C "${clone}" worktree list --porcelain 2> /dev/null \
-        | grep -Fqx "worktree ${path}"
+    local entry registered
+    while IFS= read -r -d '' entry; do
+        [[ "${entry}" == "worktree "* ]] || continue
+        registered="${entry#worktree }"
+        if [[ "$(canonicalize "${registered}")" == "${path}" ]]; then
+            echo "${registered}"
+            return 0
+        fi
+    done < <(git -C "${clone}" worktree list --porcelain -z 2> /dev/null)
+    return 1
+}
+
+worktree_is_registered() {
+    registered_worktree_path "$@" > /dev/null
 }
 
 # Create a detached worktree at $path pointing at $ref. Caller must ensure the
@@ -168,6 +180,7 @@ create_worktree() {
 force_remove_worktree() {
     local local_clone="$1"
     local path="$2"
+    path=$(registered_worktree_path "${local_clone}" "${path}") || return 0
     git -C "${local_clone}" worktree remove --force --force "${path}" > /dev/null 2>&1 || true
 }
 

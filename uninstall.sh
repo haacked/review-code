@@ -1,13 +1,13 @@
 #!/bin/bash
-# uninstall.sh - Uninstall review-code from Claude Code
+# uninstall.sh - Uninstall review-code from Claude Code and Codex
 #
 # Usage:
 #   ./uninstall.sh
 #   or
-#   ~/.claude/bin/uninstall-review-code.sh (if installed)
+#   ~/.agents/bin/uninstall-review-code.sh (if installed)
 #
 # Description:
-#   Removes review-code files from ~/.claude/ directory
+#   Removes the canonical skill and its managed harness integrations.
 #   Optionally preserves reviews
 
 set -euo pipefail
@@ -20,7 +20,10 @@ NC='\033[0m'
 
 # Directories - all paths are now fixed under the skill directory
 CLAUDE_DIR="${HOME}/.claude"
-SKILL_DIR="${CLAUDE_DIR}/skills/review-code"
+AGENTS_DIR="${HOME}/.agents"
+SKILL_DIR="${AGENTS_DIR}/skills/review-code"
+CLAUDE_SKILL_LINK="${CLAUDE_DIR}/skills/review-code"
+CODEX_HOME_DIR="${CODEX_HOME:-${HOME}/.codex}"
 REVIEWS_DIR="${SKILL_DIR}/.reviews"
 # Installs that predate the dot-dir migration keep reviews in a visible dir,
 # and both can hold content at once: a stale session running the old SKILL.md
@@ -29,9 +32,19 @@ REVIEWS_DIR="${SKILL_DIR}/.reviews"
 # reviews the user asked to preserve. Legacy first so .reviews wins
 # collisions, matching the "keep the new copy" rule in migrate_state_dirs.
 REVIEW_DIRS=()
-for review_candidate in "${SKILL_DIR}/reviews" "${REVIEWS_DIR}"; do
-    if [[ -n "$(ls -A "${review_candidate}" 2> /dev/null || true)" ]]; then
-        REVIEW_DIRS+=("${review_candidate}")
+SKILL_ROOTS=()
+for skill_candidate in "${CLAUDE_SKILL_LINK}" "${SKILL_DIR}"; do
+    if [[ -d "${skill_candidate}" && ! -L "${skill_candidate}" ]]; then
+        SKILL_ROOTS+=("${skill_candidate}")
+        current_reviews_dir="${skill_candidate}/.reviews"
+        if [[ "${skill_candidate}" == "${SKILL_DIR}" ]]; then
+            current_reviews_dir="${REVIEWS_DIR}"
+        fi
+        for review_candidate in "${skill_candidate}/reviews" "${current_reviews_dir}"; do
+            if [[ -n "$(ls -A "${review_candidate}" 2> /dev/null || true)" ]]; then
+                REVIEW_DIRS+=("${review_candidate}")
+            fi
+        done
     fi
 done
 
@@ -53,25 +66,36 @@ error() {
 
 remove_session_clear_hook() {
     # Run BEFORE remove_skill so the manage-session-hook.sh script still exists.
-    local manager="${SKILL_DIR}/scripts/manage-session-hook.sh"
-    if [[ -x "${manager}" ]]; then
+    local root manager
+    for root in ${SKILL_ROOTS[@]+"${SKILL_ROOTS[@]}"}; do
+        manager="${root}/scripts/manage-session-hook.sh"
+        [[ -x "${manager}" ]] || continue
         if "${manager}" uninstall; then
             info "Removed SessionStart hook from ~/.claude/settings.json"
         else
             warn "Failed to remove SessionStart hook from ~/.claude/settings.json"
         fi
-    fi
+    done
 }
 
 remove_skill() {
     local removed=0
 
-    # Remove skill directory (new installation location)
-    if [[ -d "${CLAUDE_DIR}/skills/review-code" ]]; then
-        rm -rf "${CLAUDE_DIR}/skills/review-code"
-        info "Removed review-code skill"
-        removed=1
+    if [[ -L "${CLAUDE_SKILL_LINK}" ]]; then
+        if [[ "$(readlink "${CLAUDE_SKILL_LINK}")" == "${SKILL_DIR}" ]]; then
+            rm "${CLAUDE_SKILL_LINK}"
+            removed=$((removed + 1))
+        else
+            warn "Leaving unmanaged skill link: ${CLAUDE_SKILL_LINK}"
+        fi
     fi
+
+    local root
+    for root in ${SKILL_ROOTS[@]+"${SKILL_ROOTS[@]}"}; do
+        rm -rf "${root}"
+        info "Removed review-code skill: ${root}"
+        removed=$((removed + 1))
+    done
 
     # Remove old command file (legacy installation)
     if [[ -f "${CLAUDE_DIR}/commands/review-code.md" ]]; then
@@ -88,10 +112,13 @@ remove_skill() {
     fi
 
     # Remove uninstall script from main bin directory
-    if [[ -f "${CLAUDE_DIR}/bin/uninstall-review-code.sh" ]]; then
-        rm "${CLAUDE_DIR}/bin/uninstall-review-code.sh"
-        removed=$((removed + 1))
-    fi
+    local script
+    for script in "${AGENTS_DIR}/bin/uninstall-review-code.sh" "${CLAUDE_DIR}/bin/uninstall-review-code.sh"; do
+        if [[ -f "${script}" && ! -L "${script}" ]]; then
+            rm "${script}"
+            removed=$((removed + 1))
+        fi
+    done
 
     if [[ "${removed}" -eq 0 ]]; then
         warn "No review-code installation found"
@@ -147,6 +174,32 @@ remove_agents() {
     fi
 }
 
+remove_codex_agents() {
+    local staging="${CODEX_HOME_DIR}/.review-code-agents"
+    local agents_dir="${CODEX_HOME_DIR}/agents"
+    # Keep ownership checks in sync with bin/install-codex.sh.
+    local managed_header="# Managed by bin/install-codex.sh from the review-code repo."
+    local agent
+    for agent in "${agents_dir}/"*.toml; do
+        if [[ -L "${agent}" ]]; then
+            case "$(readlink "${agent}")" in
+                "${staging}/"*) rm "${agent}" ;;
+                *) ;;
+            esac
+        elif [[ -f "${agent}" && "$(head -n 1 "${agent}")" == "${managed_header}" ]]; then
+            rm "${agent}"
+        fi
+    done
+    if [[ -d "${staging}" && ! -L "${staging}" ]]; then
+        for agent in "${staging}/"*.toml; do
+            if [[ -f "${agent}" && ! -L "${agent}" && "$(head -n 1 "${agent}")" == "${managed_header}" ]]; then
+                rm "${agent}"
+            fi
+        done
+        rmdir "${staging}" 2> /dev/null || true
+    fi
+}
+
 preserve_reviews() {
     if [[ ${#REVIEW_DIRS[@]} -eq 0 ]]; then
         return
@@ -178,7 +231,6 @@ preserve_reviews() {
 cleanup_old_config_files() {
     # Remove any deprecated config files that may still exist
     local old_config_files=(
-        "${SKILL_DIR}/.env"
         "${CLAUDE_DIR}/review-code.env"
     )
 
@@ -221,6 +273,7 @@ main() {
     remove_session_clear_hook
     remove_skill
     remove_agents
+    remove_codex_agents
 
     # Clean up any old config files
     cleanup_old_config_files
@@ -234,7 +287,7 @@ main() {
     echo ""
     info "Uninstallation complete!"
     echo ""
-    echo "Review-code has been removed from ~/.claude/"
+    echo "Managed review-code files have been removed from ~/.agents/, ~/.claude/, and ${CODEX_HOME_DIR}/"
     local posthog_agent_dir
     for posthog_agent_dir in ${POSTHOG_AGENT_DIRS[@]+"${POSTHOG_AGENT_DIRS[@]}"}; do
         echo "Agents removed from PostHog Desktop: ${posthog_agent_dir}/"

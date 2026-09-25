@@ -137,6 +137,8 @@ Challenge yourself:
 
 ## Output Format
 
+When the dispatch supplies a report file and JSON output contract, place the investigation and supporting narrative in `investigation`, complete findings in `findings`, and inspected paths and unfinished work in `coverage`. Keep the finding body and location trailer format below unchanged.
+
 1. **Investigation Summary**: Component usages found, state management patterns observed in neighboring files, and a11y context from parent components. Note any steps where `$architectural_context` already provided sufficient coverage.
 2. **Frontend Health**: One-sentence assessment of component and state architecture
 3. **Blocking Issues**: Bugs, a11y violations, hooks rule violations
