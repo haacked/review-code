@@ -14,7 +14,7 @@ Follow `review-compose.md` as written, with three changes:
 
 1. Write the document to `<artifacts_dir>/review-append.md` (Write tool, new file), not to `$review_file`.
 2. Open it with `# Re-review at <first 7 of pr.head_sha>` instead of the usual title, followed by one line saying what the delta covered and that findings on files it did not touch are kept above. Everything below that heading keeps the normal shape, `## Security Review` and the rest at H2, because that is what the next re-review parses.
-3. Leave out the metadata header. The script moves the existing one forward: `review_commit` to this run's head, `reviewed_at`, `review_mode: delta`, and `delta_from`. The `scope` and `token_usage` blocks in that header stay as the earlier run left them; report this run's usage to the user as usual and log it with `log-token-usage.sh`.
+3. Leave out the metadata header. The merge calls the shared metadata writer to update the existing block or create one if missing: `review_commit` to this run's head, `reviewed_at`, `review_mode: delta`, and `delta_from`. The `scope` and `token_usage` blocks in that header stay as the earlier run left them; report this run's usage to the user as usual and log it with `log-token-usage.sh`.
 
 In PR mode the Suggested Comments section goes into `review-append.md` too.
 Write the file at the compose step rather than holding the composed document
@@ -49,13 +49,14 @@ re-review.
 
 ## Tell the user what happened
 
-Say how many findings carried forward and how many were re-derived. Four fields
+Say how many findings carried forward and how many were re-derived. Three fields
 need saying out loud when they are not the happy path:
 
 - `pruned: false` with a `prune_reason`: nothing was cut, so the document now lists the previous findings on changed files next to the new ones. Say so plainly; the user is about to read a review with duplicates in it.
 - `kept_unattributed`: findings the parser could not tie to a file. They are kept deliberately. A delta review only looks at changed files, so dropping one would lose it for good rather than have an agent re-derive it.
 - `kept_undeletable`: findings on changed files whose extent in the document could not be determined safely. Same reasoning, kept rather than guessed at.
-- `header_updated: false`: the document had no metadata header to advance, so this run's head SHA was not recorded anywhere. The next re-review has no point to compute a delta from and falls back to a full review. Say it: the saving is gone until someone puts a header back.
+
+Metadata errors stop the merge without replacing the review. Resolve a malformed or duplicate metadata block before retrying; do not report a completed re-review when its commit was not recorded.
 
 Carry-forward is conservative in one direction worth a line in the review itself:
 a change in one file can invalidate a finding about a file the delta never

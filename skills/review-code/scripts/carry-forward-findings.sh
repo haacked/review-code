@@ -221,56 +221,7 @@ fi
 # --------------------------------------------------------------- header, append
 OUT_FILE="${WORK_DIR}/out.md"
 
-# The awk below is the only thing that knows whether a header was actually
-# advanced, so it reports that itself rather than having a grep guess at it
-# over a different file.
-HEADER_UPDATED=true
-
-awk -v head_sha="${HEAD_SHA}" -v reviewed_at="${REVIEWED_AT}" \
-    -v delta_from="${DELTA_FROM}" '
-    BEGIN { in_meta = 0; done_meta = 0 }
-    {
-        if (!done_meta && !in_meta && $0 ~ /^<!-- review-metadata/) {
-            in_meta = 1
-            print
-            next
-        }
-        if (in_meta) {
-            if ($0 ~ /^[[:space:]]*-->/) {
-                if (head_sha != "" && !seen_commit) print "review_commit: " head_sha
-                if (!seen_reviewed) print "reviewed_at: " reviewed_at
-                if (!seen_mode) print "review_mode: delta"
-                if (delta_from != "" && !seen_from) print "delta_from: " delta_from
-                in_meta = 0
-                done_meta = 1
-                print
-                next
-            }
-            if (head_sha != "" && $0 ~ /^review_commit:/) {
-                print "review_commit: " head_sha
-                seen_commit = 1
-                next
-            }
-            if ($0 ~ /^reviewed_at:/) {
-                print "reviewed_at: " reviewed_at
-                seen_reviewed = 1
-                next
-            }
-            if ($0 ~ /^review_mode:/) {
-                print "review_mode: delta"
-                seen_mode = 1
-                next
-            }
-            if (delta_from != "" && $0 ~ /^delta_from:/) {
-                print "delta_from: " delta_from
-                seen_from = 1
-                next
-            }
-        }
-        print
-    }
-    END { exit(done_meta ? 0 : 1) }
-' "${PRUNED_FILE}" > "${OUT_FILE}" || HEADER_UPDATED=false
+cp "${PRUNED_FILE}" "${OUT_FILE}"
 
 APPENDED=false
 if [[ -n "${APPEND_FILE}" ]]; then
@@ -278,6 +229,15 @@ if [[ -n "${APPEND_FILE}" ]]; then
     cat "${APPEND_FILE}" >> "${OUT_FILE}"
     APPENDED=true
 fi
+
+metadata_args=(--file "${OUT_FILE}" --set "reviewed_at=${REVIEWED_AT}" --set review_mode=delta)
+if [[ -n "${HEAD_SHA}" ]]; then
+    metadata_args+=(--set "review_commit=${HEAD_SHA}")
+fi
+if [[ -n "${DELTA_FROM}" ]]; then
+    metadata_args+=(--set "delta_from=${DELTA_FROM}")
+fi
+"${SCRIPT_DIR}/update-review-metadata.sh" "${metadata_args[@]}"
 
 if [[ "${DRY_RUN}" == false ]]; then
     # Same directory, so the rename is atomic: a reader sees the old document or
@@ -294,7 +254,6 @@ jq -nc \
     --argjson delta_files_list "${DELTA_FILES_JSON}" \
     --argjson pruned "${PRUNED}" \
     --argjson appended "${APPENDED}" \
-    --argjson header_updated "${HEADER_UPDATED}" \
     --argjson dry_run "${DRY_RUN}" \
     '{
         review_file: $review_file,
@@ -305,7 +264,7 @@ jq -nc \
         delta_files: ($delta_files_list | length),
         pruned: $pruned,
         appended: $appended,
-        header_updated: $header_updated,
+        header_updated: true,
         dry_run: $dry_run,
         dropped_files: ($classified.dropped | map(.file) | unique)
     }

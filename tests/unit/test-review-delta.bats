@@ -130,7 +130,8 @@ mode_of() { echo "$1" | jq -r '.mode'; }
     git -C "$REPO" checkout -q -b divergent main
     echo z > "$REPO/z.txt"
     git -C "$REPO" add -A && git -C "$REPO" commit -qm divergent
-    local other; other=$(git -C "$REPO" rev-parse HEAD)
+    local other
+    other=$(git -C "$REPO" rev-parse HEAD)
     git -C "$REPO" checkout -q feature
 
     run "$SCRIPT" --head-sha "$HEAD_SHA" --review-commit "$other" --repo-dir "$REPO" --base main
@@ -149,7 +150,8 @@ mode_of() { echo "$1" | jq -r '.mode'; }
     git -C "$REPO" merge -q --no-ff -m "merge main" main
     echo more >> "$REPO/f2.txt"
     git -C "$REPO" add -A && git -C "$REPO" commit -qm "after merge"
-    local merged_head; merged_head=$(git -C "$REPO" rev-parse HEAD)
+    local merged_head
+    merged_head=$(git -C "$REPO" rev-parse HEAD)
 
     run "$SCRIPT" --head-sha "$merged_head" --review-commit "$REVIEWED_SHA" --repo-dir "$REPO" --base main
     [ "$(mode_of "$output")" = "full" ]
@@ -176,14 +178,16 @@ mode_of() { echo "$1" | jq -r '.mode'; }
     git -C "$REPO" add -A && git -C "$REPO" commit -qm "base moves"
     git -C "$REPO" checkout -q feature
     git -C "$REPO" rebase -q main
-    local rebased; rebased=$(git -C "$REPO" rev-parse HEAD)
+    local rebased
+    rebased=$(git -C "$REPO" rev-parse HEAD)
 
     run "$SCRIPT" --head-sha "$rebased" --review-commit "$REVIEWED_SHA" --repo-dir "$REPO" --base main
     [ "$(mode_of "$output")" = "full" ]
 }
 
 @test "review-delta: falls back to full when the delta covers more than half the PR" {
-    local base_sha; base_sha=$(git -C "$REPO" rev-parse main)
+    local base_sha
+    base_sha=$(git -C "$REPO" rev-parse main)
     run "$SCRIPT" --head-sha "$HEAD_SHA" --review-commit "$base_sha" --repo-dir "$REPO" --base main
     [ "$(mode_of "$output")" = "full" ]
     echo "$output" | jq -r '.reason' | grep -q "threshold"
@@ -227,6 +231,60 @@ mode_of() { echo "$1" | jq -r '.mode'; }
     run "$SCRIPT" --head-sha "$HEAD_SHA" --review-file "$rf" --repo-dir "$REPO" --base main
     [ "$(mode_of "$output")" = "delta" ]
     [ "$(echo "$output" | jq -r '.delta_from')" = "$REVIEWED_SHA" ]
+}
+
+@test "review-delta: uses the written metadata after a fenced example that names head" {
+    local rf="$BATS_TEST_TMPDIR/quoted-review.md"
+    printf '```markdown\n<!-- review-metadata\nreview_commit: %s\n-->\n```\n\n<!-- review-metadata\nreview_commit: stale-sha\n-->\n' "$HEAD_SHA" > "$rf"
+
+    run "$PROJECT_ROOT/skills/review-code/scripts/update-review-metadata.sh" --file "$rf" \
+        --set "review_commit=$REVIEWED_SHA" --set reviewed_at=2026-09-16T01:02:03Z --set review_mode=full
+    [ "$status" -eq 0 ]
+
+    run "$SCRIPT" --head-sha "$HEAD_SHA" --review-file "$rf" --repo-dir "$REPO" --base main
+    [ "$status" -eq 0 ]
+    [ "$(mode_of "$output")" = "delta" ]
+    [ "$(echo "$output" | jq -r '.delta_from')" = "$REVIEWED_SHA" ]
+    [ "$(echo "$output" | jq -r '.changed_files')" -eq 1 ]
+}
+
+@test "review-delta: quoted metadata alone cannot suppress a full review" {
+    local rf="$BATS_TEST_TMPDIR/quoted-only.md"
+    printf '~~~markdown\n<!-- review-metadata\nreview_commit: %s\n-->\n~~~\n' "$HEAD_SHA" > "$rf"
+
+    run "$SCRIPT" --head-sha "$HEAD_SHA" --review-file "$rf" --repo-dir "$REPO" --base main
+    [ "$status" -eq 0 ]
+    [ "$(mode_of "$output")" = "full" ]
+}
+
+@test "review-delta: duplicate metadata blocks require a full review" {
+    local rf="$BATS_TEST_TMPDIR/duplicate-blocks.md"
+    printf '<!-- review-metadata\nreview_commit: %s\n-->\n\n<!-- review-metadata\nreview_commit: %s\n-->\n' "$HEAD_SHA" "$REVIEWED_SHA" > "$rf"
+
+    local result
+    result=$("$SCRIPT" --head-sha "$HEAD_SHA" --review-file "$rf" --repo-dir "$REPO" --base main 2> "$BATS_TEST_TMPDIR/metadata.stderr")
+    [ "$(mode_of "$result")" = "full" ]
+    echo "$result" | jq -e '.reason | test("metadata"; "i")' > /dev/null
+}
+
+@test "review-delta: repeated review commits require a full review" {
+    local rf="$BATS_TEST_TMPDIR/duplicate-fields.md"
+    printf '<!-- review-metadata\nreview_commit: %s\nreview_commit: %s\n-->\n' "$HEAD_SHA" "$REVIEWED_SHA" > "$rf"
+
+    local result
+    result=$("$SCRIPT" --head-sha "$HEAD_SHA" --review-file "$rf" --repo-dir "$REPO" --base main 2> "$BATS_TEST_TMPDIR/metadata.stderr")
+    [ "$(mode_of "$result")" = "full" ]
+    echo "$result" | jq -e '.reason | test("metadata"; "i")' > /dev/null
+}
+
+@test "review-delta: an unclosed metadata block requires a full review" {
+    local rf="$BATS_TEST_TMPDIR/unclosed-metadata.md"
+    printf '<!-- review-metadata\nreview_commit: %s\n' "$HEAD_SHA" > "$rf"
+
+    local result
+    result=$("$SCRIPT" --head-sha "$HEAD_SHA" --review-file "$rf" --repo-dir "$REPO" --base main 2> "$BATS_TEST_TMPDIR/metadata.stderr")
+    [ "$(mode_of "$result")" = "full" ]
+    echo "$result" | jq -e '.reason | test("metadata"; "i")' > /dev/null
 }
 
 @test "review-delta: falls back to full when the review file has no review_commit" {

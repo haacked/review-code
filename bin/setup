@@ -283,6 +283,14 @@ merge_legacy_skill_dir() {
     local old_dir="$1"
     local new_dir="$2"
 
+    local configured_worktree_root
+    configured_worktree_root="$(
+        source "${SCRIPT_DIR}/skills/review-code/scripts/helpers/worktree-layout.sh"
+        worktree_root "${new_dir}"
+    )"
+    python3 "${SCRIPT_DIR}/bin/migrate-review-worktrees.py" \
+        "${old_dir}" "${new_dir}" "${configured_worktree_root}"
+
     mkdir -p "${new_dir}"
 
     # Move learnings (user-authored content); existing files in the canonical
@@ -314,12 +322,9 @@ merge_legacy_skill_dir() {
         done < <(cd "${old_dir}/.reviews" && find . -type f)
     fi
 
-    # Move sessions and worktrees (live state).
-    for sub in .sessions .worktrees; do
-        if [[ -d "${old_dir}/${sub}" && ! -e "${new_dir}/${sub}" ]]; then
-            mv "${old_dir}/${sub}" "${new_dir}/${sub}"
-        fi
-    done
+    if [[ -d "${old_dir}/.sessions" && ! -e "${new_dir}/.sessions" ]]; then
+        mv "${old_dir}/.sessions" "${new_dir}/.sessions"
+    fi
 
     # Move repos.conf (user's clone map).
     if [[ -f "${old_dir}/repos.conf" && ! -e "${new_dir}/repos.conf" ]]; then
@@ -742,6 +747,46 @@ install_context() {
     info "Context files: ${summary}"
 }
 
+record_installed_file() {
+    local source="$1"
+    local relative="$2"
+    local manifest="$3"
+    local target="${SKILL_DIR}/${relative}"
+
+    if [[ -f "${target}" && ! -L "${target}" ]] && cmp -s "${source}" "${target}"; then
+        printf '%s\t%s\n' "$(cksum "${target}" | awk '{print $1 " " $2}')" "${relative}" >> "${manifest}"
+    fi
+}
+
+write_install_manifest() {
+    local source_root="${SCRIPT_DIR}/skills/review-code"
+    local manifest="${SKILL_DIR}/.install-manifest"
+    local temporary
+    temporary="$(mktemp "${manifest}.XXXXXX")"
+    local source relative
+
+    for source in \
+        "${source_root}/SKILL.md" \
+        "${source_root}/scripts/"*.sh "${source_root}/scripts/"*.py \
+        "${source_root}/scripts/helpers/"*.sh "${source_root}/scripts/helpers/"*.py \
+        "${source_root}/scripts/session-hooks/"*.sh "${source_root}/scripts/session-hooks/"*.py \
+        "${source_root}/handlers/"*.md "${source_root}/briefing/"*.md; do
+        [[ -f "${source}" ]] || continue
+        relative="${source#"${source_root}/"}"
+        record_installed_file "${source}" "${relative}" "${temporary}"
+    done
+
+    while IFS= read -r source; do
+        relative="${source#"${source_root}/"}"
+        record_installed_file "${source}" "${relative}" "${temporary}"
+    done < <(find "${source_root}/context" -type f -name '*.md')
+
+    source="${source_root}/learnings/README.md"
+    record_installed_file "${source}" '.learnings/README.md' "${temporary}"
+
+    mv "${temporary}" "${manifest}"
+}
+
 cleanup_old_config() {
     # Remove old config files that are no longer needed
     local old_config_files=(
@@ -1047,6 +1092,7 @@ main() {
     install_session_clear_hook
     install_agents
     install_context
+    write_install_manifest
 
     # Check for orphaned review worktrees (from crashed reviews).
     check_orphan_worktrees

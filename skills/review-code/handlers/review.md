@@ -164,7 +164,7 @@ duration_ms: NNN</usage>
 
 Maintain a `$token_usage` map throughout the review. After each Agent/Task tool invocation completes (context explorer, review agents, chunk analyzers, finding validators), parse the `<usage>` block from its response and record `total_tokens`, `tool_uses`, and `duration_ms` keyed by agent name (e.g., `context_explorer`, `code-reviewer-security`, `chunk-1-analysis`, `validator-1`). If the usage block is absent from a response, skip that entry.
 
-**Codex ($harness = `codex`):** Codex's JSONL stream carries different signals; the response surface is what `codex exec --output-last-message` writes. Track per-agent wall-clock (time around each `agent-dispatch.sh run` call) and any token fields in the final `turn.completed` event of the JSONL stream. Codex doesn't expose tool-call counts, so record `tool_uses` only when the JSONL provides it; otherwise omit the field. Keep the same `$token_usage` map shape so the token-report rendering downstream doesn't branch on harness.
+**Codex ($harness = `codex`):** Track per-agent wall-clock time around each `agent-dispatch.sh run` call. Its compact result includes the final `turn.completed` usage when available; record `input_tokens + output_tokens` as `total_tokens` and retain any other token fields. Do not read the saved event log into the conversation. Codex doesn't expose tool-call counts, so record `tool_uses` only when the result provides it; otherwise omit the field. Keep the same `$token_usage` map shape so the token-report rendering downstream doesn't branch on harness.
 
 ### Prepare File Access Instructions
 
@@ -208,19 +208,13 @@ The steps below spawn named subagent types: `code-review-context-explorer`, the 
 
 This prints `claude` or `codex`. Save it as `$harness`. If the command exits non-zero (no harness detected), stop and report the error.
 
-**Claude ($harness = `claude`):** Spawn subagents via the Task tool with `subagent_type` set to the agent name (`code-review-context-explorer`, `code-reviewer-security`, etc.). If those names aren't registered in the environment, spawn `general-purpose` and prepend the full body of `~/.claude/agents/<subagent_type>.md` (frontmatter stripped) to the prompt; pass the definition's `model:` value if the Agent tool accepts it. Read from `~/.claude/agents/` even when `CLAUDE_CONFIG_DIR` points elsewhere: `bin/setup` always installs that copy, while a redirected config home's `agents/` dir is typically what's missing when this fallback applies. Findings come back in-conversation. After `synthesis`, pass each agent's raw findings on stdin to:
-
-```bash
-~/.agents/skills/review-code/scripts/helpers/agent-report.sh "<artifacts_dir>/findings/<agent-name>.md"
-```
-
-This writes one file per reviewer so the compose step can concatenate from disk.
+**Claude ($harness = `claude`):** Spawn subagents via the Task tool with `subagent_type` set to the agent name (`code-review-context-explorer`, `code-reviewer-security`, etc.). If those names aren't registered in the environment, spawn `general-purpose` and prepend the full body of `~/.claude/agents/<subagent_type>.md` (frontmatter stripped) to the prompt; pass the definition's `model:` value if the Agent tool accepts it. Read from `~/.claude/agents/` even when `CLAUDE_CONFIG_DIR` points elsewhere: `bin/setup` always installs that copy, while a redirected config home's `agents/` dir is typically what's missing when this fallback applies. Domain reviewers use the file output contract loaded at dispatch below. Other agents return the schema their stage requires.
 
 **Codex ($harness = `codex`):** Spawn subagents via the `codex` CLI — Codex has no Task tool or subagent registration inside the orchestrating process. For each agent in the plan:
 
 ```bash
 ~/.agents/skills/review-code/scripts/helpers/agent-dispatch.sh \
-    run <agent-name> <prompt-file> <artifacts_dir>/findings/<agent-name>.md
+    run <agent-name> <prompt-file> <output-file>
 ```
 
 `<prompt-file>` is a markdown file you write first containing the same prompt body the Claude path would send inline. The helper shells out to `codex exec --json --sandbox read-only --output-last-message <findings-file>`, applying the model, reasoning effort, and instructions from `~/.codex/agents/<agent-name>.toml`, so the agent's final message lands directly at the findings path. Don't repeat the agent definition in the prompt file; the helper supplies it. Codex subagents cannot stream back into this conversation; all findings, architectural context, and validation notes reach us as files.
@@ -350,6 +344,8 @@ Stop and report any error. Retain the returned plan as `$dispatch_plan`. Choose 
 
 ### Invoke Specialized Review Agents
 
+Read `~/.agents/skills/review-code/handlers/reviewer-output.md` now. Apply its report contract to every domain reviewer, including chunk dispatch and coverage retries. Give each reviewer a unique report name and path. The shared briefing supplies the contract. After dispatch, split its report and use only findings and compact coverage for synthesis.
+
 **Build the shared briefing once, then point every agent at it.**
 
 All agents need the same payload: PR context, commit messages, architectural context, language guidelines, and the shared review instructions. Writing it into each agent's prompt would mean retyping it once per agent and carrying it here for the rest of the run, so a script writes it to disk instead.
@@ -377,7 +373,9 @@ If `scoped_diffs` has no entry for a scoped agent, no file matched that agent's 
 The line count in the prompt is that agent's own file: its `scoped_diffs` entry when it has one, otherwise `diff_lines`. Quoting the unscoped count to a scoped agent sends it paging for lines that do not exist, and an agent that receives a fraction of what it was promised may decide the briefing is broken and reply `BRIEFING_UNAVAILABLE`.
 
 ```markdown
-Read `<artifacts_dir>/briefing.md` for the review context and shared instructions, then read `<artifacts_dir>/<agent-diff-file>` for the code changes. Apply your domain lens to those changes.
+Read `<artifacts_dir>/briefing.md` for the review context, shared instructions, and report schema, then read `<artifacts_dir>/<agent-diff-file>` for the code changes. Apply your domain lens to those changes.
+
+Report path: `$report_path`. Report name: `$report_name`. Harness: `$harness`. Follow the briefing's report delivery instructions for this harness.
 
 `briefing.md` is <briefing_lines> lines and your diff is <this agent's line count> lines. The Read tool truncates long files, so check that you received every line of both. If you got fewer, read the rest with the `offset` parameter before reviewing. Reviewing a truncated diff means silently skipping the code you did not see.
 
@@ -405,10 +403,10 @@ Each agent is sized against the patch file it actually read — the chunk or sco
 For each agent in `below_threshold`, resume it (using its agent ID from the Task tool) and give it the `unread_ranges` the script reported:
 
 ```
-You did not read all of `<artifacts_dir>/<agent-diff-file>`. These line ranges are still unread: <ranges>. Read them now with `sed -n '<start>,<end>p' <path>` and report any findings they contain, in the same format. Reply `NO_ADDITIONAL_FINDINGS` if there are none.
+You did not read all of `<artifacts_dir>/<agent-diff-file>`. These line ranges are still unread: <ranges>. Read them now with `sed -n '<start>,<end>p' <path>` and report any findings they contain, in the same format. Write this retry to `$report_path` using the report JSON contract, with an empty findings string if there are none.
 ```
 
-Merge whatever comes back into the finding pool. One re-dispatch per agent; take what you get. Record each resume's usage in `$token_usage` as `coverage-bounce-{N}`.
+Use a distinct coverage-retry report under the same output contract. Split the report before merging its findings into the pool. One re-dispatch per agent; take what you get. Record each resume's usage in `$token_usage` as `coverage-bounce-{N}`.
 
 If the script errors (no transcripts yet, unreadable directory), say so in the review and continue. A missing coverage check is worth a line in the output; it is not worth blocking a completed review.
 

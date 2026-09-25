@@ -167,6 +167,8 @@ You already have call sites and branch-origin data from the Before You Review st
 
 ## Output Format
 
+When the dispatch supplies a report file and JSON output contract, place the investigation and supporting narrative in `investigation`, complete findings in `findings`, and inspected paths and unfinished work in `coverage`. Keep the finding body and location trailer format below unchanged.
+
 Structure your response as:
 
 1. **Investigation Summary**: What call sites you found, which symbols you confirmed exist in main vs. this branch, and migration patterns observed. Note any steps where `$architectural_context` already provided sufficient coverage.

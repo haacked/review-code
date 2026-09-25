@@ -167,6 +167,8 @@ Before including any finding, argue against it:
 
 ## Output Format
 
+When the dispatch supplies a report file and JSON output contract, place the investigation and supporting narrative in `investigation`, complete findings in `findings`, and inspected paths and unfinished work in `coverage`. Keep the finding body and location trailer format below unchanged.
+
 Structure your response as:
 
 1. **Investigation Summary**: Which test files you found covering the modified source, existing test helpers and factories discovered, and conventions observed in nearby test files. Note any steps where `$architectural_context` already provided sufficient coverage.

@@ -11,7 +11,8 @@ source "${_WORKTREE_LAYOUT_DIR}/config-helpers.sh"
 
 # Root directory that holds all review worktrees.
 worktree_root() {
-    echo "${REVIEW_CODE_WORKTREE_DIR:-$(resolve_skill_dir)/.worktrees}"
+    local skill_dir="${1:-$(resolve_skill_dir)}"
+    echo "${REVIEW_CODE_WORKTREE_DIR:-${skill_dir}/.worktrees}"
 }
 
 # Worktree root used before commit 182bbfa (#118) renamed it to .worktrees.

@@ -2,7 +2,7 @@
 
 After all review agents complete, extract usage metadata from each agent's response and record in `$token_usage` keyed by agent type (e.g., `$token_usage["code-reviewer-security"]`).
 
-For chunked reviews, merge all completed chunk findings into a single pool. Dispatch has already completed; do not dispatch again here.
+Use the validated findings artifacts from `reviewer-output.md`, keeping investigation summaries on disk. For chunked reviews, merge all completed chunk findings into a single pool. Dispatch has already completed; do not dispatch again here.
 
 **Pre-synthesis scope filter**
 

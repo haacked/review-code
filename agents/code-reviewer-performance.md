@@ -113,6 +113,8 @@ Before including any finding, argue against it:
 
 ## Feedback Format
 
+When the dispatch supplies a report file and JSON output contract, place the investigation and supporting narrative in `investigation`, complete findings in `findings`, and inspected paths and unfinished work in `coverage`. Keep the finding body and location trailer format below unchanged.
+
 **Response structure:**
 
 1. **Investigation Summary** - Call paths traced, data scale signals found, schema/index checks performed. Note any steps where `$architectural_context` already provided sufficient coverage.

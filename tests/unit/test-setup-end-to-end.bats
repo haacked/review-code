@@ -13,6 +13,7 @@ setup() {
     # Redirect config writes away from the real home.
     export HOME="$TEST_HOME"
     export CODEX_HOME="$TEST_HOME/.codex"
+    unset REVIEW_CODE_WORKTREE_DIR
     mkdir -p "$TEST_HOME/.claude" "$TEST_HOME/.agents" "$TEST_HOME/.codex"
 }
 
@@ -32,6 +33,31 @@ teardown() {
     [ -d "$TEST_HOME/.agents/skills/review-code/scripts" ]
     [ -d "$TEST_HOME/.agents/skills/review-code/handlers" ]
     [ -d "$TEST_HOME/.agents/skills/review-code/context" ]
+    [ -f "$TEST_HOME/.agents/skills/review-code/.install-manifest" ]
+    grep -q $'\tSKILL.md$' "$TEST_HOME/.agents/skills/review-code/.install-manifest"
+    grep -q $'\tscripts/pr-worktree.sh$' "$TEST_HOME/.agents/skills/review-code/.install-manifest"
+}
+
+@test "setup: uninstall keeps a registered worktree and its Git registration" {
+    create_migration_repo
+    bin/setup > /dev/null
+    local root="$TEST_HOME/.agents/skills/review-code"
+    local checkout="$root/.worktrees/org/repo/pr-1"
+    add_migration_worktree "$checkout" 'unfinished review'
+    local registrations
+    registrations="$(git -C "$MIGRATION_REPO" worktree list --porcelain)"
+
+    run bash "$TEST_HOME/.agents/bin/uninstall-review-code.sh"
+    [ "$status" -eq 0 ]
+    [ -d "$root" ]
+    [ ! -f "$root/SKILL.md" ]
+    [ ! -f "$root/scripts/pr-worktree.sh" ]
+    [ ! -f "$root/context/languages/bash.md" ]
+    [ "$(cat "$checkout/file.txt")" = 'unfinished review' ]
+    [ "$(git -C "$MIGRATION_REPO" worktree list --porcelain)" = "$registrations" ]
+    run git -C "$checkout" status --porcelain
+    [ "$status" -eq 0 ]
+    [[ "$output" == *' M file.txt'* ]]
 }
 
 @test "setup: creates Claude compatibility symlink at ~/.claude/skills/review-code" {
@@ -122,6 +148,158 @@ teardown() {
 
     # Claude path becomes a symlink.
     [ -L "$TEST_HOME/.claude/skills/review-code" ]
+}
+
+create_migration_repo() {
+    MIGRATION_REPO="$TEST_HOME/clone"
+    git init --quiet "$MIGRATION_REPO"
+    git -C "$MIGRATION_REPO" config commit.gpgsign false
+    git -C "$MIGRATION_REPO" config user.email "test@example.com"
+    git -C "$MIGRATION_REPO" config user.name "Test User"
+    echo "tracked" > "$MIGRATION_REPO/file.txt"
+    git -C "$MIGRATION_REPO" add file.txt
+    git -C "$MIGRATION_REPO" commit --quiet -m "initial"
+}
+
+add_migration_worktree() {
+    local destination="$1"
+    local content="$2"
+    mkdir -p "$(dirname "$destination")"
+    git -C "$MIGRATION_REPO" worktree add --detach --quiet "$destination" HEAD
+    echo "$content" > "$destination/file.txt"
+}
+
+assert_migration_worktree() {
+    local destination="$1"
+    local content="$2"
+    [ "$(cat "$destination/file.txt")" = "$content" ]
+    run git -C "$destination" status --porcelain
+    [ "$status" -eq 0 ]
+    [[ "$output" == *" M file.txt"* ]]
+}
+
+@test "setup: migrates registered worktrees into an override without losing existing checkouts" {
+    create_migration_repo
+    local legacy="$TEST_HOME/.claude/skills/review-code"
+    local canonical="$TEST_HOME/.agents/skills/review-code"
+    export REVIEW_CODE_WORKTREE_DIR="$TEST_HOME/review worktrees"
+    add_migration_worktree "$legacy/.worktrees/org/repo/pr-1" "legacy hidden"
+    add_migration_worktree "$legacy/worktrees/org/repo/pr-2" "legacy visible"
+    add_migration_worktree "$REVIEW_CODE_WORKTREE_DIR/org/repo/pr-3" "existing override"
+    add_migration_worktree "$canonical/.worktrees/org/repo/pr-4" "existing canonical"
+    git -C "$MIGRATION_REPO" worktree lock "$legacy/.worktrees/org/repo/pr-1" --reason "active review"
+    local registrations
+    registrations="$(git -C "$MIGRATION_REPO" worktree list --porcelain)"
+
+    run bin/setup
+    [ "$status" -eq 0 ]
+
+    assert_migration_worktree "$REVIEW_CODE_WORKTREE_DIR/org/repo/pr-1" "legacy hidden"
+    assert_migration_worktree "$REVIEW_CODE_WORKTREE_DIR/org/repo/pr-2" "legacy visible"
+    assert_migration_worktree "$REVIEW_CODE_WORKTREE_DIR/org/repo/pr-3" "existing override"
+    assert_migration_worktree "$REVIEW_CODE_WORKTREE_DIR/org/repo/pr-4" "existing canonical"
+    assert_migration_worktree "$legacy/.worktrees/org/repo/pr-1" "legacy hidden"
+    assert_migration_worktree "$legacy/worktrees/org/repo/pr-2" "legacy visible"
+    assert_migration_worktree "$canonical/.worktrees/org/repo/pr-4" "existing canonical"
+    [ "$(git -C "$MIGRATION_REPO" worktree list --porcelain)" = "$registrations" ]
+    run git -C "$MIGRATION_REPO" worktree prune --dry-run --verbose --expire now
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "setup: merges nonconflicting registered worktrees into the canonical default" {
+    create_migration_repo
+    local legacy="$TEST_HOME/.claude/skills/review-code"
+    local canonical="$TEST_HOME/.agents/skills/review-code"
+    add_migration_worktree "$legacy/.worktrees/org/repo/pr-1" "legacy checkout"
+    add_migration_worktree "$canonical/.worktrees/org/repo/pr-2" "canonical checkout"
+    local registrations
+    registrations="$(git -C "$MIGRATION_REPO" worktree list --porcelain)"
+
+    run bin/setup
+    [ "$status" -eq 0 ]
+
+    assert_migration_worktree "$canonical/.worktrees/org/repo/pr-1" "legacy checkout"
+    assert_migration_worktree "$canonical/.worktrees/org/repo/pr-2" "canonical checkout"
+    assert_migration_worktree "$legacy/.worktrees/org/repo/pr-1" "legacy checkout"
+    [ "$(git -C "$MIGRATION_REPO" worktree list --porcelain)" = "$registrations" ]
+}
+
+@test "setup: migrated dirty worktrees can be removed by teardown" {
+    create_migration_repo
+    local legacy="$TEST_HOME/.claude/skills/review-code"
+    local canonical="$TEST_HOME/.agents/skills/review-code"
+    export REVIEW_CODE_WORKTREE_DIR="$TEST_HOME/review worktrees"
+    add_migration_worktree "$legacy/.worktrees/org/repo/pr-1" "unfinished review"
+    git -C "$MIGRATION_REPO" worktree lock "$legacy/.worktrees/org/repo/pr-1" --reason "active review"
+
+    run bin/setup
+    [ "$status" -eq 0 ]
+    assert_migration_worktree "$REVIEW_CODE_WORKTREE_DIR/org/repo/pr-1" "unfinished review"
+
+    run "$canonical/scripts/pr-worktree.sh" teardown org repo 1 "$MIGRATION_REPO"
+    [ "$status" -eq 0 ]
+    [ ! -e "$REVIEW_CODE_WORKTREE_DIR/org/repo/pr-1" ]
+    [ ! -e "$legacy/.worktrees/org/repo/pr-1" ]
+    run git -C "$MIGRATION_REPO" worktree list --porcelain
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"/pr-1"* ]]
+}
+
+@test "setup: migrated dirty worktrees can be provisioned for an updated PR" {
+    create_migration_repo
+    local legacy="$TEST_HOME/.claude/skills/review-code"
+    local canonical="$TEST_HOME/.agents/skills/review-code"
+    local origin="$TEST_HOME/origin.git"
+    add_migration_worktree "$legacy/.worktrees/org/repo/pr-1" "unfinished review"
+    git -C "$MIGRATION_REPO" worktree lock "$legacy/.worktrees/org/repo/pr-1" --reason "active review"
+    echo "updated PR" > "$MIGRATION_REPO/file.txt"
+    git -C "$MIGRATION_REPO" commit --quiet -am "update PR"
+    git init --bare --quiet "$origin"
+    git -C "$MIGRATION_REPO" remote add origin "$origin"
+    git -C "$MIGRATION_REPO" push --quiet origin HEAD:refs/pull/1/head
+
+    run bin/setup
+    [ "$status" -eq 0 ]
+    assert_migration_worktree "$canonical/.worktrees/org/repo/pr-1" "unfinished review"
+
+    run "$canonical/scripts/pr-worktree.sh" provision org repo 1 "$MIGRATION_REPO"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$canonical/.worktrees/org/repo/pr-1/file.txt")" = "updated PR" ]
+    run git -C "$canonical/.worktrees/org/repo/pr-1" status --porcelain
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run git -C "$MIGRATION_REPO" worktree list --porcelain
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^worktree ' <<< "$output")" -eq 2 ]
+}
+
+@test "setup: worktree collisions abort before moving or deleting legacy state" {
+    create_migration_repo
+    local legacy="$TEST_HOME/.claude/skills/review-code"
+    local canonical="$TEST_HOME/.agents/skills/review-code"
+    export REVIEW_CODE_WORKTREE_DIR="$TEST_HOME/review worktrees"
+    add_migration_worktree "$legacy/.worktrees/org/repo/pr-1" "legacy checkout"
+    add_migration_worktree "$REVIEW_CODE_WORKTREE_DIR/org/repo/pr-1" "existing checkout"
+    add_migration_worktree "$legacy/.worktrees/org/repo/pr-2" "nonconflicting checkout"
+    mkdir -p "$legacy/.reviews/org/repo" "$legacy/.sessions"
+    echo "review body" > "$legacy/.reviews/org/repo/pr-1.md"
+    echo "session state" > "$legacy/.sessions/session.json"
+    local registrations
+    registrations="$(git -C "$MIGRATION_REPO" worktree list --porcelain)"
+
+    run bin/setup
+    [ "$status" -ne 0 ]
+
+    [ ! -L "$legacy" ]
+    assert_migration_worktree "$legacy/.worktrees/org/repo/pr-1" "legacy checkout"
+    assert_migration_worktree "$REVIEW_CODE_WORKTREE_DIR/org/repo/pr-1" "existing checkout"
+    assert_migration_worktree "$legacy/.worktrees/org/repo/pr-2" "nonconflicting checkout"
+    [ "$(cat "$legacy/.reviews/org/repo/pr-1.md")" = "review body" ]
+    [ "$(cat "$legacy/.sessions/session.json")" = "session state" ]
+    [ ! -e "$canonical/.reviews/org/repo/pr-1.md" ]
+    [ ! -e "$REVIEW_CODE_WORKTREE_DIR/org/repo/pr-2" ]
+    [ "$(git -C "$MIGRATION_REPO" worktree list --porcelain)" = "$registrations" ]
 }
 
 @test "setup: re-run on canonical layout preserves user-facing tree" {

@@ -4,6 +4,7 @@
 setup() {
     PROJECT_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
     export PROJECT_ROOT
+    METADATA_SCRIPT="$PROJECT_ROOT/skills/review-code/scripts/update-review-metadata.sh"
 
     # Create temporary directories for testing
     TEST_DIR=$(mktemp -d)
@@ -298,11 +299,9 @@ repo: testrepo
 Some review content here.
 EOF
 
-    local reviewed_at
-    reviewed_at=$(sed -n '/review-metadata/,/-->/{ /reviewed_at:/{ s/.*reviewed_at: *//; s/ *$//; p; q; }; }' \
-        "$review_file" 2>/dev/null || true)
-
-    [ "$reviewed_at" = "2024-06-15T14:30:00Z" ]
+    run "$METADATA_SCRIPT" --file "$review_file" --get reviewed_at
+    [ "$status" -eq 0 ]
+    [ "$output" = "2024-06-15T14:30:00Z" ]
 }
 
 @test "learn-from-pr.sh: extracts reviewed_at with offset timezone" {
@@ -314,11 +313,9 @@ mode: pr
 -->
 EOF
 
-    local reviewed_at
-    reviewed_at=$(sed -n '/review-metadata/,/-->/{ /reviewed_at:/{ s/.*reviewed_at: *//; s/ *$//; p; q; }; }' \
-        "$review_file" 2>/dev/null || true)
-
-    [ "$reviewed_at" = "2024-06-15T14:30:00+05:30" ]
+    run "$METADATA_SCRIPT" --file "$review_file" --get reviewed_at
+    [ "$status" -eq 0 ]
+    [ "$output" = "2024-06-15T14:30:00+05:30" ]
 }
 
 @test "learn-from-pr.sh: returns empty when no metadata block exists" {
@@ -328,11 +325,9 @@ EOF
 Some review content without metadata.
 EOF
 
-    local reviewed_at
-    reviewed_at=$(sed -n '/review-metadata/,/-->/{ /reviewed_at:/{ s/.*reviewed_at: *//; s/ *$//; p; q; }; }' \
-        "$review_file" 2>/dev/null || true)
-
-    [ -z "$reviewed_at" ]
+    run "$METADATA_SCRIPT" --file "$review_file" --get reviewed_at
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
 }
 
 @test "learn-from-pr.sh: ignores reviewed_at outside metadata block" {
@@ -343,11 +338,9 @@ reviewed_at: 2024-01-01T00:00:00Z
 Some review content.
 EOF
 
-    local reviewed_at
-    reviewed_at=$(sed -n '/review-metadata/,/-->/{ /reviewed_at:/{ s/.*reviewed_at: *//; s/ *$//; p; q; }; }' \
-        "$review_file" 2>/dev/null || true)
-
-    [ -z "$reviewed_at" ]
+    run "$METADATA_SCRIPT" --file "$review_file" --get reviewed_at
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
 }
 
 @test "learn-from-pr.sh: extracts reviewed_at regardless of field order" {
@@ -362,11 +355,34 @@ repo: testrepo
 -->
 EOF
 
-    local reviewed_at
-    reviewed_at=$(sed -n '/review-metadata/,/-->/{ /reviewed_at:/{ s/.*reviewed_at: *//; s/ *$//; p; q; }; }' \
-        "$review_file" 2>/dev/null || true)
+    run "$METADATA_SCRIPT" --file "$review_file" --get reviewed_at
+    [ "$status" -eq 0 ]
+    [ "$output" = "2024-06-15T14:30:00Z" ]
+}
 
-    [ "$reviewed_at" = "2024-06-15T14:30:00Z" ]
+@test "learn-from-pr.sh: ignores reviewed_at in fenced metadata examples" {
+    local review_file="$TEST_DIR/review-quoted-metadata.md"
+    cat > "$review_file" << 'EOF'
+```markdown
+<!-- review-metadata
+reviewed_at: 2024-01-01T00:00:00Z
+-->
+```
+
+~~~markdown
+<!-- review-metadata
+reviewed_at: 2024-02-01T00:00:00Z
+-->
+~~~
+
+<!-- review-metadata
+reviewed_at: 2024-06-15T14:30:00Z
+-->
+EOF
+
+    run "$METADATA_SCRIPT" --file "$review_file" --get reviewed_at
+    [ "$status" -eq 0 ]
+    [ "$output" = "2024-06-15T14:30:00Z" ]
 }
 
 @test "learn-from-pr.sh: epoch comparison works for dates" {
