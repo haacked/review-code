@@ -29,6 +29,8 @@ Subcommands:
 
   annotate   Record ids after a draft post. Reads the posted comments as JSON on
              stdin (as GET /pulls/{n}/reviews/{id}/comments returns them).
+             --submitted-comments supplies the request bodies and their
+             source_line or source_id before GitHub remaps or omits locations.
              Reports internal failures in JSON and exits 0 because the review
              already exists. The posting wrapper returns an annotation failure
              with the created review metadata.
@@ -54,6 +56,7 @@ Subcommands:
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import hashlib
 import json
 import os
@@ -189,7 +192,7 @@ def prose_withdrawal(lines: list[str], start: int) -> str | None:
     return None
 
 
-def copies_of(blocks: list[dict], taken: set, anchor: dict) -> list[dict]:
+def copies_of(blocks: list[dict], anchor: dict) -> list[dict]:
     """Every block that is the same finding written out again.
 
     A composed review carries each finding twice, once in its agent section and
@@ -204,8 +207,7 @@ def copies_of(blocks: list[dict], taken: set, anchor: dict) -> list[dict]:
     return [
         block
         for block in blocks
-        if block["index"] not in taken
-        and block["path"] == anchor["path"]
+        if block["path"] == anchor["path"]
         and block["line"] == anchor["line"]
         and normalize(block["body"]) == body
     ]
@@ -225,54 +227,88 @@ def one_per_id(blocks: list[dict]) -> list[dict]:
     return list(by_id.values())
 
 
-def match_comments(blocks: list[dict], comments: list[dict]) -> tuple[dict, list]:
-    """Pair each posted comment with every block that carries its text.
+def submitted_comment(comment: dict, submitted: list[dict]) -> dict | None:
+    """Recover the request without relying on GitHub's response order."""
+    candidates = [
+        item
+        for item in submitted
+        if item.get("path") == comment.get("path")
+        and normalize(item.get("body") or "") == normalize(comment.get("body") or "")
+    ]
+    if len(candidates) > 1:
+        if comment.get("line") is not None:
+            candidates = [c for c in candidates if c.get("line") == comment["line"]]
+        elif comment.get("position") is not None:
+            # Pending line-based comments can all report position 1.
+            candidates = [
+                c
+                for c in candidates
+                if c.get("line") is None and c.get("position") == comment["position"]
+            ]
+    return candidates[0] if len(candidates) == 1 else None
 
-    Body is the primary key, not path:line. Drift remapping can move a comment
-    to a different line than the heading records, and two findings can share a
-    line, so the text is the only thing that reliably identifies the block.
 
-    Every copy is paired, not just the first. Only the copy under Suggested
-    Comments was posted, but the agent-section copy comes first in the document,
-    so annotating one and leaving the other meant a withdrawal landed on a copy
-    nothing reads: the posted finding stayed live and the next re-review offered
-    the comment again. status and read collapse the copies back to one entry.
-    """
-    taken: set[int] = set()
+def one_finding(blocks: list[dict]) -> list[dict]:
+    """Return repeated copies of one finding, or nothing when they differ."""
+    if not blocks:
+        return []
+    copies = copies_of(blocks, blocks[0])
+    return copies if len(copies) == len(blocks) else []
+
+
+def comment_blocks(
+    blocks: list[dict], comment: dict, submitted: list[dict] | None
+) -> list[dict]:
+    """Find one finding and all its copies, or refuse an ambiguous association."""
+    candidates = [b for b in blocks if b["path"] == (comment.get("path") or "").strip()]
+    body = normalize(comment.get("body") or "")
+    source_line = None
+    if submitted is not None:
+        source = submitted_comment(comment, submitted)
+        if source is None:
+            return []
+        if source.get("source_id") is not None:
+            return one_finding(
+                [b for b in candidates if b["id"] == source["source_id"]]
+            )
+        source_line = (
+            source.get("source_line")
+            or source.get("original_line")
+            or source.get("line")
+        )
+        if source_line is not None:
+            candidates = [b for b in candidates if b["line"] == source_line]
+
+    by_body = [b for b in candidates if body and normalize(b["body"]) == body]
+    if by_body:
+        matched = one_finding(by_body)
+        if matched:
+            return matched
+
+    if submitted is not None:
+        if source_line is not None:
+            return one_finding(candidates)
+        return []
+
+    location_candidates = by_body or candidates
+    return one_finding(
+        [b for b in location_candidates if b["line"] == comment.get("line")]
+    )
+
+
+def match_comments(
+    blocks: list[dict], comments: list[dict], submitted: list[dict] | None = None
+) -> tuple[dict, list]:
+    """Record every copy only when exactly one comment claims the finding."""
+    matches = [comment_blocks(blocks, comment, submitted) for comment in comments]
+    claims = Counter(block["index"] for match in matches for block in match)
     pairs: dict[int, dict] = {}
     unmatched: list[dict] = []
-
-    for comment in comments:
-        path = (comment.get("path") or "").strip()
-        body = normalize(comment.get("body") or "")
-        anchor = None
-        if body:
-            anchor = next(
-                (
-                    block
-                    for block in blocks
-                    if block["index"] not in taken
-                    and block["path"] == path
-                    and normalize(block["body"]) == body
-                ),
-                None,
-            )
-        if anchor is None:
-            anchor = next(
-                (
-                    block
-                    for block in blocks
-                    if block["index"] not in taken
-                    and block["path"] == path
-                    and block["line"] == comment.get("line")
-                ),
-                None,
-            )
-        if anchor is None:
-            unmatched.append({"id": comment.get("id"), "path": path})
+    for comment, match in zip(comments, matches):
+        if not match or any(claims[b["index"]] > 1 for b in match):
+            unmatched.append({"id": comment.get("id"), "path": comment.get("path")})
             continue
-        for block in copies_of(blocks, taken, anchor):
-            taken.add(block["index"])
+        for block in match:
             pairs[block["index"]] = comment
     return pairs, unmatched
 
@@ -305,13 +341,13 @@ def rewrite_annotation(line: str, tokens: list[str]) -> str:
     return f"{head} <!-- pc:{' '.join(tokens)} -->" if tokens else head
 
 
-def annotate_heading(line: str, comment: dict) -> str:
+def annotate_heading(line: str, comment: dict, digest: str | None) -> str:
     tokens = [
         str(v)
         for v in (
             comment.get("id"),
             comment.get("node_id"),
-            BODY_HASH_PREFIX + body_hash(comment.get("body") or ""),
+            BODY_HASH_PREFIX + digest if digest else None,
         )
         if v
     ]
@@ -404,15 +440,36 @@ def write_atomic(path: Path, lines: list[str], suffix: str) -> None:
 
 def cmd_annotate(args, lines: list[str], path: Path) -> dict:
     comments = load_stdin_list()
+    submitted = None
+    if args.submitted_comments:
+        submitted = json.loads(
+            Path(args.submitted_comments).read_text(encoding="utf-8")
+        )
+        if not isinstance(submitted, list):
+            raise ValueError("submitted comments must be a JSON array")
     # A withdrawn block is never a candidate. Its finding was retired and its
     # text was not reposted, so body matching cannot reach it, but the
     # path-and-line fallback would: a new finding at the same location would
     # take the retired block's annotation, wiping the withdrawal and bringing
     # the finding back to life while the real new block got nothing.
     live = [b for b in find_blocks(lines) if not b["withdrawn"]]
-    pairs, unmatched = match_comments(live, comments)
+    pairs, unmatched = match_comments(live, comments, submitted)
+    by_index = {b["index"]: b for b in live}
     for index, comment in pairs.items():
-        lines[index] = annotate_heading(lines[index], comment)
+        digest = body_hash(comment.get("body") or "")
+        source = (
+            submitted_comment(comment, submitted) if submitted is not None else None
+        )
+        block = by_index[index]
+        if (
+            source is not None
+            and source.get("source_id") is not None
+            and source.get("source_id") == block["id"]
+            and normalize(block["body"]) != normalize(comment.get("body") or "")
+        ):
+            # Replacing an ID does not reconcile edits on either side.
+            digest = block["body_hash"]
+        lines[index] = annotate_heading(lines[index], comment, digest)
     header_updated = update_header(lines, args.review_id, args.posted_at)
     if pairs or header_updated:
         write_atomic(path, lines, "pc-ids")
@@ -603,6 +660,10 @@ def main() -> int:
     parser.add_argument("--review-file", required=True)
     parser.add_argument("--review-id")
     parser.add_argument("--posted-at")
+    parser.add_argument(
+        "--submitted-comments",
+        help="JSON file of requests with original finding locations",
+    )
     parser.add_argument("--date")
     args = parser.parse_args()
 
