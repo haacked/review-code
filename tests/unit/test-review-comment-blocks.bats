@@ -186,6 +186,32 @@ EOF
     grep -Eq '^#### `src/auth\.ts:84` <!-- pc:888 PRRC_bbb b:[0-9a-f]{8} -->$' "$REVIEW"
 }
 
+@test "annotate: submitted lines distinguish identical bodies despite GET reordering" {
+    write_same_path_review
+    sed 's/Reject expired tokens\./Validate the token first./' "$REVIEW" > "$TEST_DIR/same-body.md"
+    mv "$TEST_DIR/same-body.md" "$REVIEW"
+    cat > "$TEST_DIR/submitted.json" << 'EOF'
+[
+  {"path":"src/auth.ts","line":42,"body":"Validate the token first."},
+  {"path":"src/auth.ts","line":84,"body":"Validate the token first."}
+]
+EOF
+    cat > "$TEST_DIR/posted.json" << 'EOF'
+[
+  {"id":888,"node_id":"PRRC_bbb","path":"src/auth.ts","line":84,"body":"Validate the token first."},
+  {"id":777,"node_id":"PRRC_aaa","path":"src/auth.ts","line":42,"body":"Validate the token first."}
+]
+EOF
+
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" --submitted-comments "$TEST_DIR/submitted.json" < "$TEST_DIR/posted.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 2 ]
+    [ "$(echo "$output" | jq '.unmatched | length')" -eq 0 ]
+    grep -Eq '^#### `src/auth\.ts:42` <!-- pc:777 PRRC_aaa b:[0-9a-f]{8} -->$' "$REVIEW"
+    grep -Eq '^#### `src/auth\.ts:84` <!-- pc:888 PRRC_bbb b:[0-9a-f]{8} -->$' "$REVIEW"
+}
+
 @test "annotate: ambiguous body does not fall back to an unrelated finding at the returned line" {
     write_same_path_review
     sed 's/Reject expired tokens\./Validate the token first./' "$REVIEW" > "$TEST_DIR/same-body.md"

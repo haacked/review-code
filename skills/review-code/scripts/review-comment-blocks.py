@@ -256,6 +256,24 @@ def one_finding(blocks: list[dict]) -> list[dict]:
     return copies if len(copies) == len(blocks) else []
 
 
+def blocks_for_source_id(
+    blocks: list[dict], candidates: list[dict], body: str, source_id: int
+) -> list[dict]:
+    by_id = [block for block in blocks if block["id"] == source_id]
+    if by_id:
+        matched = one_finding(by_id)
+        if not matched or matched[0] not in candidates:
+            return []
+        candidates = copies_of(candidates, matched[0])
+    else:
+        candidates = [
+            block for block in candidates if body and normalize(block["body"]) == body
+        ]
+    if any(block["id"] not in (None, source_id) for block in candidates):
+        return []
+    return one_finding(candidates)
+
+
 def comment_blocks(
     blocks: list[dict], comment: dict, submitted: list[dict] | None
 ) -> list[dict]:
@@ -268,19 +286,7 @@ def comment_blocks(
         if source is None:
             return []
         if source.get("source_id") is not None:
-            by_id = [b for b in blocks if b["id"] == source["source_id"]]
-            if by_id:
-                matched = one_finding(by_id)
-                if not matched or matched[0] not in candidates:
-                    return []
-                candidates = copies_of(candidates, matched[0])
-            else:
-                candidates = [
-                    b for b in candidates if body and normalize(b["body"]) == body
-                ]
-            if any(b["id"] not in (None, source["source_id"]) for b in candidates):
-                return []
-            return one_finding(candidates)
+            return blocks_for_source_id(blocks, candidates, body, source["source_id"])
         source_line = (
             source.get("source_line")
             or source.get("original_line")
