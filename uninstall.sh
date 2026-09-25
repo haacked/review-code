@@ -28,8 +28,7 @@ REVIEWS_DIR="${SKILL_DIR}/.reviews"
 # Installs that predate the dot-dir migration keep reviews in a visible dir,
 # and both can hold content at once: a stale session running the old SKILL.md
 # recreates reviews/ after bin/setup migrated to .reviews/. Back up every
-# directory that has content so the rm -rf in remove_skill never destroys
-# reviews the user asked to preserve. Legacy first so .reviews wins
+# directory that has content. Legacy first so .reviews wins
 # collisions, matching the "keep the new copy" rule in migrate_state_dirs.
 REVIEW_DIRS=()
 SKILL_ROOTS=()
@@ -92,9 +91,13 @@ remove_skill() {
 
     local root
     for root in ${SKILL_ROOTS[@]+"${SKILL_ROOTS[@]}"}; do
-        rm -rf "${root}"
-        info "Removed review-code skill: ${root}"
-        removed=$((removed + 1))
+        if remove_installed_files "${root}"; then
+            info "Removed installed review-code files: ${root}"
+            removed=$((removed + 1))
+        else
+            warn "No ownership manifest at ${root}; leaving its contents intact"
+        fi
+        disable_skill_entrypoint "${root}"
     done
 
     # Remove old command file (legacy installation)
@@ -123,6 +126,57 @@ remove_skill() {
     if [[ "${removed}" -eq 0 ]]; then
         warn "No review-code installation found"
     fi
+}
+
+disable_skill_entrypoint() {
+    local root="$1"
+    local entrypoint="${root}/SKILL.md"
+    [[ -e "${entrypoint}" || -L "${entrypoint}" ]] || return 0
+
+    local retained="${root}/SKILL.md.uninstalled"
+    local suffix=1
+    while [[ -e "${retained}" || -L "${retained}" ]]; do
+        retained="${root}/SKILL.md.uninstalled.${suffix}"
+        suffix=$((suffix + 1))
+    done
+    mv "${entrypoint}" "${retained}"
+    info "Retained skill entrypoint: ${retained}"
+}
+
+remove_installed_files() {
+    local root="$1"
+    local manifest="${root}/.install-manifest"
+    [[ -f "${manifest}" && ! -L "${manifest}" ]] || return 1
+
+    local physical_root
+    physical_root="$(cd "${root}" && pwd -P)"
+    local expected_fingerprint relative target physical_dir actual_fingerprint
+    while IFS=$'\t' read -r expected_fingerprint relative; do
+        [[ "${expected_fingerprint}" =~ ^[0-9]+\ [0-9]+$ ]] || continue
+        [[ -n "${relative}" && "${relative}" != /* && "${relative}" != *//* ]] || continue
+        [[ ! "${relative}" =~ (^|/)\.\.(/|$) && ! "${relative}" =~ (^|/)\.(/|$) ]] || continue
+        case "${relative}" in
+            SKILL.md | .learnings/README.md | scripts/* | handlers/* | briefing/* | context/*) ;;
+            *) continue ;;
+        esac
+
+        target="${root}/${relative}"
+        [[ -f "${target}" && ! -L "${target}" ]] || continue
+        physical_dir="$(cd -P "$(dirname "${target}")" && pwd)"
+        case "${physical_dir}" in
+            "${physical_root}" | "${physical_root}/"*) ;;
+            *) continue ;;
+        esac
+        actual_fingerprint="$(cksum "${target}" | awk '{print $1 " " $2}')"
+        if [[ "${actual_fingerprint}" == "${expected_fingerprint}" ]]; then
+            rm "${target}"
+        fi
+    done < "${manifest}"
+
+    rm "${manifest}"
+    rmdir "${root}/scripts/helpers" "${root}/scripts/session-hooks" "${root}/scripts" \
+        "${root}/handlers" "${root}/briefing" 2> /dev/null || true
+    rmdir "${root}" 2> /dev/null || true
 }
 
 remove_agents() {
@@ -210,7 +264,7 @@ preserve_reviews() {
     for dir in "${REVIEW_DIRS[@]}"; do
         echo "Reviews found at: ${dir}"
     done
-    read -p "Preserve reviews before uninstalling? [Y/n] " -n 1 -r
+    read -p "Back up reviews before uninstalling? [Y/n] " -n 1 -r
     echo ""
 
     if [[ ! ${REPLY} =~ ^[Nn]$ ]]; then
@@ -224,7 +278,7 @@ preserve_reviews() {
         done
         info "Reviews backed up to: ${backup_dir}/reviews"
     else
-        warn "Reviews will be removed with skill directory"
+        info "Reviews remain in the skill directory"
     fi
 }
 

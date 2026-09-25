@@ -35,6 +35,19 @@ PY
     [[ "$output" != *"Full investigation"* ]]
 }
 
+@test "handler contracts: reviewer dispatch registers its expected report" {
+    report_path="$ARTIFACTS/reports/security.json"
+    extract_documented_block "$SKILL/handlers/reviewer-output.md" bash expected-reviewer-reports.txt > "$ARTIFACTS/register.sh"
+
+    run env report_path="$report_path" bash -e "$ARTIFACTS/register.sh"
+
+    [ "$status" -eq 0 ]
+    run env report_path="$report_path" bash -e "$ARTIFACTS/register.sh"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$ARTIFACTS/expected-reviewer-reports.txt")" = "$report_path" ]
+    [ "$(wc -l < "$ARTIFACTS/expected-reviewer-reports.txt")" -eq 1 ]
+}
+
 @test "handler contracts: full append advances existing metadata through the shared writer" {
     review_file="$ARTIFACTS/review.md"
     cat > "$review_file" << 'EOF'
@@ -67,6 +80,7 @@ EOF
     review_file="$BATS_TEST_TMPDIR/saved review.md"
     mkdir -p "$ARTIFACTS/reports"
     jq -n '{investigation: "Evidence", findings: "Finding", coverage: {files_read: ["a.py"], gaps: ["Cannot verify b.py"]}}' > "$ARTIFACTS/reports/security.json"
+    printf '%s\n' "$ARTIFACTS/reports/security.json" > "$ARTIFACTS/expected-reviewer-reports.txt"
     extract_documented_block "$SKILL/handlers/review-compose.md" bash reviewer-report.py \
         | sed 's/<SESSION_ID>/session-123/g' > "$ARTIFACTS/retain.sh"
 
@@ -76,6 +90,32 @@ EOF
     rm -rf "$ARTIFACTS"
     [ "$(cat "${review_file}.artifacts/session-123/investigations/security.md")" = "Evidence" ]
     jq -e '.gaps == ["Cannot verify b.py"]' "${review_file}.artifacts/session-123/coverage/security.json"
+}
+
+@test "handler contracts: retention fails when no reports were registered" {
+    review_file="$BATS_TEST_TMPDIR/saved review.md"
+    mkdir -p "$ARTIFACTS/reports"
+    extract_documented_block "$SKILL/handlers/review-compose.md" bash reviewer-report.py \
+        | sed 's/<SESSION_ID>/session-123/g' > "$ARTIFACTS/retain.sh"
+
+    run env review_file="$review_file" bash -e "$ARTIFACTS/retain.sh"
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"reviewer report"* ]]
+}
+
+@test "handler contracts: retention fails when any expected report is missing" {
+    review_file="$BATS_TEST_TMPDIR/saved review.md"
+    mkdir -p "$ARTIFACTS/reports"
+    jq -n '{investigation: "Evidence", findings: "Finding", coverage: {files_read: ["a.py"], gaps: []}}' > "$ARTIFACTS/reports/security.json"
+    printf '%s\n' "$ARTIFACTS/reports/security.json" "$ARTIFACTS/reports/correctness.json" > "$ARTIFACTS/expected-reviewer-reports.txt"
+    extract_documented_block "$SKILL/handlers/review-compose.md" bash reviewer-report.py \
+        | sed 's/<SESSION_ID>/session-123/g' > "$ARTIFACTS/retain.sh"
+
+    run env review_file="$review_file" bash -e "$ARTIFACTS/retain.sh"
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"correctness.json"* ]]
 }
 
 @test "handler contracts: documented voice lint command projects the findings array" {

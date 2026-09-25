@@ -28,15 +28,23 @@ its text is not carried through every earlier turn of the run.
 
 **For area-specific reviews**, include only that area's findings.
 
-Before linking evidence, retain the split reviewer reports beside the review so session cleanup cannot remove them:
+Before linking evidence, retain every expected reviewer report beside the review so session cleanup cannot remove it. A missing manifest or report means a reviewer did not produce evidence, so stop the review:
 
 ```bash
-for report_path in "<artifacts_dir>/reports/"*.json; do
-    [[ -f "$report_path" ]] || continue
+manifest="<artifacts_dir>/expected-reviewer-reports.txt"
+if [[ ! -s "$manifest" ]]; then
+    echo "ERROR: no reviewer reports were registered" >&2
+    exit 1
+fi
+while IFS= read -r report_path; do
+    if [[ ! -f "$report_path" || ! -r "$report_path" ]]; then
+        echo "ERROR: expected reviewer report missing or unreadable: $report_path" >&2
+        exit 1
+    fi
     report_name="$(basename "$report_path" .json)"
     python3 ~/.agents/skills/review-code/scripts/reviewer-report.py \
       --input "$report_path" --output-dir "${review_file}.artifacts/<SESSION_ID>" --name "$report_name" || exit 1
-done
+done < "$manifest"
 ```
 
 Require every copy to succeed. Link each agent's retained investigation and coverage artifacts from its section, using the returned paths. Include every unresolved coverage gap. Do not read or copy the investigation text into the conversation to write the review.

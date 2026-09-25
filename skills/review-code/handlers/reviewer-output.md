@@ -4,6 +4,15 @@ Apply this contract to domain reviewers, including each chunk reviewer and cover
 
 Give each dispatch a unique `$report_name`, such as `code-reviewer-security`, `chunk-2-code-reviewer-security`, or `coverage-bounce-1`. Set `$report_path` to `<artifacts_dir>/reports/$report_name.json`. The shared briefing contains the report schema. Put only the report path, report name, and harness in the dispatch prompt; do not copy the schema into every prompt.
 
+Register each expected report before its first dispatch, including chunk reviewers and coverage retries. Reuse the same entry when retrying a dispatch at the same path:
+
+```bash
+manifest="<artifacts_dir>/expected-reviewer-reports.txt"
+if [[ ! -f "$manifest" ]] || ! grep -Fxq -- "$report_path" "$manifest"; then
+    printf '%s\n' "$report_path" >> "$manifest"
+fi
+```
+
 For Codex, pass `$report_path` as the output-file argument to `agent-dispatch.sh run`. Its compact result names the report and event-log files; do not read the event log or raw report into the conversation. For the Claude fallback, save the returned JSON to `$report_path` using the Write tool, with content separate from the path. Never interpolate agent output into shell commands.
 
 After each successful dispatch, split the saved report:

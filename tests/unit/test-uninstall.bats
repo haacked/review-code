@@ -237,6 +237,7 @@ prepare_standalone_uninstall() {
     mkdir -p "$UNINSTALL_CANONICAL" "$(dirname "$UNINSTALL_SCRIPT")"
     cp "$PROJECT_ROOT/uninstall.sh" "$UNINSTALL_SCRIPT"
     echo "installed skill" > "$UNINSTALL_CANONICAL/SKILL.md"
+    printf '%s\t%s\n' "$(cksum "$UNINSTALL_CANONICAL/SKILL.md" | awk '{print $1 " " $2}')" 'SKILL.md' > "$UNINSTALL_CANONICAL/.install-manifest"
 }
 
 run_standalone_uninstall() {
@@ -259,7 +260,9 @@ write_managed_codex_agent() {
     run_standalone_uninstall
     [ "$status" -eq 0 ]
 
-    [ ! -e "$UNINSTALL_CANONICAL" ]
+    [ -d "$UNINSTALL_CANONICAL/.reviews" ]
+    [ ! -e "$UNINSTALL_CANONICAL/SKILL.md" ]
+    [ ! -e "$UNINSTALL_CANONICAL/.install-manifest" ]
     [ ! -L "$legacy" ]
     [ ! -e "$UNINSTALL_SCRIPT" ]
     local backups=("$UNINSTALL_HOME"/review-code-backup-*)
@@ -268,7 +271,56 @@ write_managed_codex_agent() {
     [ "$(cat "${backups[0]}/reviews/org/repo/visible.md")" = "visible review" ]
 }
 
-@test "uninstall.sh: standalone removal backs up a legacy real-directory installation" {
+@test "uninstall.sh: keeps state and modified installed files at their original paths" {
+    prepare_standalone_uninstall
+    local root="$UNINSTALL_CANONICAL"
+    mkdir -p "$root/.learnings" "$root/.sessions" "$root/.worktrees/org/repo/pr-1" "$root/context/orgs/custom" "$root/scripts"
+    echo 'learned' > "$root/.learnings/index.jsonl"
+    echo 'session' > "$root/.sessions/review.json"
+    echo 'checkout' > "$root/.worktrees/org/repo/pr-1/README"
+    echo 'org/repo /clone' > "$root/repos.conf"
+    echo 'custom context' > "$root/context/orgs/custom/review.md"
+    echo 'user script' > "$root/scripts/local.sh"
+    echo 'original context' > "$root/context/base.md"
+    printf '%s\t%s\n' "$(cksum "$root/context/base.md" | awk '{print $1 " " $2}')" 'context/base.md' >> "$root/.install-manifest"
+    echo 'modified context' > "$root/context/base.md"
+
+    run_standalone_uninstall
+    [ "$status" -eq 0 ]
+
+    [ ! -e "$root/SKILL.md" ]
+    [ "$(cat "$root/.learnings/index.jsonl")" = 'learned' ]
+    [ "$(cat "$root/.sessions/review.json")" = 'session' ]
+    [ "$(cat "$root/.worktrees/org/repo/pr-1/README")" = 'checkout' ]
+    [ "$(cat "$root/repos.conf")" = 'org/repo /clone' ]
+    [ "$(cat "$root/context/orgs/custom/review.md")" = 'custom context' ]
+    [ "$(cat "$root/context/base.md")" = 'modified context' ]
+    [ "$(cat "$root/scripts/local.sh")" = 'user script' ]
+}
+
+@test "uninstall.sh: leaves an untracked legacy skill tree intact" {
+    prepare_standalone_uninstall
+    rm "$UNINSTALL_CANONICAL/.install-manifest"
+
+    run_standalone_uninstall
+    [ "$status" -eq 0 ]
+    [ ! -e "$UNINSTALL_CANONICAL/SKILL.md" ]
+    [ "$(cat "$UNINSTALL_CANONICAL/SKILL.md.uninstalled")" = 'installed skill' ]
+}
+
+@test "uninstall.sh: keeps a customized SKILL.md without leaving the skill active" {
+    prepare_standalone_uninstall
+    echo 'customized skill' > "$UNINSTALL_CANONICAL/SKILL.md"
+    echo 'earlier backup' > "$UNINSTALL_CANONICAL/SKILL.md.uninstalled"
+
+    run_standalone_uninstall
+    [ "$status" -eq 0 ]
+    [ ! -e "$UNINSTALL_CANONICAL/SKILL.md" ]
+    [ "$(cat "$UNINSTALL_CANONICAL/SKILL.md.uninstalled")" = 'earlier backup' ]
+    [ "$(cat "$UNINSTALL_CANONICAL/SKILL.md.uninstalled.1")" = 'customized skill' ]
+}
+
+@test "uninstall.sh: standalone removal backs up and retains a legacy real-directory installation" {
     prepare_standalone_uninstall
     rm -rf "$UNINSTALL_CANONICAL"
     local legacy="$UNINSTALL_HOME/.claude/skills/review-code"
@@ -280,7 +332,8 @@ write_managed_codex_agent() {
     run_standalone_uninstall
     [ "$status" -eq 0 ]
 
-    [ ! -e "$legacy" ]
+    [ -d "$legacy" ]
+    [ "$(cat "$legacy/.reviews/org/repo/current.md")" = 'current review' ]
     local backups=("$UNINSTALL_HOME"/review-code-backup-*)
     [ "${#backups[@]}" -eq 1 ]
     [ "$(cat "${backups[0]}/reviews/org/repo/current.md")" = "current review" ]

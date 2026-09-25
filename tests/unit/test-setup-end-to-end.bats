@@ -33,6 +33,31 @@ teardown() {
     [ -d "$TEST_HOME/.agents/skills/review-code/scripts" ]
     [ -d "$TEST_HOME/.agents/skills/review-code/handlers" ]
     [ -d "$TEST_HOME/.agents/skills/review-code/context" ]
+    [ -f "$TEST_HOME/.agents/skills/review-code/.install-manifest" ]
+    grep -q $'\tSKILL.md$' "$TEST_HOME/.agents/skills/review-code/.install-manifest"
+    grep -q $'\tscripts/pr-worktree.sh$' "$TEST_HOME/.agents/skills/review-code/.install-manifest"
+}
+
+@test "setup: uninstall keeps a registered worktree and its Git registration" {
+    create_migration_repo
+    bin/setup > /dev/null
+    local root="$TEST_HOME/.agents/skills/review-code"
+    local checkout="$root/.worktrees/org/repo/pr-1"
+    add_migration_worktree "$checkout" 'unfinished review'
+    local registrations
+    registrations="$(git -C "$MIGRATION_REPO" worktree list --porcelain)"
+
+    run bash "$TEST_HOME/.agents/bin/uninstall-review-code.sh"
+    [ "$status" -eq 0 ]
+    [ -d "$root" ]
+    [ ! -f "$root/SKILL.md" ]
+    [ ! -f "$root/scripts/pr-worktree.sh" ]
+    [ ! -f "$root/context/languages/bash.md" ]
+    [ "$(cat "$checkout/file.txt")" = 'unfinished review' ]
+    [ "$(git -C "$MIGRATION_REPO" worktree list --porcelain)" = "$registrations" ]
+    run git -C "$checkout" status --porcelain
+    [ "$status" -eq 0 ]
+    [[ "$output" == *' M file.txt'* ]]
 }
 
 @test "setup: creates Claude compatibility symlink at ~/.claude/skills/review-code" {

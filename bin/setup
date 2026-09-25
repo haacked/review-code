@@ -747,6 +747,46 @@ install_context() {
     info "Context files: ${summary}"
 }
 
+record_installed_file() {
+    local source="$1"
+    local relative="$2"
+    local manifest="$3"
+    local target="${SKILL_DIR}/${relative}"
+
+    if [[ -f "${target}" && ! -L "${target}" ]] && cmp -s "${source}" "${target}"; then
+        printf '%s\t%s\n' "$(cksum "${target}" | awk '{print $1 " " $2}')" "${relative}" >> "${manifest}"
+    fi
+}
+
+write_install_manifest() {
+    local source_root="${SCRIPT_DIR}/skills/review-code"
+    local manifest="${SKILL_DIR}/.install-manifest"
+    local temporary
+    temporary="$(mktemp "${manifest}.XXXXXX")"
+    local source relative
+
+    for source in \
+        "${source_root}/SKILL.md" \
+        "${source_root}/scripts/"*.sh "${source_root}/scripts/"*.py \
+        "${source_root}/scripts/helpers/"*.sh "${source_root}/scripts/helpers/"*.py \
+        "${source_root}/scripts/session-hooks/"*.sh "${source_root}/scripts/session-hooks/"*.py \
+        "${source_root}/handlers/"*.md "${source_root}/briefing/"*.md; do
+        [[ -f "${source}" ]] || continue
+        relative="${source#"${source_root}/"}"
+        record_installed_file "${source}" "${relative}" "${temporary}"
+    done
+
+    while IFS= read -r source; do
+        relative="${source#"${source_root}/"}"
+        record_installed_file "${source}" "${relative}" "${temporary}"
+    done < <(find "${source_root}/context" -type f -name '*.md')
+
+    source="${source_root}/learnings/README.md"
+    record_installed_file "${source}" '.learnings/README.md' "${temporary}"
+
+    mv "${temporary}" "${manifest}"
+}
+
 cleanup_old_config() {
     # Remove old config files that are no longer needed
     local old_config_files=(
@@ -1052,6 +1092,7 @@ main() {
     install_session_clear_hook
     install_agents
     install_context
+    write_install_manifest
 
     # Check for orphaned review worktrees (from crashed reviews).
     check_orphan_worktrees
