@@ -1402,6 +1402,44 @@ EOF
     [ "$(jq -c '[.comments[].position]' "$DRAFT_REQUEST")" = '[1,1]' ]
 }
 
+@test "create-draft-review: append records a preserved comment missing its local annotation" {
+    prepare_rewritten_annotation_case
+    jq '.append = true | .delta_paths = ["src/new.ts"] | .comments = []' \
+        "$ANNOTATION_INPUT" > "$MOCK_DIR/updated-input.json"
+    mv "$MOCK_DIR/updated-input.json" "$ANNOTATION_INPUT"
+    jq '[.[] | select(.id == 777) | .body = "Validate the token first.\n\n    validate(token);"]' \
+        "$POSTED_COMMENTS" > "$MOCK_DIR/updated-comments.json"
+    mv "$MOCK_DIR/updated-comments.json" "$POSTED_COMMENTS"
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews/99999/comments"* ]]; then
+    cat "$POSTED_COMMENTS"
+elif [[ "$*" == *"/reviews/11111/comments"* ]]; then
+    jq '[.[] | .id = 123]' "$POSTED_COMMENTS"
+elif [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[{"id":11111,"state":"PENDING","user":{"login":"user"},"body":"old"}]'
+elif [[ "$*" == *"--method DELETE"* ]]; then
+    echo '{}'
+elif [[ "$*" == *"--method POST"* ]]; then
+    cat > "$DRAFT_REQUEST"
+    echo '{"id":99999}'
+else
+    exit 1
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    run_annotation_case
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.success')" = true ]
+    [ "$(echo "$output" | jq -r '.replaced_existing')" = true ]
+    [ "$(echo "$output" | jq '.inline_count')" -eq 1 ]
+    [ "$(echo "$output" | jq '.annotated_count')" -eq 1 ]
+    grep -Eq '^#### `src/auth\.ts:10` <!-- pc:777 PRRC_aaa b:[0-9a-f]{8} -->$' "$ANNOTATION_REVIEW"
+    [ "$(jq -r '.comments[0].body' "$DRAFT_REQUEST")" = "$(jq -r '.[0].body' "$POSTED_COMMENTS")" ]
+}
+
 assert_annotation_failure() {
     local inline_count="$1" annotated_count="$2"
     [ "$status" -ne 0 ]

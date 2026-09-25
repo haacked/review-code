@@ -353,6 +353,64 @@ EOF
     grep -q '^#### `src/auth.ts:84`$' "$REVIEW"
 }
 
+@test "annotate: missing source id permits a unique exact body match" {
+    cat > "$TEST_DIR/submitted.json" << 'EOF'
+[{"path":"src/auth.ts","source_id":123,"position":5,"body":"Validate the token first."}]
+EOF
+    cat > "$TEST_DIR/posted.json" << 'EOF'
+[{"id":777,"node_id":"PRRC_aaa","path":"src/auth.ts","line":null,"position":5,"body":"Validate the token first."}]
+EOF
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" < "$TEST_DIR/posted.json"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 1 ]
+    write_review
+
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" --submitted-comments "$TEST_DIR/submitted.json" < "$TEST_DIR/posted.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 1 ]
+    [ "$(echo "$output" | jq '.unmatched | length')" -eq 0 ]
+    grep -Eq '^#### `src/auth\.ts:42` <!-- pc:777 PRRC_aaa b:[0-9a-f]{8} -->$' "$REVIEW"
+}
+
+@test "annotate: missing source id refuses a rewritten body even with a matching source line" {
+    cat > "$TEST_DIR/submitted.json" << 'EOF'
+[{"path":"src/auth.ts","source_id":123,"source_line":42,"position":5,"body":"Rewritten on GitHub."}]
+EOF
+    cat > "$TEST_DIR/posted.json" << 'EOF'
+[{"id":777,"node_id":"PRRC_aaa","path":"src/auth.ts","line":42,"position":5,"body":"Rewritten on GitHub."}]
+EOF
+    local checksum_before
+    checksum_before=$(checksum "$REVIEW")
+
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" --submitted-comments "$TEST_DIR/submitted.json" < "$TEST_DIR/posted.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 0 ]
+    [ "$(echo "$output" | jq -c '[.unmatched[].id]')" = '[777]' ]
+    [ "$(checksum "$REVIEW")" = "$checksum_before" ]
+}
+
+@test "annotate: missing source id does not claim an exact body belonging to another id" {
+    sed 's@`src/auth.ts:42`@`src/auth.ts:42` <!-- pc:456 PRRC_other b:01234567 -->@' "$REVIEW" > "$TEST_DIR/recorded.md"
+    mv "$TEST_DIR/recorded.md" "$REVIEW"
+    cat > "$TEST_DIR/submitted.json" << 'EOF'
+[{"path":"src/auth.ts","source_id":123,"position":5,"body":"Validate the token first."}]
+EOF
+    cat > "$TEST_DIR/posted.json" << 'EOF'
+[{"id":777,"node_id":"PRRC_aaa","path":"src/auth.ts","line":null,"position":5,"body":"Validate the token first."}]
+EOF
+    local checksum_before
+    checksum_before=$(checksum "$REVIEW")
+
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" --submitted-comments "$TEST_DIR/submitted.json" < "$TEST_DIR/posted.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 0 ]
+    [ "$(echo "$output" | jq -c '[.unmatched[].id]')" = '[777]' ]
+    [ "$(checksum "$REVIEW")" = "$checksum_before" ]
+}
+
 @test "annotate: longer outer fences preserve nested code and surrounding findings" {
     local fixture_dir="$PROJECT_ROOT/tests/fixtures/reviews"
     cp "$fixture_dir/nested-fences.md" "$REVIEW"
@@ -992,6 +1050,65 @@ dup_annotate() {
     [ "$status" -eq 0 ]
     [[ "$output" == *'"annotated": 2'* ]]
     [ "$(grep -c 'pc:777 PRRC_aaa' "$REVIEW")" -eq 2 ]
+}
+
+prepare_duplicate_source_id_repost() {
+    write_duplicated_review
+    jq -n '[{id: 123, node_id: "PRRC_old", path: "src/auth.ts", line: 42, body: "Validate the token first."}]' \
+        | python3 "$SCRIPT" annotate --review-file "$REVIEW" > /dev/null
+    cat > "$TEST_DIR/submitted.json" << 'EOF'
+[{"path":"src/auth.ts","source_id":123,"position":5,"body":"Edited in the GitHub UI."}]
+EOF
+    cat > "$TEST_DIR/reposted.json" << 'EOF'
+[{"id":999,"node_id":"PRRC_reposted","path":"src/auth.ts","line":null,"position":5,"body":"Edited in the GitHub UI."}]
+EOF
+}
+
+@test "annotate: source id restores an unannotated copy with its shared baseline and withdrawal" {
+    prepare_duplicate_source_id_repost
+    local old_hash
+    old_hash=$(python3 "$SCRIPT" read --review-file "$REVIEW" | jq -r '.comments[0].body_hash')
+    awk '/pc:123/ {if (++seen == 2) sub(/ <!-- pc:123[^>]* -->/, "")} {print}' \
+        "$REVIEW" > "$TEST_DIR/partial.md"
+    mv "$TEST_DIR/partial.md" "$REVIEW"
+
+    repost_preserved_comment
+
+    [ "$(echo "$output" | jq '.annotated')" -eq 2 ]
+    [ "$(grep -c "pc:999 PRRC_reposted b:$old_hash" "$REVIEW")" -eq 2 ]
+    [ "$(preserved_comment_state "$TEST_DIR/reposted.json" 999)" = "changed_on_github" ]
+    jq -n '[{id: 999, reason: "The author addressed the finding."}]' \
+        | python3 "$SCRIPT" withdraw --review-file "$REVIEW" > "$TEST_DIR/withdrawn.json"
+    [ "$(jq '.withdrawn' "$TEST_DIR/withdrawn.json")" -eq 2 ]
+    [ "$("$PARSER" "$REVIEW" | jq 'length')" -eq 0 ]
+}
+
+@test "annotate: source id treats conflicting copy baselines as unknown" {
+    prepare_duplicate_source_id_repost
+    awk '/pc:123/ {if (++seen == 2) sub(/b:[0-9a-f]+/, "b:deadbeef")} {print}' \
+        "$REVIEW" > "$TEST_DIR/conflicting-baselines.md"
+    mv "$TEST_DIR/conflicting-baselines.md" "$REVIEW"
+
+    repost_preserved_comment
+
+    [ "$(echo "$output" | jq '.annotated')" -eq 2 ]
+    [ "$(preserved_comment_state "$TEST_DIR/reposted.json" 999)" = "unknown_baseline" ]
+}
+
+@test "annotate: source id refuses identical copies with conflicting known ids" {
+    prepare_duplicate_source_id_repost
+    awk '/pc:123/ {if (++seen == 2) sub(/pc:123/, "pc:456")} {print}' \
+        "$REVIEW" > "$TEST_DIR/conflicting-ids.md"
+    mv "$TEST_DIR/conflicting-ids.md" "$REVIEW"
+    local checksum_before
+    checksum_before=$(checksum "$REVIEW")
+
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" --submitted-comments "$TEST_DIR/submitted.json" < "$TEST_DIR/reposted.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 0 ]
+    [ "$(echo "$output" | jq -c '[.unmatched[].id]')" = '[999]' ]
+    [ "$(checksum "$REVIEW")" = "$checksum_before" ]
 }
 
 # The point of the whole exercise: a dropped comment must stop being a live

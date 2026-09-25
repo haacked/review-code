@@ -268,9 +268,19 @@ def comment_blocks(
         if source is None:
             return []
         if source.get("source_id") is not None:
-            return one_finding(
-                [b for b in candidates if b["id"] == source["source_id"]]
-            )
+            by_id = [b for b in blocks if b["id"] == source["source_id"]]
+            if by_id:
+                matched = one_finding(by_id)
+                if not matched or matched[0] not in candidates:
+                    return []
+                candidates = copies_of(candidates, matched[0])
+            else:
+                candidates = [
+                    b for b in candidates if body and normalize(b["body"]) == body
+                ]
+            if any(b["id"] not in (None, source["source_id"]) for b in candidates):
+                return []
+            return one_finding(candidates)
         source_line = (
             source.get("source_line")
             or source.get("original_line")
@@ -464,11 +474,11 @@ def cmd_annotate(args, lines: list[str], path: Path) -> dict:
         if (
             source is not None
             and source.get("source_id") is not None
-            and source.get("source_id") == block["id"]
             and normalize(block["body"]) != normalize(comment.get("body") or "")
         ):
             # Replacing an ID does not reconcile edits on either side.
-            digest = block["body_hash"]
+            baselines = {b["body_hash"] for b in live if b["id"] == source["source_id"]}
+            digest = baselines.pop() if len(baselines) == 1 else None
         lines[index] = annotate_heading(lines[index], comment, digest)
     header_updated = update_header(lines, args.review_id, args.posted_at)
     if pairs or header_updated:
