@@ -997,6 +997,86 @@ write_deleted_anchor_draft() {
     ]'
 }
 
+assert_path_anchor_draft() {
+    local path="$1"
+    local header="$2"
+    local diff="$BATS_TEST_TMPDIR/path.diff"
+    printf '%s\n' "$header" '@@ -1 +1 @@' '-removed_guard()' '+replacement()' > "$diff"
+    write_deleted_anchor_draft
+    jq --arg path "$path" --arg diff "$diff" '
+        .publication.comments |= map(.path = $path | .line = 1)
+        | .mappings |= map(.path = $path | .line = 1)
+        | .context.original_diff_path = $diff
+        | .context.append = true
+    ' "$INPUT" > "$BATS_TEST_TMPDIR/path-draft.json"
+
+    run "$CONTRACT" draft "$BATS_TEST_TMPDIR/path-draft.json"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e --arg path "$path" '
+        .delta_paths == [$path]
+        and .comments == [
+            {path: $path, line: 1, side: "RIGHT", body: "Fix the replacement.", line_content: "replacement()"},
+            {path: $path, line: 1, side: "LEFT", body: "Keep the guard.", line_content: "removed_guard()"}
+        ]'
+}
+
+@test "finding contract: draft decodes Git octal UTF-8 paths for both sides and append filtering" {
+    assert_path_anchor_draft 'src/café.py' 'diff --git "a/src/caf\303\251.py" "b/src/caf\303\251.py"'
+}
+
+@test "finding contract: draft preserves literal backslashes before octal digits in paths" {
+    assert_path_anchor_draft 'src/literal\303.py' 'diff --git "a/src/literal\\303.py" "b/src/literal\\303.py"'
+}
+
+@test "finding contract: draft accepts unquoted Git paths containing spaces" {
+    assert_path_anchor_draft 'src/file name.py' 'diff --git a/src/file name.py b/src/file name.py'
+}
+
+assert_rename_anchor_draft() {
+    local old_path="$1"
+    local new_path="$2"
+    local diff="$BATS_TEST_TMPDIR/ambiguous-rename.diff"
+    printf '%s\n' \
+        "diff --git a/$old_path b/$new_path" \
+        'similarity index 65%' \
+        "rename from $old_path" \
+        "rename to $new_path" \
+        'index 1111111..2222222 100644' \
+        "--- a/$old_path" \
+        "+++ b/$new_path" \
+        '@@ -1,3 +1,3 @@' \
+        ' before()' \
+        '-removed_guard()' \
+        '+replacement()' \
+        ' after()' > "$diff"
+    write_deleted_anchor_draft
+    jq --arg path "$new_path" --arg diff "$diff" '
+        .publication.comments |= map(.path = $path | .line = 2)
+        | .mappings |= map(.path = $path | .line = 2)
+        | .context.original_diff_path = $diff
+        | .context.append = true
+    ' "$INPUT" > "$BATS_TEST_TMPDIR/rename-draft.json"
+
+    run "$CONTRACT" draft "$BATS_TEST_TMPDIR/rename-draft.json"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e --arg old "$old_path" --arg new "$new_path" '
+        .delta_paths == [$old, $new]
+        and .comments == [
+            {path: $new, line: 2, side: "RIGHT", body: "Fix the replacement.", line_content: "replacement()"},
+            {path: $new, line: 2, side: "LEFT", body: "Keep the guard.", line_content: "removed_guard()"}
+        ]'
+}
+
+@test "finding contract: draft resolves a rename source containing a Git header separator" {
+    assert_rename_anchor_draft 'src/foo b/bar.py' 'src/renamed.py'
+}
+
+@test "finding contract: draft resolves a rename destination containing a Git header separator" {
+    assert_rename_anchor_draft 'src/original.py' 'src/foo b/renamed.py'
+}
+
 @test "finding contract: draft rejects mappings that change an explicitly requested side" {
     write_deleted_anchor_draft
     jq '.mappings[1].side = "RIGHT"' "$INPUT" > "$BATS_TEST_TMPDIR/wrong-side.json"

@@ -45,6 +45,22 @@ build_position_map() {
     local diff="$1"
 
     echo "${diff}" | LC_ALL=C awk "$(git_diff_path_functions)"'
+    function open_file() {
+        if (current_file == "" || file_open) return
+        if (!first_file) print ","
+        first_file = 0
+        printf "  %s: {", json_quote(current_file)
+        first_line = 1
+        file_open = 1
+    }
+    function close_file() {
+        if (current_file != "") {
+            open_file()
+            print "\n  }"
+        }
+        current_file = ""
+        file_open = 0
+    }
     function emit_line(line, side) {
         if (!first_line) printf ","
         first_line = 0
@@ -55,18 +71,21 @@ build_position_map() {
         first_file = 1
     }
     /^diff --git / {
-        if (current_file != "") print "}"
+        close_file()
         current_file = diff_header_path($0)
+        old_file = ""
         in_hunk = 0
-        if (current_file != "") {
-            if (!first_file) print ","
-            first_file = 0
-            printf "  %s: {", json_quote(current_file)
-            first_line = 1
-        }
+        next
+    }
+    !in_hunk && /^rename to / { current_file = diff_rename_path($0); next }
+    !in_hunk && /^--- "?a\// { old_file = diff_marker_path($0); next }
+    !in_hunk && /^\+\+\+ / {
+        if ($0 ~ /^\+\+\+ \/dev\/null([[:space:]]|$)/) current_file = old_file
+        else if ($0 ~ /^\+\+\+ "?b\//) current_file = diff_marker_path($0)
         next
     }
     /^@@ / {
+        open_file()
         rest = substr($0, index($0, "-") + 1)
         sub(/[^0-9].*/, "", rest)
         old_line = rest + 0
@@ -86,45 +105,42 @@ build_position_map() {
     /^\+/ { emit_line(new_line++, "RIGHT"); next }
     /^-/ { emit_line(old_line++, "LEFT"); next }
     END {
-        if (current_file != "") print "\n  }"
+        close_file()
         print "}"
     }
     '
 }
 
-# Look up a target in the position map
-# Args: $1 = position_map (JSON), $2 = path, $3 = line, $4 = optional side
-# Output: JSON object with position info or error
-lookup_position() {
+lookup_positions() {
     local position_map="$1"
-    local path="$2"
-    local line="$3"
-    local side="${4:-}"
+    local targets="$2"
 
-    if [[ -n "${side}" && "${side}" != "LEFT" && "${side}" != "RIGHT" ]]; then
-        error "Target side must be LEFT or RIGHT"
-        return 1
-    fi
-
-    echo "${position_map}" | jq \
-        --arg path "${path}" \
-        --argjson line "${line}" \
-        --arg side "${side}" '
-        .[$path] as $file
-        | if $file == null then
-            {path: $path, line: $line, error: "file not in diff"}
-        else
-            (if $side == "" then
-                $file["RIGHT:" + ($line | tostring)] // $file["LEFT:" + ($line | tostring)]
-            else
-                $file[$side + ":" + ($line | tostring)]
-            end) as $position
-            | if $position == null then
-                {path: $path, line: $line, error: "line not in diff"}
-            else
-                {path: $path, line: $line} + $position
-            end
-        end
+    echo "${position_map}" | jq --argjson targets "${targets}" '
+        . as $positions
+        | {mappings: [$targets[]
+            | .path as $path
+            | .line as $line
+            | (.side // "") as $side
+            | if $side != "" and $side != "LEFT" and $side != "RIGHT" then
+                error("Target side must be LEFT or RIGHT")
+              else
+                $positions[$path] as $file
+                | if $file == null then
+                    {path: $path, line: $line, error: "file not in diff"}
+                  else
+                    (if $side == "" then
+                        $file["RIGHT:" + ($line | tostring)] // $file["LEFT:" + ($line | tostring)]
+                    else
+                        $file[$side + ":" + ($line | tostring)]
+                    end) as $position
+                    | if $position == null then
+                        {path: $path, line: $line, error: "line not in diff"}
+                      else
+                        {path: $path, line: $line} + $position
+                      end
+                  end
+              end
+        ]}
     '
 }
 
@@ -176,21 +192,7 @@ main() {
     local position_map
     position_map=$(build_position_map "${diff}")
 
-    # Process each target
-    local mappings="[]"
-    while IFS= read -r target; do
-        local path line side
-        path=$(echo "${target}" | jq -r '.path')
-        line=$(echo "${target}" | jq -r '.line')
-        side=$(echo "${target}" | jq -r '.side // ""')
-
-        local mapping
-        mapping=$(lookup_position "${position_map}" "${path}" "${line}" "${side}")
-        mappings=$(echo "${mappings}" | jq --argjson m "${mapping}" '. + [$m]')
-    done < <(echo "${targets}" | jq -c '.[]')
-
-    # Output result
-    jq -n --argjson mappings "${mappings}" '{mappings: $mappings}'
+    lookup_positions "${position_map}" "${targets}"
 }
 
 # Only run main if script is executed directly (not sourced)

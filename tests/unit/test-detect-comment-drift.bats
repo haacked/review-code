@@ -728,3 +728,122 @@ EOF_DIFF
     echo "$output" | jq -e '.comments | length == 0'
     echo "$output" | jq -e '.unmapped_comments[0] | .side == "LEFT" and .line == 11 and .reason == "line content not found in current diff"'
 }
+
+@test "detect-comment-drift: literal backslash paths retain their hunks and remap LEFT content" {
+    local original_diff="$BATS_TEST_TMPDIR/original.diff"
+    local current_diff="$BATS_TEST_TMPDIR/current.diff"
+    cat > "$original_diff" << 'EOF_DIFF'
+diff --git "a/src\\name.ts" "b/src\\name.ts"
+@@ -10 +10 @@
+-required_guard()
++replacement()
+EOF_DIFF
+    sed 's/@@ -10 +10 @@/@@ -20 +20 @@/' "$original_diff" > "$current_diff"
+    create_mock_gh "def456" "$current_diff"
+    jq -n --arg diff "$original_diff" '{
+        owner: "org", repo: "repo", pr_number: 42, review_commit: "abc123",
+        original_diff_path: $diff,
+        comments: [{path: "src\\name.ts", line: 10, side: "LEFT", body: "Keep the required guard."}]
+    }' > "$BATS_TEST_TMPDIR/input.json"
+
+    run bash -c '"$1" < "$2" 2>/dev/null' _ "$SCRIPT" "$BATS_TEST_TMPDIR/input.json"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.unmapped_comments == [] and (.comments | length == 1)'
+    echo "$output" | jq -e '.comments[0] | .path == "src\\name.ts" and .side == "LEFT" and .line == 20 and .original_line == 10 and .remapped'
+
+    run bash -c 'source "$1"; file_hunks "$(cat "$2")" "$3"' _ "$SCRIPT" "$original_diff" 'src\name.ts'
+
+    [ "$status" -eq 0 ]
+    [ "$output" = $'@@ -10 +10 @@\n-required_guard()\n+replacement()' ]
+}
+
+@test "detect-comment-drift: literal escapes in source text match only on the requested side" {
+    local current_diff="$BATS_TEST_TMPDIR/escaped-content.diff"
+    cat > "$current_diff" << 'EOF_DIFF'
+diff --git a/src/string.ts b/src/string.ts
+@@ -20 +10 @@
+-const s = "\n";
++const s = "\n";
+EOF_DIFF
+    create_mock_gh "def456" "$current_diff"
+    jq -n '{
+        owner: "org", repo: "repo", pr_number: 42, review_commit: "abc123",
+        comments: [{path: "src/string.ts", line: 10, side: "LEFT", body: "Keep this escape.", line_content: "const s = \"\\n\";"}]
+    }' > "$BATS_TEST_TMPDIR/input.json"
+
+    run bash -c '"$1" < "$2" 2>/dev/null' _ "$SCRIPT" "$BATS_TEST_TMPDIR/input.json"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.unmapped_comments == [] and (.comments | length == 1)'
+    echo "$output" | jq -e '.comments[0] | .side == "LEFT" and .line == 20 and .original_line == 10 and .remapped and .line_content == "const s = \"\\n\";"'
+}
+
+@test "detect-comment-drift: rename metadata keeps LEFT comments mapped when either path contains a header separator" {
+    local original_diff="$FIXTURES_DIR/ambiguous-rename-paths.diff"
+    local current_diff="$BATS_TEST_TMPDIR/shifted-renames.diff"
+    sed 's/@@ -1,3 +1,3 @@/@@ -11,3 +11,3 @@/' "$original_diff" > "$current_diff"
+    create_mock_gh "def456" "$current_diff"
+    jq -n --arg diff "$original_diff" '{
+        owner: "org", repo: "repo", pr_number: 42, review_commit: "abc123",
+        original_diff_path: $diff,
+        comments: [
+            ["src/renamed.py", "src/foo b/renamed.py"][]
+            | {path: ., line: 2, side: "LEFT", body: "Keep the required behavior."}
+        ]
+    }' > "$BATS_TEST_TMPDIR/input.json"
+
+    run bash -c '"$1" < "$2" 2>/dev/null' _ "$SCRIPT" "$BATS_TEST_TMPDIR/input.json"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '
+        .drift_detected and .unmapped_comments == []
+        and [.comments[].path] == ["src/renamed.py", "src/foo b/renamed.py"]
+        and all(.comments[]; .side == "LEFT" and .line == 12 and .original_line == 2 and .remapped)
+    '
+}
+
+@test "detect-comment-drift: marker-like content in an unrelated hunk cannot redirect a LEFT comment" {
+    local original_diff="$BATS_TEST_TMPDIR/original-target.diff"
+    local current_diff="$BATS_TEST_TMPDIR/unrelated-marker.diff"
+    cat > "$original_diff" << 'EOF_DIFF'
+diff --git a/src/target.py b/src/target.py
+index 1111111..2222222 100644
+--- a/src/target.py
++++ b/src/target.py
+@@ -10 +10 @@
+-required_guard()
++replacement()
+EOF_DIFF
+    cat > "$current_diff" << 'EOF_DIFF'
+diff --git a/docs/example.txt b/docs/example.txt
+index 3333333..4444444 100644
+--- a/docs/example.txt
++++ b/docs/example.txt
+@@ -1 +1 @@
+-old heading
++++ b/src/target.py
+@@ -11 +11 @@
+-required_guard()
++unrelated_replacement()
+diff --git a/src/target.py b/src/target.py
+index 5555555..6666666 100644
+--- a/src/target.py
++++ b/src/target.py
+@@ -100 +100 @@
+-required_guard()
++replacement()
+EOF_DIFF
+    create_mock_gh "def456" "$current_diff"
+    jq -n --arg diff "$original_diff" '{
+        owner: "org", repo: "repo", pr_number: 42, review_commit: "abc123",
+        original_diff_path: $diff,
+        comments: [{path: "src/target.py", line: 10, side: "LEFT", body: "Keep the required guard."}]
+    }' > "$BATS_TEST_TMPDIR/input.json"
+
+    run bash -c '"$1" < "$2" 2>/dev/null' _ "$SCRIPT" "$BATS_TEST_TMPDIR/input.json"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.unmapped_comments == [] and (.comments | length == 1)'
+    echo "$output" | jq -e '.comments[0] | .path == "src/target.py" and .side == "LEFT" and .line == 100 and .original_line == 10 and .remapped'
+}

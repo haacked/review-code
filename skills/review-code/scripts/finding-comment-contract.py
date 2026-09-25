@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shlex
 import sys
 from pathlib import Path
 from typing import Any
@@ -389,6 +388,92 @@ def validate_publication_comment(raw: Any) -> dict[str, Any]:
     return raw
 
 
+def decode_git_path(raw_path: str) -> str:
+    if not raw_path.startswith('"'):
+        return raw_path
+    if not raw_path.endswith('"'):
+        raise ValueError("could not parse a path from the diff")
+
+    escapes = {
+        "a": 7,
+        "b": 8,
+        "t": 9,
+        "n": 10,
+        "v": 11,
+        "f": 12,
+        "r": 13,
+        '"': 34,
+        "\\": 92,
+    }
+    decoded = bytearray()
+    body = raw_path[1:-1]
+    index = 0
+    while index < len(body):
+        char = body[index]
+        if char != "\\":
+            decoded.extend(char.encode("utf-8"))
+            index += 1
+            continue
+
+        index += 1
+        if index >= len(body):
+            raise ValueError("could not parse a path from the diff")
+        char = body[index]
+        if char in "01234567":
+            octal = char
+            while (
+                len(octal) < 3
+                and index + 1 < len(body)
+                and body[index + 1] in "01234567"
+            ):
+                index += 1
+                octal += body[index]
+            decoded.append(int(octal, 8))
+        else:
+            decoded.append(escapes.get(char, ord(char)))
+        index += 1
+
+    return decoded.decode("utf-8", errors="surrogateescape")
+
+
+def git_diff_header_paths(raw_line: str) -> tuple[str, str]:
+    content = raw_line.removeprefix("diff --git ")
+    if content.startswith('"'):
+        match = re.match(r'("(?:[^"\\]|\\.)*") (.+)$', content)
+        if not match:
+            raise ValueError("could not parse a path from the diff")
+        raw_old_path, raw_new_path = match.groups()
+    else:
+        candidates: list[tuple[str, str]] = []
+        for match in re.finditer(r' (?="?b/)', content):
+            raw_old_path = content[: match.start()]
+            raw_new_path = content[match.end() :]
+            candidates.append((raw_old_path, raw_new_path))
+            old_path = decode_git_path(raw_old_path)
+            new_path = decode_git_path(raw_new_path)
+            if old_path.removeprefix("a/") == new_path.removeprefix("b/"):
+                break
+        else:
+            if not candidates:
+                raise ValueError("could not parse a path from the diff")
+            raw_old_path, raw_new_path = candidates[0]
+
+    old_path = decode_git_path(raw_old_path)
+    new_path = decode_git_path(raw_new_path)
+    if not old_path.startswith("a/") or not new_path.startswith("b/"):
+        raise ValueError("could not parse a path from the diff")
+    return old_path[2:], new_path[2:]
+
+
+def git_diff_marker_path(raw_path: str) -> str | None:
+    decoded = decode_git_path(raw_path)
+    if decoded == "/dev/null":
+        return None
+    if decoded.startswith(("a/", "b/")):
+        return decoded[2:]
+    raise ValueError("could not parse a path from the diff")
+
+
 def parse_diff(path: str) -> tuple[dict[tuple[str, str, int], str], list[str]]:
     contents: dict[tuple[str, str, int], str] = {}
     paths: list[str] = []
@@ -405,15 +490,7 @@ def parse_diff(path: str) -> tuple[dict[tuple[str, str, int], str], list[str]]:
         if raw_line.startswith("diff --git "):
             if pending_path_pair:
                 add_path(pending_path_pair[1])
-            parts = shlex.split(raw_line)
-            if (
-                len(parts) != 4
-                or not parts[2].startswith("a/")
-                or not parts[3].startswith("b/")
-            ):
-                raise ValueError("could not parse a path from the diff")
-            old_path = parts[2][2:]
-            current_path = parts[3][2:]
+            old_path, current_path = git_diff_header_paths(raw_line)
             if old_path == current_path:
                 add_path(current_path)
                 pending_path_pair = None
@@ -422,13 +499,40 @@ def parse_diff(path: str) -> tuple[dict[tuple[str, str, int], str], list[str]]:
             old_line = new_line = None
             continue
         if raw_line.startswith("rename from ") and pending_path_pair:
+            pending_path_pair = (
+                decode_git_path(raw_line.removeprefix("rename from ")),
+                pending_path_pair[1],
+            )
+            continue
+        if raw_line.startswith("rename to ") and pending_path_pair:
+            current_path = decode_git_path(raw_line.removeprefix("rename to "))
             add_path(pending_path_pair[0])
-            add_path(pending_path_pair[1])
+            add_path(current_path)
             pending_path_pair = None
             continue
         if raw_line.startswith("copy from ") and pending_path_pair:
-            add_path(pending_path_pair[1])
+            pending_path_pair = (
+                decode_git_path(raw_line.removeprefix("copy from ")),
+                pending_path_pair[1],
+            )
+            continue
+        if raw_line.startswith("copy to ") and pending_path_pair:
+            current_path = decode_git_path(raw_line.removeprefix("copy to "))
+            add_path(current_path)
             pending_path_pair = None
+            continue
+        if raw_line.startswith("--- ") and pending_path_pair:
+            old_path = git_diff_marker_path(raw_line.removeprefix("--- "))
+            if old_path is not None:
+                pending_path_pair = (old_path, pending_path_pair[1])
+            continue
+        if raw_line.startswith("+++ ") and pending_path_pair:
+            new_path = git_diff_marker_path(raw_line.removeprefix("+++ "))
+            if new_path is not None:
+                current_path = new_path
+                add_path(pending_path_pair[0])
+                add_path(current_path)
+                pending_path_pair = None
             continue
         if raw_line.startswith("@@"):
             match = re.match(r"@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@", raw_line)

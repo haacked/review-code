@@ -77,20 +77,34 @@ extract_line_content_from_diff() {
     local target_line="$3"
     local side="${4:-RIGHT}"
 
-    echo "${diff}" | awk -v target_path="${target_path}" -v target_line="${target_line}" -v side="${side}" "$(git_diff_path_functions)"'
+    echo "${diff}" | TARGET_PATH="${target_path}" awk -v target_line="${target_line}" -v side="${side}" "$(git_diff_path_functions)"'
     BEGIN {
+        target_path = ENVIRON["TARGET_PATH"]
         in_file = 0
         old_line = new_line = 0
         in_hunk = 0
     }
 
     /^diff --git/ {
-        in_file = (diff_header_path($0) == target_path)
+        current_path = diff_header_path($0)
+        in_file = (current_path == target_path)
         in_hunk = 0
         next
     }
+    !in_hunk && /^rename to / {
+        current_path = diff_rename_path($0)
+        in_file = (current_path == target_path)
+        next
+    }
+    !in_hunk && /^\+\+\+ "?b\// {
+        current_path = diff_marker_path($0)
+        in_file = (current_path == target_path)
+        next
+    }
 
-    /^@@/ && in_file {
+    /^@@/ {
+        in_hunk = 1
+        if (!in_file) next
         rest = substr($0, index($0, "-") + 1)
         sub(/[^0-9].*/, "", rest)
         old_line = rest + 0
@@ -100,7 +114,6 @@ extract_line_content_from_diff() {
             gsub(/[^0-9].*/, "", rest)
             new_line = rest + 0
         }
-        in_hunk = 1
         next
     }
 
@@ -155,20 +168,35 @@ find_line_in_diff() {
 
     # Find all matching line numbers in the file within the diff
     local matches
-    matches=$(echo "${diff}" | awk -v target_path="${target_path}" -v trimmed_content="${trimmed_content}" -v side="${side}" "$(git_diff_path_functions)"'
+    matches=$(echo "${diff}" | TARGET_PATH="${target_path}" TRIMMED_CONTENT="${trimmed_content}" awk -v side="${side}" "$(git_diff_path_functions)"'
     BEGIN {
+        target_path = ENVIRON["TARGET_PATH"]
+        trimmed_content = ENVIRON["TRIMMED_CONTENT"]
         in_file = 0
         old_line = new_line = 0
         in_hunk = 0
     }
 
     /^diff --git/ {
-        in_file = (diff_header_path($0) == target_path)
+        current_path = diff_header_path($0)
+        in_file = (current_path == target_path)
         in_hunk = 0
         next
     }
+    !in_hunk && /^rename to / {
+        current_path = diff_rename_path($0)
+        in_file = (current_path == target_path)
+        next
+    }
+    !in_hunk && /^\+\+\+ "?b\// {
+        current_path = diff_marker_path($0)
+        in_file = (current_path == target_path)
+        next
+    }
 
-    /^@@/ && in_file {
+    /^@@/ {
+        in_hunk = 1
+        if (!in_file) next
         rest = substr($0, index($0, "-") + 1)
         sub(/[^0-9].*/, "", rest)
         old_line = rest + 0
@@ -178,7 +206,6 @@ find_line_in_diff() {
             gsub(/[^0-9].*/, "", rest)
             new_line = rest + 0
         }
-        in_hunk = 1
         next
     }
 
@@ -238,13 +265,27 @@ file_hunks() {
     local diff="$1"
     local target_path="$2"
 
-    echo "${diff}" | awk -v target_path="${target_path}" "$(git_diff_path_functions)"'
+    echo "${diff}" | TARGET_PATH="${target_path}" awk "$(git_diff_path_functions)"'
+    BEGIN {
+        target_path = ENVIRON["TARGET_PATH"]
+    }
     /^diff --git/ {
-        in_file = (diff_header_path($0) == target_path)
+        current_path = diff_header_path($0)
+        in_file = (current_path == target_path)
         in_hunk = 0
         next
     }
-    in_file && /^@@/ { in_hunk = 1 }
+    !in_hunk && /^rename to / {
+        current_path = diff_rename_path($0)
+        in_file = (current_path == target_path)
+        next
+    }
+    !in_hunk && /^\+\+\+ "?b\// {
+        current_path = diff_marker_path($0)
+        in_file = (current_path == target_path)
+        next
+    }
+    /^@@/ { in_hunk = 1 }
     in_file && in_hunk { print }
     '
 }
@@ -256,9 +297,21 @@ file_in_diff() {
     local diff="$1"
     local target_path="$2"
 
-    echo "${diff}" | awk -v target_path="${target_path}" "$(git_diff_path_functions)"'
-        /^diff --git / && diff_header_path($0) == target_path { found = 1 }
-        END { print found ? "true" : "false" }
+    echo "${diff}" | TARGET_PATH="${target_path}" awk "$(git_diff_path_functions)"'
+        BEGIN { target_path = ENVIRON["TARGET_PATH"] }
+        function consider_file() {
+            if (current_path == target_path) found = 1
+        }
+        /^diff --git / {
+            consider_file()
+            current_path = diff_header_path($0)
+            in_hunk = 0
+            next
+        }
+        !in_hunk && /^rename to / { current_path = diff_rename_path($0); next }
+        !in_hunk && /^\+\+\+ "?b\// { current_path = diff_marker_path($0); next }
+        /^@@/ { consider_file(); in_hunk = 1 }
+        END { consider_file(); print found ? "true" : "false" }
     '
 }
 
@@ -318,8 +371,7 @@ remap_comment() {
     # Return the remapped comment
     if [[ "${new_line}" -eq "${line}" ]]; then
         # Line didn't move, no remapping needed
-        echo "${comment}" | jq --argjson new_line "${new_line}" \
-            '. + {remapped: false}'
+        echo "${comment}" | jq '. + {remapped: false}'
     else
         echo "${comment}" | jq --argjson new_line "${new_line}" --argjson orig_line "${line}" \
             '. + {line: $new_line, original_line: $orig_line, remapped: true}'
