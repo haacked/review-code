@@ -27,8 +27,8 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
-@test "diff-position-mapper: has lookup_position function" {
-    run bash -c "grep -q '^lookup_position()' '$SCRIPT'"
+@test "diff-position-mapper: has lookup_positions function" {
+    run bash -c "grep -q '^lookup_positions()' '$SCRIPT'"
     [ "$status" -eq 0 ]
 }
 
@@ -108,9 +108,6 @@ setup() {
 }
 
 # =============================================================================
-# lookup_position tests
-# =============================================================================
-
 @test "diff-position-mapper: returns error for file not in diff" {
     local diff
     diff=$(cat "$FIXTURES_DIR/simple-single-file.diff")
@@ -389,4 +386,94 @@ setup() {
 
     run bash -c "echo '$input' | '$SCRIPT' --diff-file '$diff_file'"
     [ "$status" -eq 0 ]
+}
+
+map_deleted_line_targets() {
+    printf '%s\n' "$1" > "$BATS_TEST_TMPDIR/targets.json"
+    run bash -c '"$1" --diff-file "$2" < "$3"' _ "$SCRIPT" \
+        "$FIXTURES_DIR/deleted-line-anchors.diff" "$BATS_TEST_TMPDIR/targets.json"
+    [ "$status" -eq 0 ]
+}
+
+@test "diff-position-mapper: maps fully deleted file lines to LEFT by default" {
+    map_deleted_line_targets '{"targets":[{"path":"src/deleted.py","line":1},{"path":"src/deleted.py","line":4}]}'
+
+    echo "$output" | jq -e '.mappings == [
+        {path: "src/deleted.py", line: 1, side: "LEFT"},
+        {path: "src/deleted.py", line: 4, side: "LEFT"}
+    ]'
+}
+
+@test "diff-position-mapper: explicit LEFT resolves removed lines sharing RIGHT line numbers" {
+    map_deleted_line_targets '{"targets":[{"path":"src/mixed.py","line":11,"side":"LEFT"},{"path":"src/mixed.py","line":11}]}'
+
+    echo "$output" | jq -e '.mappings == [
+        {path: "src/mixed.py", line: 11, side: "LEFT"},
+        {path: "src/mixed.py", line: 11, side: "RIGHT"}
+    ]'
+}
+
+@test "diff-position-mapper: unchanged context only maps on RIGHT" {
+    map_deleted_line_targets '{"targets":[{"path":"src/mixed.py","line":13,"side":"LEFT"},{"path":"src/mixed.py","line":13},{"path":"src/mixed.py","line":12,"side":"RIGHT"}]}'
+
+    echo "$output" | jq -e '.mappings[0].error == "line not in diff" and .mappings[1].error == "line not in diff"'
+    echo "$output" | jq -e '.mappings[2] == {path: "src/mixed.py", line: 12, side: "RIGHT"}'
+}
+
+@test "diff-position-mapper: explicit side never falls back to the opposite side" {
+    map_deleted_line_targets '{"targets":[{"path":"src/deleted.py","line":1,"side":"RIGHT"},{"path":"src/added.py","line":1,"side":"LEFT"}]}'
+
+    echo "$output" | jq -e '.mappings | length == 2 and all(.[]; .error == "line not in diff")'
+}
+
+@test "diff-position-mapper: hunk content beginning with file-header markers is mappable" {
+    map_deleted_line_targets '{"targets":[{"path":"src/deleted.py","line":3,"side":"LEFT"},{"path":"src/markers.txt","line":1,"side":"LEFT"},{"path":"src/markers.txt","line":1,"side":"RIGHT"}]}'
+
+    echo "$output" | jq -e '.mappings | length == 3 and all(.[]; has("error") | not)'
+    echo "$output" | jq -e '[.mappings[].side] == ["LEFT", "LEFT", "RIGHT"]'
+}
+
+@test "diff-position-mapper: mixed batches preserve target order defaults and mapping errors" {
+    map_deleted_line_targets '{"targets":[
+        {"path":"src/mixed.py","line":11},
+        {"path":"src/mixed.py","line":11,"side":"LEFT"},
+        {"path":"src/added.py","line":1,"side":"RIGHT"},
+        {"path":"src/missing.py","line":1},
+        {"path":"src/mixed.py","line":999,"side":"LEFT"},
+        {"path":"src/deleted.py","line":1}
+    ]}'
+
+    echo "$output" | jq -e '.mappings == [
+        {path: "src/mixed.py", line: 11, side: "RIGHT"},
+        {path: "src/mixed.py", line: 11, side: "LEFT"},
+        {path: "src/added.py", line: 1, side: "RIGHT"},
+        {path: "src/missing.py", line: 1, error: "file not in diff"},
+        {path: "src/mixed.py", line: 999, error: "line not in diff"},
+        {path: "src/deleted.py", line: 1, side: "LEFT"}
+    ]'
+}
+
+@test "diff-position-mapper: an invalid side rejects the batch without partial mappings" {
+    printf '%s\n' '{"targets":[{"path":"src/mixed.py","line":11},{"path":"src/mixed.py","line":11,"side":"BOTH"}]}' > "$BATS_TEST_TMPDIR/targets.json"
+
+    run bash -c '"$1" --diff-file "$2" < "$3"' _ "$SCRIPT" \
+        "$FIXTURES_DIR/deleted-line-anchors.diff" "$BATS_TEST_TMPDIR/targets.json"
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Target side must be LEFT or RIGHT"* ]]
+    [[ "$output" != *'"mappings"'* ]]
+}
+
+@test "diff-position-mapper: rename metadata resolves header separators within either path" {
+    jq -n '{targets: [
+        ["src/renamed.py", "src/foo b/renamed.py"][] as $path
+        | ["LEFT", "RIGHT"][] as $side
+        | {path: $path, line: 2, side: $side}
+    ]}' > "$BATS_TEST_TMPDIR/targets.json"
+
+    run bash -c '"$1" --diff-file "$2" < "$3"' _ "$SCRIPT" \
+        "$FIXTURES_DIR/ambiguous-rename-paths.diff" "$BATS_TEST_TMPDIR/targets.json"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e --slurpfile input "$BATS_TEST_TMPDIR/targets.json" '.mappings == $input[0].targets'
 }

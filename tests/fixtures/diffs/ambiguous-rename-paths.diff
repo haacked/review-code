@@ -1,0 +1,24 @@
+diff --git a/src/foo b/bar.py b/src/renamed.py
+similarity index 65%
+rename from src/foo b/bar.py
+rename to src/renamed.py
+index 1111111..2222222 100644
+--- a/src/foo b/bar.py
++++ b/src/renamed.py
+@@ -1,3 +1,3 @@
+ before()
+-removed_guard()
++replacement()
+ after()
+diff --git a/src/original.py b/src/foo b/renamed.py
+similarity index 65%
+rename from src/original.py
+rename to src/foo b/renamed.py
+index 3333333..4444444 100644
+--- a/src/original.py
++++ b/src/foo b/renamed.py
+@@ -1,3 +1,3 @@
+ before()
+-removed_cleanup()
++replacement_cleanup()
+ after()

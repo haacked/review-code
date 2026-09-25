@@ -10,13 +10,13 @@ Before including any finding in the final review, verify it references code actu
 EOF
 ```
 
-Where `targets` contains `{"path": "<file>", "line": <number>}` objects. The diff comes from the file, so it never passes through this conversation.
+Where `targets` contains `{"path": "<file>", "line": <number>, "side": "LEFT"|"RIGHT"}` objects. Use `LEFT` and the old-file line number for findings on removed code, including fully deleted files. Use `RIGHT` and the new-file line number for added or surviving code. If the side is unknown, omit it; the mapper prefers `RIGHT` when both sides have that number, then falls back to `LEFT`. Resolve an ambiguous location against the cited code before mapping. The diff comes from the file, so it never passes through this conversation.
 
 **Step 2: Handle results.** Check the `mappings` array in the output:
 
-- **Has `side` field** (line is in the diff): Include the finding as-is.
-- **Error: `"line not in diff"`** (file is in the diff but line is outside any hunk):
-  1. Resume the agent that produced this finding (using the agent ID from the Task tool).
+- **Has `side` field** (line is in the diff): Include the finding and preserve the returned `side` with its file and line through the finding contract and publication. A `LEFT` anchor is valid even when the file no longer exists in the checkout.
+- **Error: `"line not in diff"`** (the requested line is absent on that side):
+  1. Check the cited code's side and line number. If either is wrong, correct the target and rerun the mapper. If the code is outside the hunks, resume the agent that produced this finding (using the agent ID from the Task tool).
   2. Ask: "Your finding at `<file>:<line>` references a line outside the changed hunks in the diff. Is this finding still relevant to the changes (e.g., the issue interacts with the changed code), or should it be dropped?"
   3. Include only if the agent confirms relevance and provides justification.
 - **Error: `"file not in diff"`**: Drop the finding silently. The pre-synthesis scope filter is the primary gate for this; the position mapper serves as a backstop for any that slip through.
@@ -43,7 +43,7 @@ Where `targets` contains `{"path": "<file>", "line": <number>}` objects. The dif
 
   $file_access_instructions
 
-  Read the file at `$file` (around line `$line`) and determine whether this finding is real or a false positive. Try to disprove it. Respond with CONFIRMED or DISMISSED and your reasoning.
+  Inspect the cited code on `$side` at `$file:$line`. For LEFT anchors, use the removed code in the diff or the base version; the checkout may have different code or no file at that path. Determine whether this finding is real or a false positive. Try to disprove it. Respond with CONFIRMED or DISMISSED and your reasoning.
   ````
 
   Dispatch all blocking finding validations **in parallel**. Extract usage metadata from each validator's response and record in `$token_usage` as `validator-{N}` (numbered sequentially). For each result:
@@ -51,4 +51,4 @@ Where `targets` contains `{"path": "<file>", "line": <number>}` objects. The dif
   - **CONFIRMED**: keep as `blocking:`.
   - **Unreachable or errors**: keep the finding as-is.
 
-- **Otherwise** (non-blocking findings): Use the Read tool to verify the claim is accurate before including it.
+- **Otherwise** (non-blocking findings): Verify the claim against the cited side before including it. Use the diff or base version for removed code and the checkout for surviving code.

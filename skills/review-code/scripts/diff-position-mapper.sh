@@ -4,7 +4,8 @@ set -euo pipefail
 #
 # GitHub's PR review comment API accepts either deprecated "position" or the
 # preferred "line" + "side" parameters. This script maps file:line targets
-# to their corresponding line numbers and side (RIGHT for new file lines).
+# to their corresponding line numbers and side (LEFT for old, RIGHT for new).
+# Targets may specify a side. Without one, RIGHT takes precedence over LEFT.
 #
 # Usage:
 #   echo '<json_input>' | diff-position-mapper.sh
@@ -36,141 +37,111 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 # shellcheck source=lib/helpers/json-helpers.sh
 source "${SCRIPT_DIR}/helpers/json-helpers.sh"
+# shellcheck source=lib/helpers/git-diff-paths.sh
+source "${SCRIPT_DIR}/helpers/git-diff-paths.sh"
 
-# Parse the diff and build a lookup table mapping file paths and line numbers
-# Lines that appear in the diff (added or context lines) are mapped with their side
-#
-# Args: $1 = diff content
-# Output: JSON object with structure: { "file/path.ts": { "42": {"line": 42, "side": "RIGHT"}, ... }, ... }
+# Keys include the side because old and new line numbers can overlap.
 build_position_map() {
     local diff="$1"
 
-    # Use awk to parse the diff and output JSON (BSD awk compatible)
-    echo "${diff}" | awk '
-    BEGIN {
+    echo "${diff}" | LC_ALL=C awk "$(git_diff_path_functions)"'
+    function open_file() {
+        if (current_file == "" || file_open) return
+        if (!first_file) print ","
+        first_file = 0
+        printf "  %s: {", json_quote(current_file)
+        first_line = 1
+        file_open = 1
+    }
+    function close_file() {
+        if (current_file != "") {
+            open_file()
+            print "\n  }"
+        }
         current_file = ""
-        old_line = 0
-        new_line = 0
+        file_open = 0
+    }
+    function emit_line(line, side) {
+        if (!first_line) printf ","
+        first_line = 0
+        printf "\n    \"%s:%d\": {\"line\": %d, \"side\": \"%s\"}", side, line, line, side
+    }
+    BEGIN {
         print "{"
         first_file = 1
     }
-
-    # Match diff header to get file path
-    # Format: diff --git a/path/to/file b/path/to/file
-    /^diff --git/ {
-        # Extract the b/ path (new file) - find last " b/" and take everything after
-        idx = match($0, / b\//)
-        if (idx > 0) {
-            if (current_file != "") {
-                print "}"
-            }
-            if (!first_file) {
-                print ","
-            }
-            first_file = 0
-            current_file = substr($0, idx + 3)
-            # Escape quotes in file path
-            gsub(/"/, "\\\"", current_file)
-            printf "  \"%s\": {", current_file
-            first_line = 1
-        }
+    /^diff --git / {
+        close_file()
+        current_file = diff_header_path($0)
+        old_file = ""
+        in_hunk = 0
         next
     }
-
-    # Match hunk header
-    # Format: @@ -old_start,old_count +new_start,new_count @@
-    /^@@/ {
-        # Parse hunk header manually for BSD awk compatibility
-        # Find the +N part for new line start
-        idx = index($0, "+")
-        if (idx > 0) {
-            rest = substr($0, idx + 1)
-            # Extract number until comma or space
-            gsub(/[^0-9].*/, "", rest)
-            new_line = rest + 0
-        }
-        # Find the -N part for old line start
-        idx = index($0, "-")
-        if (idx > 0) {
-            rest = substr($0, idx + 1)
-            gsub(/[^0-9].*/, "", rest)
-            old_line = rest + 0
-        }
+    !in_hunk && /^rename to / { current_file = diff_rename_path($0); next }
+    !in_hunk && /^--- "?a\// { old_file = diff_marker_path($0); next }
+    !in_hunk && /^\+\+\+ / {
+        if ($0 ~ /^\+\+\+ \/dev\/null([[:space:]]|$)/) current_file = old_file
+        else if ($0 ~ /^\+\+\+ "?b\//) current_file = diff_marker_path($0)
         next
     }
-
-    # Skip if no current file (before first diff header)
-    current_file == "" { next }
-
-    # Context line (space prefix) - both sides have this line
-    # We map context lines to RIGHT because review comments target the new version
-    # of the file. While context lines exist in both old and new versions, GitHub
-    # displays them on the right side of split diff view, making RIGHT the natural
-    # choice for comment placement.
-    /^ / {
-        if (!first_line) printf ","
-        first_line = 0
-        printf "\n    \"%d\": {\"line\": %d, \"side\": \"RIGHT\"}", new_line, new_line
+    /^@@ / {
+        open_file()
+        rest = substr($0, index($0, "-") + 1)
+        sub(/[^0-9].*/, "", rest)
+        old_line = rest + 0
+        rest = substr($0, index($0, "+") + 1)
+        sub(/[^0-9].*/, "", rest)
+        new_line = rest + 0
+        in_hunk = 1
+        next
+    }
+    current_file == "" || !in_hunk { next }
+    # GitHub requires RIGHT for unchanged context.
+    /^ / || /^$/ {
         old_line++
-        new_line++
+        emit_line(new_line++, "RIGHT")
         next
     }
-
-    # Added line (+) - only in new file (RIGHT side)
-    /^\+/ && !/^\+\+\+/ {
-        if (!first_line) printf ","
-        first_line = 0
-        printf "\n    \"%d\": {\"line\": %d, \"side\": \"RIGHT\"}", new_line, new_line
-        new_line++
-        next
-    }
-
-    # Removed line (-) - only in old file (LEFT side)
-    /^-/ && !/^---/ {
-        old_line++
-        next
-    }
-
+    /^\+/ { emit_line(new_line++, "RIGHT"); next }
+    /^-/ { emit_line(old_line++, "LEFT"); next }
     END {
-        if (current_file != "") {
-            print "\n  }"
-        }
+        close_file()
         print "}"
     }
     '
 }
 
-# Look up a target in the position map
-# Args: $1 = position_map (JSON), $2 = path, $3 = line
-# Output: JSON object with position info or error
-lookup_position() {
+lookup_positions() {
     local position_map="$1"
-    local path="$2"
-    local line="$3"
+    local targets="$2"
 
-    # Query the position map
-    local result
-    result=$(echo "${position_map}" | jq -r --arg path "${path}" --arg line "${line}" '
-        .[$path][$line] // null
-    ')
-
-    if [[ "${result}" == "null" ]]; then
-        # Check if file exists in diff at all
-        local file_exists
-        file_exists=$(echo "${position_map}" | jq -r --arg path "${path}" 'has($path)')
-
-        if [[ "${file_exists}" == "false" ]]; then
-            jq -n --arg path "${path}" --argjson line "${line}" \
-                '{path: $path, line: $line, error: "file not in diff"}'
-        else
-            jq -n --arg path "${path}" --argjson line "${line}" \
-                '{path: $path, line: $line, error: "line not in diff"}'
-        fi
-    else
-        # Return the position info with path and line included
-        echo "${result}" | jq --arg path "${path}" --argjson line "${line}" \
-            '{path: $path, line: $line} + .'
-    fi
+    echo "${position_map}" | jq --argjson targets "${targets}" '
+        . as $positions
+        | {mappings: [$targets[]
+            | .path as $path
+            | .line as $line
+            | (.side // "") as $side
+            | if $side != "" and $side != "LEFT" and $side != "RIGHT" then
+                error("Target side must be LEFT or RIGHT")
+              else
+                $positions[$path] as $file
+                | if $file == null then
+                    {path: $path, line: $line, error: "file not in diff"}
+                  else
+                    (if $side == "" then
+                        $file["RIGHT:" + ($line | tostring)] // $file["LEFT:" + ($line | tostring)]
+                    else
+                        $file[$side + ":" + ($line | tostring)]
+                    end) as $position
+                    | if $position == null then
+                        {path: $path, line: $line, error: "line not in diff"}
+                      else
+                        {path: $path, line: $line} + $position
+                      end
+                  end
+              end
+        ]}
+    '
 }
 
 main() {
@@ -221,20 +192,7 @@ main() {
     local position_map
     position_map=$(build_position_map "${diff}")
 
-    # Process each target
-    local mappings="[]"
-    while IFS= read -r target; do
-        local path line
-        path=$(echo "${target}" | jq -r '.path')
-        line=$(echo "${target}" | jq -r '.line')
-
-        local mapping
-        mapping=$(lookup_position "${position_map}" "${path}" "${line}")
-        mappings=$(echo "${mappings}" | jq --argjson m "${mapping}" '. + [$m]')
-    done < <(echo "${targets}" | jq -c '.[]')
-
-    # Output result
-    jq -n --argjson mappings "${mappings}" '{mappings: $mappings}'
+    lookup_positions "${position_map}" "${targets}"
 }
 
 # Only run main if script is executed directly (not sourced)
