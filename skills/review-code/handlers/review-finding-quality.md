@@ -17,6 +17,7 @@ Enumerate the surviving findings in stable review order. Assign every finding a 
   "location": "path/file.rs:42",
   "file": "path/file.rs",
   "line": 42,
+  "side": "RIGHT",
   "confidence": 90,
   "description": "the reviewer's current body",
   "proposed_fix": "fix text or null",
@@ -32,7 +33,7 @@ Enumerate the surviving findings in stable review order. Assign every finding a 
 }
 ```
 
-`location` is the display value. `file` and `line` are the routing values used by diff mapping, draft comments, and `--fix`; keep them as separate fields through every later merge. A finding without a specific source location cannot cross the publication boundary and remains in the local review's withheld section.
+`location` is the display value. `file`, `line`, and `side` are the routing values used by diff mapping and draft comments; keep them as separate fields through every later merge. Preserve the side from finding validation: `LEFT` uses old-file line numbers, and `RIGHT` uses new-file line numbers. For `--fix`, inspect the current code before applying a change at a `LEFT` location. A finding without a specific source location cannot cross the publication boundary and remains in the local review's withheld section.
 
 Set `comment_style` from the session (`concise` by default, or `detailed`) on every finding and preserve it through preflight, composition, voice, repair, and the final gate. Style changes public wording only; it never reduces the internal analysis.
 

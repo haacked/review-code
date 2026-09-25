@@ -618,3 +618,113 @@ EOF
     echo "$output" | jq -e '.drift_detected == true'
     echo "$output" | jq -e '.comments | length == 1'
 }
+
+@test "detect-comment-drift: LEFT extraction returns removed content but excludes unchanged context" {
+    run bash -c 'source "$1"; extract_line_content_from_diff "$(cat "$2")" src/mixed.py 11 LEFT' _ \
+        "$SCRIPT" "$FIXTURES_DIR/deleted-line-anchors.diff"
+    [ "$status" -eq 0 ]
+    [ "$output" = "removed_guard()" ]
+
+    run bash -c 'source "$1"; extract_line_content_from_diff "$(cat "$2")" src/mixed.py 13 LEFT' _ \
+        "$SCRIPT" "$FIXTURES_DIR/deleted-line-anchors.diff"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "detect-comment-drift: LEFT search ignores identical content found only on RIGHT" {
+    run bash -c 'source "$1"; find_line_in_diff "$(cat "$2")" src/mixed.py "replacement()" 11 LEFT' _ \
+        "$SCRIPT" "$FIXTURES_DIR/deleted-line-anchors.diff"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+
+    run bash -c 'source "$1"; find_line_in_diff "$(cat "$2")" src/mixed.py "removed_guard()" 11 LEFT' _ \
+        "$SCRIPT" "$FIXTURES_DIR/deleted-line-anchors.diff"
+    [ "$status" -eq 0 ]
+    [ "$output" = "11" ]
+}
+
+@test "detect-comment-drift: hunk header-like content and no-newline markers keep both counters correct" {
+    for side in LEFT RIGHT; do
+        local content
+        if [ "$side" = LEFT ]; then content="-- old heading"; else content="++ new heading"; fi
+
+        run bash -c 'source "$1"; extract_line_content_from_diff "$(cat "$2")" src/markers.txt 1 "$3"' _ \
+            "$SCRIPT" "$FIXTURES_DIR/deleted-line-anchors.diff" "$side"
+        [ "$status" -eq 0 ]
+        [ "$output" = "$content" ]
+
+        run bash -c 'source "$1"; find_line_in_diff "$(cat "$2")" src/markers.txt "$3" 1 "$4"' _ \
+            "$SCRIPT" "$FIXTURES_DIR/deleted-line-anchors.diff" "$content" "$side"
+        [ "$status" -eq 0 ]
+        [ "$output" = "1" ]
+    done
+}
+
+@test "detect-comment-drift: remaps fully deleted file comments from original LEFT content" {
+    local current_diff="$BATS_TEST_TMPDIR/current.diff"
+    cat > "$current_diff" <<'EOF_DIFF'
+diff --git a/src/deleted.py b/src/deleted.py
+deleted file mode 100644
+index 1111111..0000000
+--- a/src/deleted.py
++++ /dev/null
+@@ -1,2 +0,0 @@
+-preamble()
+-required_guard()
+EOF_DIFF
+    create_mock_gh "def456" "$current_diff"
+    jq -n --arg diff "$FIXTURES_DIR/deleted-line-anchors.diff" '{
+        owner: "org", repo: "repo", pr_number: 42, review_commit: "abc123",
+        original_diff_path: $diff,
+        comments: [{path: "src/deleted.py", line: 1, side: "LEFT", body: "Keep the required guard."}]
+    }' > "$BATS_TEST_TMPDIR/input.json"
+
+    run bash -c '"$1" < "$2" 2>/dev/null' _ "$SCRIPT" "$BATS_TEST_TMPDIR/input.json"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.drift_detected and (.unmapped_comments | length == 0)'
+    echo "$output" | jq -e '.comments | length == 1'
+    echo "$output" | jq -e '.comments[0] | .side == "LEFT" and .line == 2 and .original_line == 1 and .remapped'
+}
+
+@test "detect-comment-drift: does not remap a LEFT comment onto a new-only line" {
+    create_mock_gh "def456" "$FIXTURES_DIR/deleted-line-anchors.diff"
+    jq -n '{
+        owner: "org", repo: "repo", pr_number: 42, review_commit: "abc123",
+        comments: [{path: "src/mixed.py", line: 20, side: "LEFT", body: "Keep the old behavior.", line_content: "replacement()"}]
+    }' > "$BATS_TEST_TMPDIR/input.json"
+
+    run bash -c '"$1" < "$2" 2>/dev/null' _ "$SCRIPT" "$BATS_TEST_TMPDIR/input.json"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.comments | length == 0'
+    echo "$output" | jq -e '.unmapped_comments[0] | .side == "LEFT" and .line == 20 and .reason == "line content not found in current diff"'
+}
+
+@test "detect-comment-drift: restored deletions cannot retain LEFT anchors on unchanged context" {
+    local current_diff="$BATS_TEST_TMPDIR/restored.diff"
+    cat > "$current_diff" <<'EOF_DIFF'
+diff --git a/src/mixed.py b/src/mixed.py
+index 1111111..3333333 100644
+--- a/src/mixed.py
++++ b/src/mixed.py
+@@ -10,4 +10,4 @@
+ before()
+ removed_guard()
+-removed_cleanup()
++replacement_cleanup()
+ after()
+EOF_DIFF
+    create_mock_gh "def456" "$current_diff"
+    jq -n --arg diff "$FIXTURES_DIR/deleted-line-anchors.diff" '{
+        owner: "org", repo: "repo", pr_number: 42, review_commit: "abc123",
+        original_diff_path: $diff,
+        comments: [{path: "src/mixed.py", line: 11, side: "LEFT", body: "Keep the required guard."}]
+    }' > "$BATS_TEST_TMPDIR/input.json"
+
+    run bash -c '"$1" < "$2" 2>/dev/null' _ "$SCRIPT" "$BATS_TEST_TMPDIR/input.json"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.comments | length == 0'
+    echo "$output" | jq -e '.unmapped_comments[0] | .side == "LEFT" and .line == 11 and .reason == "line content not found in current diff"'
+}

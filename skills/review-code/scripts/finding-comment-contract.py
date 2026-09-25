@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 SEVERITIES = ("blocking", "suggestion", "question", "nit")
+COMMENT_SIDES = ("LEFT", "RIGHT")
 COVERAGE_FIELDS = (
     "problem",
     "trigger",
@@ -44,11 +45,17 @@ def valid_identifier(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def valid_side(value: Any) -> bool:
+    return value is None or value in COMMENT_SIDES
+
+
 def validate_facts(item: dict[str, Any]) -> list[str]:
     reasons: list[str] = []
     identifier = item.get("id")
     if not valid_identifier(identifier):
         reasons.append("id must be a non-empty string or integer")
+    if not valid_side(item.get("side")):
+        reasons.append("side must be LEFT or RIGHT")
     if item.get("comment_style", "concise") not in ("concise", "detailed"):
         reasons.append("comment_style must be concise or detailed")
     severity = item.get("severity")
@@ -335,6 +342,8 @@ def publish(quality: Any) -> dict[str, Any]:
         except ValueError as exc:
             body = ""
             reasons.append(str(exc))
+        if not valid_side(raw.get("side")):
+            reasons.append("side must be LEFT or RIGHT")
         if not file:
             reasons.append("file must be a non-empty string")
         if isinstance(line, bool) or not isinstance(line, int) or line < 1:
@@ -375,14 +384,17 @@ def validate_publication_comment(raw: Any) -> dict[str, Any]:
         raise ValueError("publication comments must have valid path and line fields")
     if not body:
         raise ValueError("publication comments must have a non-empty body")
+    if not valid_side(raw.get("side")):
+        raise ValueError("publication comment side must be LEFT or RIGHT")
     return raw
 
 
-def parse_diff(path: str) -> tuple[dict[tuple[str, int], str], list[str]]:
-    contents: dict[tuple[str, int], str] = {}
+def parse_diff(path: str) -> tuple[dict[tuple[str, str, int], str], list[str]]:
+    contents: dict[tuple[str, str, int], str] = {}
     paths: list[str] = []
     current_path: str | None = None
     pending_path_pair: tuple[str, str] | None = None
+    old_line: int | None = None
     new_line: int | None = None
 
     def add_path(changed_path: str) -> None:
@@ -407,7 +419,7 @@ def parse_diff(path: str) -> tuple[dict[tuple[str, int], str], list[str]]:
                 pending_path_pair = None
             else:
                 pending_path_pair = (old_path, current_path)
-            new_line = None
+            old_line = new_line = None
             continue
         if raw_line.startswith("rename from ") and pending_path_pair:
             add_path(pending_path_pair[0])
@@ -419,26 +431,30 @@ def parse_diff(path: str) -> tuple[dict[tuple[str, int], str], list[str]]:
             pending_path_pair = None
             continue
         if raw_line.startswith("@@"):
-            match = re.search(r"\+(\d+)", raw_line)
-            new_line = int(match.group(1)) if match else None
+            match = re.match(r"@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@", raw_line)
+            old_line, new_line = (
+                (int(match[1]), int(match[2])) if match else (None, None)
+            )
             continue
-        if current_path is None or new_line is None:
+        if current_path is None or old_line is None or new_line is None:
             continue
-        if raw_line.startswith("+") and not raw_line.startswith("+++"):
-            contents[(current_path, new_line)] = raw_line[1:]
+        if raw_line.startswith("+"):
+            contents[(current_path, "RIGHT", new_line)] = raw_line[1:]
             new_line += 1
-        elif raw_line.startswith(" "):
-            contents[(current_path, new_line)] = raw_line[1:]
+        elif raw_line.startswith(" ") or raw_line == "":
+            contents[(current_path, "RIGHT", new_line)] = raw_line[1:]
+            old_line += 1
             new_line += 1
-        elif raw_line.startswith("-") and not raw_line.startswith("---"):
-            continue
+        elif raw_line.startswith("-"):
+            contents[(current_path, "LEFT", old_line)] = raw_line[1:]
+            old_line += 1
     if pending_path_pair:
         add_path(pending_path_pair[1])
     return contents, paths
 
 
 def nearest_code_line(
-    contents: dict[tuple[str, int], str], path: str, line: int
+    contents: dict[tuple[str, str, int], str], path: str, side: str, line: int
 ) -> int | None:
     """Return the closest line with code in the same run of diff lines.
 
@@ -449,8 +465,8 @@ def nearest_code_line(
     """
     for step in (1, -1):
         candidate = line + step
-        while (path, candidate) in contents:
-            if contents[(path, candidate)].strip():
+        while (path, side, candidate) in contents:
+            if contents[(path, side, candidate)].strip():
                 return candidate
             candidate += step
     return None
@@ -515,8 +531,10 @@ def draft(draft_input: Any) -> dict[str, Any]:
             "body": source["body"],
         }
         side = mapping.get("side")
-        if side not in {None, "LEFT", "RIGHT"}:
+        if not valid_side(side):
             raise ValueError("mapping side must be LEFT or RIGHT")
+        if source.get("side") is not None and side != source["side"]:
+            raise ValueError("mapping side does not match its publication comment")
         if side:
             comment["side"] = side
         if isinstance(source.get("line_content"), str):
@@ -539,20 +557,20 @@ def draft(draft_input: Any) -> dict[str, Any]:
     if diff_path:
         line_contents, delta_paths = parse_diff(diff_path)
         for comment in comments:
-            line_content = line_contents.get((comment["path"], comment["line"]))
+            side = comment.get("side", "RIGHT")
+            line_content = line_contents.get((comment["path"], side, comment["line"]))
             if (
                 line_content is not None
                 and not line_content.strip()
-                and comment.get("side", "RIGHT") == "RIGHT"
                 # A suggestion block replaces the anchored line. Moving the anchor would replace code.
                 and "```suggestion" not in comment["body"]
             ):
                 code_line = nearest_code_line(
-                    line_contents, comment["path"], comment["line"]
+                    line_contents, comment["path"], side, comment["line"]
                 )
                 if code_line is not None:
                     comment["line"] = code_line
-                    line_content = line_contents[(comment["path"], code_line)]
+                    line_content = line_contents[(comment["path"], side, code_line)]
             if line_content is not None:
                 comment["line_content"] = line_content
     if result.get("append") is True:

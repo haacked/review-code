@@ -168,7 +168,7 @@ If `$finding_publication.all_withheld` is true, keep `$selected_indices` empty a
 
 1. **Select draft candidates by index**: When Suggested Comments ran, set `$selected_indices` to the indices in `$suggested_comments.new` and `$suggested_comments.build_upon`. When it did not run because this is an allowed `--self --draft` review, set `$selected_indices` to every index in `$finding_publication.comments`. Write only that integer array to `<artifacts_dir>/draft-selected-indices.json`. Do not parse the review file, read `$finding_quality`, or put a comment body in this selection.
 
-2. **Map comment locations to diff positions**: Use `jq` over `<artifacts_dir>/finding-publication.json` and `draft-selected-indices.json` to build a targets array containing only each selected canonical `path` and `line`, then run it through the position mapper. Save the complete mapper result to `<artifacts_dir>/draft-mappings.json`.
+2. **Map comment locations to diff positions**: Use `jq` over `<artifacts_dir>/finding-publication.json` and `draft-selected-indices.json` to build a targets array containing each selected canonical `path`, `line`, and `side` (when present), then run it through the position mapper. Preserve `LEFT` for removed code, including deleted files. Save the complete mapper result to `<artifacts_dir>/draft-mappings.json`.
 
 ```bash
 ~/.agents/skills/review-code/scripts/diff-position-mapper.sh --diff-file "<diff_path>" <<'EOF'
@@ -218,7 +218,7 @@ Pass `<artifacts_dir>/draft-input.json` unchanged to `create-draft-review.sh`.
 
 **Comment drift detection:** When `review_commit` is provided, `create-draft-review.sh` automatically detects if the PR received new commits since the review was generated. If comments have drifted, it remaps them to their correct positions using content-based matching. Comments that cannot be remapped are moved to `unmapped_comments`.
 
-**Extracting `line_content`:** The executable draft assembly reads `original_diff_path` and copies the code at each target line into `line_content`. This enables content-based matching for drift detection without letting the orchestrator rewrite the comment object.
+**Extracting `line_content`:** The executable draft assembly reads `original_diff_path` and copies the code at each target line on its selected side into `line_content`. Drift detection searches the same side, so a `LEFT` comment cannot move onto an added line with matching text.
 
 **Writing the summary:** The `summary` field is the casual top-level comment on a GitHub review. Keep it to 1-2 short sentences. The author knows what their PR does, so never restate or narrate the approach back to them.
 

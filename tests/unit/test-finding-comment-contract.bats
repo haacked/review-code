@@ -966,3 +966,101 @@ filters: [...before.groups, ...after.groups]
         [ "$(echo "$output" | jq -r '.withheld[0].quality_state')" = "invalid_contract" ]
     done
 }
+
+write_deleted_anchor_draft() {
+    jq -n --arg diff "$PROJECT_ROOT/tests/fixtures/diffs/deleted-line-anchors.diff" '{
+        publication: {
+            comments: [
+                {path: "src/mixed.py", line: 11, side: "LEFT", body: "Keep the guard."},
+                {path: "src/mixed.py", line: 11, side: "RIGHT", body: "Fix the replacement."}
+            ],
+            unmapped_comments: []
+        },
+        selected_indices: [1, 0],
+        mappings: [
+            {path: "src/mixed.py", line: 11, side: "RIGHT"},
+            {path: "src/mixed.py", line: 11, side: "LEFT"}
+        ],
+        context: {owner: "org", repo: "repo", pr_number: 42, reviewer_username: "reviewer", original_diff_path: $diff}
+    }' > "$INPUT"
+}
+
+@test "finding contract: selected draft anchors extract content from their mapped side" {
+    write_deleted_anchor_draft
+
+    run "$CONTRACT" draft "$INPUT"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.comments == [
+        {path: "src/mixed.py", line: 11, side: "RIGHT", body: "Fix the replacement.", line_content: "replacement()"},
+        {path: "src/mixed.py", line: 11, side: "LEFT", body: "Keep the guard.", line_content: "removed_guard()"}
+    ]'
+}
+
+@test "finding contract: draft rejects mappings that change an explicitly requested side" {
+    write_deleted_anchor_draft
+    jq '.mappings[1].side = "RIGHT"' "$INPUT" > "$BATS_TEST_TMPDIR/wrong-side.json"
+
+    run "$CONTRACT" draft "$BATS_TEST_TMPDIR/wrong-side.json"
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"side"* ]]
+}
+
+@test "finding contract: deleted blank anchors move to deleted code and stay LEFT" {
+    write_deleted_anchor_draft
+    jq '
+        .publication.comments = [{path: "src/deleted.py", line: 2, body: "Keep the deleted setup."}]
+        | .selected_indices = [0]
+        | .mappings = [{path: "src/deleted.py", line: 2, side: "LEFT"}]
+    ' "$INPUT" > "$BATS_TEST_TMPDIR/deleted-blank.json"
+
+    run "$CONTRACT" draft "$BATS_TEST_TMPDIR/deleted-blank.json"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.unmapped_comments | length == 0'
+    echo "$output" | jq -e '.comments[0] | .side == "LEFT" and .line == 3 and .line_content == "-- retired heading"'
+}
+
+@test "finding contract: draft extracts header-like hunk text on both sides" {
+    write_deleted_anchor_draft
+    jq '
+        .publication.comments |= map(.path = "src/markers.txt" | .line = 1)
+        | .mappings |= map(.path = "src/markers.txt" | .line = 1)
+    ' "$INPUT" > "$BATS_TEST_TMPDIR/header-like.json"
+
+    run "$CONTRACT" draft "$BATS_TEST_TMPDIR/header-like.json"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '[.comments[] | {side, line_content}] == [
+        {side: "RIGHT", line_content: "++ new heading"},
+        {side: "LEFT", line_content: "-- old heading"}
+    ]'
+}
+
+@test "finding contract: deleted blank anchors cannot move onto unchanged context" {
+    local diff="$BATS_TEST_TMPDIR/deleted-blank.diff"
+    cat > "$diff" <<'EOF_DIFF'
+diff --git a/src/blank.py b/src/blank.py
+index 1111111..2222222 100644
+--- a/src/blank.py
++++ b/src/blank.py
+@@ -10,3 +10,2 @@
+ before()
+-
+ after()
+EOF_DIFF
+    jq -n --arg diff "$diff" '{
+        publication: {
+            comments: [{path: "src/blank.py", line: 11, side: "LEFT", body: "Keep this separator."}],
+            unmapped_comments: []
+        },
+        mappings: [{path: "src/blank.py", line: 11, side: "LEFT"}],
+        context: {owner: "org", repo: "repo", pr_number: 42, reviewer_username: "reviewer", original_diff_path: $diff}
+    }' > "$INPUT"
+
+    run "$CONTRACT" draft "$INPUT"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.comments == [{path: "src/blank.py", line: 11, side: "LEFT", body: "Keep this separator.", line_content: ""}]'
+}
