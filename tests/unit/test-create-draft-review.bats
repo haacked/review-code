@@ -1239,7 +1239,10 @@ prepare_annotation_case() {
     cat > "$MOCK_DIR/gh" << 'EOF'
 #!/bin/bash
 if [[ "$*" == *"/reviews/99999/comments"* ]]; then
-    if [[ "$COMMENTS_READ_FAIL" == true ]]; then
+    if [[ "$COMMENTS_READ_FAIL" == http-error ]]; then
+        echo '{"message":"Not Found"}'
+        exit 1
+    elif [[ "$COMMENTS_READ_FAIL" == true ]]; then
         echo 'Could not read posted comments' >&2
         exit 1
     fi
@@ -1365,6 +1368,7 @@ assert_rewritten_comments_recorded() {
     assert_rewritten_comments_recorded
     [ "$(echo "$output" | jq -r '.drift_detected')" = true ]
     [ "$(jq -c '[.comments[].line]' "$DRAFT_REQUEST")" = '[18,6]' ]
+    jq -e 'all(.comments[]; keys == ["body", "line", "path", "side"] and .side == "RIGHT")' "$DRAFT_REQUEST" > /dev/null
 }
 
 @test "create-draft-review: append records replacement ids for preserved comments edited on GitHub" {
@@ -1501,6 +1505,17 @@ assert_annotation_failure() {
     run_annotation_case
 
     assert_annotation_failure 4 0
+    echo "$output" | jq -e '.error | endswith("before retrying.")' > /dev/null
+}
+
+@test "create-draft-review: reports the created draft when fetching posted ids returns an HTTP error body" {
+    prepare_annotation_case
+    COMMENTS_READ_FAIL=http-error
+
+    run_annotation_case
+
+    assert_annotation_failure 4 0
+    echo "$output" | jq -e '.error | endswith("before retrying.")' > /dev/null
 }
 
 @test "create-draft-review: reports the created draft when posted ids are empty" {

@@ -314,7 +314,7 @@ main() {
         trap "rm -f '${submitted_file}'" EXIT
         echo "${comments}" > "${submitted_file}"
         posted_comments=$(gh api "repos/${owner}/${repo}/pulls/${pr_number}/reviews/${review_id}/comments" --paginate 2> /dev/null \
-            | jq -s 'add // []' || echo "[]")
+            | jq -s 'add // []') || posted_comments="[]"
         annotate_result=$(echo "${posted_comments}" | "${SCRIPT_DIR}/review-comment-blocks.py" annotate \
             --review-file "${review_file}" \
             --submitted-comments "${submitted_file}" \
