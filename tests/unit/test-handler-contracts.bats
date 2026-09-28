@@ -168,6 +168,21 @@ EOF
     done
 }
 
+@test "handler contracts: finding quality Codex dispatch uses the installed helper path" {
+    run python3 - "$SKILL/handlers/review-finding-quality.md" <<'PY'
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text()
+codex_line = next(line for line in text.splitlines() if line.startswith('- **Codex:**'))
+expected = '~/.agents/skills/review-code/scripts/helpers/agent-dispatch.sh run "$quality_agent" "$quality_prompt" "$quality_output"'
+assert expected in codex_line
+assert '`agent-dispatch.sh run ' not in codex_line
+PY
+
+    [ "$status" -eq 0 ]
+}
+
 @test "handler contracts: unavailable finding input stops the documented block before dispatch" {
     local marker="$ARTIFACTS/dispatched"
     extract_documented_block "$SKILL/handlers/review-finding-quality.md" bash build-finding-prompt.py > "$ARTIFACTS/quality.sh"

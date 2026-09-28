@@ -26,7 +26,7 @@ python3 ~/.agents/skills/review-code/scripts/build-finding-prompt.py \
 Require success before dispatch. The helper validates the input, supplies counts for complete reads, and rejects prompts of 4096 bytes or more. It includes source-context paths only for the composer. The limit covers the generated dispatch prompt, not the harness-supplied agent definition or the input file.
 
 - **Claude:** Read only the generated prompt and pass it unchanged to Task with `subagent_type: $quality_agent`. Apply the named-agent fallback from `review.md` if needed.
-- **Codex:** Run `agent-dispatch.sh run "$quality_agent" "$quality_prompt" "$quality_output"` and read its output file for response parsing.
+- **Codex:** Run `~/.agents/skills/review-code/scripts/helpers/agent-dispatch.sh run "$quality_agent" "$quality_prompt" "$quality_output"` and read its output file for response parsing.
 
 Do not append finding bodies, facts, fixes, or lint notes to either prompt. Repair inputs belong in a fresh file too. If generation fails or an agent returns `INPUT_UNAVAILABLE`, handle it as that stage's existing error case: withhold composer and gate inputs, or retain the current bodies on a voice failure. Never interpret unavailable input as an empty or passing result. The reviewer-only `BRIEFING_UNAVAILABLE` inline fallback does not apply here.
 
