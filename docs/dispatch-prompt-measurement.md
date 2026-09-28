@@ -28,7 +28,7 @@ The September 1 cost note used the narrower project filter `--match review-code-
 
 The classifier detects inline finding arrays in 95 comprehension, 28 voice, and 26 composition prompts. The largest composition batch uses `current_description`, which is also recognized. Each JSON row includes the timestamp, stage, and transcript path so a large result can be inspected rather than inferred from its aggregate category.
 
-Token counts estimate characters divided by four. These are first user prompts, not the agent definition, tool reads, total billed tokens, or resumed calls. Shape classification is heuristic: an incidental path can count as a reference, and unrecognized prose can still contain payload. The report reads Claude transcripts with named-agent metadata; generic fallback agents and Codex subprocess dispatches are outside this corpus.
+Token counts estimate characters divided by four. These are first user prompts, not the agent definition, tool reads, total billed tokens, or resumed calls. Shape classification is heuristic: an incidental path can count as a reference, and unrecognized prose can still contain payload. The report reads Claude transcripts for the named review agents; generic fallback agents, built-in `Explore` chunk analyzers, and Codex subprocess dispatches are outside this corpus. The current chunk handler supplies analysis and diff artifact paths, but this table does not measure those built-in analyzer prompts.
 
 ## Historical prompts and intentional inline cases
 
@@ -52,6 +52,12 @@ For each quality prompt above 2,400 estimated tokens, the first inline finding a
 
 The seven generated prompts total 1,119 estimated tokens versus 25,197 in the transcripts, a 95.6% reduction in dispatch text. This is a replay of prompt construction, not a measured reduction in total review cost. Agents still read the complete finding payload, and artifact path lengths affect the generated size.
 
+Running `bin/token-report --prompts --all-stages` on minimal replay transcripts classified all seven original prompts as inlined and all seven generated prompts as by reference. Their median dispatch size changed from 3,452 to 146 estimated tokens.
+
 ## Regression coverage
 
 `test-build-finding-prompt.bats` checks a 350-finding batch, payload isolation, complete-read instructions, composer-only source access, missing and malformed inputs, empty batches, and the UTF-8 prompt limit. `test-handler-contracts.bats` executes the documented dispatch command for all three agents and checks that missing input stops execution before dispatch. `test-token-report.bats` covers date boundaries, undated records, stage selection, JSON paths, inline finding arrays, and transcript attribution.
+
+The final focused run passed all 51 tests, and the integration suite passed all 25. The full unit run passed 2,260 cases and failed 20 because their log directories were outside the filesystem sandbox. All 40 tests in those two meta-review suites passed after setting writable `CODEX_LOG_DIR` and `COPILOT_LOG_DIR` paths. A later classifier regression was included in the final focused run, covering 2,281 unit cases across the runs. Formatting and changed-file lint passed. The 40 repository-wide lint findings reproduce unchanged on the base revision.
+
+`bin/setup` completed. A read-only Claude comprehension agent consumed a generated file-reference prompt, returned the fixture's id, and produced verdicts accepted by the gate parser. The longer `/review-code` smoke test was stopped when a concurrent install replaced the shared handler, so it does not establish an end-to-end result for this branch.
