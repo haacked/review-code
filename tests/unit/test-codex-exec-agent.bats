@@ -235,6 +235,11 @@ MOCKEOF
     write_agent_toml code-reviewer-comment gpt-5.6-sol high
     FIXTURE="$PROJECT_ROOT/tests/fixtures/finding-comments/pr-90970.json"
     CONTRACT="$PROJECT_ROOT/skills/review-code/scripts/finding-comment-contract.py"
+    BUILDER="$PROJECT_ROOT/skills/review-code/scripts/build-finding-prompt.py"
+    DISPATCH_INPUT="$TMP_DIR/repair-dispatch-input.json"
+    DIFF="$TMP_DIR/diff.patch"
+    BRIEFING="$TMP_DIR/briefing.md"
+    FILE_ACCESS="$TMP_DIR/file-access.md"
     RESPONSE="$TMP_DIR/composer-response.json"
     INITIAL="$TMP_DIR/initial.json"
     INITIAL_COMPOSED="$TMP_DIR/initial-composed.json"
@@ -278,12 +283,19 @@ MOCKEOF
     }]' "$FIXTURE" > "$RESPONSE"
     CODEX_AGENT_RESPONSE_FILE="$RESPONSE"
     export CODEX_AGENT_RESPONSE_FILE
-    printf 'Compose this structured finding from its facts.\n' > "$PROMPT_FILE"
+    jq '.rewrites_needed' "$REWRITE_DECISION" > "$DISPATCH_INPUT"
+    printf '%s\n' 'diff --git a/flag_matching.rs b/flag_matching.rs' > "$DIFF"
+    printf '%s\n' 'Review context.' > "$BRIEFING"
+    printf '%s\n' 'Read the cited file.' > "$FILE_ACCESS"
+    "$BUILDER" --agent code-reviewer-comment --input "$DISPATCH_INPUT" \
+        --diff "$DIFF" --briefing "$BRIEFING" --file-access "$FILE_ACCESS" > "$PROMPT_FILE"
     create_mock_codex
 
     run "$SCRIPT" code-reviewer-comment "$PROMPT_FILE" "$OUTPUT_FILE"
 
     [ "$status" -eq 0 ]
+    grep -Fq "$DISPATCH_INPUT" "$CODEX_PROMPT_LOG"
+    ! grep -Fq 'This collector never sees a mixed-targeting flag' "$CODEX_PROMPT_LOG"
     cmp -s "$RESPONSE" "$OUTPUT_FILE"
     run grep -Fxq -- "resume" "$CODEX_ARGS_LOG"
     [ "$status" -ne 0 ]

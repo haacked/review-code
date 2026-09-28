@@ -9,7 +9,7 @@
 #   Parses a code review markdown file and extracts structured findings.
 #   Looks for patterns like:
 #   - File:line references in headers: #### `path/to/file.py:123`
-#   - Confidence markers: [Security 85%], (75% confidence)
+#   - Confidence markers: Location: path:line | Confidence: NN%, [Security 85%], (75% confidence)
 #   - Agent section headers: ## Security Review, ## Performance Review
 #
 # Options:
@@ -213,6 +213,8 @@ main() {
     # Standalone location line under a prose-titled finding: `path/file.sh:14`
     # or `path/file.sh:73-74`
     local standalone_loc_re='^`([^:`]+):([0-9]+)(-[0-9]+)?`[[:space:]]*$'
+    local plain_loc_re='^([^[:space:]:`|]+):([0-9]+)(-[0-9]+)?[[:space:]]*$'
+    local confidence_trailer_re='^Location:[[:space:]]+(.+)[[:space:]]+\|[[:space:]]+Confidence:[[:space:]]+(100|[0-9]{1,2})%[[:space:]]*$'
     # Fenced code block delimiter, with the marker run and whatever follows it
     # captured separately. Nesting is counted rather than toggled: this repo's
     # own finding format puts a ```suggestion block inside a ```text body, which
@@ -341,6 +343,7 @@ main() {
             finding_description="${BASH_REMATCH[2]}"
             finding_file=""
             finding_line="0"
+            current_confidence=""
             begin_finding
             continue
         fi
@@ -368,6 +371,7 @@ main() {
             finding_file="${BASH_REMATCH[1]}"
             finding_line="${BASH_REMATCH[2]}"
             finding_description="${BASH_REMATCH[3]}"
+            current_confidence=""
 
             # Check for confidence in the description
             if [[ "${finding_description}" =~ \[([0-9]+)%\] ]] || [[ "${finding_description}" =~ \(([0-9]+)%[[:space:]]*confidence\) ]]; then
@@ -419,6 +423,20 @@ main() {
             current_confidence=""
             in_finding=false
             continue
+        fi
+
+        if [[ "${in_finding}" == true ]] && [[ "${finding_end}" -eq 0 ]] \
+            && [[ "${line}" =~ ${confidence_trailer_re} ]]; then
+            local trailer_location="${BASH_REMATCH[1]}"
+            local trailer_confidence="${BASH_REMATCH[2]}"
+            if [[ "${trailer_location}" =~ ${standalone_loc_re} ]] || [[ "${trailer_location}" =~ ${plain_loc_re} ]]; then
+                current_confidence="${trailer_confidence}"
+                if [[ -z "${finding_file}" ]]; then
+                    finding_file="${BASH_REMATCH[1]}"
+                    finding_line="${BASH_REMATCH[2]}"
+                fi
+                continue
+            fi
         fi
 
         # Detect confidence markers in current context

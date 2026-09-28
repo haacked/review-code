@@ -38,6 +38,16 @@ bin/lint
 
 Requirements: `shellcheck` (install: `brew install shellcheck`)
 
+### bin/token-report
+
+Measures review costs from Claude transcripts. Use prompt mode to locate large dispatches by date, agent, and transcript path:
+
+```bash
+bin/token-report --prompts --all-stages --since 2026-09-01 --limit 10
+```
+
+`--since` filters individual dispatch timestamps in prompt mode and excludes undated records. `--all-stages` includes context explorers, finding validators, and comprehension gates alongside the default `code-reviewer-*` agents. `--json` returns every matching row; `--limit` controls the largest-prompt table. Token estimates use characters divided by four, and payload detection is heuristic. See [the dispatch measurement](../docs/dispatch-prompt-measurement.md) for the current baseline and its limits.
+
 ## Directory Structure
 
 ```text

@@ -136,6 +136,66 @@ EOF
     jq -e '.error == null and .checked == 2 and .clean == 1 and .warned_ids == [2]' "$ARTIFACTS/voice-lint-result.json"
 }
 
+@test "handler contracts: finding stages dispatch input and source context through file references" {
+    local agent stage prompt_file
+    local diff_path="$ARTIFACTS/diff.patch"
+    printf '%s\n' 'DIFF_PAYLOAD_SENTINEL' > "$diff_path"
+    printf '%s\n' 'BRIEFING_PAYLOAD_SENTINEL' > "$ARTIFACTS/briefing.md"
+    printf '%s\n' 'FILE_ACCESS_PAYLOAD_SENTINEL' > "$ARTIFACTS/file-access.md"
+    extract_documented_block "$SKILL/handlers/review-finding-quality.md" bash build-finding-prompt.py > "$ARTIFACTS/quality.sh"
+
+    for agent in comprehension-gate code-reviewer-voice code-reviewer-comment; do
+        stage="test-$agent"
+        prompt_file="$ARTIFACTS/$stage-prompt.md"
+        jq -n '[{id: 1, description: "FINDING_PAYLOAD_SENTINEL"}]' > "$ARTIFACTS/$stage-input.json"
+
+        run env quality_stage="$stage" quality_agent="$agent" diff_path="$diff_path" bash -e "$ARTIFACTS/quality.sh"
+
+        [ "$status" -eq 0 ]
+        [ -s "$prompt_file" ]
+        grep -Fq "$ARTIFACTS/$stage-input.json" "$prompt_file"
+        ! grep -q 'PAYLOAD_SENTINEL' "$prompt_file"
+        [[ "$output" != *PAYLOAD_SENTINEL* ]]
+        if [ "$agent" = code-reviewer-comment ]; then
+            grep -Fq "$diff_path" "$prompt_file"
+            grep -Fq "$ARTIFACTS/briefing.md" "$prompt_file"
+            grep -Fq "$ARTIFACTS/file-access.md" "$prompt_file"
+        else
+            ! grep -Fq "$diff_path" "$prompt_file"
+            ! grep -Fq "$ARTIFACTS/briefing.md" "$prompt_file"
+            ! grep -Fq "$ARTIFACTS/file-access.md" "$prompt_file"
+        fi
+    done
+}
+
+@test "handler contracts: finding quality Codex dispatch uses the installed helper path" {
+    run python3 - "$SKILL/handlers/review-finding-quality.md" <<'PY'
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text()
+codex_line = next(line for line in text.splitlines() if line.startswith('- **Codex:**'))
+expected = '~/.agents/skills/review-code/scripts/helpers/agent-dispatch.sh run "$quality_agent" "$quality_prompt" "$quality_output"'
+assert expected in codex_line
+assert '`agent-dispatch.sh run ' not in codex_line
+PY
+
+    [ "$status" -eq 0 ]
+}
+
+@test "handler contracts: unavailable finding input stops the documented block before dispatch" {
+    local marker="$ARTIFACTS/dispatched"
+    extract_documented_block "$SKILL/handlers/review-finding-quality.md" bash build-finding-prompt.py > "$ARTIFACTS/quality.sh"
+    printf '%s\n' 'touch "$DISPATCH_MARKER"' >> "$ARTIFACTS/quality.sh"
+
+    run env quality_stage=missing quality_agent=comprehension-gate DISPATCH_MARKER="$marker" bash -e "$ARTIFACTS/quality.sh"
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *INPUT_UNAVAILABLE* ]]
+    [ ! -e "$marker" ]
+    [ ! -s "$ARTIFACTS/missing-prompt.md" ]
+}
+
 @test "handler contracts: documented draft command wraps publication and preserves selected bodies" {
     jq -n '{
         findings: [],
@@ -186,9 +246,9 @@ EOF
 
 @test "handler contracts: documented preservation merge restores lost claims" {
     jq '{findings: [.cases[] | {id, severity: "blocking", description, proposed_fix: null}], withheld: []}' "$PROJECT_ROOT/tests/fixtures/finding-comments/voice-preservation-regressions.json" > "$ARTIFACTS/finding-quality-prevoice.json"
-    jq '[.cases[] | {id, description: .rewrite, proposed_fix: null, unchanged: false}]' "$PROJECT_ROOT/tests/fixtures/finding-comments/voice-preservation-regressions.json" > "$ARTIFACTS/voice-output.json"
+    jq '[.cases[] | {id, description: .rewrite, proposed_fix: null, unchanged: false}]' "$PROJECT_ROOT/tests/fixtures/finding-comments/voice-preservation-regressions.json" > "$ARTIFACTS/voice-output.md"
     jq '[.cases[] | {id, preserved: false, notes}]' "$PROJECT_ROOT/tests/fixtures/finding-comments/voice-preservation-regressions.json" > "$ARTIFACTS/voice-preservation.json"
-    extract_documented_block "$SKILL/handlers/review-finding-quality.md" bash '"<artifacts_dir>/voice-output.json"' > "$ARTIFACTS/preserve.sh"
+    extract_documented_block "$SKILL/handlers/review-finding-quality.md" bash '"<artifacts_dir>/voice-output.md"' > "$ARTIFACTS/preserve.sh"
 
     run bash -e "$ARTIFACTS/preserve.sh"
 
@@ -207,9 +267,9 @@ EOF
         {id: 2, severity: "suggestion", description: "`suggestion`: Accepted neighbor.", proposed_fix: null}
     ], withheld: []}' > "$ARTIFACTS/finding-quality-voiced.json"
     printf '%s\n' '{"warned_ids": [1], "error": null}' > "$ARTIFACTS/voice-lint-result.json"
-    printf '%s\n' '[{"id": 1, "description": "`suggestion`: Repaired one.", "proposed_fix": null, "unchanged": false}]' > "$ARTIFACTS/voice-repair-output.json"
+    printf '%s\n' '[{"id": 1, "description": "`suggestion`: Repaired one.", "proposed_fix": null, "unchanged": false}]' > "$ARTIFACTS/voice-repair-output.md"
     printf '%s\n' '[{"id": 1, "preserved": true, "notes": "Same claim."}]' > "$ARTIFACTS/voice-repair-preservation.json"
-    extract_documented_block "$SKILL/handlers/review-finding-quality.md" bash voice-repair-output.json > "$ARTIFACTS/repair.sh"
+    extract_documented_block "$SKILL/handlers/review-finding-quality.md" bash voice-repair-output.md > "$ARTIFACTS/repair.sh"
 
     run bash -e "$ARTIFACTS/repair.sh"
 
