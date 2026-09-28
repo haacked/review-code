@@ -98,7 +98,7 @@ run_batch() {
     local manifest="$1"
     local rows agent prompt_file output_file result_file index exit_code
     local failed=0
-    local -a pids=() agents=() prompts=() outputs=() results=()
+    local -a pids=() agents=() prompts=() outputs=()
 
     if [[ "$(detect_harness)" != codex ]]; then
         echo "ERROR: batch requires Codex; Claude uses native Task completion notifications." >&2
@@ -137,7 +137,6 @@ run_batch() {
         mkdir -p "$(dirname "${result_file}")"
         _run_agent_codex "${agents[index]}" "${prompts[index]}" "${outputs[index]}" > "${result_file}" &
         pids+=("$!")
-        results+=("${result_file}")
     done
 
     for index in "${!pids[@]}"; do
@@ -149,13 +148,14 @@ run_batch() {
             failed=1
         fi
     done
-    for index in "${!results[@]}"; do
-        if [[ ! -s "${results[index]}" ]]; then
+    for index in "${!outputs[@]}"; do
+        result_file="${outputs[index]}.dispatch.json"
+        if [[ ! -s "${result_file}" ]]; then
             echo "ERROR: agent ${agents[index]} did not produce a dispatch result: ${outputs[index]}" >&2
             failed=1
             continue
         fi
-        if ! jq -ce --arg agent "${agents[index]}" '. + {agent: $agent}' "${results[index]}"; then
+        if ! jq -ce --arg agent "${agents[index]}" '. + {agent: $agent}' "${result_file}"; then
             echo "ERROR: agent ${agents[index]} produced an invalid dispatch result: ${outputs[index]}" >&2
             failed=1
         fi

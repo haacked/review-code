@@ -283,6 +283,32 @@ def mix(c):
     }
 
 
+def bash_glue_kind(command):
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return None
+    if words in (["true"], [":"]):
+        return "noop"
+    if (
+        len(words) == 2
+        and words[0] == "sleep"
+        and re.fullmatch(r"\d+(?:\.\d+)?[smh]?", words[1])
+    ):
+        return "sleep"
+    if words == ["date", "-u", "+%Y-%m-%dT%H:%M:%SZ"]:
+        return "timestamp"
+    if (
+        len(words) == 2
+        and words[0] == "echo"
+        and re.fullmatch(
+            r"waiting(?: for (?:background )?agents)?", words[1], re.IGNORECASE
+        )
+    ):
+        return "waiting"
+    return None
+
+
 def scan_bash_glue(path):
     counts = collections.Counter()
     seen = set()
@@ -295,9 +321,7 @@ def scan_bash_glue(path):
             if not isinstance(rec, dict):
                 continue
             msg = rec.get("message")
-            if not isinstance(msg, dict):
-                continue
-            if msg.get("role") != "assistant":
+            if not isinstance(msg, dict) or msg.get("role") != "assistant":
                 continue
             content = msg.get("content")
             if not isinstance(content, list):
@@ -326,31 +350,7 @@ def scan_bash_glue(path):
                     continue
                 if ".sh" not in command and "review-code/" not in command:
                     counts["short_non_skill_calls"] += 1
-                try:
-                    words = shlex.split(command)
-                except ValueError:
-                    continue
-                kind = None
-                if words in (["true"], [":"]):
-                    kind = "noop"
-                elif (
-                    len(words) == 2
-                    and words[0] == "sleep"
-                    and re.fullmatch(r"\d+(?:\.\d+)?[smh]?", words[1])
-                ):
-                    kind = "sleep"
-                elif words == ["date", "-u", "+%Y-%m-%dT%H:%M:%SZ"]:
-                    kind = "timestamp"
-                elif (
-                    len(words) == 2
-                    and words[0] == "echo"
-                    and re.fullmatch(
-                        r"waiting(?: for (?:background )?agents)?",
-                        words[1],
-                        re.IGNORECASE,
-                    )
-                ):
-                    kind = "waiting"
+                kind = bash_glue_kind(command)
                 if kind:
                     counts[kind] += 1
     return dict(counts)
