@@ -551,6 +551,7 @@ def draft(draft_input: Any) -> dict[str, Any]:
                     line_contents, comment["path"], comment["line"]
                 )
                 if code_line is not None:
+                    comment["source_line"] = comment["line"]
                     comment["line"] = code_line
                     line_content = line_contents[(comment["path"], code_line)]
             if line_content is not None:

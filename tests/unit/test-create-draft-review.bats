@@ -1239,7 +1239,10 @@ prepare_annotation_case() {
     cat > "$MOCK_DIR/gh" << 'EOF'
 #!/bin/bash
 if [[ "$*" == *"/reviews/99999/comments"* ]]; then
-    if [[ "$COMMENTS_READ_FAIL" == true ]]; then
+    if [[ "$COMMENTS_READ_FAIL" == http-error ]]; then
+        echo '{"message":"Not Found"}'
+        exit 1
+    elif [[ "$COMMENTS_READ_FAIL" == true ]]; then
         echo 'Could not read posted comments' >&2
         exit 1
     fi
@@ -1257,6 +1260,188 @@ EOF
 
 run_annotation_case() {
     run bash -c '"$1" < "$2" 2> "$3"' _ "$SCRIPT" "$ANNOTATION_INPUT" "$ANNOTATION_ERROR"
+}
+
+prepare_rewritten_annotation_case() {
+    prepare_annotation_case
+    DRAFT_REQUEST="$MOCK_DIR/draft-request.json"
+    export DRAFT_REQUEST
+    cat > "$ANNOTATION_REVIEW" << 'EOF'
+<!-- review-metadata
+reviewed_at: 2026-09-22T00:00:00Z
+mode: pr
+-->
+
+## Suggested Comments
+
+#### `src/auth.ts:10`
+
+```text
+Validate the token first.
+
+    validate(token);
+```
+
+---
+
+#### `src/auth.ts:5`
+
+```text
+Reject expired tokens.
+
+    checkExpiry(token);
+```
+EOF
+    jq -n --arg review_file "$ANNOTATION_REVIEW" '{
+        owner: "org", repo: "test", pr_number: 1, reviewer_username: "user",
+        summary: "Test review", review_file: $review_file,
+        comments: [
+            {path: "src/auth.ts", line: 10, side: "RIGHT", body: "Validate the token first.\n\n```ts\nvalidate(token);\n```"},
+            {path: "src/auth.ts", line: 5, side: "RIGHT", body: "Reject expired tokens.\n\n```ts\ncheckExpiry(token);\n```"}
+        ]
+    }' > "$ANNOTATION_INPUT"
+    jq '[.comments | to_entries[] | {
+        id: (if .key == 0 then 777 else 888 end),
+        node_id: (if .key == 0 then "PRRC_aaa" else "PRRC_bbb" end),
+        path: .value.path, line: null, original_line: null, position: 1, body: .value.body
+    }] | reverse' "$ANNOTATION_INPUT" > "$POSTED_COMMENTS"
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"--jq"*".head.sha"* ]]; then
+    echo def456
+elif [[ "$*" == *"pr diff"* ]]; then
+    cat "$PROJECT_ROOT/tests/fixtures/diffs/drift-updated.diff"
+elif [[ "$*" == *"/reviews/99999/comments"* ]]; then
+    cat "$POSTED_COMMENTS"
+elif [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[]'
+elif [[ "$*" == *"--method POST"* ]]; then
+    cat > "$DRAFT_REQUEST"
+    echo '{"id":99999}'
+else
+    exit 1
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+}
+
+assert_rewritten_comments_recorded() {
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.success')" = true ]
+    [ "$(echo "$output" | jq '.inline_count')" -eq 2 ]
+    [ "$(echo "$output" | jq '.annotated_count')" -eq 2 ]
+    grep -Eq '^#### `src/auth\.ts:10` <!-- pc:777 PRRC_aaa b:[0-9a-f]{8} -->$' "$ANNOTATION_REVIEW"
+    grep -Eq '^#### `src/auth\.ts:5` <!-- pc:888 PRRC_bbb b:[0-9a-f]{8} -->$' "$ANNOTATION_REVIEW"
+    jq -e '[.comments[] | has("source_line") or has("source_id") or has("line_content")] | all(. == false)' "$DRAFT_REQUEST" > /dev/null
+}
+
+@test "create-draft-review: records rewritten legacy comments returned with null lines in reverse order" {
+    prepare_rewritten_annotation_case
+    jq '.comments[0].position = 11 | .comments[1].position = 5' "$ANNOTATION_INPUT" > "$MOCK_DIR/updated-input.json"
+    mv "$MOCK_DIR/updated-input.json" "$ANNOTATION_INPUT"
+
+    run_annotation_case
+
+    assert_rewritten_comments_recorded
+    [ "$(jq -c '[.comments[].position]' "$DRAFT_REQUEST")" = '[11,5]' ]
+    jq -e 'all(.comments[]; keys == ["body", "path", "position"])' "$DRAFT_REQUEST" > /dev/null
+}
+
+@test "create-draft-review: annotates comments from every paginated response array" {
+    prepare_rewritten_annotation_case
+    jq -c '.[] | [.]' "$POSTED_COMMENTS" > "$MOCK_DIR/comment-pages.json"
+    mv "$MOCK_DIR/comment-pages.json" "$POSTED_COMMENTS"
+
+    run_annotation_case
+
+    assert_rewritten_comments_recorded
+}
+
+@test "create-draft-review: associates rewritten comments with original findings after real drift remapping" {
+    prepare_rewritten_annotation_case
+    jq --rawfile diff "$PROJECT_ROOT/tests/fixtures/diffs/drift-original.diff" \
+        '.review_commit = "abc123" | .original_diff = $diff' "$ANNOTATION_INPUT" > "$MOCK_DIR/updated-input.json"
+    mv "$MOCK_DIR/updated-input.json" "$ANNOTATION_INPUT"
+
+    run_annotation_case
+
+    assert_rewritten_comments_recorded
+    [ "$(echo "$output" | jq -r '.drift_detected')" = true ]
+    [ "$(jq -c '[.comments[].line]' "$DRAFT_REQUEST")" = '[18,6]' ]
+    jq -e 'all(.comments[]; keys == ["body", "line", "path", "side"] and .side == "RIGHT")' "$DRAFT_REQUEST" > /dev/null
+}
+
+@test "create-draft-review: append records replacement ids for preserved comments edited on GitHub" {
+    prepare_rewritten_annotation_case
+    sed -e 's@`src/auth.ts:10`@`src/auth.ts:10` <!-- pc:101 PRRC_old_a b:01234567 -->@' \
+        -e 's@`src/auth.ts:5`@`src/auth.ts:5` <!-- pc:102 PRRC_old_b b:01234567 -->@' \
+        "$ANNOTATION_REVIEW" > "$MOCK_DIR/recorded.md"
+    mv "$MOCK_DIR/recorded.md" "$ANNOTATION_REVIEW"
+    jq '.append = true | .delta_paths = ["src/new.ts"] | .comments = []' \
+        "$ANNOTATION_INPUT" > "$MOCK_DIR/updated-input.json"
+    mv "$MOCK_DIR/updated-input.json" "$ANNOTATION_INPUT"
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews/99999/comments"* ]]; then
+    cat "$POSTED_COMMENTS"
+elif [[ "$*" == *"/reviews/11111/comments"* ]]; then
+    jq '[.[] | .id = (if .id == 777 then 101 else 102 end)]' "$POSTED_COMMENTS"
+elif [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[{"id":11111,"state":"PENDING","user":{"login":"user"},"body":"old"}]'
+elif [[ "$*" == *"--method DELETE"* ]]; then
+    echo '{}'
+elif [[ "$*" == *"--method POST"* ]]; then
+    cat > "$DRAFT_REQUEST"
+    echo '{"id":99999}'
+else
+    exit 1
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    run_annotation_case
+
+    assert_rewritten_comments_recorded
+    [ "$(echo "$output" | jq -r '.replaced_existing')" = true ]
+    [ "$(jq -c '[.comments[].position]' "$DRAFT_REQUEST")" = '[1,1]' ]
+}
+
+@test "create-draft-review: append records a preserved comment missing its local annotation" {
+    prepare_rewritten_annotation_case
+    jq '.append = true | .delta_paths = ["src/new.ts"] | .comments = []' \
+        "$ANNOTATION_INPUT" > "$MOCK_DIR/updated-input.json"
+    mv "$MOCK_DIR/updated-input.json" "$ANNOTATION_INPUT"
+    jq '[.[] | select(.id == 777) | .body = "Validate the token first.\n\n    validate(token);"]' \
+        "$POSTED_COMMENTS" > "$MOCK_DIR/updated-comments.json"
+    mv "$MOCK_DIR/updated-comments.json" "$POSTED_COMMENTS"
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"/reviews/99999/comments"* ]]; then
+    cat "$POSTED_COMMENTS"
+elif [[ "$*" == *"/reviews/11111/comments"* ]]; then
+    jq '[.[] | .id = 123]' "$POSTED_COMMENTS"
+elif [[ "$*" == *"/reviews --paginate"* ]]; then
+    echo '[{"id":11111,"state":"PENDING","user":{"login":"user"},"body":"old"}]'
+elif [[ "$*" == *"--method DELETE"* ]]; then
+    echo '{}'
+elif [[ "$*" == *"--method POST"* ]]; then
+    cat > "$DRAFT_REQUEST"
+    echo '{"id":99999}'
+else
+    exit 1
+fi
+EOF
+    chmod +x "$MOCK_DIR/gh"
+
+    run_annotation_case
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.success')" = true ]
+    [ "$(echo "$output" | jq -r '.replaced_existing')" = true ]
+    [ "$(echo "$output" | jq '.inline_count')" -eq 1 ]
+    [ "$(echo "$output" | jq '.annotated_count')" -eq 1 ]
+    grep -Eq '^#### `src/auth\.ts:10` <!-- pc:777 PRRC_aaa b:[0-9a-f]{8} -->$' "$ANNOTATION_REVIEW"
+    [ "$(jq -r '.comments[0].body' "$DRAFT_REQUEST")" = "$(jq -r '.[0].body' "$POSTED_COMMENTS")" ]
 }
 
 assert_annotation_failure() {
@@ -1320,6 +1505,17 @@ assert_annotation_failure() {
     run_annotation_case
 
     assert_annotation_failure 4 0
+    echo "$output" | jq -e '.error | endswith("before retrying.")' > /dev/null
+}
+
+@test "create-draft-review: reports the created draft when fetching posted ids returns an HTTP error body" {
+    prepare_annotation_case
+    COMMENTS_READ_FAIL=http-error
+
+    run_annotation_case
+
+    assert_annotation_failure 4 0
+    echo "$output" | jq -e '.error | endswith("before retrying.")' > /dev/null
 }
 
 @test "create-draft-review: reports the created draft when posted ids are empty" {

@@ -36,6 +36,9 @@ set -euo pipefail
 #     ]
 #   }
 #
+# Comments can carry source_line when their posting line differs from the
+# finding heading. This field is local metadata and is not sent to GitHub.
+#
 # Output JSON:
 #   {
 #     "success": true,
@@ -106,7 +109,10 @@ create_pending_review() {
     request_body=$(jq -n \
         --arg body "${body}" \
         --argjson comments "${comments_json}" \
-        '{body: $body, comments: $comments}')
+        '{body: $body, comments: [$comments[] |
+            if .position != null then {path, position, body}
+            else {path, line, body} + (if .side then {side} else {} end)
+            end]}')
 
     if ! result=$(echo "${request_body}" | gh api --method POST \
         "repos/${owner}/${repo}/pulls/${pr_number}/reviews" \
@@ -144,7 +150,8 @@ main() {
     summary=$(echo "${input}" | jq -r '.summary // ""')
     review_commit=$(echo "${input}" | jq -r '.review_commit // ""')
     review_file=$(echo "${input}" | jq -r '.review_file // ""')
-    comments=$(echo "${input}" | jq -c '.comments // []')
+    comments=$(echo "${input}" | jq -c '[.comments // [] | .[] |
+        . + {source_line: (.source_line // .original_line // .line)}]')
     unmapped_comments=$(echo "${input}" | jq -c '.unmapped_comments // []')
     append=$(echo "${input}" | jq -r '.append // false')
     delta_paths=$(echo "${input}" | jq -c '.delta_paths // []')
@@ -160,8 +167,8 @@ main() {
 
     if [[ -n "${review_commit}" ]] && [[ "${review_commit}" != "null" ]]; then
         local drift_result
-        # Pass input directly; detect-comment-drift.sh ignores extra fields
-        if drift_result=$(echo "${input}" | "${SCRIPT_DIR}/detect-comment-drift.sh"); then
+        if drift_result=$(echo "${input}" | jq --argjson comments "${comments}" '.comments = $comments' \
+            | "${SCRIPT_DIR}/detect-comment-drift.sh"); then
             drift_detected=$(echo "${drift_result}" | jq -r '.drift_detected')
 
             if [[ "${drift_detected}" == "true" ]]; then
@@ -207,7 +214,7 @@ main() {
                 '[
                     $review.comments[]
                     | select(.path as $path | ($delta_paths | index($path) | not))
-                    | {path, body}
+                    | {path, body, source_id: .id}
                         + (if .position != null then {position} else {line} end)
                 ]')
             comments=$(jq -n \
@@ -217,8 +224,7 @@ main() {
         fi
     fi
 
-    # Validate comments have required fields, filter invalid ones, and strip to API fields.
-    # Single pass: partition into valid and invalid, then extract counts and filtered items.
+    # Retain source locations through validation for annotation after posting.
     local validation_result
     validation_result=$(echo "${comments}" | jq -c '
         def is_non_empty_string:
@@ -237,11 +243,6 @@ main() {
         {
             valid: [
                 .[] | select(is_valid)
-                | if .position != null then
-                    {path, position, body}
-                  else
-                    {path, line, body} + (if .side then {side: .side} else {} end)
-                  end
             ],
             invalid: [.[] | select(is_valid | not)]
         }')
@@ -307,10 +308,16 @@ main() {
     # Return the created review metadata when annotation fails.
     local annotated_count=0 annotation_failure=""
     if [[ -n "${review_file}" ]]; then
-        local posted_comments annotate_result
-        posted_comments=$(gh api "repos/${owner}/${repo}/pulls/${pr_number}/reviews/${review_id}/comments" --paginate 2> /dev/null || echo "[]")
+        local posted_comments annotate_result submitted_file
+        submitted_file=$(mktemp)
+        # shellcheck disable=SC2064  # Keep the path after main's locals go out of scope.
+        trap "rm -f '${submitted_file}'" EXIT
+        echo "${comments}" > "${submitted_file}"
+        posted_comments=$(gh api "repos/${owner}/${repo}/pulls/${pr_number}/reviews/${review_id}/comments" --paginate 2> /dev/null \
+            | jq -s 'add // []') || posted_comments="[]"
         annotate_result=$(echo "${posted_comments}" | "${SCRIPT_DIR}/review-comment-blocks.py" annotate \
             --review-file "${review_file}" \
+            --submitted-comments "${submitted_file}" \
             --review-id "${review_id}" \
             --posted-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" 2> /dev/null || echo '{"error":"Comment annotation failed"}')
         annotated_count=$(echo "${annotate_result}" | jq -r '.annotated_comments // 0')

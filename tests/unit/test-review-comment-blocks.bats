@@ -123,6 +123,320 @@ annotate() {
     [[ "$output" == *'999'* ]]
 }
 
+write_same_path_review() {
+    cat > "$REVIEW" << 'EOF'
+## Suggested Comments
+
+#### `src/auth.ts:42`
+
+```text
+Validate the token first.
+```
+
+---
+
+#### `src/auth.ts:84`
+
+```text
+Reject expired tokens.
+```
+EOF
+}
+
+@test "annotate: submitted locations associate rewritten legacy comments despite GET reordering" {
+    write_same_path_review
+    cat > "$TEST_DIR/submitted.json" << 'EOF'
+[
+  {"path":"src/auth.ts","line":44,"source_line":42,"body":"Check the token before hashing it.\n\n```ts\nvalidate(token);\n```"},
+  {"path":"src/auth.ts","line":86,"source_line":84,"body":"Check expiry before accepting the token.\n\n```ts\ncheckExpiry(token);\n```"}
+]
+EOF
+    cat > "$TEST_DIR/posted.json" << 'EOF'
+[
+  {"id":888,"node_id":"PRRC_bbb","path":"src/auth.ts","line":null,"original_line":null,"position":1,"body":"Check expiry before accepting the token.\n\n```ts\ncheckExpiry(token);\n```"},
+  {"id":777,"node_id":"PRRC_aaa","path":"src/auth.ts","line":null,"original_line":null,"position":1,"body":"Check the token before hashing it.\n\n```ts\nvalidate(token);\n```"}
+]
+EOF
+
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" --submitted-comments "$TEST_DIR/submitted.json" < "$TEST_DIR/posted.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 2 ]
+    [ "$(echo "$output" | jq '.unmatched | length')" -eq 0 ]
+    grep -Eq '^#### `src/auth\.ts:42` <!-- pc:777 PRRC_aaa b:[0-9a-f]{8} -->$' "$REVIEW"
+    grep -Eq '^#### `src/auth\.ts:84` <!-- pc:888 PRRC_bbb b:[0-9a-f]{8} -->$' "$REVIEW"
+}
+
+@test "annotate: identical bodies at different lines follow locations instead of GET order" {
+    write_same_path_review
+    sed 's/Reject expired tokens\./Validate the token first./' "$REVIEW" > "$TEST_DIR/same-body.md"
+    mv "$TEST_DIR/same-body.md" "$REVIEW"
+    cat > "$TEST_DIR/posted.json" << 'EOF'
+[
+  {"id":888,"node_id":"PRRC_bbb","path":"src/auth.ts","line":84,"body":"Validate the token first."},
+  {"id":777,"node_id":"PRRC_aaa","path":"src/auth.ts","line":42,"body":"Validate the token first."}
+]
+EOF
+
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" < "$TEST_DIR/posted.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 2 ]
+    grep -Eq '^#### `src/auth\.ts:42` <!-- pc:777 PRRC_aaa b:[0-9a-f]{8} -->$' "$REVIEW"
+    grep -Eq '^#### `src/auth\.ts:84` <!-- pc:888 PRRC_bbb b:[0-9a-f]{8} -->$' "$REVIEW"
+}
+
+@test "annotate: submitted lines distinguish identical bodies despite GET reordering" {
+    write_same_path_review
+    sed 's/Reject expired tokens\./Validate the token first./' "$REVIEW" > "$TEST_DIR/same-body.md"
+    mv "$TEST_DIR/same-body.md" "$REVIEW"
+    cat > "$TEST_DIR/submitted.json" << 'EOF'
+[
+  {"path":"src/auth.ts","line":42,"body":"Validate the token first."},
+  {"path":"src/auth.ts","line":84,"body":"Validate the token first."}
+]
+EOF
+    cat > "$TEST_DIR/posted.json" << 'EOF'
+[
+  {"id":888,"node_id":"PRRC_bbb","path":"src/auth.ts","line":84,"body":"Validate the token first."},
+  {"id":777,"node_id":"PRRC_aaa","path":"src/auth.ts","line":42,"body":"Validate the token first."}
+]
+EOF
+
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" --submitted-comments "$TEST_DIR/submitted.json" < "$TEST_DIR/posted.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 2 ]
+    [ "$(echo "$output" | jq '.unmatched | length')" -eq 0 ]
+    grep -Eq '^#### `src/auth\.ts:42` <!-- pc:777 PRRC_aaa b:[0-9a-f]{8} -->$' "$REVIEW"
+    grep -Eq '^#### `src/auth\.ts:84` <!-- pc:888 PRRC_bbb b:[0-9a-f]{8} -->$' "$REVIEW"
+}
+
+@test "annotate: ambiguous body does not fall back to an unrelated finding at the returned line" {
+    write_same_path_review
+    sed 's/Reject expired tokens\./Validate the token first./' "$REVIEW" > "$TEST_DIR/same-body.md"
+    mv "$TEST_DIR/same-body.md" "$REVIEW"
+    cat >> "$REVIEW" << 'EOF'
+
+---
+
+#### `src/auth.ts:120`
+
+```text
+Unrelated finding.
+```
+EOF
+    cat > "$TEST_DIR/posted.json" << 'EOF'
+[{"id":999,"node_id":"PRRC_x","path":"src/auth.ts","line":120,"body":"Validate the token first."}]
+EOF
+
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" < "$TEST_DIR/posted.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 0 ]
+    [ "$(echo "$output" | jq -c '[.unmatched[].id]')" = '[999]' ]
+    ! grep -q 'pc:' "$REVIEW"
+}
+
+@test "annotate: positions distinguish identical submitted bodies after line drift" {
+    write_same_path_review
+    cat > "$TEST_DIR/submitted.json" << 'EOF'
+[
+  {"path":"src/auth.ts","source_line":42,"position":5,"body":"Check the token."},
+  {"path":"src/auth.ts","source_line":84,"position":47,"body":"Check the token."}
+]
+EOF
+    cat > "$TEST_DIR/posted.json" << 'EOF'
+[
+  {"id":888,"node_id":"PRRC_bbb","path":"src/auth.ts","line":null,"position":47,"body":"Check the token."},
+  {"id":777,"node_id":"PRRC_aaa","path":"src/auth.ts","line":null,"position":5,"body":"Check the token."}
+]
+EOF
+
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" --submitted-comments "$TEST_DIR/submitted.json" < "$TEST_DIR/posted.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 2 ]
+    grep -Eq '^#### `src/auth\.ts:42` <!-- pc:777 PRRC_aaa b:[0-9a-f]{8} -->$' "$REVIEW"
+    grep -Eq '^#### `src/auth\.ts:84` <!-- pc:888 PRRC_bbb b:[0-9a-f]{8} -->$' "$REVIEW"
+}
+
+@test "annotate: ambiguous findings on the same line remain unmatched" {
+    write_same_path_review
+    sed 's/src\/auth.ts:84/src\/auth.ts:42/' "$REVIEW" > "$TEST_DIR/same-line.md"
+    mv "$TEST_DIR/same-line.md" "$REVIEW"
+    checksum_before=$(checksum "$REVIEW")
+    cat > "$TEST_DIR/posted.json" << 'EOF'
+[{"id":777,"node_id":"PRRC_aaa","path":"src/auth.ts","line":42,"body":"Rewritten comment."}]
+EOF
+
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" < "$TEST_DIR/posted.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 0 ]
+    [ "$(echo "$output" | jq -c '[.unmatched[].id]')" = '[777]' ]
+    [ "$(checksum "$REVIEW")" = "$checksum_before" ]
+}
+
+@test "annotate: competing comment ids leave the finding unchanged in either response order" {
+    cat > "$TEST_DIR/posted.json" << 'EOF'
+[
+  {"id":777,"node_id":"PRRC_aaa","path":"src/auth.ts","line":42,"body":"Validate the token first."},
+  {"id":999,"node_id":"PRRC_other","path":"src/auth.ts","line":42,"body":"A different comment claiming the same finding."}
+]
+EOF
+    local checksum_before order
+    checksum_before=$(checksum "$REVIEW")
+    for order in . reverse; do
+        jq "$order" "$TEST_DIR/posted.json" > "$TEST_DIR/ordered.json"
+
+        run python3 "$SCRIPT" annotate --review-file "$REVIEW" < "$TEST_DIR/ordered.json"
+
+        [ "$status" -eq 0 ]
+        [ "$(echo "$output" | jq '.annotated_comments')" -eq 0 ]
+        [ "$(echo "$output" | jq -c '[.unmatched[].id] | sort')" = '[777,999]' ]
+        [ "$(checksum "$REVIEW")" = "$checksum_before" ]
+    done
+}
+
+@test "annotate: submitted metadata cannot guess between rewritten findings on the same line" {
+    write_same_path_review
+    sed 's/src\/auth.ts:84/src\/auth.ts:42/' "$REVIEW" > "$TEST_DIR/same-line.md"
+    mv "$TEST_DIR/same-line.md" "$REVIEW"
+    cat > "$TEST_DIR/submitted.json" << 'EOF'
+[{"path":"src/auth.ts","source_line":42,"position":5,"body":"Rewritten comment."}]
+EOF
+    cat > "$TEST_DIR/posted.json" << 'EOF'
+[{"id":777,"node_id":"PRRC_aaa","path":"src/auth.ts","line":null,"position":5,"body":"Rewritten comment."}]
+EOF
+
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" --submitted-comments "$TEST_DIR/submitted.json" < "$TEST_DIR/posted.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 0 ]
+    [ "$(echo "$output" | jq -c '[.unmatched[].id]')" = '[777]' ]
+    ! grep -q 'pc:' "$REVIEW"
+}
+
+@test "annotate: identical legacy bodies without usable locations remain unmatched" {
+    write_same_path_review
+    sed 's/Reject expired tokens\./Validate the token first./' "$REVIEW" > "$TEST_DIR/same-body.md"
+    mv "$TEST_DIR/same-body.md" "$REVIEW"
+    cat > "$TEST_DIR/posted.json" << 'EOF'
+[
+  {"id":888,"node_id":"PRRC_bbb","path":"src/auth.ts","line":null,"position":1,"body":"Validate the token first."},
+  {"id":777,"node_id":"PRRC_aaa","path":"src/auth.ts","line":null,"position":1,"body":"Validate the token first."}
+]
+EOF
+
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" < "$TEST_DIR/posted.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 0 ]
+    [ "$(echo "$output" | jq -c '[.unmatched[].id] | sort')" = '[777,888]' ]
+    ! grep -q 'pc:' "$REVIEW"
+}
+
+@test "annotate: ambiguous legacy responses cannot consume submitted comments by order" {
+    write_same_path_review
+    cat > "$TEST_DIR/submitted.json" << 'EOF'
+[
+  {"path":"src/auth.ts","line":42,"source_line":42,"body":"Check the token."},
+  {"path":"src/auth.ts","line":84,"source_line":84,"body":"Check the token."}
+]
+EOF
+    cat > "$TEST_DIR/posted.json" << 'EOF'
+[
+  {"id":888,"node_id":"PRRC_bbb","path":"src/auth.ts","line":null,"position":1,"body":"Check the token."},
+  {"id":777,"node_id":"PRRC_aaa","path":"src/auth.ts","line":null,"position":1,"body":"Check the token."}
+]
+EOF
+
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" --submitted-comments "$TEST_DIR/submitted.json" < "$TEST_DIR/posted.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 0 ]
+    [ "$(echo "$output" | jq -c '[.unmatched[].id] | sort')" = '[777,888]' ]
+    ! grep -q 'pc:' "$REVIEW"
+}
+
+@test "annotate: preserved source id associates an append comment edited on GitHub" {
+    write_same_path_review
+    sed 's@`src/auth.ts:42`@`src/auth.ts:42` <!-- pc:123 PRRC_old b:01234567 -->@' "$REVIEW" > "$TEST_DIR/recorded.md"
+    mv "$TEST_DIR/recorded.md" "$REVIEW"
+    cat > "$TEST_DIR/submitted.json" << 'EOF'
+[{"path":"src/auth.ts","source_id":123,"position":5,"body":"An author edited this comment on GitHub."}]
+EOF
+    cat > "$TEST_DIR/posted.json" << 'EOF'
+[{"id":777,"node_id":"PRRC_aaa","path":"src/auth.ts","line":null,"position":5,"body":"An author edited this comment on GitHub."}]
+EOF
+
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" --submitted-comments "$TEST_DIR/submitted.json" < "$TEST_DIR/posted.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 1 ]
+    grep -Eq '^#### `src/auth\.ts:42` <!-- pc:777 PRRC_aaa b:[0-9a-f]{8} -->$' "$REVIEW"
+    grep -q '^#### `src/auth.ts:84`$' "$REVIEW"
+}
+
+@test "annotate: missing source id permits a unique exact body match" {
+    cat > "$TEST_DIR/submitted.json" << 'EOF'
+[{"path":"src/auth.ts","source_id":123,"position":5,"body":"Validate the token first."}]
+EOF
+    cat > "$TEST_DIR/posted.json" << 'EOF'
+[{"id":777,"node_id":"PRRC_aaa","path":"src/auth.ts","line":null,"position":5,"body":"Validate the token first."}]
+EOF
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" < "$TEST_DIR/posted.json"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 1 ]
+    write_review
+
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" --submitted-comments "$TEST_DIR/submitted.json" < "$TEST_DIR/posted.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 1 ]
+    [ "$(echo "$output" | jq '.unmatched | length')" -eq 0 ]
+    grep -Eq '^#### `src/auth\.ts:42` <!-- pc:777 PRRC_aaa b:[0-9a-f]{8} -->$' "$REVIEW"
+}
+
+@test "annotate: missing source id refuses a rewritten body even with a matching source line" {
+    cat > "$TEST_DIR/submitted.json" << 'EOF'
+[{"path":"src/auth.ts","source_id":123,"source_line":42,"position":5,"body":"Rewritten on GitHub."}]
+EOF
+    cat > "$TEST_DIR/posted.json" << 'EOF'
+[{"id":777,"node_id":"PRRC_aaa","path":"src/auth.ts","line":42,"position":5,"body":"Rewritten on GitHub."}]
+EOF
+    local checksum_before
+    checksum_before=$(checksum "$REVIEW")
+
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" --submitted-comments "$TEST_DIR/submitted.json" < "$TEST_DIR/posted.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 0 ]
+    [ "$(echo "$output" | jq -c '[.unmatched[].id]')" = '[777]' ]
+    [ "$(checksum "$REVIEW")" = "$checksum_before" ]
+}
+
+@test "annotate: missing source id does not claim an exact body belonging to another id" {
+    sed 's@`src/auth.ts:42`@`src/auth.ts:42` <!-- pc:456 PRRC_other b:01234567 -->@' "$REVIEW" > "$TEST_DIR/recorded.md"
+    mv "$TEST_DIR/recorded.md" "$REVIEW"
+    cat > "$TEST_DIR/submitted.json" << 'EOF'
+[{"path":"src/auth.ts","source_id":123,"position":5,"body":"Validate the token first."}]
+EOF
+    cat > "$TEST_DIR/posted.json" << 'EOF'
+[{"id":777,"node_id":"PRRC_aaa","path":"src/auth.ts","line":null,"position":5,"body":"Validate the token first."}]
+EOF
+    local checksum_before
+    checksum_before=$(checksum "$REVIEW")
+
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" --submitted-comments "$TEST_DIR/submitted.json" < "$TEST_DIR/posted.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 0 ]
+    [ "$(echo "$output" | jq -c '[.unmatched[].id]')" = '[777]' ]
+    [ "$(checksum "$REVIEW")" = "$checksum_before" ]
+}
+
 @test "annotate: longer outer fences preserve nested code and surrounding findings" {
     local fixture_dir="$PROJECT_ROOT/tests/fixtures/reviews"
     cp "$fixture_dir/nested-fences.md" "$REVIEW"
@@ -400,6 +714,69 @@ status_of() {
     jq -n '[{id: 777, body: "Reworded in the notes."}]' \
         | python3 "$SCRIPT" set-body --review-file "$REVIEW"
     [ "$(status_of '[.[] | if .id == 777 then .body = "Edited in the GitHub UI." else . end]')" = "diverged" ]
+}
+
+prepare_preserved_comment_repost() {
+    annotate
+    live_json | jq '[.[] | select(.id == 777) | .body = "Edited in the GitHub UI."]' > "$TEST_DIR/live-before.json"
+    jq '[.[] | {path, position, body, source_id: .id}]' "$TEST_DIR/live-before.json" > "$TEST_DIR/submitted.json"
+    jq '[.[] | .id = 999 | .node_id = "PRRC_reposted"]' "$TEST_DIR/live-before.json" > "$TEST_DIR/reposted.json"
+}
+
+preserved_comment_state() {
+    local comments_file="$1" comment_id="$2"
+    python3 "$SCRIPT" status --review-file "$REVIEW" < "$comments_file" \
+        | jq -r --argjson id "$comment_id" '.comments[] | select(.id == $id) | .state'
+}
+
+repost_preserved_comment() {
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" --submitted-comments "$TEST_DIR/submitted.json" < "$TEST_DIR/reposted.json"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 1 ]
+}
+
+@test "status: source id rebinding preserves changes made only on GitHub" {
+    prepare_preserved_comment_repost
+    [ "$(preserved_comment_state "$TEST_DIR/live-before.json" 777)" = "changed_on_github" ]
+
+    repost_preserved_comment
+
+    [ "$(preserved_comment_state "$TEST_DIR/reposted.json" 999)" = "changed_on_github" ]
+}
+
+@test "status: source id rebinding preserves divergence between notes and GitHub" {
+    prepare_preserved_comment_repost
+    jq -n '[{id: 777, body: "Independently edited in the notes."}]' \
+        | python3 "$SCRIPT" set-body --review-file "$REVIEW"
+    [ "$(preserved_comment_state "$TEST_DIR/live-before.json" 777)" = "diverged" ]
+
+    repost_preserved_comment
+
+    [ "$(preserved_comment_state "$TEST_DIR/reposted.json" 999)" = "diverged" ]
+}
+
+@test "status: source id rebinding does not invent an unknown sync baseline" {
+    prepare_preserved_comment_repost
+    sed -E 's/ b:[0-9a-f]{8} -->/ -->/' "$REVIEW" > "$TEST_DIR/no-baseline.md"
+    mv "$TEST_DIR/no-baseline.md" "$REVIEW"
+    [ "$(preserved_comment_state "$TEST_DIR/live-before.json" 777)" = "unknown_baseline" ]
+
+    repost_preserved_comment
+
+    [ "$(preserved_comment_state "$TEST_DIR/reposted.json" 999)" = "unknown_baseline" ]
+}
+
+@test "status: source id rebinding refreshes the baseline when both bodies agree" {
+    prepare_preserved_comment_repost
+    jq '[.[] | {id, body}]' "$TEST_DIR/live-before.json" \
+        | python3 "$SCRIPT" set-body --review-file "$REVIEW"
+    [ "$(preserved_comment_state "$TEST_DIR/live-before.json" 777)" = "in_sync" ]
+
+    repost_preserved_comment
+
+    [ "$(preserved_comment_state "$TEST_DIR/reposted.json" 999)" = "in_sync" ]
+    jq '[.[] | .body = "Edited again on GitHub after the repost."]' "$TEST_DIR/reposted.json" > "$TEST_DIR/live-after.json"
+    [ "$(preserved_comment_state "$TEST_DIR/live-after.json" 999)" = "changed_on_github" ]
 }
 
 @test "status: reports a comment that is gone from GitHub" {
@@ -699,6 +1076,65 @@ dup_annotate() {
     [ "$status" -eq 0 ]
     [[ "$output" == *'"annotated": 2'* ]]
     [ "$(grep -c 'pc:777 PRRC_aaa' "$REVIEW")" -eq 2 ]
+}
+
+prepare_duplicate_source_id_repost() {
+    write_duplicated_review
+    jq -n '[{id: 123, node_id: "PRRC_old", path: "src/auth.ts", line: 42, body: "Validate the token first."}]' \
+        | python3 "$SCRIPT" annotate --review-file "$REVIEW" > /dev/null
+    cat > "$TEST_DIR/submitted.json" << 'EOF'
+[{"path":"src/auth.ts","source_id":123,"position":5,"body":"Edited in the GitHub UI."}]
+EOF
+    cat > "$TEST_DIR/reposted.json" << 'EOF'
+[{"id":999,"node_id":"PRRC_reposted","path":"src/auth.ts","line":null,"position":5,"body":"Edited in the GitHub UI."}]
+EOF
+}
+
+@test "annotate: source id restores an unannotated copy with its shared baseline and withdrawal" {
+    prepare_duplicate_source_id_repost
+    local old_hash
+    old_hash=$(python3 "$SCRIPT" read --review-file "$REVIEW" | jq -r '.comments[0].body_hash')
+    awk '/pc:123/ {if (++seen == 2) sub(/ <!-- pc:123[^>]* -->/, "")} {print}' \
+        "$REVIEW" > "$TEST_DIR/partial.md"
+    mv "$TEST_DIR/partial.md" "$REVIEW"
+
+    repost_preserved_comment
+
+    [ "$(echo "$output" | jq '.annotated')" -eq 2 ]
+    [ "$(grep -c "pc:999 PRRC_reposted b:$old_hash" "$REVIEW")" -eq 2 ]
+    [ "$(preserved_comment_state "$TEST_DIR/reposted.json" 999)" = "changed_on_github" ]
+    jq -n '[{id: 999, reason: "The author addressed the finding."}]' \
+        | python3 "$SCRIPT" withdraw --review-file "$REVIEW" > "$TEST_DIR/withdrawn.json"
+    [ "$(jq '.withdrawn' "$TEST_DIR/withdrawn.json")" -eq 2 ]
+    [ "$("$PARSER" "$REVIEW" | jq 'length')" -eq 0 ]
+}
+
+@test "annotate: source id treats conflicting copy baselines as unknown" {
+    prepare_duplicate_source_id_repost
+    awk '/pc:123/ {if (++seen == 2) sub(/b:[0-9a-f]+/, "b:deadbeef")} {print}' \
+        "$REVIEW" > "$TEST_DIR/conflicting-baselines.md"
+    mv "$TEST_DIR/conflicting-baselines.md" "$REVIEW"
+
+    repost_preserved_comment
+
+    [ "$(echo "$output" | jq '.annotated')" -eq 2 ]
+    [ "$(preserved_comment_state "$TEST_DIR/reposted.json" 999)" = "unknown_baseline" ]
+}
+
+@test "annotate: source id refuses identical copies with conflicting known ids" {
+    prepare_duplicate_source_id_repost
+    awk '/pc:123/ {if (++seen == 2) sub(/pc:123/, "pc:456")} {print}' \
+        "$REVIEW" > "$TEST_DIR/conflicting-ids.md"
+    mv "$TEST_DIR/conflicting-ids.md" "$REVIEW"
+    local checksum_before
+    checksum_before=$(checksum "$REVIEW")
+
+    run python3 "$SCRIPT" annotate --review-file "$REVIEW" --submitted-comments "$TEST_DIR/submitted.json" < "$TEST_DIR/reposted.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.annotated_comments')" -eq 0 ]
+    [ "$(echo "$output" | jq -c '[.unmatched[].id]')" = '[999]' ]
+    [ "$(checksum "$REVIEW")" = "$checksum_before" ]
 }
 
 # The point of the whole exercise: a dropped comment must stop being a live

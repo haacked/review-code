@@ -719,6 +719,7 @@ EOF
 
     [ "$status" -eq 0 ]
     [ "$(echo "$output" | jq -c '[.comments[].line]')" = "[23,23]" ]
+    [ "$(echo "$output" | jq -c '[.comments[].source_line]')" = "[21,22]" ]
     [ "$(echo "$output" | jq -r '.comments[0].line_content')" = "    def test_roll(self):" ]
     [ "$(echo "$output" | jq -r '.comments[1].line_content')" = "    def test_roll(self):" ]
 }
