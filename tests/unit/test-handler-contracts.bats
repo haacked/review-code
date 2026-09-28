@@ -183,3 +183,16 @@ EOF
     [ "$(echo "$output" | jq -r '.findings[0].publishable')" = "true" ]
     [ "$(echo "$output" | jq '.withheld | length')" -eq 0 ]
 }
+
+@test "handler contracts: documented preservation merge restores lost claims" {
+    jq '{findings: [.cases[] | {id, severity: "blocking", description, proposed_fix: null}], withheld: []}' "$PROJECT_ROOT/tests/fixtures/finding-comments/voice-preservation-regressions.json" > "$ARTIFACTS/finding-quality-prevoice.json"
+    jq '[.cases[] | {id, description: .rewrite, proposed_fix: null, unchanged: false}]' "$PROJECT_ROOT/tests/fixtures/finding-comments/voice-preservation-regressions.json" > "$ARTIFACTS/voice-output.json"
+    jq '[.cases[] | {id, preserved: false, notes}]' "$PROJECT_ROOT/tests/fixtures/finding-comments/voice-preservation-regressions.json" > "$ARTIFACTS/voice-preservation.json"
+    extract_documented_block "$SKILL/handlers/review-finding-quality.md" bash gate-voice-preservation.py > "$ARTIFACTS/preserve.sh"
+
+    run bash -e "$ARTIFACTS/preserve.sh"
+
+    [ "$status" -eq 0 ]
+    jq -e '.voice_preservation.error == null and (.voice_preservation.reverted | length) == 2' "$ARTIFACTS/finding-quality-voiced.json"
+    jq -e --slurpfile original "$ARTIFACTS/finding-quality-prevoice.json" '.findings == $original[0].findings and .withheld == $original[0].withheld' "$ARTIFACTS/finding-quality-voiced.json"
+}
