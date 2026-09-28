@@ -197,6 +197,28 @@ PY
     done
 }
 
+@test "voice preservation: code fence closing line endings remain unchanged" {
+    cp "$ORIGINAL" "$BATS_TEST_TMPDIR/before-line-ending-original.json"
+    cp "$RESPONSES" "$BATS_TEST_TMPDIR/before-line-ending-responses.json"
+    update_json "$ORIGINAL" '.findings[0].description += "\n```python\nflush(batch)\n```\n"'
+    update_json "$RESPONSES" '.[0].description += "\n```python\nflush(batch)\n```"'
+
+    run_gate
+
+    assert_restored 1
+    assert_accepted 2
+
+    cp "$BATS_TEST_TMPDIR/before-line-ending-original.json" "$ORIGINAL"
+    cp "$BATS_TEST_TMPDIR/before-line-ending-responses.json" "$RESPONSES"
+    update_json "$ORIGINAL" '.findings[0].description += "\n```python\nflush(batch)\n```"'
+    update_json "$RESPONSES" '.[0].description += "\n```python\nflush(batch)\n```\n"'
+
+    run_gate
+
+    assert_restored 1
+    assert_accepted 2
+}
+
 @test "voice preservation: whitespace growth is free but each field has a two-times text limit" {
     update_json "$RESPONSES" '.[0].description += ("\n" * 1000)'
     run_gate

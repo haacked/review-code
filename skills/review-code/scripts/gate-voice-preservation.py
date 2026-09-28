@@ -63,7 +63,7 @@ def markdown_parts(body: str) -> tuple[list[str], Counter[str]]:
         else:
             current.append(line)
             if kind == "close":
-                blocks.append("".join(current).rstrip("\r\n"))
+                blocks.append("".join(current))
                 current = []
                 prose.append("\n")
     if current:
