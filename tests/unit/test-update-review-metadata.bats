@@ -47,6 +47,22 @@ assert_rejected_unchanged() {
     cmp -s "$TEST_DIR/before.md" "$REVIEW"
 }
 
+assert_current_timestamp() {
+    python3 - "$TEST_DIR/started" "$REVIEW" << 'PY'
+from datetime import datetime, timezone
+from pathlib import Path
+import re
+import sys
+
+started = float(Path(sys.argv[1]).read_text())
+document = Path(sys.argv[2]).read_text()
+matches = re.findall(r"^reviewed_at: (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)$", document, re.M)
+assert len(matches) == 1, document
+timestamp = datetime.strptime(matches[0], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
+assert int(started) <= timestamp <= datetime.now(timezone.utc).timestamp()
+PY
+}
+
 @test "update-review-metadata: updates one block in place and preserves surrounding bytes" {
     run update_full
     [ "$status" -eq 0 ]
@@ -72,6 +88,41 @@ PY
     grep -q '^review_mode: delta$' "$REVIEW"
     grep -q '^delta_from: previous-sha$' "$REVIEW"
     [ "$(grep -c '^delta_from:' "$REVIEW")" -eq 1 ]
+}
+
+@test "update-review-metadata: generates the current UTC timestamp when omitted" {
+    local mode
+    for mode in full delta; do
+        cp "$TEST_DIR/before.md" "$REVIEW"
+        python3 -c 'from datetime import datetime, timezone; print(datetime.now(timezone.utc).timestamp())' > "$TEST_DIR/started"
+
+        run "$SCRIPT" --file "$REVIEW" --set review_mode="$mode"
+
+        [ "$status" -eq 0 ]
+        assert_current_timestamp
+    done
+}
+
+@test "update-review-metadata: creates metadata with a UTC timestamp for a new local review" {
+    printf '# Local review\n\nKeep the body unchanged.' > "$REVIEW"
+    cp "$REVIEW" "$TEST_DIR/body.md"
+    python3 -c 'from datetime import datetime, timezone; print(datetime.now(timezone.utc).timestamp())' > "$TEST_DIR/started"
+
+    run env TZ=Pacific/Honolulu "$SCRIPT" --file "$REVIEW" --set review_mode=full
+
+    [ "$status" -eq 0 ]
+    assert_current_timestamp
+    python3 - "$TEST_DIR/body.md" "$REVIEW" << 'PY'
+from pathlib import Path
+import sys
+
+before, after = (Path(path).read_bytes() for path in sys.argv[1:])
+header, body = after.split(b"-->\n\n", 1)
+assert header.startswith(b"<!-- review-metadata\n")
+assert b"review_mode: full\n" in header
+assert b"review_commit:" not in header
+assert body == before
+PY
 }
 
 @test "update-review-metadata: inserts a missing block before the original review" {
@@ -163,7 +214,7 @@ PY
 }
 
 @test "update-review-metadata: rejects missing required fields without modifying the review" {
-    run "$SCRIPT" --file "$REVIEW" --set review_commit=bbbbbbb --set review_mode=full
+    run "$SCRIPT" --file "$REVIEW" --set review_commit=bbbbbbb
     assert_rejected_unchanged
 
     run "$SCRIPT" --file "$REVIEW" --set review_commit=bbbbbbb --set "reviewed_at=$REVIEWED_AT"
@@ -198,6 +249,13 @@ PY
     assert_rejected_unchanged
 
     run "$SCRIPT" --file "$REVIEW" --set $'review_commit=bbbbbbb\nreview_mode: delta' \
+        --set "reviewed_at=$REVIEWED_AT" --set review_mode=full
+    assert_rejected_unchanged
+
+    run "$SCRIPT" --file "$REVIEW" --set reviewed_at= --set review_mode=full
+    assert_rejected_unchanged
+
+    run "$SCRIPT" --file "$REVIEW" --set "reviewed_at=$REVIEWED_AT" \
         --set "reviewed_at=$REVIEWED_AT" --set review_mode=full
     assert_rejected_unchanged
 }
@@ -267,6 +325,17 @@ EOF
     run "$SCRIPT" --file "$REVIEW" --get review_commit
     [ "$status" -eq 0 ]
     [ -z "$output" ]
+}
+
+@test "update-review-metadata: reading an absent timestamp does not generate one" {
+    printf '<!-- review-metadata\nreview_mode: full\n-->\n' > "$REVIEW"
+    cp "$REVIEW" "$TEST_DIR/before.md"
+
+    run "$SCRIPT" --file "$REVIEW" --get reviewed_at
+
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    cmp -s "$TEST_DIR/before.md" "$REVIEW"
 }
 
 @test "update-review-metadata: rejects reads from duplicate actual blocks" {

@@ -13,6 +13,7 @@ import glob
 import json
 import os
 import re
+import shlex
 import sys
 
 # Per-million-token rates. Reviews run mostly on the top tier; subagents pinned
@@ -63,11 +64,18 @@ def parse_args():
         action="store_true",
         help="Emit machine-readable JSON instead of a table",
     )
-    parser.add_argument(
+    reports = parser.add_mutually_exclusive_group()
+    reports.add_argument(
         "--prompts",
         action="store_true",
         help="Report how reviewer subagents received their payload (inlined "
         "in the prompt, or by a path to a file) instead of the cost tables",
+    )
+    reports.add_argument(
+        "--bash-glue",
+        action="store_true",
+        help="Count short no-op, sleep, timestamp, and waiting Bash calls in "
+        "orchestrator transcripts; uses the cost report's session filters",
     )
     parser.add_argument(
         "--all-stages",
@@ -106,27 +114,33 @@ REVIEW_STAGES = {
 }
 
 
-def first_user_prompt(path):
+def iter_json_objects(path):
     with open(path, errors="ignore") as fh:
         for line in fh:
             try:
                 rec = json.loads(line)
             except ValueError:
                 continue
-            msg = rec.get("message") or {}
-            if msg.get("role") != "user":
-                continue
-            c = msg.get("content")
-            if isinstance(c, str):
-                return c
-            if isinstance(c, list):
-                t = "".join(
-                    b.get("text", "")
-                    for b in c
-                    if isinstance(b, dict) and b.get("type") == "text"
-                )
-                if t:
-                    return t
+            if isinstance(rec, dict):
+                yield rec
+
+
+def first_user_prompt(path):
+    for rec in iter_json_objects(path):
+        msg = rec.get("message") or {}
+        if msg.get("role") != "user":
+            continue
+        c = msg.get("content")
+        if isinstance(c, str):
+            return c
+        if isinstance(c, list):
+            t = "".join(
+                b.get("text", "")
+                for b in c
+                if isinstance(b, dict) and b.get("type") == "text"
+            )
+            if t:
+                return t
     return None
 
 
@@ -278,33 +292,28 @@ def scan(path):
     totals = collections.Counter()
     cost = 0.0
     seen = set()
-    with open(path, errors="ignore") as fh:
-        for line in fh:
-            try:
-                rec = json.loads(line)
-            except ValueError:
-                continue
-            msg = rec.get("message") or {}
-            usage = msg.get("usage")
-            if not usage:
-                continue
-            key = msg.get("id") or rec.get("requestId") or rec.get("uuid")
-            if key in seen:
-                continue
-            seen.add(key)
-            i = usage.get("input_tokens", 0)
-            o = usage.get("output_tokens", 0)
-            cw = usage.get("cache_creation_input_tokens", 0)
-            cr = usage.get("cache_read_input_tokens", 0)
-            totals["in"] += i
-            totals["out"] += o
-            totals["cache_write"] += cw
-            totals["cache_read"] += cr
-            totals["context"] += i + cw + cr
-            r = RATES[tier(msg.get("model"))]
-            cost += (
-                i * r.input + cw * r.cache_write + cr * r.cache_read + o * r.output
-            ) / 1e6
+    for rec in iter_json_objects(path):
+        msg = rec.get("message") or {}
+        usage = msg.get("usage")
+        if not usage:
+            continue
+        key = msg.get("id") or rec.get("requestId") or rec.get("uuid")
+        if key in seen:
+            continue
+        seen.add(key)
+        i = usage.get("input_tokens", 0)
+        o = usage.get("output_tokens", 0)
+        cw = usage.get("cache_creation_input_tokens", 0)
+        cr = usage.get("cache_read_input_tokens", 0)
+        totals["in"] += i
+        totals["out"] += o
+        totals["cache_write"] += cw
+        totals["cache_read"] += cr
+        totals["context"] += i + cw + cr
+        r = RATES[tier(msg.get("model"))]
+        cost += (
+            i * r.input + cw * r.cache_write + cr * r.cache_read + o * r.output
+        ) / 1e6
     return totals, len(seen), cost
 
 
@@ -315,14 +324,9 @@ def first_timestamp(path):
     timestamp within the first handful of lines, so probing for it here keeps
     scan() off the files that are about to be dropped.
     """
-    with open(path, errors="ignore") as fh:
-        for line in fh:
-            try:
-                rec = json.loads(line)
-            except ValueError:
-                continue
-            if rec.get("timestamp"):
-                return rec["timestamp"]
+    for rec in iter_json_objects(path):
+        if rec.get("timestamp"):
+            return rec["timestamp"]
     return None
 
 
@@ -343,7 +347,113 @@ def mix(c):
     }
 
 
-def report_costs(root, match, since, limit, as_json):
+def bash_glue_kind(command):
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return None
+    if words in (["true"], [":"]):
+        return "noop"
+    if (
+        len(words) == 2
+        and words[0] == "sleep"
+        and re.fullmatch(r"\d+(?:\.\d+)?[smh]?", words[1])
+    ):
+        return "sleep"
+    if words == ["date", "-u", "+%Y-%m-%dT%H:%M:%SZ"]:
+        return "timestamp"
+    if (
+        len(words) == 2
+        and words[0] == "echo"
+        and re.fullmatch(
+            r"waiting(?: for (?:background )?agents)?", words[1], re.IGNORECASE
+        )
+    ):
+        return "waiting"
+    return None
+
+
+def scan_bash_glue(path):
+    counts = collections.Counter()
+    seen = set()
+    for rec in iter_json_objects(path):
+        msg = rec.get("message")
+        if not isinstance(msg, dict) or msg.get("role") != "assistant":
+            continue
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if (
+                not isinstance(block, dict)
+                or block.get("type") != "tool_use"
+                or block.get("name") != "Bash"
+            ):
+                continue
+            key = block.get("id")
+            if isinstance(key, str) and key:
+                if key in seen:
+                    continue
+                seen.add(key)
+            counts["bash_calls"] += 1
+            tool_input = block.get("input")
+            if not isinstance(tool_input, dict):
+                continue
+            command = tool_input.get("command")
+            if not isinstance(command, str):
+                continue
+            command = command.strip()
+            if len(command) >= 40:
+                continue
+            if ".sh" not in command and "review-code/" not in command:
+                counts["short_non_skill_calls"] += 1
+            kind = bash_glue_kind(command)
+            if kind:
+                counts[kind] += 1
+    return dict(counts)
+
+
+def report_bash_glue(sessions, limit, as_json):
+    totals = collections.Counter()
+    for session in sessions:
+        totals.update(session["bash_glue"])
+    kinds = {key: totals[key] for key in ("noop", "sleep", "timestamp", "waiting")}
+    glue_calls = sum(kinds.values())
+    per_session = round(glue_calls / len(sessions), 3) if sessions else 0
+    summary = {
+        "sessions": len(sessions),
+        "bash_calls": totals["bash_calls"],
+        "short_non_skill_calls": totals["short_non_skill_calls"],
+        "glue_calls": glue_calls,
+        "glue_calls_per_session": per_session,
+        "by_kind": kinds,
+    }
+    if as_json:
+        rows = [
+            {
+                key: session[key]
+                for key in ("project", "session", "started", "bash_glue")
+            }
+            for session in sessions[:limit]
+        ]
+        print(json.dumps({"summary": summary, "sessions": rows}, indent=2))
+        return
+    print(
+        f"Bash glue report: {len(sessions)} sessions, {totals['bash_calls']} Bash calls"
+    )
+    print(
+        "Whole commands under 40 characters; known glue forms only. Subagents excluded."
+    )
+    print(f"{'kind':<14} {'calls':>7} {'per session':>12}")
+    for key, count in kinds.items():
+        per_session = count / len(sessions) if sessions else 0
+        print(f"{key:<14} {count:>7} {per_session:>12.2f}")
+    print(
+        f"{'total glue':<14} {glue_calls:>7} {summary['glue_calls_per_session']:>12.2f}"
+    )
+
+
+def report_costs(root, match, since, limit, as_json, bash_glue=False):
     cutoff = None
     if since:
         try:
@@ -374,6 +484,16 @@ def report_costs(root, match, since, limit, as_json):
             if turns < 3:
                 continue
             sid = os.path.basename(main)[:-6]
+            if bash_glue:
+                sessions.append(
+                    {
+                        "project": os.path.basename(project),
+                        "session": sid,
+                        "started": ts,
+                        "bash_glue": scan_bash_glue(main),
+                    }
+                )
+                continue
             st, scost, nsub = collections.Counter(), 0.0, 0
             for sub in glob.glob(os.path.join(project, sid, "subagents", "*.jsonl")):
                 t, _, c = scan(sub)
@@ -396,6 +516,10 @@ def report_costs(root, match, since, limit, as_json):
                     "orchestrator_output_tokens": ot["out"],
                 }
             )
+
+    if bash_glue:
+        report_bash_glue(sessions, limit, as_json)
+        return
 
     if not sessions:
         print(f"No sessions matched '{match}' under {root}")
@@ -470,7 +594,9 @@ def main():
             args.dir, args.match, args.json, args.since, args.all_stages, args.limit
         )
     else:
-        report_costs(args.dir, args.match, args.since, args.limit, args.json)
+        report_costs(
+            args.dir, args.match, args.since, args.limit, args.json, args.bash_glue
+        )
 
 
 if __name__ == "__main__":

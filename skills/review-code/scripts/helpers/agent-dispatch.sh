@@ -15,6 +15,7 @@
 # Usage:
 #   agent-dispatch.sh --detect
 #   agent-dispatch.sh run <agent-name> <prompt-file> <output-file>
+#   agent-dispatch.sh batch <manifest-json>
 #
 # Where:
 #   agent-name    matches an agents/<agent-name>.md (Claude) or a rendered
@@ -93,6 +94,90 @@ _run_agent_codex() {
         "${agent_name}" "${prompt_file}" "${output_file}"
 }
 
+run_batch() {
+    local manifest="$1"
+    local rows agent prompt_file output_file result_file index exit_code
+    local concurrency="${REVIEW_CODE_AGENT_CONCURRENCY:-4}"
+    local failed=0 wait_index=0
+    local -a pids=() agents=() prompts=() outputs=()
+
+    if [[ ! "${concurrency}" =~ ^[1-9][0-9]*$ ]] || ((${#concurrency} > 2)) || ((concurrency > 32)); then
+        echo "ERROR: REVIEW_CODE_AGENT_CONCURRENCY must be an integer from 1 to 32" >&2
+        return 2
+    fi
+    if [[ "$(detect_harness)" != codex ]]; then
+        echo "ERROR: batch requires Codex; Claude uses native Task completion notifications." >&2
+        return 2
+    fi
+    if ! rows=$(jq -er '
+        if type == "array" and length > 0
+            and all(.[];
+                type == "object"
+                and (.agent | type == "string" and test("^[a-zA-Z0-9_-]+$"))
+                and all(.prompt_file, .output_file;
+                    type == "string" and length > 0 and (test("[[:cntrl:]]") | not)))
+            and ([.[].output_file] | length == (unique | length))
+            and ([.[].output_file] as $outputs
+                 | all($outputs[];
+                       (. + ".dispatch.json") as $result
+                       | ($outputs | index($result) | not)))
+        then .[] | [.agent, .prompt_file, .output_file] | join("\t")
+        else error("expected nonempty agent entries with unique output paths") end
+    ' "${manifest}"); then
+        echo "ERROR: invalid batch manifest: ${manifest}" >&2
+        return 2
+    fi
+    while IFS=$'\t' read -r agent prompt_file output_file; do
+        if [[ ! -f "${prompt_file}" || ! -r "${prompt_file}" ]]; then
+            echo "ERROR: prompt file missing or unreadable: ${prompt_file}" >&2
+            return 1
+        fi
+        agents+=("${agent}")
+        prompts+=("${prompt_file}")
+        outputs+=("${output_file}")
+    done <<< "${rows}"
+
+    for index in "${!agents[@]}"; do
+        if ((index - wait_index >= concurrency)); then
+            if wait "${pids[wait_index]}"; then
+                :
+            else
+                exit_code=$?
+                echo "ERROR: agent ${agents[wait_index]} exited ${exit_code}: ${outputs[wait_index]}" >&2
+                failed=1
+            fi
+            ((wait_index += 1))
+        fi
+        result_file="${outputs[index]}.dispatch.json"
+        mkdir -p "$(dirname "${result_file}")"
+        _run_agent_codex "${agents[index]}" "${prompts[index]}" "${outputs[index]}" > "${result_file}" &
+        pids+=("$!")
+    done
+
+    for ((index = wait_index; index < ${#pids[@]}; index++)); do
+        if wait "${pids[index]}"; then
+            continue
+        else
+            exit_code=$?
+            echo "ERROR: agent ${agents[index]} exited ${exit_code}: ${outputs[index]}" >&2
+            failed=1
+        fi
+    done
+    for index in "${!outputs[@]}"; do
+        result_file="${outputs[index]}.dispatch.json"
+        if [[ ! -s "${result_file}" ]]; then
+            echo "ERROR: agent ${agents[index]} did not produce a dispatch result: ${outputs[index]}" >&2
+            failed=1
+            continue
+        fi
+        if ! jq -ce --arg agent "${agents[index]}" '. + {agent: $agent}' "${result_file}"; then
+            echo "ERROR: agent ${agents[index]} produced an invalid dispatch result: ${outputs[index]}" >&2
+            failed=1
+        fi
+    done
+    return "${failed}"
+}
+
 main() {
     local sub="${1:-}"
     case "${sub}" in
@@ -106,8 +191,15 @@ main() {
             shift
             run_agent "$@"
             ;;
+        batch)
+            if [[ $# -ne 2 ]]; then
+                echo "Usage: $0 batch <manifest-json>" >&2
+                return 2
+            fi
+            run_batch "$2"
+            ;;
         *)
-            echo "Usage: $0 {--detect | run <agent-name> <prompt-file> <output-file>}" >&2
+            echo "Usage: $0 {--detect | run <agent-name> <prompt-file> <output-file> | batch <manifest-json>}" >&2
             return 2
             ;;
     esac

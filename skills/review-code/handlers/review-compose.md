@@ -101,14 +101,14 @@ An Overview paragraph in the right register reads like:
 Save the complete review to `$review_file`, or append the new sections for a full `--append` review. Then record its identity with the shared writer:
 
 ```bash
-metadata_args=(--file "$review_file" --set "reviewed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" --set review_mode=full)
+metadata_args=(--file "$review_file" --set review_mode=full)
 if [[ -n "$review_commit" ]]; then
     metadata_args+=(--set "review_commit=$review_commit")
 fi
 ~/.agents/skills/review-code/scripts/update-review-metadata.sh "${metadata_args[@]}"
 ```
 
-Set `$review_commit` to the reviewed PR head SHA in PR mode, or to an empty string otherwise. Require the command to succeed before continuing to linting or PR output. It also removes stale `delta_from` metadata on a full review.
+Set `$review_commit` to the reviewed PR head SHA in PR mode, or to an empty string otherwise. Require the command to succeed before continuing to linting or PR output. The writer generates `reviewed_at` in UTC and removes stale `delta_from` metadata on a full review. Do not fetch a timestamp in a separate tool call.
 
 **Lint the narrative.** With the file on disk, run the linter over its narrative prose. It reads the Overview and the per-agent summaries and skips finding bodies, which the voice pass already gated. It records what it finds as a `## Lint notes` section at the end of the file and never edits the prose:
 
