@@ -17,7 +17,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent / "helpers"))
 
-from markdown_fences import walk_fences
+from markdown_fences import walk_fences  # noqa: E402
 
 FIELDS = ("description", "proposed_fix")
 SEVERITY = r"(?:blocking|suggestion|question|nit)"
