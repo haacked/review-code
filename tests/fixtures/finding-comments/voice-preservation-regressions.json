@@ -1,0 +1,17 @@
+{
+  "source": "Reconstructed from the reported voice-pass failures; the original session artifacts are unavailable.",
+  "cases": [
+    {
+      "id": 1,
+      "description": "`blocking`: This skips backfill for sibling cohorts; on master those sibling cohorts were stamped and got their backfill. Keep stamping those cohorts before scheduling the backfill.",
+      "rewrite": "`blocking`: This skips backfill for sibling cohorts. Keep stamping those cohorts before scheduling the backfill.",
+      "notes": "The rewrite drops the existing backfill behavior that justifies blocking the change."
+    },
+    {
+      "id": 3,
+      "description": "`blocking`: An exception leaves this cohort unfinished. The run, not the cohort, is the unit that fails, so the other cohorts in that run also stop. Handle the exception before marking the cohort failed.",
+      "rewrite": "`blocking`: An exception leaves this cohort unfinished. Handle the exception before marking the cohort failed.",
+      "notes": "The rewrite drops the explanation that failure belongs to the run rather than the cohort."
+    }
+  ]
+}

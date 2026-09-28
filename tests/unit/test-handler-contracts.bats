@@ -243,3 +243,40 @@ PY
     [ "$(echo "$output" | jq -r '.findings[0].publishable')" = "true" ]
     [ "$(echo "$output" | jq '.withheld | length')" -eq 0 ]
 }
+
+@test "handler contracts: documented preservation merge restores lost claims" {
+    jq '{findings: [.cases[] | {id, severity: "blocking", description, proposed_fix: null}], withheld: []}' "$PROJECT_ROOT/tests/fixtures/finding-comments/voice-preservation-regressions.json" > "$ARTIFACTS/finding-quality-prevoice.json"
+    jq '[.cases[] | {id, description: .rewrite, proposed_fix: null, unchanged: false}]' "$PROJECT_ROOT/tests/fixtures/finding-comments/voice-preservation-regressions.json" > "$ARTIFACTS/voice-output.md"
+    jq '[.cases[] | {id, preserved: false, notes}]' "$PROJECT_ROOT/tests/fixtures/finding-comments/voice-preservation-regressions.json" > "$ARTIFACTS/voice-preservation.json"
+    extract_documented_block "$SKILL/handlers/review-finding-quality.md" bash '"<artifacts_dir>/voice-output.md"' > "$ARTIFACTS/preserve.sh"
+
+    run bash -e "$ARTIFACTS/preserve.sh"
+
+    [ "$status" -eq 0 ]
+    jq -e '.voice_preservation.error == null and (.voice_preservation.reverted | length) == 2' "$ARTIFACTS/finding-quality-voiced.json"
+    jq -e --slurpfile original "$ARTIFACTS/finding-quality-prevoice.json" '.findings == $original[0].findings and .withheld == $original[0].withheld' "$ARTIFACTS/finding-quality-voiced.json"
+}
+
+@test "handler contracts: documented voice repair keeps accepted neighboring rewrites" {
+    jq -n '{findings: [
+        {id: 1, severity: "suggestion", description: "`suggestion`: Original one.", proposed_fix: null},
+        {id: 2, severity: "suggestion", description: "`suggestion`: Original two.", proposed_fix: null}
+    ], withheld: []}' > "$ARTIFACTS/finding-quality-prevoice.json"
+    jq -n '{findings: [
+        {id: 1, severity: "suggestion", description: "`suggestion`: First rewrite.", proposed_fix: null},
+        {id: 2, severity: "suggestion", description: "`suggestion`: Accepted neighbor.", proposed_fix: null}
+    ], withheld: []}' > "$ARTIFACTS/finding-quality-voiced.json"
+    printf '%s\n' '{"warned_ids": [1], "error": null}' > "$ARTIFACTS/voice-lint-result.json"
+    printf '%s\n' '[{"id": 1, "description": "`suggestion`: Repaired one.", "proposed_fix": null, "unchanged": false}]' > "$ARTIFACTS/voice-repair-output.md"
+    printf '%s\n' '[{"id": 1, "preserved": true, "notes": "Same claim."}]' > "$ARTIFACTS/voice-repair-preservation.json"
+    extract_documented_block "$SKILL/handlers/review-finding-quality.md" bash voice-repair-output.md > "$ARTIFACTS/repair.sh"
+
+    run bash -e "$ARTIFACTS/repair.sh"
+
+    [ "$status" -eq 0 ]
+    jq -e '
+        (.findings[] | select(.id == 1) | .description) == "`suggestion`: Repaired one."
+        and (.findings[] | select(.id == 2) | .description) == "`suggestion`: Accepted neighbor."
+        and .voice_repair.target_ids == [1]
+    ' "$ARTIFACTS/finding-quality-repaired.json"
+}

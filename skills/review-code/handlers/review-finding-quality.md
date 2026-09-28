@@ -101,13 +101,29 @@ Record composer usage under `$token_usage["code-reviewer-comment"]`. In debug mo
 
 ### Voice Pass
 
-Save each finding's `id`, `severity`, `location`, `comment_style`, `description`, and `proposed_fix` to `<artifacts_dir>/voice-input.json` and dispatch `code-reviewer-voice` with `$quality_stage = voice`. Keep the facts and routing fields in `$finding_quality`, outside the voice payload.
+Save the full `$finding_quality` as `<artifacts_dir>/finding-quality-prevoice.json`. This immutable snapshot is the fallback for both the first voice pass and its lint repair. Save each finding's `id`, `severity`, `location`, `comment_style`, `description`, and `proposed_fix` to `<artifacts_dir>/voice-input.json`, then dispatch `code-reviewer-voice` with `$quality_stage = voice` through "Deliver Finding Inputs". Keep the facts and routing fields outside the voice payload.
 
-Parse responses by id. `unchanged: true` keeps the current body. Ignore unknown ids and count them as anomalies. A missing id keeps the current body. Treat an array length difference greater than one as a failed batch and keep every current body.
+For every changed finding, compare both returned fields with their pre-voice originals using the retained `facts`. Check every claim already expressed, including each mechanism step, result, requested change, regression case, qualifier, comparison with existing behavior, and scope of failure. Identify where each claim survives in the rewrite. Do this even for facts the selected comment style permits omitting during initial composition. Do not require facts that were absent from the pre-voice body, and do not use token presence or shorter length as proof of meaning preservation. A dropped or weakened claim, invented claim, uncertain equivalence, or a missing sentence whose meaning is not carried elsewhere rejects that finding's rewrite. Removing pipeline provenance and redundant phrasing is allowed only when every substantive claim survives.
 
-For each rewrite, require the identical severity prefix, every backtick-quoted path or line token from the current body, and every code block. Limit growth to about twice the original length. Rejecting a voice rewrite restores the pre-voice body. If more than half fail, discard the whole voice batch.
+For example, deleting "on master those sibling cohorts were stamped and got their backfill" removes evidence of a regression even if all backtick tokens survive. Changing a run failure into a cohort failure changes which other cohorts stop. Both restore the pre-voice finding before the final comprehension gate, without invoking semantic repair.
 
-Merge the accepted voice bodies into `$finding_quality.findings` and save the full object as `<artifacts_dir>/finding-quality-voiced.json`. The linter takes a bare array of `{id, description, proposed_fix}` objects; `proposed_fix` may be null. Extract that array and run:
+Write the orchestrator's comparison decisions as a bare array to `<artifacts_dir>/voice-preservation.json`: `[{"id": 1, "preserved": false, "notes": "Dropped the comparison with master that establishes the regression."}]`. Set `preserved: true` only after every claim has an equivalent in the rewrite; on rejection, name the lost or altered meaning in `notes`. The voice agent must not grade its own preservation. An unchanged response needs no comparison verdict.
+
+Run the executable merge with the original snapshot, response file, and decisions:
+
+```bash
+~/.agents/skills/review-code/scripts/gate-voice-preservation.py \
+  "<artifacts_dir>/finding-quality-prevoice.json" \
+  "<artifacts_dir>/voice-output.md" \
+  "<artifacts_dir>/voice-preservation.json" \
+  > "<artifacts_dir>/finding-quality-voiced.json"
+```
+
+The helper accepts bare JSON or a single four-backtick JSON fence. It checks the response schema, exact severity prefix, every original backtick span (including full directory prefixes and line ranges), code blocks, and the twofold growth limit in each field. Moving a citation to metadata or `proposed_fix` does not preserve it in `description`. Only `description` and `proposed_fix` may change. Missing, duplicate, malformed, or rejected candidates or comparison verdicts restore that finding. Unknown ids are anomalies. An unreadable response or non-array payload restores all originals with an error. Never infer a JSON result from a prose summary or dispatch another voice call just to repair the schema.
+
+Read the helper's output as `$finding_quality`. Its `voice_preservation` records accepted, unchanged, and reverted ids with reasons, plus anomalies and errors. Fallback is per finding regardless of the number of failures or the response array length; valid neighboring rewrites survive even when 10 of 12 findings revert. This merge does not grant publication approval; every result still passes through the final comprehension gate.
+
+The linter takes a bare array of `{id, description, proposed_fix}` objects; `proposed_fix` may be null. Extract that array and run:
 
 ```bash
 jq '[.findings[] | {id, description, proposed_fix}]' \
@@ -118,9 +134,23 @@ jq '[.findings[] | {id, description, proposed_fix}]' \
   > "<artifacts_dir>/voice-lint-result.json"
 ```
 
-Read `warned_ids` and `error` from the result; the linter exits zero even on errors. For warned ids, save their current voice input fields and lint notes to `<artifacts_dir>/voice-repair-input.json`. Dispatch a fresh `code-reviewer-voice` call with `$quality_stage = voice-repair` under both harnesses. Recheck preservation, regenerate the array from the repaired bodies, and lint once. A remaining warning restores the pre-voice body. A missing linter or non-null `error` leaves the accepted voice bodies unchanged.
+Read `warned_ids` and `error` from the result; the linter exits zero even on errors. For warned ids, save their current voice input fields and lint notes to `<artifacts_dir>/voice-repair-input.json`. Dispatch a fresh `code-reviewer-voice` call with `$quality_stage = voice-repair` through "Deliver Finding Inputs" under both harnesses. Compare every repair with the immutable pre-voice snapshot, never with the first rewrite. Recheck preservation, regenerate the array from the repaired bodies, and lint once. A remaining warning restores the pre-voice body. A missing linter or non-null `error` leaves the accepted voice bodies unchanged.
 
-Record voice usage, preservation failures, and `{total_tokens: 0, checked, clean, warned, bounced, reverted}` under the existing `$token_usage` keys. In debug mode, save `11c-voice-rewrite` and `11c2-voice-lint` artifacts.
+Run the executable repair merge:
+
+```bash
+~/.agents/skills/review-code/scripts/gate-voice-preservation.py repair \
+  "<artifacts_dir>/finding-quality-prevoice.json" \
+  "<artifacts_dir>/finding-quality-voiced.json" \
+  "<artifacts_dir>/voice-lint-result.json" \
+  "<artifacts_dir>/voice-repair-output.md" \
+  "<artifacts_dir>/voice-repair-preservation.json" \
+  > "<artifacts_dir>/finding-quality-repaired.json"
+```
+
+Use its full output as `$finding_quality`. The command derives the target ids from `warned_ids`, validates those candidates against the immutable snapshot, and replaces only those ids in the accepted voiced object. Missing or rejected repairs restore their pre-voice finding; unexpected ids are ignored and recorded as anomalies. Regenerate the linter array and lint once. A remaining warning restores the pre-voice body. A missing linter or non-null `error` leaves the accepted voice bodies unchanged.
+
+Record voice usage, preservation failures, and `{total_tokens: 0, checked, clean, warned, bounced, reverted}` under the existing `$token_usage` keys. In debug mode, save the original snapshot, raw response, comparison decisions, merge diagnostics, and `11c-voice-rewrite` and `11c2-voice-lint` artifacts.
 
 ### Final Comprehension Gate
 
