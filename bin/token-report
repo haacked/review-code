@@ -48,8 +48,9 @@ def parse_args():
     parser.add_argument(
         "--since",
         metavar="<date>",
-        default="",
-        help="ISO date; skip sessions whose first entry predates it",
+        default=None,
+        type=datetime.date.fromisoformat,
+        help="ISO date; filter sessions (or individual dispatches with --prompts)",
     )
     parser.add_argument(
         "--limit",
@@ -76,7 +77,16 @@ def parse_args():
         help="Count short no-op, sleep, timestamp, and waiting Bash calls in "
         "orchestrator transcripts; uses the cost report's session filters",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--all-stages",
+        action="store_true",
+        help="With --prompts, include context explorers, validators, and comprehension gates",
+    )
+    args = parser.parse_args()
+    if args.all_stages and not args.prompts:
+        parser.error("--all-stages requires --prompts")
+    args.since = str(args.since) if args.since else ""
+    return args
 
 
 def median(xs):
@@ -94,7 +104,14 @@ def median(xs):
 # invented its own each run: /tmp/rc-<n>-agent-context.md, shared_context.md,
 # briefing.md, pr<n>-arch.md. Matching any absolute path to a text-ish file
 # catches the whole family instead of guessing at the names.
-PATH_HINT = re.compile(r"(/[\w.\-]+){2,}\.(md|diff|patch|txt)\b")
+PATH_HINT = re.compile(r"(/[\w.\-]+){2,}\.(md|diff|patch|txt|json)\b")
+REVIEW_STAGES = {
+    "code-review-context-explorer": "context",
+    "finding-validator": "validation",
+    "code-reviewer-comment": "composition",
+    "code-reviewer-voice": "voice",
+    "comprehension-gate": "comprehension",
+}
 
 
 def iter_json_objects(path):
@@ -127,17 +144,41 @@ def first_user_prompt(path):
     return None
 
 
+def contains_finding_array(text):
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\[\s*\{", text):
+        try:
+            items, _ = decoder.raw_decode(text[match.start() :])
+        except ValueError:
+            continue
+        if not isinstance(items, list):
+            continue
+        if any(
+            isinstance(item, dict)
+            and "id" in item
+            and any(
+                isinstance(item.get(field), str)
+                for field in ("description", "current_description")
+            )
+            for item in items
+        ):
+            return True
+    return False
+
+
 def shape(text):
     if text.strip() == "FILE_PROMPT_PLACEHOLDER":
         return None  # harness artifact, not a real prompt
     if "diff --git" in text:
+        return "inlined"
+    if contains_finding_array(text):
         return "inlined"
     if PATH_HINT.search(text):
         return "by-reference"
     return "no-payload"
 
 
-def report_prompts(root, match, as_json):
+def report_prompts(root, match, as_json, since="", all_stages=False, limit=15):
     rows = []
     for project in sorted(glob.glob(os.path.join(root, "*"))):
         if match and match not in os.path.basename(project):
@@ -151,14 +192,28 @@ def report_prompts(root, match, as_json):
                     atype = json.load(fh).get("agentType") or ""
             except ValueError:
                 continue
-            if not atype.startswith("code-reviewer-"):
+            if not atype.startswith("code-reviewer-") and not (
+                all_stages and atype in REVIEW_STAGES
+            ):
+                continue
+            timestamp = first_timestamp(f)
+            if since and (not timestamp or timestamp[:10] < since):
                 continue
             text = first_user_prompt(f)
             if not text:
                 continue
             k = shape(text)
             if k:
-                rows.append({"agent": atype, "shape": k, "tokens": len(text) // 4})
+                rows.append(
+                    {
+                        "agent": atype,
+                        "stage": REVIEW_STAGES.get(atype, "review"),
+                        "shape": k,
+                        "tokens": len(text) // 4,
+                        "timestamp": timestamp,
+                        "transcript": f,
+                    }
+                )
 
     if not rows:
         print(f"No reviewer subagents matched '{match}' under {root}")
@@ -184,7 +239,10 @@ def report_prompts(root, match, as_json):
         )
         return
 
-    print(f"{len(rows)} reviewer-agent dispatches under {root} matching '{match}'\n")
+    print(f"{len(rows)} review-agent dispatches under {root} matching '{match}'")
+    if since:
+        print(f"since {since} (individual dispatch timestamps; undated excluded)")
+    print()
     print(f"{'prompt shape':<16} {'n':>5} {'pct':>6} {'median tok':>11} {'p90':>8}")
     for k in ("inlined", "by-reference", "no-payload"):
         v = by_shape.get(k) or []
@@ -195,9 +253,19 @@ def report_prompts(root, match, as_json):
             f"{k:<16} {len(v):>5} {100 * len(v) / len(rows):>5.0f}% {median(v):>11,} {p90:>8,}"
         )
 
-    print("\n  inlined      the diff is in the prompt text")
-    print("  by-reference the prompt names a file holding the payload")
-    print("  no-payload   neither; the agent was told to fetch the diff itself")
+    print("\n  inlined      the prompt contains a diff or JSON finding array")
+    print(
+        "  by-reference a text/JSON path was found, with no recognized inline payload"
+    )
+    print("  no-payload   neither pattern was recognized (not proof of no payload)")
+    print("  tokens are estimated as characters / 4; shapes are heuristic")
+    largest = sorted(rows, key=lambda row: row["tokens"], reverse=True)[: max(limit, 0)]
+    print(f"\nLargest {len(largest)} dispatches:")
+    for row in largest:
+        print(
+            f"  {row['tokens']:>6,} tok  {row['timestamp'] or 'undated'}  "
+            f"{row['agent']}  {row['shape']}\n    {row['transcript']}"
+        )
 
 
 # =============================================================================
@@ -522,7 +590,9 @@ def main():
     if not os.path.isdir(args.dir):
         sys.exit(f"ERROR: Transcript directory not found: {args.dir}")
     if args.prompts:
-        report_prompts(args.dir, args.match, args.json)
+        report_prompts(
+            args.dir, args.match, args.json, args.since, args.all_stages, args.limit
+        )
     else:
         report_costs(
             args.dir, args.match, args.since, args.limit, args.json, args.bash_glue

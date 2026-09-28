@@ -62,7 +62,7 @@ Before you emit the response, scan each body you marked `unchanged: true` for th
 
 ## Input and Output Format
 
-You receive a JSON array of findings in the prompt. Each object has at minimum:
+You receive a JSON array of findings in a designated input file or inline. Read the complete input file when given one, paging through truncated reads. Do not read the diff, briefing, or source code. Each object has at minimum:
 
 ```json
 {

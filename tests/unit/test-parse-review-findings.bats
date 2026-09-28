@@ -199,6 +199,149 @@ EOF
     echo "$output" | jq -e '.[0].confidence == 0' > /dev/null
 }
 
+@test "parse-review-findings.sh: reads a trailer after nested reviewer fences without replacing the header location" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Security Review
+
+#### `auth.py:45`
+
+```text
+suggestion: Use a constant-time comparison.
+```suggestion
+hmac.compare_digest(a, b)
+```
+```
+Location: `auth.py:50-52` | Confidence: 95%
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'map([.agent, .file, .line, .confidence]) == [["security", "auth.py", 45, 95]]' > /dev/null
+    echo "$output" | jq -e '.[0].description | contains("hmac.compare_digest(a, b)") and (contains("Location:") | not)' > /dev/null
+}
+
+@test "parse-review-findings.sh: a numbered prose finding gets its location and confidence from the trailer" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Correctness Review
+
+### 1. Missing fallback
+
+```text
+blocking: Handle the failed cache lookup.
+```
+Location: `src/cache.rs:262-274` | Confidence: 85%
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'map([.agent, .file, .line, .confidence]) == [["correctness", "src/cache.rs", 262, 85]]' > /dev/null
+}
+
+@test "parse-review-findings.sh: a severity finding accepts a plain path and line range in the trailer" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Testing Review
+
+### `suggestion`: Cover the fallback
+
+```text
+suggestion: Assert that a failed cache lookup falls back to the database.
+```
+Location: tests/cache_test.rs:145-165 | Confidence: 70%
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'map([.agent, .file, .line, .confidence]) == [["testing", "tests/cache_test.rs", 145, 70]]' > /dev/null
+}
+
+@test "parse-review-findings.sh: trailer confidence belongs only to its finding and accepts both endpoints" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+#### `first.py:1`
+First finding.
+Location: first.py:1 | Confidence: 100%
+
+- **`inline.py:6`**: Inline finding without confidence.
+
+### `suggestion`: Second finding
+Location: second.py:2 | Confidence: 75%
+
+### `question`: Finding without confidence
+**File:** `third.py:3`
+
+### 4. Finding with zero confidence
+Location: fourth.py:4 | Confidence: 0%
+
+#### `fifth.py:5`
+Another finding without confidence.
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'map([.file, .line, .confidence]) == [["first.py", 1, 100], ["inline.py", 6, 0], ["second.py", 2, 75], ["third.py", 3, 0], ["fourth.py", 4, 0], ["fifth.py", 5, 0]]' > /dev/null
+}
+
+@test "parse-review-findings.sh: malformed trailer scores leave confidence at zero" {
+    for score in '-1%' '85.5%' '101%' '999%' '85' '85%junk' '85%%' 'high'; do
+        cat > "$TEST_DIR/review.md" << EOF
+#### \`auth.py:45\`
+Reject an invalid token.
+Location: auth.py:50 | Confidence: ${score}
+EOF
+        run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+        [ "$status" -eq 0 ]
+        echo "$output" | jq -e 'map([.file, .line, .confidence]) == [["auth.py", 45, 0]]' > /dev/null
+    done
+}
+
+@test "parse-review-findings.sh: malformed trailer locations do not set location or confidence" {
+    for location in 'auth.py' 'auth.py:line' '`auth.py:45' 'auth.py:45`' '`auth.py:45`junk' ':45' 'auth.py:45-foo'; do
+        cat > "$TEST_DIR/review.md" << EOF
+### 1. Reject an invalid token
+Location: ${location} | Confidence: 90%
+EOF
+        run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+        [ "$status" -eq 0 ]
+        echo "$output" | jq -e 'map([.file, .line, .confidence]) == [["", 0, 0]]' > /dev/null
+    done
+}
+
+@test "parse-review-findings.sh: trailers outside a finding do not affect adjacent findings" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+Location: before.py:1 | Confidence: 100%
+
+### `question`: First finding without confidence
+**File:** `first.py:2`
+
+#### `second.py:3`
+Second finding.
+Location: second.py:3 | Confidence: 90%
+
+---
+
+Location: after.py:4 | Confidence: 75%
+
+### `question`: Third finding without confidence
+**File:** `third.py:5`
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'map([.file, .line, .confidence]) == [["first.py", 2, 0], ["second.py", 3, 90], ["third.py", 5, 0]]' > /dev/null
+}
+
+@test "parse-review-findings.sh: quoted trailers remain body text without setting metadata" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+### 1. Document the review format
+
+```text
+The example contains this trailer:
+Location: `fake.py:99` | Confidence: 90%
+```suggestion
+Location: nested.py:88 | Confidence: 80%
+```
+```
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'map([.file, .line, .confidence]) == [["", 0, 0]]' > /dev/null
+    echo "$output" | jq -e '.[0].description | contains("fake.py:99") and contains("nested.py:88")' > /dev/null
+}
+
 # =============================================================================
 # Multiple findings tests
 # =============================================================================

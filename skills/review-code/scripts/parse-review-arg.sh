@@ -102,7 +102,7 @@ if [[ "${arg}" == "learn" ]] && [[ "${FIND_MODE}" != "true" ]]; then
 fi
 
 # Special keywords for area-specific reviews
-AREA_KEYWORDS=("security" "performance" "maintainability" "testing" "compatibility" "architecture" "frontend" "infra-config")
+AREA_KEYWORDS=("security" "performance" "correctness" "maintainability" "testing" "compatibility" "architecture" "frontend" "infra-config")
 
 # Helper: Check if argument is in array
 contains() {
