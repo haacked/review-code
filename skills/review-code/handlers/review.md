@@ -393,8 +393,17 @@ The line counts in the agent prompt are advisory. They only help an agent that r
 After the agents return, check what they read:
 
 ```bash
-~/.agents/skills/review-code/scripts/check-diff-coverage.sh --diff-lines <diff_lines> --json
+~/.agents/skills/review-code/scripts/check-diff-coverage.sh --diff-lines <diff_lines> \
+  --diff-file <diff_path> [--repo-dir <git.working_dir>] --json
 ```
+
+With `--repo-dir`, a reviewer that read the changed files in the checkout instead of the patch gets credit for the new side of each hunk. Pass it only when `git.working_dir` holds that new side:
+
+- local mode: always.
+- PR mode: when `local_clone` is set, or `file_ref` is null.
+- branch mode: when `branch` equals `git.branch`.
+
+Omit it in commit and range modes and in every other case, because the working tree then holds different content.
 
 It reads this session's subagent transcripts (`--session` defaults to `$CLAUDE_CODE_SESSION_ID`) and returns per-agent coverage plus a `below_threshold` array. It exits 0 whenever it can read the transcripts; short coverage is a result, not a failure.
 

@@ -323,3 +323,219 @@ make_patch() { # $1 name, $2 lines
     [ "$(echo "$output" | jq -r '.agents[0].diff_path')" = "$chunk0" ]
     [ "$(echo "$output" | jq -r '.agents[0].total')" -eq 2029 ]
 }
+
+# =============================================================================
+# Reads of the changed files in the checkout
+# =============================================================================
+#
+# A reviewer can review a change by reading the changed files in the PR
+# checkout instead of the patch. Those reads cover the new side of each hunk,
+# so they count, but only when the file is under --repo-dir: in a cross-branch
+# review the working tree holds different content, and the caller omits it.
+
+# A patch that adds one 3-line file. Lines 1-6 are headers, 7-9 are content.
+make_new_file_patch() {
+    local f="$BATS_TEST_TMPDIR/new.patch"
+    cat > "$f" <<'PATCH'
+diff --git a/docs/a.md b/docs/a.md
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/docs/a.md
+@@ -0,0 +1,3 @@
++alpha
++beta
++gamma
+PATCH
+    printf '%s' "$f"
+}
+
+# The new-file patch plus a modified file. Line 16 is the only removed line.
+make_mixed_patch() {
+    local f="$BATS_TEST_TMPDIR/mixed.patch"
+    cat "$(make_new_file_patch)" > "$f"
+    cat >> "$f" <<'PATCH'
+diff --git a/src/b.py b/src/b.py
+index 2222222..3333333 100644
+--- a/src/b.py
++++ b/src/b.py
+@@ -1,4 +1,4 @@
+ one
+-two
++TWO
+ three
+ four
+PATCH
+    printf '%s' "$f"
+}
+
+REPO() { printf '%s' "$BATS_TEST_TMPDIR/repo"; }
+
+@test "check-diff-coverage: a full Read of a new file in the repo covers its patch section" {
+    local patch="$(make_new_file_patch)"
+    make_agent code-reviewer-correctness a1 "$(read_block "$(REPO)/docs/a.md" null null)"
+    run_cov --diff-lines 9 --diff-file "$patch" --repo-dir "$(REPO)" --json
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.agents[0].pct')" -eq 100 ]
+    [ "$(echo "$output" | jq -r '.agents[0].method')" = "file" ]
+    [ "$(echo "$output" | jq -r '.agents[0].diff_path')" = "$patch" ]
+}
+
+@test "check-diff-coverage: reading a modified file leaves its removed lines unread" {
+    local patch="$(make_mixed_patch)"
+    make_agent code-reviewer-maintainability a1 \
+        "$(read_block "$(REPO)/docs/a.md" null null)" \
+        "$(read_block "$(REPO)/src/b.py" null null)"
+    run_cov --diff-lines 19 --diff-file "$patch" --repo-dir "$(REPO)" --json
+    [ "$(echo "$output" | jq -r '.agents[0].covered')" -eq 18 ]
+    [ "$(echo "$output" | jq -c '.agents[0].unread_ranges')" = "[[16,16]]" ]
+}
+
+@test "check-diff-coverage: a partial Read credits only the lines it returned" {
+    local patch="$(make_new_file_patch)"
+    make_agent code-reviewer-correctness a1 "$(read_block "$(REPO)/docs/a.md" 2 1)"
+    run_cov --diff-lines 9 --diff-file "$patch" --repo-dir "$(REPO)" --json
+    # The six header lines plus patch line 8, which holds new line 2.
+    [ "$(echo "$output" | jq -r '.agents[0].covered')" -eq 7 ]
+    [ "$(echo "$output" | jq -c '.agents[0].unread_ranges')" = "[[7,7],[9,9]]" ]
+}
+
+@test "check-diff-coverage: a sed range on a relative path after cd into the repo counts" {
+    local patch="$(make_new_file_patch)"
+    make_agent code-reviewer-testing a1 "$(bash_block "cd $(REPO) && sed -n '1,2p' docs/a.md")"
+    run_cov --diff-lines 9 --diff-file "$patch" --repo-dir "$(REPO)" --json
+    [ "$(echo "$output" | jq -r '.agents[0].covered')" -eq 8 ]
+    [ "$(echo "$output" | jq -r '.agents[0].method')" = "file" ]
+}
+
+@test "check-diff-coverage: a Read outside --repo-dir is not credited" {
+    local patch="$(make_new_file_patch)"
+    make_agent code-reviewer-correctness a1 "$(read_block /elsewhere/docs/a.md null null)"
+    run_cov --diff-lines 9 --diff-file "$patch" --repo-dir "$(REPO)" --json
+    [ "$(echo "$output" | jq -r '.agents[0].pct')" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.agents[0].method')" = "none" ]
+}
+
+@test "check-diff-coverage: without --repo-dir file reads earn nothing" {
+    local patch="$(make_new_file_patch)"
+    make_agent code-reviewer-correctness a1 "$(read_block "$(REPO)/docs/a.md" null null)"
+    run_cov --diff-lines 9 --diff-file "$patch" --json
+    [ "$(echo "$output" | jq -r '.agents[0].pct')" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.agents[0].method')" = "none" ]
+}
+
+@test "check-diff-coverage: file reads map against the patch the agent named" {
+    # The agent sized its own patch with wc and then read the files. With no
+    # --diff-file, the named patch is the only map from files to patch lines.
+    local patch="$(make_new_file_patch)"
+    make_agent code-reviewer-maintainability a1 \
+        "$(bash_block "wc -l $patch")" \
+        "$(read_block "$(REPO)/docs/a.md" null null)"
+    run_cov --diff-lines 9 --repo-dir "$(REPO)" --json
+    [ "$(echo "$output" | jq -r '.agents[0].pct')" -eq 100 ]
+}
+
+@test "check-diff-coverage: patch and file reads combine without double counting" {
+    local patch="$(make_mixed_patch)"
+    make_agent code-reviewer-security a1 \
+        "$(bash_block "sed -n '1,12p' $patch")" \
+        "$(read_block "$(REPO)/src/b.py" null null)"
+    run_cov --diff-lines 19 --diff-file "$patch" --repo-dir "$(REPO)" --json
+    [ "$(echo "$output" | jq -r '.agents[0].covered')" -eq 18 ]
+    [ "$(echo "$output" | jq -r '.agents[0].method')" = "file+sed" ]
+}
+
+@test "check-diff-coverage: an unquoted sed range counts" {
+    make_agent code-reviewer-testing a1 "$(bash_block "sed -n 1,600p /tmp/diff.patch")"
+    run_cov --diff-lines 600 --json
+    [ "$(echo "$output" | jq -r '.agents[0].pct')" -eq 100 ]
+}
+
+@test "check-diff-coverage: an agent that read nothing has the whole diff unread" {
+    # The re-dispatch prompt sends these ranges back to the agent, so an empty
+    # list would leave it nothing to read.
+    make_agent code-reviewer-security a1 "$(bash_block "grep -n foo /tmp/other.txt")"
+    run_cov --diff-lines 600 --json
+    [ "$(echo "$output" | jq -c '.agents[0].unread_ranges')" = "[[1,600]]" ]
+}
+
+@test "check-diff-coverage: the comment and voice agents are not reviewers" {
+    make_agent code-reviewer-comment composer "$(bash_block "grep -n foo /tmp/other.txt")"
+    make_agent code-reviewer-voice voice "$(bash_block "grep -n foo /tmp/other.txt")"
+    make_agent code-reviewer-security rev "$(bash_block "sed -n '1,600p' /tmp/diff.patch")"
+    run_cov --diff-lines 600 --json
+    [ "$(echo "$output" | jq -r '[.agents[].agent] | join(",")')" = "code-reviewer-security" ]
+}
+
+@test "check-diff-coverage: a sed of another file does not count toward the patch the command names" {
+    make_agent code-reviewer-testing a1 "$(bash_block "wc -l /tmp/diff.patch; sed -n '1,300p' docs/a.md")"
+    run_cov --diff-lines 600 --json
+    [ "$(echo "$output" | jq -r '.agents[0].covered')" -eq 0 ]
+}
+
+@test "check-diff-coverage: a sed of the patch through a redirect, -- or a variable still counts" {
+    make_agent code-reviewer-security a1 "$(bash_block "sed -n '1,600p' < /tmp/diff.patch")"
+    make_agent code-reviewer-testing a2 "$(bash_block "sed -n '1,600p' -- /tmp/diff.patch")"
+    make_agent code-reviewer-correctness a3 "$(bash_block 'P=/tmp/diff.patch; sed -n "1,600p" "$P"')"
+    run_cov --diff-lines 600 --json
+    [ "$(echo "$output" | jq -c '[.agents[].pct] | unique')" = "[100]" ]
+}
+
+@test "check-diff-coverage: files whose paths git pads with a tab or quotes still map" {
+    local patch="$BATS_TEST_TMPDIR/odd.patch"
+    printf '%s\n' \
+        'diff --git a/my file.md b/my file.md' \
+        'new file mode 100644' \
+        '--- /dev/null' \
+        $'+++ b/my file.md\t' \
+        '@@ -0,0 +1 @@' \
+        '+spaced' \
+        'diff --git "a/r\303\251sum\303\251.md" "b/r\303\251sum\303\251.md"' \
+        'new file mode 100644' \
+        '--- /dev/null' \
+        '+++ "b/r\303\251sum\303\251.md"' \
+        '@@ -0,0 +1 @@' \
+        '+accented' > "$patch"
+    make_agent code-reviewer-correctness a1 \
+        "$(read_block "$(REPO)/my file.md" null null)" \
+        "$(read_block "$(REPO)/résumé.md" null null)"
+    run_cov --diff-lines 12 --diff-file "$patch" --repo-dir "$(REPO)" --json
+    [ "$(echo "$output" | jq -r '.agents[0].pct')" -eq 100 ]
+}
+
+@test "check-diff-coverage: a carriage return inside a line does not shift later files" {
+    local patch="$BATS_TEST_TMPDIR/cr.patch"
+    printf 'diff --git a/a.md b/a.md\n--- a/a.md\n+++ b/a.md\n@@ -1 +1 @@\n-old\r text\n+new\ndiff --git a/b.md b/b.md\n--- a/b.md\n+++ b/b.md\n@@ -1 +1 @@\n-gone\n+kept\n' > "$patch"
+    make_agent code-reviewer-correctness a1 "$(read_block "$(REPO)/b.md" null null)"
+    run_cov --diff-lines 12 --diff-file "$patch" --repo-dir "$(REPO)" --json
+    # b.md's headers are lines 7-10 and its added line is 12; line 11 is removed.
+    [ "$(echo "$output" | jq -c '.agents[0].unread_ranges')" = "[[1,6],[11,11]]" ]
+}
+
+@test "check-diff-coverage: a cd on its own line or in a subshell counts" {
+    local patch="$(make_new_file_patch)"
+    make_agent code-reviewer-testing a1 "$(bash_block "cd $(REPO)
+sed -n '1,1p' docs/a.md")"
+    make_agent code-reviewer-security a2 "$(bash_block "(cd $(REPO) && sed -n '2,3p' docs/a.md)")"
+    run_cov --diff-lines 9 --diff-file "$patch" --repo-dir "$(REPO)" --json
+    [ "$(echo "$output" | jq -r '.agents[] | select(.agent == "code-reviewer-testing") | .covered')" -eq 7 ]
+    [ "$(echo "$output" | jq -r '.agents[] | select(.agent == "code-reviewer-security") | .covered')" -eq 8 ]
+}
+
+@test "check-diff-coverage: a file with two sections in one diff credits both" {
+    # Local reviews can join the staged and unstaged diffs, which repeats a file.
+    local patch="$BATS_TEST_TMPDIR/twice.patch"
+    cat "$(make_new_file_patch)" "$(make_new_file_patch)" > "$patch"
+    make_agent code-reviewer-correctness a1 "$(read_block "$(REPO)/docs/a.md" null null)"
+    run_cov --diff-lines 18 --diff-file "$patch" --repo-dir "$(REPO)" --json
+    [ "$(echo "$output" | jq -r '.agents[0].pct')" -eq 100 ]
+}
+
+@test "check-diff-coverage: a Read through a symlink to --repo-dir counts" {
+    local patch="$(make_new_file_patch)"
+    mkdir -p "$(REPO)/docs" && : > "$(REPO)/docs/a.md"
+    ln -s "$(REPO)" "$BATS_TEST_TMPDIR/link"
+    make_agent code-reviewer-correctness a1 "$(read_block "$BATS_TEST_TMPDIR/link/docs/a.md" null null)"
+    run_cov --diff-lines 9 --diff-file "$patch" --repo-dir "$(REPO)" --json
+    [ "$(echo "$output" | jq -r '.agents[0].pct')" -eq 100 ]
+}

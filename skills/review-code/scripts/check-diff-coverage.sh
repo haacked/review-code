@@ -25,18 +25,28 @@ set -euo pipefail
 # exists on disk (a swept artifacts dir), there is no way to tell a short
 # chunk from the full diff, so --diff-lines is the denominator there.
 #
+# An agent can also review by reading the changed files in the checkout. With
+# --repo-dir, a Read or `sed -n 'A,Bp'` of a changed file under that directory
+# credits the patch lines that hold the new side of its hunks, plus the file's
+# header lines. Removed lines stay unread, because the checkout does not have
+# them. The patch the agent named maps files to patch lines, or --diff-file
+# when it named none. Omit --repo-dir when the checkout does not hold the
+# diff's new side, as in a review from a different branch of the same repo.
+#
 # Usage:
 #   check-diff-coverage.sh --diff-lines <n> [options]
 #
 # Options:
-#   --dir <path>      Transcript root (default: ~/.claude/projects)
-#   --session <uuid>  Session whose subagents to inspect
-#                     (default: $CLAUDE_CODE_SESSION_ID)
-#   --diff-lines <n>  Lines in the full diff; the fallback denominator when a
-#                     transcript names no patch the script can count
-#   --min-pct <n>     Coverage below this lands the agent in `below_threshold`
-#                     (default: 90)
-#   --json            Emit machine-readable JSON instead of a table
+#   --dir <path>        Transcript root (default: ~/.claude/projects)
+#   --session <uuid>    Session whose subagents to inspect
+#                       (default: $CLAUDE_CODE_SESSION_ID)
+#   --diff-lines <n>    Lines in the full diff; the fallback denominator when a
+#                       transcript names no patch the script can count
+#   --diff-file <path>  The full diff, used for an agent that named no patch
+#   --repo-dir <path>   Checkout whose changed files count as reads of the diff
+#   --min-pct <n>       Coverage below this lands the agent in `below_threshold`
+#                       (default: 90)
+#   --json              Emit machine-readable JSON instead of a table
 #
 # Always exits 0 when it can read the transcripts. Short coverage is a result,
 # not an error; the caller decides what to do about it.
@@ -44,6 +54,8 @@ set -euo pipefail
 DIR="${HOME}/.claude/projects"
 SESSION="${CLAUDE_CODE_SESSION_ID:-}"
 DIFF_LINES=""
+DIFF_FILE=""
+REPO_DIR=""
 MIN_PCT="90"
 AS_JSON="false"
 
@@ -61,6 +73,14 @@ while [[ $# -gt 0 ]]; do
             DIFF_LINES="${2:-}"
             shift 2
             ;;
+        --diff-file)
+            DIFF_FILE="${2:-}"
+            shift 2
+            ;;
+        --repo-dir)
+            REPO_DIR="${2:-}"
+            shift 2
+            ;;
         --min-pct)
             MIN_PCT="${2:-90}"
             shift 2
@@ -70,7 +90,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -h | --help)
-            sed -n '4,38p' "$0" | sed -E 's/^# ?//'
+            sed -n '4,49p' "$0" | sed -E 's/^# ?//'
             exit 0
             ;;
         *)
@@ -90,18 +110,26 @@ if [[ -z "${DIFF_LINES}" ]]; then
     exit 1
 fi
 
-DIR="${DIR}" SESSION="${SESSION}" DIFF_LINES="${DIFF_LINES}" MIN_PCT="${MIN_PCT}" \
-    AS_JSON="${AS_JSON}" python3 - << 'PYTHON'
-import glob, json, os, re, sys
+DIR="${DIR}" SESSION="${SESSION}" DIFF_LINES="${DIFF_LINES}" DIFF_FILE="${DIFF_FILE}" \
+    REPO_DIR="${REPO_DIR}" MIN_PCT="${MIN_PCT}" AS_JSON="${AS_JSON}" python3 - << 'PYTHON'
+import codecs, glob, json, os, re, sys
 
 ROOT = os.environ["DIR"]
 SESSION = os.environ["SESSION"]
 TOTAL = int(os.environ["DIFF_LINES"])
+DIFF_FILE = os.environ["DIFF_FILE"] or None
+REPO_DIR = os.path.normpath(os.environ["REPO_DIR"]) if os.environ["REPO_DIR"] else None
 MIN_PCT = int(os.environ["MIN_PCT"])
 AS_JSON = os.environ["AS_JSON"] == "true"
 
-# `sed -n '10,20p'`, in either quoting style.
-SED = re.compile(r"""sed -n\s+['"](\d+),(\d+)p['"]""")
+# `sed -n '10,20p'`, quoted either way or not at all.
+SED = re.compile(r"""sed -n\s+['"]?(\d+),(\d+)p['"]?""")
+# The same, with the file it prints: `sed -n '10,20p' docs/a.md`. A redirect, a
+# `--` or a `$VAR` after the range is not a file name.
+SED_FILE = re.compile(r"""sed -n\s+['"]?(\d+),(\d+)p['"]?\s+(["']?)([^\s"';|&<>()$-][^\s"';|&<>()]*)\3""")
+# Subagents named code-reviewer-* that compose or polish comments and never read the diff.
+NOT_REVIEWERS = {"code-reviewer-comment", "code-reviewer-voice"}
+HUNK = re.compile(r"@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 subdirs = glob.glob(os.path.join(ROOT, "*", SESSION, "subagents"))
 if not subdirs:
@@ -149,6 +177,85 @@ def patch_path(text):
     return m.group(1).strip("\"'") if m else None
 
 
+_patch_maps = {}
+
+
+def new_side_path(line):
+    """The path in a `+++` header, or None for a deleted file.
+
+    Git ends a path that contains a space with a tab, and quotes a path with
+    other unusual characters using C escapes.
+    """
+    raw = line[4:].rstrip("\n").rstrip("\t")
+    if len(raw) > 1 and raw[0] == raw[-1] == '"':
+        raw = codecs.escape_decode(raw[1:-1])[0].decode("utf-8", "replace")
+    return raw[2:] if raw.startswith("b/") else None
+
+
+def patch_map(path):
+    """For each changed file in a patch, the sections that hold it.
+
+    Each section has its header lines and a new line -> patch line map. A file
+    can have two sections when a local review joins the staged and unstaged
+    diffs. Hunk line counts decide where a hunk ends, so a removed line that
+    starts with `--` is not mistaken for a file header.
+    """
+    if path not in _patch_maps:
+        files, section = {}, None
+        old_left = new_left = new_no = 0
+        try:
+            # Split only at \n so that patch line numbers match sed and wc.
+            with open(path, errors="ignore", newline="\n") as fh:
+                for n, line in enumerate(fh, 1):
+                    if old_left > 0 or new_left > 0:
+                        kind = line[:1]
+                        if kind == "-":
+                            old_left -= 1
+                        elif kind == "\\":
+                            section["headers"].append(n)
+                        else:
+                            section["lines"][new_no] = n
+                            new_no += 1
+                            new_left -= 1
+                            if kind != "+":
+                                old_left -= 1
+                        continue
+                    if line.startswith("diff --git "):
+                        section = {"headers": [], "lines": {}}
+                    if section is None:
+                        continue
+                    section["headers"].append(n)
+                    if line.startswith("+++ ") and (new_path := new_side_path(line)):
+                        files.setdefault(new_path, []).append(section)
+                    m = HUNK.match(line)
+                    if m:
+                        old_left = int(m.group(1)) if m.group(1) is not None else 1
+                        new_no = int(m.group(2))
+                        new_left = int(m.group(3)) if m.group(3) is not None else 1
+        except OSError:
+            files = {}
+        _patch_maps[path] = files
+    return _patch_maps[path]
+
+
+def repo_relative(path, command=""):
+    """The path of a file under --repo-dir relative to it, or None.
+
+    A relative path counts only when the same command changes into --repo-dir.
+    """
+    if not REPO_DIR or not path:
+        return None
+    if os.path.isabs(path):
+        for file, repo in ((os.path.normpath(path), REPO_DIR),
+                           (os.path.realpath(path), os.path.realpath(REPO_DIR))):
+            rel = os.path.relpath(file, repo)
+            if rel != ".." and not rel.startswith("../"):
+                return rel
+        return None
+    cd_repo = r"""(^\s*|[;&|(]\s*)cd\s+["']?""" + re.escape(REPO_DIR) + r"""/?["']?(\s|;|&|\)|$)"""
+    return os.path.normpath(path) if re.search(cd_repo, command, re.M) else None
+
+
 rows = []
 for subdir in subdirs:
     for f in sorted(glob.glob(os.path.join(subdir, "*.jsonl"))):
@@ -159,10 +266,11 @@ for subdir in subdirs:
             atype = json.load(open(meta)).get("agentType") or ""
         except ValueError:
             continue
-        if not atype.startswith("code-reviewer-"):
+        if not atype.startswith("code-reviewer-") or atype in NOT_REVIEWERS:
             continue
 
         intervals, how, paths = [], set(), set()
+        file_reads = []  # (path relative to --repo-dir, first line, last line)
         for line in open(f, errors="ignore"):
             try:
                 rec = json.loads(line)
@@ -175,18 +283,32 @@ for subdir in subdirs:
                 if not isinstance(block, dict) or block.get("type") != "tool_use":
                     continue
                 inp = block.get("input") or {}
-                if block.get("name") == "Read" and inp.get("file_path", "").endswith(".patch"):
+                if block.get("name") == "Read":
+                    fp = inp.get("file_path", "")
                     off = inp.get("offset") or 1
                     lim = inp.get("limit") or 2000
-                    intervals.append([off, off + lim - 1])
-                    paths.add(inp["file_path"])
-                    how.add("Read")
+                    if fp.endswith(".patch"):
+                        intervals.append([off, off + lim - 1])
+                        paths.add(fp)
+                        how.add("Read")
+                    elif rel := repo_relative(fp):
+                        file_reads.append((rel, off, off + lim - 1))
                 elif block.get("name") == "Bash":
                     cmd = inp.get("command", "")
+                    other_file_seds = set()
+                    for m in SED_FILE.finditer(cmd):
+                        target = m.group(4)
+                        if target.endswith(".patch"):
+                            continue
+                        other_file_seds.add(m.start())
+                        if rel := repo_relative(target, cmd):
+                            file_reads.append((rel, int(m.group(1)), int(m.group(2))))
                     if ".patch" not in cmd:
                         continue
                     paths.add(patch_path(cmd))
                     for m in SED.finditer(cmd):
+                        if m.start() in other_file_seds:
+                            continue
                         intervals.append([int(m.group(1)), int(m.group(2))])
                         how.add("sed")
 
@@ -206,7 +328,23 @@ for subdir in subdirs:
         # chunk-0 when an agent mentions both. max() on (count, path) tuples
         # breaks count ties by path, which is fine — that just picks one of
         # the equally-long files.
-        total, diff_path = max(counted) if counted else (TOTAL, None)
+        if counted:
+            total, diff_path = max(counted)
+        elif DIFF_FILE and line_count(DIFF_FILE) is not None:
+            total, diff_path = line_count(DIFF_FILE), DIFF_FILE
+        else:
+            total, diff_path = TOTAL, None
+
+        # A file read covers the patch lines of the new side it returned, and
+        # the file's headers so that reading a new file in full reaches 100%.
+        if diff_path and file_reads:
+            sections = patch_map(diff_path)
+            for rel, first, last in file_reads:
+                for section in sections.get(rel, []):
+                    hit = [p for new, p in section["lines"].items() if first <= new <= last]
+                    if hit:
+                        intervals.extend([p, p] for p in hit + section["headers"])
+                        how.add("file")
 
         merged = [[a, min(b, total)] for a, b in merge(intervals) if a <= min(b, total)]
         covered = sum(b - a + 1 for a, b in merged)
@@ -215,6 +353,8 @@ for subdir in subdirs:
             gaps.insert(0, [1, merged[0][0] - 1])
         if merged and merged[-1][1] < total:
             gaps.append([merged[-1][1] + 1, total])
+        if not merged and total:
+            gaps = [[1, total]]
         rows.append({"agent": atype, "diff_path": diff_path, "covered": covered, "total": total,
                      "pct": round(100 * covered / total) if total else 0,
                      "unread_ranges": gaps, "method": "+".join(sorted(how)) or "none"})
