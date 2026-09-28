@@ -135,9 +135,10 @@ report() { run "$SCRIPT" --dir "$ROOT" --match review "$@"; }
 # --prompts: how reviewer agents received their payload
 # =============================================================================
 
-sub() { # $1 name, $2 agentType, $3 prompt text
+sub() { # $1 is the name. $2 is the agent type. $3 is the prompt text. $4 is an optional first timestamp.
     jq -n --arg t "$2" '{agentType: $t}' > "$PROJ/$SESSION/subagents/$1.meta.json"
-    jq -nc --arg c "$3" '{message: {role: "user", content: $c}}' \
+    jq -nc --arg c "$3" --arg ts "${4:-}" \
+        '{message: {role: "user", content: $c}} + (if $ts == "" then {} else {timestamp: $ts} end)' \
         > "$PROJ/$SESSION/subagents/$1.jsonl"
 }
 
@@ -185,4 +186,119 @@ sub() { # $1 name, $2 agentType, $3 prompt text
     report --prompts --json
     [ "$status" -eq 0 ]
     echo "$output" | grep -q "No reviewer subagents matched"
+}
+
+@test "token-report --prompts: JSON finding arrays are inlined even with file references" {
+    local findings
+    findings=$(jq -nc '[{id: 7, description: "`blocking`: stale entries survive eviction.", path: "cache.py", line: 42}]')
+    sub a1 code-reviewer-comment "Read /tmp/briefing.md and compose these findings: $findings"
+    report --prompts --json
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.rows[0].shape == "inlined"' > /dev/null
+}
+
+@test "token-report --prompts: pretty printed findings are inlined" {
+    local findings
+    findings=$(jq -n '[{id: "f-1", description: "The response loses the field.", proposed_fix: null}]')
+    sub a1 code-reviewer-voice "Polish this batch:
+$findings"
+    report --prompts --json
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.rows[0].shape == "inlined"' > /dev/null
+}
+
+@test "token-report --prompts: composer repair bodies are inlined" {
+    sub a1 code-reviewer-comment 'Read /tmp/briefing.md and compose [{"id": 1, "current_description": "The request fails.", "facts": {"problem": "The request fails."}}]'
+    report --prompts --json
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.rows[0].shape == "inlined"' > /dev/null
+}
+
+@test "token-report --prompts: JSON file references are by-reference" {
+    sub a1 code-reviewer-comment "Read all items in /tmp/artifacts/findings.json."
+    report --prompts --json
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.rows[0].shape == "by-reference"' > /dev/null
+}
+
+@test "token-report --prompts: unrelated JSON arrays do not count as finding payloads" {
+    sub a1 code-reviewer-comment 'Use /tmp/briefing.md with options [{"id": 7, "mode": "strict"}].'
+    report --prompts --json
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.rows[0].shape == "by-reference"' > /dev/null
+}
+
+@test "token-report --prompts: default scope excludes context validation and gate stages" {
+    sub a1 code-review-context-explorer "Read /tmp/ctx.md"
+    sub a2 finding-validator "Read /tmp/findings.json"
+    sub a3 comprehension-gate "Read /tmp/findings.json"
+    sub a4 code-reviewer-comment "Read /tmp/findings.json"
+    sub a5 code-reviewer-voice "Read /tmp/findings.json"
+    report --prompts --json
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.reviewer_dispatches == 2 and ([.rows[].agent] | sort) == ["code-reviewer-comment", "code-reviewer-voice"]' > /dev/null
+}
+
+@test "token-report --prompts: all stages includes review helpers and excludes unrelated agents" {
+    sub a1 code-review-context-explorer "Read /tmp/ctx.md"
+    sub a2 finding-validator "Read /tmp/findings.json"
+    sub a3 comprehension-gate "Read /tmp/findings.json"
+    sub a4 code-reviewer-security "Read /tmp/ctx.md"
+    sub a5 unit-test-writer "Read /tmp/ctx.md"
+    report --prompts --all-stages --json
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.reviewer_dispatches == 4 and ([.rows[].agent] | sort) == ["code-review-context-explorer", "code-reviewer-security", "comprehension-gate", "finding-validator"]' > /dev/null
+}
+
+@test "token-report --prompts: since filters each subagent timestamp and includes the boundary" {
+    echo '{"timestamp":"2026-01-01T00:00:00Z"}' > "$MAIN"
+    sub a1 code-reviewer-security "Read /tmp/before.md" "2026-09-27T23:59:59Z"
+    sub a2 code-reviewer-security "Read /tmp/boundary.md" "2026-09-28T00:00:00Z"
+    sub a3 code-reviewer-security "Read /tmp/after.md" "2026-09-28T00:00:01Z"
+    sub a4 code-reviewer-security "Read /tmp/undated.md"
+    report --prompts --since 2026-09-28 --json
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.reviewer_dispatches == 2 and ([.rows[].timestamp] | sort) == ["2026-09-28T00:00:00Z", "2026-09-28T00:00:01Z"]' > /dev/null
+}
+
+@test "token-report --prompts: since uses the first stamped entry rather than the user prompt date" {
+    sub a1 code-reviewer-security "Read /tmp/ctx.md" "2026-09-29T00:00:00Z"
+    local transcript="$PROJ/$SESSION/subagents/a1.jsonl"
+    local prompt
+    prompt=$(cat "$transcript")
+    printf '%s\n' 'not-json' '{"timestamp":"2026-09-27T12:00:00Z","type":"progress"}' "$prompt" > "$transcript"
+    sub a2 code-reviewer-security "Read /tmp/ctx.md" "2026-09-28T00:00:00Z"
+    report --prompts --since 2026-09-28 --json
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.reviewer_dispatches == 1 and .rows[0].timestamp == "2026-09-28T00:00:00Z"' > /dev/null
+}
+
+@test "token-report --prompts: rows identify their transcript and retain undated dispatches without since" {
+    sub a1 code-reviewer-security "Read /tmp/ctx.md"
+    sub a2 code-reviewer-security "Read /tmp/ctx.md" "2026-09-28T00:00:00Z"
+    report --prompts --json
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e --arg first "$PROJ/$SESSION/subagents/a1.jsonl" --arg second "$PROJ/$SESSION/subagents/a2.jsonl" \
+        '.reviewer_dispatches == 2 and .rows[0].transcript == $first and (.rows[0] | has("timestamp")) and .rows[0].timestamp == null and .rows[1].transcript == $second and .rows[1].timestamp == "2026-09-28T00:00:00Z"' > /dev/null
+}
+
+@test "token-report --prompts: table limits output to the largest dispatch" {
+    local larger="$PROJ/$SESSION/subagents/z-larger.jsonl"
+    local smaller="$PROJ/$SESSION/subagents/a-smaller.jsonl"
+    sub a-smaller code-reviewer-security "Read /tmp/small.md" "2026-09-28T00:00:00Z"
+    sub z-larger code-reviewer-security "Read /tmp/larger.md and review this substantially longer dispatch prompt." "2026-09-27T00:00:00Z"
+
+    report --prompts --limit 1
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"$larger"* ]]
+    [[ "$output" != *"$smaller"* ]]
+    [[ "$output" == *"2026-09-27T00:00:00Z"* ]]
+}
+
+@test "token-report --prompts: rejects invalid since dates" {
+    sub a1 code-reviewer-security "Read /tmp/ctx.md" "2026-09-28T00:00:00Z"
+    report --prompts --since not-a-date --json
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"--since"* ]]
 }
