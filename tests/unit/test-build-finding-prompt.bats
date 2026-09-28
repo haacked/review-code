@@ -151,28 +151,49 @@ PY
     [ "$status" -ne 0 ]
 }
 
-@test "build-finding-prompt: refuses file references that exceed the UTF-8 prompt budget" {
-    local long_dir
+@test "build-finding-prompt: enforces the 4096-byte UTF-8 prompt boundary" {
+    local candidate first_error last_success long_dir name output_file seed
     long_dir=$(python3 - "$BATS_TEST_TMPDIR" <<'PY'
 from pathlib import Path
 import sys
 
 path = sys.argv[1]
-while len(path.encode("utf-8")) + 201 < 992:
-    path += "/" + "λ" * 100
-path += "/" + "x" * (991 - len(path.encode("utf-8")))
+remaining = 832 - len(path.encode("utf-8"))
+for parts in range(1, 50):
+    characters = remaining - parts
+    if parts <= characters <= parts * 100:
+        sizes = [characters // parts] * parts
+        for index in range(characters % parts):
+            sizes[index] += 1
+        path += "".join("/" + "d" * size for size in sizes)
+        break
+assert len(path.encode("utf-8")) == 832
 Path(path).mkdir(parents=True)
 print(path)
 PY
 )
-    cp "$INPUT" "$long_dir/findings.json"
-    INPUT="$long_dir/findings.json"
-    DIFF="$long_dir/diff.patch"
-    BRIEFING="$long_dir/briefing.md"
-    FILE_ACCESS="$long_dir/file-access.json"
-    printf '%s\n' diff > "$DIFF"
-    printf '%s\n' briefing > "$BRIEFING"
-    printf '%s\n' access > "$FILE_ACCESS"
-    prompt code-reviewer-comment --diff "$DIFF" --briefing "$BRIEFING" --file-access "$FILE_ACCESS"
-    [ "$status" -ne 0 ]
+    seed="$long_dir/seed.json"
+    cp "$INPUT" "$seed"
+    printf '%s\n' diff > "$long_dir/diff.patch"
+    printf '%s\n' briefing > "$long_dir/briefing.md"
+    printf '%s\n' access > "$long_dir/file-access.json"
+    output_file="$BATS_TEST_TMPDIR/boundary-prompt"
+
+    for length in $(seq 1 200); do
+        printf -v name '%*s' "$length" ''
+        name=${name// /x}
+        candidate="$long_dir/$name.json"
+        cp "$seed" "$candidate"
+        if python3 "$SCRIPT" --agent code-reviewer-comment --input "$candidate" \
+            --diff "$long_dir/diff.patch" --briefing "$long_dir/briefing.md" \
+            --file-access "$long_dir/file-access.json" > "$output_file" 2> "$BATS_TEST_TMPDIR/boundary-error"; then
+            last_success=$(wc -c < "$output_file" | tr -d ' ')
+        else
+            first_error=$(<"$BATS_TEST_TMPDIR/boundary-error")
+            break
+        fi
+    done
+
+    [ "$last_success" -eq 4095 ]
+    [[ "$first_error" == *"dispatch prompt exceeds the 4096-byte limit"* ]]
 }

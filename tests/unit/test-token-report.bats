@@ -282,6 +282,20 @@ $findings"
         '.reviewer_dispatches == 2 and .rows[0].transcript == $first and (.rows[0] | has("timestamp")) and .rows[0].timestamp == null and .rows[1].transcript == $second and .rows[1].timestamp == "2026-09-28T00:00:00Z"' > /dev/null
 }
 
+@test "token-report --prompts: table limits output to the largest dispatch" {
+    local larger="$PROJ/$SESSION/subagents/z-larger.jsonl"
+    local smaller="$PROJ/$SESSION/subagents/a-smaller.jsonl"
+    sub a-smaller code-reviewer-security "Read /tmp/small.md" "2026-09-28T00:00:00Z"
+    sub z-larger code-reviewer-security "Read /tmp/larger.md and review this substantially longer dispatch prompt." "2026-09-27T00:00:00Z"
+
+    report --prompts --limit 1
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"$larger"* ]]
+    [[ "$output" != *"$smaller"* ]]
+    [[ "$output" == *"2026-09-27T00:00:00Z"* ]]
+}
+
 @test "token-report --prompts: rejects invalid since dates" {
     sub a1 code-reviewer-security "Read /tmp/ctx.md" "2026-09-28T00:00:00Z"
     report --prompts --since not-a-date --json
