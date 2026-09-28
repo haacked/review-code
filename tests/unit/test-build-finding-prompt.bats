@@ -1,0 +1,178 @@
+#!/usr/bin/env bats
+
+setup() {
+    PROJECT_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+    SCRIPT="$PROJECT_ROOT/skills/review-code/scripts/build-finding-prompt.py"
+    INPUT="$BATS_TEST_TMPDIR/findings.json"
+    DIFF="$BATS_TEST_TMPDIR/diff.patch"
+    BRIEFING="$BATS_TEST_TMPDIR/briefing.md"
+    FILE_ACCESS="$BATS_TEST_TMPDIR/file-access.json"
+    printf '%s\n' '[{"id": 1, "description": "PAYLOAD_SENTINEL: the response loses its field."}]' > "$INPUT"
+    printf '%s\n' 'DIFF_SENTINEL' > "$DIFF"
+    printf '%s\n' 'BRIEFING_SENTINEL' > "$BRIEFING"
+    printf '%s\n' '{"content":"FILE_ACCESS_SENTINEL"}' > "$FILE_ACCESS"
+}
+
+prompt() {
+    run python3 "$SCRIPT" --agent "$1" --input "$INPUT" "${@:2}"
+}
+
+assert_count() {
+    python3 - "$output" "$1" "$2" <<'PY'
+import re
+import sys
+
+text, count, noun = sys.argv[1:]
+assert re.search(rf"(?:\b{count}\s+{noun}\b|\b{noun}\s*[:=]\s*{count}\b)", text, re.I), text
+PY
+}
+
+assert_bounded_prompt() {
+    python3 - "$output" <<'PY'
+import sys
+
+assert len(sys.argv[1].encode("utf-8")) < 4096
+PY
+}
+
+@test "build-finding-prompt: a large gate batch uses a bounded reference without leaking payload" {
+    python3 - "$INPUT" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w") as stream:
+    json.dump([{"id": i, "description": "PAYLOAD_SENTINEL_λ" * 1000} for i in range(350)], stream, indent=2)
+    stream.write("\n")
+PY
+    prompt comprehension-gate
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"$INPUT"* ]]
+    [[ "$output" != *PAYLOAD_SENTINEL* ]]
+    [[ "$output" == *INPUT_UNAVAILABLE* ]]
+    assert_bounded_prompt
+    assert_count 350 '(?:items|findings)'
+    assert_count "$(awk 'END {print NR}' "$INPUT")" lines
+    [[ "$output" =~ [Pp]ag(e|es|ed|ing) ]]
+}
+
+@test "build-finding-prompt: voice reads a JSON batch by reference" {
+    prompt code-reviewer-voice
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"$INPUT"* ]]
+    [[ "$output" != *PAYLOAD_SENTINEL* ]]
+    [[ "$output" != *"$DIFF"* ]]
+    [[ "$output" != *"$BRIEFING"* ]]
+    [[ "$output" != *"$FILE_ACCESS"* ]]
+    [[ "$output" == *INPUT_UNAVAILABLE* ]]
+    assert_count 1 '(?:items|findings)'
+    assert_bounded_prompt
+}
+
+@test "build-finding-prompt: composer receives all source context as file references" {
+    prompt code-reviewer-comment --diff "$DIFF" --briefing "$BRIEFING" --file-access "$FILE_ACCESS"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"$INPUT"* ]]
+    [[ "$output" == *"$DIFF"* ]]
+    [[ "$output" == *"$BRIEFING"* ]]
+    [[ "$output" == *"$FILE_ACCESS"* ]]
+    [[ "$output" != *PAYLOAD_SENTINEL* ]]
+    [[ "$output" != *DIFF_SENTINEL* ]]
+    [[ "$output" != *BRIEFING_SENTINEL* ]]
+    [[ "$output" != *FILE_ACCESS_SENTINEL* ]]
+    [[ "$output" == *INPUT_UNAVAILABLE* ]]
+    assert_bounded_prompt
+}
+
+@test "build-finding-prompt: composer requires each source context file" {
+    prompt code-reviewer-comment --briefing "$BRIEFING" --file-access "$FILE_ACCESS"
+    [ "$status" -ne 0 ]
+    prompt code-reviewer-comment --diff "$DIFF" --file-access "$FILE_ACCESS"
+    [ "$status" -ne 0 ]
+    prompt code-reviewer-comment --diff "$DIFF" --briefing "$BRIEFING"
+    [ "$status" -ne 0 ]
+}
+
+@test "build-finding-prompt: composer rejects missing or empty context files" {
+    local context
+    for context in "$DIFF" "$BRIEFING" "$FILE_ACCESS"; do
+        cp "$context" "$BATS_TEST_TMPDIR/saved-context"
+        rm "$context"
+        prompt code-reviewer-comment --diff "$DIFF" --briefing "$BRIEFING" --file-access "$FILE_ACCESS"
+        [ "$status" -ne 0 ]
+        [[ "$output" == *INPUT_UNAVAILABLE* ]]
+        : > "$context"
+        prompt code-reviewer-comment --diff "$DIFF" --briefing "$BRIEFING" --file-access "$FILE_ACCESS"
+        [ "$status" -ne 0 ]
+        [[ "$output" == *INPUT_UNAVAILABLE* ]]
+        mv "$BATS_TEST_TMPDIR/saved-context" "$context"
+    done
+}
+
+@test "build-finding-prompt: gate and voice reject every source context argument" {
+    local agent
+    for agent in comprehension-gate code-reviewer-voice; do
+        prompt "$agent" --diff "$DIFF"
+        [ "$status" -ne 0 ]
+        prompt "$agent" --briefing "$BRIEFING"
+        [ "$status" -ne 0 ]
+        prompt "$agent" --file-access "$FILE_ACCESS"
+        [ "$status" -ne 0 ]
+    done
+}
+
+@test "build-finding-prompt: accepts an empty batch" {
+    printf '%s\n' '[]' > "$INPUT"
+    prompt comprehension-gate
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"$INPUT"* ]]
+    assert_count 0 '(?:items|findings)'
+    assert_count 1 lines
+}
+
+@test "build-finding-prompt: missing input fails explicitly" {
+    rm "$INPUT"
+    prompt comprehension-gate
+    [ "$status" -ne 0 ]
+    [[ "$output" == *INPUT_UNAVAILABLE* ]]
+}
+
+@test "build-finding-prompt: empty malformed or non-object-array input fails explicitly" {
+    local payload
+    for payload in '' '{broken' '{}' 'null' '[1]' '[{"id":1},"bad"]'; do
+        printf '%s' "$payload" > "$INPUT"
+        prompt comprehension-gate
+        [ "$status" -ne 0 ]
+        [[ "$output" == *INPUT_UNAVAILABLE* ]]
+    done
+}
+
+@test "build-finding-prompt: unsupported agents fail" {
+    prompt finding-validator
+    [ "$status" -ne 0 ]
+}
+
+@test "build-finding-prompt: refuses file references that exceed the UTF-8 prompt budget" {
+    local long_dir
+    long_dir=$(python3 - "$BATS_TEST_TMPDIR" <<'PY'
+from pathlib import Path
+import sys
+
+path = sys.argv[1]
+while len(path.encode("utf-8")) + 201 < 992:
+    path += "/" + "λ" * 100
+path += "/" + "x" * (991 - len(path.encode("utf-8")))
+Path(path).mkdir(parents=True)
+print(path)
+PY
+)
+    cp "$INPUT" "$long_dir/findings.json"
+    INPUT="$long_dir/findings.json"
+    DIFF="$long_dir/diff.patch"
+    BRIEFING="$long_dir/briefing.md"
+    FILE_ACCESS="$long_dir/file-access.json"
+    printf '%s\n' diff > "$DIFF"
+    printf '%s\n' briefing > "$BRIEFING"
+    printf '%s\n' access > "$FILE_ACCESS"
+    prompt code-reviewer-comment --diff "$DIFF" --briefing "$BRIEFING" --file-access "$FILE_ACCESS"
+    [ "$status" -ne 0 ]
+}

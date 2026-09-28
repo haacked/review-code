@@ -4,6 +4,32 @@ Load this handler after finding validation and the optional adversary meta-revie
 
 When `$selected_agents` or the surviving finding pool is empty, set `$finding_quality` to `{"findings": [], "rewrites_needed": [], "withheld": []}` and skip to "Finalize Publication". A clean review still needs an explicit value because document composition, `--fix`, and PR output consume it.
 
+### Deliver Finding Inputs
+
+For every model call in this handler, including repairs, save the stage's input array to `<artifacts_dir>/$quality_stage-input.json`. Preserve exactly the fields required below. Set `$quality_agent` to the named agent and use a distinct `$quality_stage` for each invocation, such as `finding-preflight`, `comment-compose`, `voice`, `voice-repair`, `comprehension`, `comment-repair-1`, or `comprehension-recheck-1`. Extract arrays from existing JSON artifacts with `jq` when possible; never paste them into dispatch prompts.
+
+Before the first composer call, save the prepared `$file_access_instructions` once to `<artifacts_dir>/file-access.md` using Write, with content separate from the path. Generate each prompt with:
+
+```bash
+quality_input="<artifacts_dir>/$quality_stage-input.json"
+quality_prompt="<artifacts_dir>/$quality_stage-prompt.md"
+quality_output="<artifacts_dir>/$quality_stage-output.md"
+quality_context_args=()
+if [[ "$quality_agent" == code-reviewer-comment ]]; then
+    quality_context_args=(--diff "$diff_path" --briefing "<artifacts_dir>/briefing.md" --file-access "<artifacts_dir>/file-access.md")
+fi
+python3 ~/.agents/skills/review-code/scripts/build-finding-prompt.py \
+  --agent "$quality_agent" --input "$quality_input" "${quality_context_args[@]}" \
+  > "$quality_prompt"
+```
+
+Require success before dispatch. The helper validates the input, supplies counts for complete reads, and rejects prompts of 4096 bytes or more. It includes source-context paths only for the composer. The limit covers the generated dispatch prompt, not the harness-supplied agent definition or the input file.
+
+- **Claude:** Read only the generated prompt and pass it unchanged to Task with `subagent_type: $quality_agent`. Apply the named-agent fallback from `review.md` if needed.
+- **Codex:** Run `agent-dispatch.sh run "$quality_agent" "$quality_prompt" "$quality_output"` and read its output file for response parsing.
+
+Do not append finding bodies, facts, fixes, or lint notes to either prompt. Repair inputs belong in a fresh file too. If generation fails or an agent returns `INPUT_UNAVAILABLE`, handle it as that stage's existing error case: withhold composer and gate inputs, or retain the current bodies on a voice failure. Never interpret unavailable input as an empty or passing result. The reviewer-only `BRIEFING_UNAVAILABLE` inline fallback does not apply here.
+
 ### Build and Validate the Contract
 
 Enumerate the surviving findings in stable review order. Assign every finding a unique sequential integer `id`, starting at 1, then read its cited code and relevant diff and build:
@@ -53,7 +79,7 @@ Keep every `withheld` entry for the local review and remove it from later model 
 
 ### Fast Comprehension Preflight
 
-Send the validated findings directly to `comprehension-gate` before semantic composition. Give the gate only the finding objects and facts, with no diff, briefing, or source-code path. Use the same response parsing and fail-closed coverage rules as the final gate, then run `finding-comment-contract.py gate` without `--final` to produce `<artifacts_dir>/finding-preflight.json`.
+Extract the validated `findings` array into `<artifacts_dir>/finding-preflight-input.json` and dispatch `comprehension-gate` with `$quality_stage = finding-preflight` before semantic composition. Give the gate only that input file, with no diff, briefing, or source-code path. Use the same response parsing and fail-closed coverage rules as the final gate, then run `finding-comment-contract.py gate` without `--final` to produce `<artifacts_dir>/finding-preflight.json`.
 
 `PASS` findings bypass `code-reviewer-comment`. Reset their `publishable` value to false and set `quality_state` to `preflight_passed`; the final gate still decides whether they are safe to publish after the voice pass. Apply the same style-aware meaning and included-token preservation checks required after composition. Concise preflight must reject unnecessary walkthroughs even when all facts have coverage.
 
@@ -63,10 +89,7 @@ Record preflight usage under `$token_usage["comprehension-gate-preflight"]`. In 
 
 ### Compose Rewrite Bodies
 
-If the preflight produced no `rewrites_needed` entries, skip the composer call and record zero composer usage. Otherwise send only those entries to `code-reviewer-comment` with their current bodies, facts, preflight coverage, notes, unresolved phrases, `$diff_path`, `<artifacts_dir>/briefing.md`, and `$file_access_instructions`. The composer must compose from the facts and inspect cited code when a fact still uses internal shorthand.
-
-- **Claude:** start a Task with subagent_type `code-reviewer-comment`.
-- **Codex:** write a self-contained prompt to `<artifacts_dir>/comment-compose-prompt.md`, then run `agent-dispatch.sh run code-reviewer-comment <prompt-file> <artifacts_dir>/comment-compose-output.md`.
+If the preflight produced no `rewrites_needed` entries, skip the composer call and record zero composer usage. Otherwise save only those entries, including their current bodies, facts, preflight coverage, notes, and unresolved phrases, to `<artifacts_dir>/comment-compose-input.json`. Dispatch `code-reviewer-comment` with `$quality_stage = comment-compose` through "Deliver Finding Inputs". The composer must compose from the facts and inspect cited code when a fact still uses internal shorthand.
 
 Parse by id and merge only `description` and `proposed_fix`. Ignore unknown extra ids and record a parse anomaly. Withhold each expected id that is missing, duplicated, malformed, or has a non-null `error`, using `quality_state: "composition_failed"` and the concrete reason.
 
@@ -78,7 +101,7 @@ Record composer usage under `$token_usage["code-reviewer-comment"]`. In debug mo
 
 ### Voice Pass
 
-Send each finding's `id`, `severity`, `location`, `comment_style`, `description`, and `proposed_fix` to `code-reviewer-voice`. Keep the facts and routing fields in `$finding_quality`, outside the voice payload.
+Save each finding's `id`, `severity`, `location`, `comment_style`, `description`, and `proposed_fix` to `<artifacts_dir>/voice-input.json` and dispatch `code-reviewer-voice` with `$quality_stage = voice`. Keep the facts and routing fields in `$finding_quality`, outside the voice payload.
 
 Parse responses by id. `unchanged: true` keeps the current body. Ignore unknown ids and count them as anomalies. A missing id keeps the current body. Treat an array length difference greater than one as a failed batch and keep every current body.
 
@@ -95,7 +118,7 @@ jq '[.findings[] | {id, description, proposed_fix}]' \
   > "<artifacts_dir>/voice-lint-result.json"
 ```
 
-Read `warned_ids` and `error` from the result; the linter exits zero even on errors. For warned ids, ask the same voice agent once to repair the flagged sentence. Claude may resume the voice task. Codex must dispatch a fresh, self-contained `code-reviewer-voice` prompt because it has no resume state. Recheck preservation, regenerate the array from the repaired bodies, and lint once. A remaining warning restores the pre-voice body. A missing linter or non-null `error` leaves the accepted voice bodies unchanged.
+Read `warned_ids` and `error` from the result; the linter exits zero even on errors. For warned ids, save their current voice input fields and lint notes to `<artifacts_dir>/voice-repair-input.json`. Dispatch a fresh `code-reviewer-voice` call with `$quality_stage = voice-repair` under both harnesses. Recheck preservation, regenerate the array from the repaired bodies, and lint once. A remaining warning restores the pre-voice body. A missing linter or non-null `error` leaves the accepted voice bodies unchanged.
 
 Record voice usage, preservation failures, and `{total_tokens: 0, checked, clean, warned, bounced, reverted}` under the existing `$token_usage` keys. In debug mode, save `11c-voice-rewrite` and `11c2-voice-lint` artifacts.
 
@@ -103,8 +126,7 @@ Record voice usage, preservation failures, and `{total_tokens: 0, checked, clean
 
 Merge accepted voice bodies into `$finding_quality.findings`. Write the full object to `<artifacts_dir>/finding-contract-voiced.json` and its `findings` array to `<artifacts_dir>/comprehension-input.json` with `kind: "finding"`.
 
-- **Claude:** start a Task with subagent_type `comprehension-gate` and the input.
-- **Codex:** point a self-contained prompt at `<artifacts_dir>/comprehension-input.json`, then run `agent-dispatch.sh run comprehension-gate <prompt-file> <artifacts_dir>/comprehension-output.md`. The gate may read that input file, but receives no diff or source-code path.
+Dispatch `comprehension-gate` with `$quality_stage = comprehension` through "Deliver Finding Inputs". The gate may read that input file, but receives no diff or source-code path.
 
 Require the `comprehension-gate` agent's Output schema for both preflight and final verdicts. Write only the parsed JSON array, without Markdown fences, to `<artifacts_dir>/comprehension-verdicts.json`. Each entry must preserve its input `id` and contain `verdict`, `coverage`, `inference_required`, `unresolved`, and `notes`. Coverage has exactly six boolean keys: `problem`, `trigger`, `mechanism`, `result`, `requested_change`, and `regression_case`. Then run:
 
@@ -117,9 +139,9 @@ Require the `comprehension-gate` agent's Output schema for both preflight and fi
 
 The script accepts `PASS` only when the selected style's required facts have coverage and `inference_required` is false. Concise requires problem, applicable trigger, and requested change; mechanism, result, and regression coverage may be false. Detailed requires every applicable field. The model must also reject factual inconsistency, unclear action, or prose that violates the selected style. Missing, duplicate, or malformed verdicts are withheld with `quality_state: "gate_error"`. Missing or extra coverage keys and non-boolean values are malformed in either style.
 
-For each `rewrites_needed` entry, start a fresh `code-reviewer-comment` invocation under both harnesses. Give it the structured finding, current body, gate coverage, notes, unresolved phrases, `$diff_path`, briefing path, and file-access instructions. Never resume the original reviewer.
+For each `rewrites_needed` entry, save a one-item array with the structured finding, current body, gate coverage, notes, and unresolved phrases to `<artifacts_dir>/comment-repair-<id>-input.json`. Dispatch a fresh `code-reviewer-comment` invocation through "Deliver Finding Inputs" with `$quality_stage = comment-repair-<id>` under both harnesses. Never resume the original reviewer.
 
-Apply the composer preservation and error checks, run `compose` on successful repairs, cold-read them once more, then apply `gate --final`. A second `REWRITE`, malformed verdict, composer error, or preservation failure is withheld. Never restore a pre-gate opaque body.
+Apply the composer preservation and error checks, run `compose` on successful repairs, then save each repaired input array to `<artifacts_dir>/comprehension-recheck-<id>-input.json`. Cold-read it once more through "Deliver Finding Inputs" with `comprehension-gate` and `$quality_stage = comprehension-recheck-<id>`, then apply `gate --final`. A second `REWRITE`, malformed verdict, composer error, or preservation failure is withheld. Never restore a pre-gate opaque body.
 
 Send both the preflight `PASS` findings and the composed `REWRITE` findings through the final comprehension gate. Merge first-pass findings, second-pass findings, and every withheld array into `$finding_quality`. Record `{total_tokens: 0, contracted, preflight_passed, composed, gate_passed, rewritten, withheld, gate_errors}` under `$token_usage["finding-quality"]`, plus usage for the preflight, final gate, and repair calls. In debug mode, save the stage under `11c3-comprehension-gate`.
 

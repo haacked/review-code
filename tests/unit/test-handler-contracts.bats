@@ -136,6 +136,51 @@ EOF
     jq -e '.error == null and .checked == 2 and .clean == 1 and .warned_ids == [2]' "$ARTIFACTS/voice-lint-result.json"
 }
 
+@test "handler contracts: finding stages dispatch input and source context through file references" {
+    local agent stage prompt_file
+    local diff_path="$ARTIFACTS/diff.patch"
+    printf '%s\n' 'DIFF_PAYLOAD_SENTINEL' > "$diff_path"
+    printf '%s\n' 'BRIEFING_PAYLOAD_SENTINEL' > "$ARTIFACTS/briefing.md"
+    printf '%s\n' 'FILE_ACCESS_PAYLOAD_SENTINEL' > "$ARTIFACTS/file-access.md"
+    extract_documented_block "$SKILL/handlers/review-finding-quality.md" bash build-finding-prompt.py > "$ARTIFACTS/quality.sh"
+
+    for agent in comprehension-gate code-reviewer-voice code-reviewer-comment; do
+        stage="test-$agent"
+        prompt_file="$ARTIFACTS/$stage-prompt.md"
+        jq -n '[{id: 1, description: "FINDING_PAYLOAD_SENTINEL"}]' > "$ARTIFACTS/$stage-input.json"
+
+        run env quality_stage="$stage" quality_agent="$agent" diff_path="$diff_path" bash -e "$ARTIFACTS/quality.sh"
+
+        [ "$status" -eq 0 ]
+        [ -s "$prompt_file" ]
+        grep -Fq "$ARTIFACTS/$stage-input.json" "$prompt_file"
+        ! grep -q 'PAYLOAD_SENTINEL' "$prompt_file"
+        [[ "$output" != *PAYLOAD_SENTINEL* ]]
+        if [ "$agent" = code-reviewer-comment ]; then
+            grep -Fq "$diff_path" "$prompt_file"
+            grep -Fq "$ARTIFACTS/briefing.md" "$prompt_file"
+            grep -Fq "$ARTIFACTS/file-access.md" "$prompt_file"
+        else
+            ! grep -Fq "$diff_path" "$prompt_file"
+            ! grep -Fq "$ARTIFACTS/briefing.md" "$prompt_file"
+            ! grep -Fq "$ARTIFACTS/file-access.md" "$prompt_file"
+        fi
+    done
+}
+
+@test "handler contracts: unavailable finding input stops the documented block before dispatch" {
+    local marker="$ARTIFACTS/dispatched"
+    extract_documented_block "$SKILL/handlers/review-finding-quality.md" bash build-finding-prompt.py > "$ARTIFACTS/quality.sh"
+    printf '%s\n' 'touch "$DISPATCH_MARKER"' >> "$ARTIFACTS/quality.sh"
+
+    run env quality_stage=missing quality_agent=comprehension-gate DISPATCH_MARKER="$marker" bash -e "$ARTIFACTS/quality.sh"
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *INPUT_UNAVAILABLE* ]]
+    [ ! -e "$marker" ]
+    [ ! -s "$ARTIFACTS/missing-prompt.md" ]
+}
+
 @test "handler contracts: documented draft command wraps publication and preserves selected bodies" {
     jq -n '{
         findings: [],
