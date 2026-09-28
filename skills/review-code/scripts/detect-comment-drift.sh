@@ -68,93 +68,95 @@ fetch_current_diff() {
 
 # Extract the line content at a given file path and line number from a diff.
 # Parses the diff to find the file's hunks and locates the content at the
-# specified new-file line number.
-# Args: $1 = diff, $2 = file path, $3 = line number
+# specified line number on the selected side.
+# Args: $1 = diff, $2 = file path, $3 = line number, $4 = side (default RIGHT)
 # Output: the line content (with +/- prefix stripped), or empty if not found
 extract_line_content_from_diff() {
     local diff="$1"
     local target_path="$2"
     local target_line="$3"
+    local side="${4:-RIGHT}"
 
-    echo "${diff}" | awk -v target_path="${target_path}" -v target_line="${target_line}" '
+    echo "${diff}" | TARGET_PATH="${target_path}" awk -v target_line="${target_line}" -v side="${side}" "$(git_diff_path_functions)"'
     BEGIN {
+        target_path = ENVIRON["TARGET_PATH"]
         in_file = 0
-        new_line = 0
+        old_line = new_line = 0
         in_hunk = 0
     }
 
     /^diff --git/ {
-        # Extract b/ path
-        idx = match($0, / b\//)
-        if (idx > 0) {
-            current_file = substr($0, idx + 3)
-            in_file = (current_file == target_path)
-        } else {
-            in_file = 0
-        }
+        current_path = diff_header_path($0)
+        in_file = (current_path == target_path)
         in_hunk = 0
         next
     }
+    !in_hunk && /^rename to / {
+        current_path = diff_rename_path($0)
+        in_file = (current_path == target_path)
+        next
+    }
+    !in_hunk && /^\+\+\+ "?b\// {
+        current_path = diff_marker_path($0)
+        in_file = (current_path == target_path)
+        next
+    }
 
-    /^@@/ && in_file {
-        # Parse +N from hunk header for new line start
+    /^@@/ {
+        in_hunk = 1
+        if (!in_file) next
+        rest = substr($0, index($0, "-") + 1)
+        sub(/[^0-9].*/, "", rest)
+        old_line = rest + 0
         idx = index($0, "+")
         if (idx > 0) {
             rest = substr($0, idx + 1)
             gsub(/[^0-9].*/, "", rest)
             new_line = rest + 0
         }
-        in_hunk = 1
         next
     }
 
     !in_file || !in_hunk { next }
 
-    # Skip file-level diff headers
-    /^---/ || /^\+\+\+/ { next }
-
-    # Removed line (-) only advances old line counter
     /^-/ {
+        if (side == "LEFT" && old_line == target_line) {
+            print substr($0, 2)
+            exit
+        }
+        old_line++
         next
     }
-
-    # Added line (+)
     /^\+/ {
-        if (new_line == target_line) {
+        if (side == "RIGHT" && new_line == target_line) {
             print substr($0, 2)
             exit
         }
         new_line++
         next
     }
-
-    # Context line (space prefix or blank line within a hunk).
-    # Git may strip the leading space from blank context lines, so an
-    # empty line inside a hunk is treated as context.
-    {
-        if (new_line == target_line) {
-            if (substr($0, 1, 1) == " ") {
-                print substr($0, 2)
-            } else {
-                print $0
-            }
+    /^ / || /^$/ {
+        if (side == "RIGHT" && new_line == target_line) {
+            print substr($0, 2)
             exit
         }
+        old_line++
         new_line++
     }
     '
 }
 
 # Search a diff for a line with matching content in a specific file.
-# Returns the new line number where the content appears, or nothing if not found.
+# Returns the line number on the selected side, or nothing if not found.
 # When multiple matches exist, returns the one closest to the original line.
-# Args: $1 = diff, $2 = file path, $3 = line content to find, $4 = original line number
+# Args: $1 = diff, $2 = file path, $3 = content, $4 = original line, $5 = side (default RIGHT)
 # Output: the new line number, or empty if not found
 find_line_in_diff() {
     local diff="$1"
     local target_path="$2"
     local content="$3"
     local original_line="$4"
+    local side="${5:-RIGHT}"
 
     # Normalize the search content by trimming whitespace
     local trimmed_content
@@ -166,71 +168,69 @@ find_line_in_diff() {
 
     # Find all matching line numbers in the file within the diff
     local matches
-    matches=$(echo "${diff}" | awk -v target_path="${target_path}" -v trimmed_content="${trimmed_content}" '
+    matches=$(echo "${diff}" | TARGET_PATH="${target_path}" TRIMMED_CONTENT="${trimmed_content}" awk -v side="${side}" "$(git_diff_path_functions)"'
     BEGIN {
+        target_path = ENVIRON["TARGET_PATH"]
+        trimmed_content = ENVIRON["TRIMMED_CONTENT"]
         in_file = 0
-        new_line = 0
+        old_line = new_line = 0
         in_hunk = 0
     }
 
     /^diff --git/ {
-        idx = match($0, / b\//)
-        if (idx > 0) {
-            current_file = substr($0, idx + 3)
-            in_file = (current_file == target_path)
-        } else {
-            in_file = 0
-        }
+        current_path = diff_header_path($0)
+        in_file = (current_path == target_path)
         in_hunk = 0
         next
     }
+    !in_hunk && /^rename to / {
+        current_path = diff_rename_path($0)
+        in_file = (current_path == target_path)
+        next
+    }
+    !in_hunk && /^\+\+\+ "?b\// {
+        current_path = diff_marker_path($0)
+        in_file = (current_path == target_path)
+        next
+    }
 
-    /^@@/ && in_file {
+    /^@@/ {
+        in_hunk = 1
+        if (!in_file) next
+        rest = substr($0, index($0, "-") + 1)
+        sub(/[^0-9].*/, "", rest)
+        old_line = rest + 0
         idx = index($0, "+")
         if (idx > 0) {
             rest = substr($0, idx + 1)
             gsub(/[^0-9].*/, "", rest)
             new_line = rest + 0
         }
-        in_hunk = 1
         next
     }
 
     !in_file || !in_hunk { next }
 
-    # Skip file-level diff headers
-    /^---/ || /^\+\+\+/ { next }
-
-    # Removed line
     /^-/ {
+        if (side == "LEFT") match_content(old_line)
+        old_line++
         next
     }
-
-    # Added line
     /^\+/ {
+        if (side == "RIGHT") match_content(new_line)
+        new_line++
+        next
+    }
+    /^ / || /^$/ {
+        if (side == "RIGHT") match_content(new_line)
+        old_line++
+        new_line++
+    }
+    function match_content(line, line_text) {
         line_text = substr($0, 2)
         gsub(/^[[:space:]]+/, "", line_text)
         gsub(/[[:space:]]+$/, "", line_text)
-        if (line_text == trimmed_content) {
-            print new_line
-        }
-        new_line++
-        next
-    }
-
-    # Context line (space prefix or blank line within a hunk)
-    {
-        if (substr($0, 1, 1) == " ") {
-            line_text = substr($0, 2)
-        } else {
-            line_text = $0
-        }
-        gsub(/^[[:space:]]+/, "", line_text)
-        gsub(/[[:space:]]+$/, "", line_text)
-        if (line_text == trimmed_content) {
-            print new_line
-        }
-        new_line++
+        if (line_text == trimmed_content) print line
     }
     ')
 
@@ -265,13 +265,27 @@ file_hunks() {
     local diff="$1"
     local target_path="$2"
 
-    echo "${diff}" | awk -v target_path="${target_path}" "$(git_diff_path_functions)"'
+    echo "${diff}" | TARGET_PATH="${target_path}" awk "$(git_diff_path_functions)"'
+    BEGIN {
+        target_path = ENVIRON["TARGET_PATH"]
+    }
     /^diff --git/ {
-        in_file = (diff_header_path($0) == target_path)
+        current_path = diff_header_path($0)
+        in_file = (current_path == target_path)
         in_hunk = 0
         next
     }
-    in_file && /^@@/ { in_hunk = 1 }
+    !in_hunk && /^rename to / {
+        current_path = diff_rename_path($0)
+        in_file = (current_path == target_path)
+        next
+    }
+    !in_hunk && /^\+\+\+ "?b\// {
+        current_path = diff_marker_path($0)
+        in_file = (current_path == target_path)
+        next
+    }
+    /^@@/ { in_hunk = 1 }
     in_file && in_hunk { print }
     '
 }
@@ -283,11 +297,22 @@ file_in_diff() {
     local diff="$1"
     local target_path="$2"
 
-    if [[ "${diff}" == *"diff --git a/${target_path} b/${target_path}"* ]]; then
-        echo "true"
-    else
-        echo "false"
-    fi
+    echo "${diff}" | TARGET_PATH="${target_path}" awk "$(git_diff_path_functions)"'
+        BEGIN { target_path = ENVIRON["TARGET_PATH"] }
+        function consider_file() {
+            if (current_path == target_path) found = 1
+        }
+        /^diff --git / {
+            consider_file()
+            current_path = diff_header_path($0)
+            in_hunk = 0
+            next
+        }
+        !in_hunk && /^rename to / { current_path = diff_rename_path($0); next }
+        !in_hunk && /^\+\+\+ "?b\// { current_path = diff_marker_path($0); next }
+        /^@@/ { consider_file(); in_hunk = 1 }
+        END { consider_file(); print found ? "true" : "false" }
+    '
 }
 
 # Remap a single comment against the current diff.
@@ -299,10 +324,11 @@ remap_comment() {
     local original_diff="$2"
     local current_diff="$3"
 
-    local path line line_content
-    read -r path line line_content < <(
-        echo "${comment}" | jq -r '[.path, (.line | tostring), (.line_content // "")] | @tsv'
-    )
+    local path line side line_content
+    path=$(echo "${comment}" | jq -r '.path')
+    line=$(echo "${comment}" | jq -r '.line')
+    side=$(echo "${comment}" | jq -r '.side // "RIGHT"')
+    line_content=$(echo "${comment}" | jq -r '.line_content // ""')
 
     # A file whose hunks are identical in both diffs kept every line where it
     # was. This also keeps comments on blank lines, which content matching
@@ -318,7 +344,7 @@ remap_comment() {
 
     # If line_content wasn't provided, try to extract it from the original diff
     if [[ -z "${line_content}" ]] && [[ -n "${original_diff}" ]]; then
-        line_content=$(extract_line_content_from_diff "${original_diff}" "${path}" "${line}")
+        line_content=$(extract_line_content_from_diff "${original_diff}" "${path}" "${line}" "${side}")
     fi
 
     # If we still have no line content, we cannot remap this comment
@@ -335,7 +361,7 @@ remap_comment() {
 
     # Search for the content in the current diff
     local new_line
-    new_line=$(find_line_in_diff "${current_diff}" "${path}" "${line_content}" "${line}")
+    new_line=$(find_line_in_diff "${current_diff}" "${path}" "${line_content}" "${line}" "${side}")
 
     if [[ -z "${new_line}" ]]; then
         echo "${comment}" | jq '{path, line, side: (.side // "RIGHT"), body, reason: "line content not found in current diff"}'
@@ -345,8 +371,7 @@ remap_comment() {
     # Return the remapped comment
     if [[ "${new_line}" -eq "${line}" ]]; then
         # Line didn't move, no remapping needed
-        echo "${comment}" | jq --argjson new_line "${new_line}" \
-            '. + {remapped: false}'
+        echo "${comment}" | jq '. + {remapped: false}'
     else
         echo "${comment}" | jq --argjson new_line "${new_line}" --argjson orig_line "${line}" \
             '. + {line: $new_line, original_line: $orig_line, remapped: true}'
