@@ -69,6 +69,8 @@ A review's cost is dominated by the orchestrating conversation, not by the size 
 
 Run `bin/token-report` to measure what your own reviews cost. It reads the session transcripts and separates orchestrator cost from subagent cost, which the skill's own `.reviews/token-usage.jsonl` cannot see.
 
+Use `bin/token-report --bash-glue --match review-code-review- --since 2026-09-01` to count short no-op, sleep, timestamp, and waiting commands in Claude orchestrator transcripts. Review stages use harness completion notifications or blocking waits; Codex subprocess batches launch and wait inside `agent-dispatch.sh`. See [the Bash-turn measurement](docs/bash-turn-measurement.md) for the baseline, current counts, and verification limits.
+
 ### 3. Continuous Improvement via Feedback Loop
 
 The system learns and improves over time through a structured feedback mechanism:

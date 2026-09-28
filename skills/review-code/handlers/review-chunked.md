@@ -16,7 +16,7 @@ Loaded when the session JSON's `chunk_metadata.chunked` is `true`: the diff was 
 
    Require success before dispatch. Keep the returned `manifest_path` and `chunks` entries. Each entry includes `metadata_path`, `analysis_path`, and `diff_lines`. The helper writes metadata for only that chunk's files and a compact cross-chunk manifest with file ownership and artifact paths. It does not copy architectural context or analysis bodies.
 
-   Dispatch one analysis per chunk in parallel using the harness detected in `review.md`:
+   Dispatch one analysis per chunk in parallel using the harness and completion rules in `review.md`. For Codex, collect the entries below in one `agent-dispatch.sh batch` manifest and require that batch to finish successfully:
    - **Claude:** Use Task with `subagent_type: "Explore"`, `model: "sonnet"`. Explore is read-only, so request the complete summary as its final response, then save it once to the chunk's `analysis_path` using Write. If using an equivalent agent with a Write tool, request direct output to `analysis_path` and only a path and completion status in its response. If that agent cannot write, save its complete returned summary using Write instead.
    - **Codex:** Write the prompt to a file and use `agent-dispatch.sh run code-review-context-explorer <prompt-file> <analysis_path>`. Request the complete summary as the final message; the read-only subprocess's output file captures it directly. Use the rendered agent's model. Do not read the summary into the orchestrator.
 
@@ -56,7 +56,7 @@ Loaded when the session JSON's `chunk_metadata.chunked` is `true`: the diff was 
      If you notice issues that may interact with code in other chunks, flag them as questions.
      ```
    - Everything else comes from the shared `briefing.md`, exactly as in an unchunked review. Do not inline architectural context or chunk analyses into prompts.
-   - Dispatch all applicable (chunk x agent) combinations in parallel using the harness method in `review.md`. For Claude, apply the named reviewer fallback from "Subagent Availability" when needed. For Codex, use `agent-dispatch.sh run <agent-name> <prompt-file> <artifacts_dir>/reports/chunk-<index>-<agent-name>.json` with distinct prompt and output paths per combination.
+   - Dispatch all applicable (chunk x agent) combinations in parallel using the harness and completion rules in `review.md`. For Claude, apply the named reviewer fallback from "Subagent Availability" when needed. For Codex, collect one batch entry per combination with distinct prompt paths and output paths of `<artifacts_dir>/reports/chunk-<index>-<agent-name>.json`, then require `agent-dispatch.sh batch` to finish successfully.
    - If a reviewer reports `BRIEFING_UNAVAILABLE`, repair its missing artifact and re-dispatch that combination. If file delivery remains unavailable, use `review-inline-fallback.md` for that reviewer and include its chunk analysis and manifest in the fallback. Do not accept an unavailable result as a clean review.
 
 3. Split each domain reviewer report using `reviewer-output.md`. Merge only the extracted findings into the synthesis pool and retain all coverage gaps and investigation paths. Do not read the raw reports or investigation summaries into the conversation.

@@ -200,6 +200,8 @@ No safe local checkout is available for reading PR files. This can happen becaus
 
 The steps below spawn named subagent types: `code-review-context-explorer`, the domain `code-reviewer-*` reviewers, `finding-validator`, `code-reviewer-comment`, `comprehension-gate`, and `code-reviewer-voice`. How they spawn depends on the harness.
 
+**Completion applies to every stage, including chunk analysis and retries.** Never issue no-op Bash turns (`true`, `:`, `sleep`, or `echo waiting`) to keep the conversation alive or poll for agents. Do useful independent work while agents run, then use the completion mechanism below. Generate consumed timestamps inside the script that writes them, rather than fetching `date` in a separate tool call.
+
 **Detect the harness once, at the start of "ready":**
 
 ```bash
@@ -210,6 +212,8 @@ This prints `claude` or `codex`. Save it as `$harness`. If the command exits non
 
 **Claude ($harness = `claude`):** Spawn subagents via the Task tool with `subagent_type` set to the agent name (`code-review-context-explorer`, `code-reviewer-security`, etc.). If those names aren't registered in the environment, spawn `general-purpose` and prepend the full body of `~/.claude/agents/<subagent_type>.md` (frontmatter stripped) to the prompt; pass the definition's `model:` value if the Agent tool accepts it. Read from `~/.claude/agents/` even when `CLAUDE_CONFIG_DIR` points elsewhere: `bin/setup` always installs that copy, while a redirected config home's `agents/` dir is typically what's missing when this fallback applies. Domain reviewers use the file output contract loaded at dispatch below. Other agents return the schema their stage requires.
 
+Retain each Task ID and wait for completion notifications when background tasks are supported. When notifications are unavailable, use a blocking TaskOutput or native wait for the outstanding task IDs. After a timeout, keep waiting through that tool; do not replace it with Bash polling. Collect each task's result and failure status before advancing to a dependent stage.
+
 **Codex ($harness = `codex`):** Spawn subagents via the `codex` CLI — Codex has no Task tool or subagent registration inside the orchestrating process. For each agent in the plan:
 
 ```bash
@@ -219,7 +223,13 @@ This prints `claude` or `codex`. Save it as `$harness`. If the command exits non
 
 `<prompt-file>` is a markdown file you write first containing the same prompt body the Claude path would send inline. The helper shells out to `codex exec --json --sandbox read-only --output-last-message <findings-file>`, applying the model, reasoning effort, and instructions from `~/.codex/agents/<agent-name>.toml`, so the agent's final message lands directly at the findings path. Don't repeat the agent definition in the prompt file; the helper supplies it. Codex subagents cannot stream back into this conversation; all findings, architectural context, and validation notes reach us as files.
 
-Under Codex, dispatch is sequential unless you background the invocations; prefer backgrounding (`... &`) when the plan picks several reviewers so they run in parallel, then `wait` before synthesis. Track each backgrounded PID alongside the agent name so you can attribute a non-zero exit.
+For parallel Codex work, write a JSON array to `<artifacts_dir>/agent-batch.json` with one entry per invocation: `{"agent": "<agent-name>", "prompt_file": "<absolute-prompt-path>", "output_file": "<absolute-output-path>"}`. Use distinct output paths for every invocation, including chunk instances. Then run:
+
+```bash
+~/.agents/skills/review-code/scripts/helpers/agent-dispatch.sh batch "<artifacts_dir>/agent-batch.json"
+```
+
+The script launches children and waits for every PID in the same shell, checks each exit status, and returns non-zero if any child failed. Keep the tool call attached to the batch. If the execution tool yields a session ID, use its native blocking wait/resume mechanism until that command finishes. Do not launch children in one Bash call and try to `wait` in a later shell. Require success before consuming output files; report any failed agent instead of treating it as a clean review. Single-agent `run` calls follow the same tool completion rule.
 
 **Codex feature gaps to disclose.** Claude-only steps are:
 - The coverage-resume bounce (per-agent Task resume isn't available)

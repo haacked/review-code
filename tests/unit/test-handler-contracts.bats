@@ -48,6 +48,24 @@ PY
     [ "$(wc -l < "$ARTIFACTS/expected-reviewer-reports.txt")" -eq 1 ]
 }
 
+@test "handler contracts: reviewer output preserves batch dispatch and completion rules" {
+    python3 - "$SKILL/handlers/reviewer-output.md" << 'PY'
+from pathlib import Path
+import re
+import sys
+
+document = Path(sys.argv[1]).read_text()
+dispatch = document.split("For Codex,", 1)[1].split("After each successful dispatch", 1)[0]
+assert "agent-dispatch.sh batch" in dispatch
+assert re.search(r"(?:parallel|concurrent).{0,100}(?:batch|manifest)|(?:batch|manifest).{0,100}(?:parallel|concurrent)", dispatch, re.I | re.S)
+assert re.search(r"output_file.{0,30}\$report_path", dispatch, re.S)
+run_rule = re.search(r"[^.\n]*agent-dispatch\.sh run[^.\n]*(?:\.|$)", dispatch)
+assert run_rule is not None
+assert re.search(r"\b(?:lone|single)\b", run_rule[0]) and "retry" in run_rule[0]
+assert "review.md" in dispatch and "completion" in dispatch.lower()
+PY
+}
+
 @test "handler contracts: full append advances existing metadata through the shared writer" {
     review_file="$ARTIFACTS/review.md"
     cat > "$review_file" << 'EOF'
@@ -74,6 +92,37 @@ EOF
     grep -Fxq '# Earlier findings' "$review_file"
     grep -Fxq '# Appended full review' "$review_file"
     ! grep -q '^delta_from:' "$review_file"
+}
+
+@test "handler contracts: compose delegates timestamp generation to the metadata writer" {
+    extract_documented_block "$SKILL/handlers/review-compose.md" bash metadata_args > "$ARTIFACTS/metadata.sh"
+
+    run grep -Eq '(^|[^[:alnum:]_])date([[:space:]]|$)|reviewed_at=' "$ARTIFACTS/metadata.sh"
+    [ "$status" -ne 0 ]
+    grep -Fq 'update-review-metadata.sh' "$ARTIFACTS/metadata.sh"
+}
+
+@test "handler contracts: review dispatch waits through its owning harness" {
+    python3 - "$SKILL/handlers/review.md" << 'PY'
+from pathlib import Path
+import re
+import sys
+
+document = Path(sys.argv[1]).read_text()
+dispatch = document.split("### Subagent Availability\n", 1)[1].split("### Gather Architectural Context\n", 1)[0]
+claude = dispatch.split("**Claude ($harness = `claude`):**", 1)[1].split("**Codex ($harness = `codex`):**", 1)[0]
+codex = dispatch.split("**Codex ($harness = `codex`):**", 1)[1]
+assert "completion notification" in claude.lower()
+assert re.search(r"blocking.{0,60}(?:wait|TaskOutput)|(?:wait|TaskOutput).{0,60}blocking", claude, re.I | re.S)
+assert "agent-dispatch.sh" in codex and re.search(r"\bbatch\b", codex)
+assert "same shell" in codex.lower()
+assert re.search(r"(?:every|each).{0,70}(?:exit|status)|(?:exit|status).{0,70}(?:every|each)", codex, re.I | re.S)
+assert re.search(r"(?:no-op|no op|noop|throwaway)", dispatch, re.I)
+for command in ("true", "sleep", "echo waiting"):
+    assert command in dispatch, f"missing explicit prohibition of {command!r} glue turns"
+for block in re.findall(r"^```bash\n(.*?)^```$", document, re.M | re.S):
+    assert not re.search(r"^\s*(?:true|sleep\s+1|echo\s+['\"]?waiting['\"]?)\s*$", block, re.M)
+PY
 }
 
 @test "handler contracts: retained reviewer evidence survives session cleanup" {

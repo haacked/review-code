@@ -3,12 +3,12 @@
 
 import argparse
 import os
-from pathlib import Path
 import re
 import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
 
 from markdown_fences import walk_fences
-
 
 FIELDS = {"review_commit", "reviewed_at", "review_mode", "delta_from"}
 
@@ -104,11 +104,14 @@ def main():
             if key in values:
                 raise ValueError(f"duplicate assignment: {key}")
             values[key] = value
-        if not values.get("reviewed_at") or values.get("review_mode") not in {
+        if values.get("review_mode") not in {
             "full",
             "delta",
         }:
-            raise ValueError("reviewed_at and review_mode (full or delta) are required")
+            raise ValueError("review_mode (full or delta) is required")
+        values.setdefault(
+            "reviewed_at", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        )
         if values["review_mode"] == "full":
             values.pop("delta_from", None)
         target = args.file.resolve(strict=True)

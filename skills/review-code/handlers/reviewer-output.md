@@ -13,7 +13,7 @@ if [[ ! -f "$manifest" ]] || ! grep -Fxq -- "$report_path" "$manifest"; then
 fi
 ```
 
-For Codex, pass `$report_path` as the output-file argument to `agent-dispatch.sh run`. Its compact result names the report and event-log files; do not read the event log or raw report into the conversation. For the Claude fallback, save the returned JSON to `$report_path` using the Write tool, with content separate from the path. Never interpolate agent output into shell commands.
+For Codex, add each parallel reviewer invocation to the `agent-dispatch.sh batch` manifest with `output_file` set to `$report_path`. Use `agent-dispatch.sh run` only for a single agent or retry, passing `$report_path` as its output-file argument. Follow the completion rules in `review.md` for both harnesses. Each Codex result names the report and event-log files; do not read the event log or raw report into the conversation. For the Claude fallback, save the returned JSON to `$report_path` using the Write tool, with content separate from the path. Never interpolate agent output into shell commands.
 
 After each successful dispatch, split the saved report:
 
