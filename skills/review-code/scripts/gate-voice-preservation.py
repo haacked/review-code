@@ -17,7 +17,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent / "helpers"))
 
-from markdown_fences import walk_fences  # noqa: E402
+from markdown_fences import walk_fences
 
 FIELDS = ("description", "proposed_fix")
 SEVERITY = r"(?:blocking|suggestion|question|nit)"
@@ -171,47 +171,166 @@ def merge(
     return {**quality, "findings": findings, "voice_preservation": report}
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("original", help="Full immutable finding-quality object")
-    parser.add_argument("responses", help="Bare or four-backtick-fenced voice array")
-    parser.add_argument(
-        "preservation", help="Orchestrator's per-finding semantic verdicts"
-    )
-    args = parser.parse_args()
-    try:
-        quality = json.loads(Path(args.original).read_text(encoding="utf-8"))
-        if not isinstance(quality, dict) or not isinstance(
-            quality.get("findings"), list
+def read_quality(path: str, label: str) -> dict:
+    quality = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(quality, dict) or not isinstance(quality.get("findings"), list):
+        raise TypeError(f"{label} must be a finding-quality object")
+    ids = []
+    for item in quality["findings"]:
+        if not isinstance(item, dict) or not valid_id(item.get("id")):
+            raise ValueError(f"{label} findings need valid ids")
+        if (
+            not isinstance(item.get("description"), str)
+            or not item["description"].strip()
         ):
-            raise TypeError("original must be a finding-quality object")
-        ids = []
-        for item in quality["findings"]:
-            if not isinstance(item, dict) or not valid_id(item.get("id")):
-                raise ValueError("original findings need valid ids")
-            if (
-                not isinstance(item.get("description"), str)
-                or not item["description"].strip()
-            ):
-                raise ValueError("original findings need non-empty descriptions")
-            if item.get("proposed_fix") is not None and not isinstance(
-                item["proposed_fix"], str
-            ):
-                raise ValueError("original proposed_fix must be text or null")
-            ids.append(item["id"])
-        if len(set(ids)) != len(ids):
-            raise ValueError("original finding ids must be unique")
+            raise ValueError(f"{label} findings need non-empty descriptions")
+        if item.get("proposed_fix") is not None and not isinstance(
+            item["proposed_fix"], str
+        ):
+            raise ValueError(f"{label} proposed_fix must be text or null")
+        ids.append(item["id"])
+    if len(set(ids)) != len(ids):
+        raise ValueError(f"{label} finding ids must be unique")
+    return quality
+
+
+def read_object(path: str, label: str) -> dict:
+    value = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise TypeError(f"{label} must be a JSON object")
+    return value
+
+
+def run_merge(original_path: str, responses_path: str, preservation_path: str) -> int:
+    try:
+        quality = read_quality(original_path, "original")
     except (OSError, TypeError, ValueError) as error:
         print(f"Invalid pre-voice snapshot: {error}", file=sys.stderr)
         return 1
     try:
-        responses = read_array(args.responses, fenced=True)
-        verdicts = read_array(args.preservation)
+        responses = read_array(responses_path, fenced=True)
+        verdicts = read_array(preservation_path)
         result = merge(quality, responses, verdicts)
     except (OSError, TypeError, ValueError) as error:
         result = merge(quality, [], [], f"{type(error).__name__}: {error}")
     print(json.dumps(result, ensure_ascii=False))
     return 0
+
+
+def run_repair(
+    original_path: str,
+    accepted_path: str,
+    lint_path: str,
+    responses_path: str,
+    preservation_path: str,
+) -> int:
+    try:
+        original = read_quality(original_path, "original")
+        accepted = read_quality(accepted_path, "accepted")
+    except (OSError, TypeError, ValueError) as error:
+        print(f"Invalid repair snapshot: {error}", file=sys.stderr)
+        return 1
+
+    original_ids = [item["id"] for item in original["findings"]]
+    accepted_ids = [item["id"] for item in accepted["findings"]]
+    if set(original_ids) != set(accepted_ids):
+        print("Invalid repair snapshot: finding ids differ", file=sys.stderr)
+        return 1
+
+    try:
+        lint_result = read_object(lint_path, "lint result")
+        target_ids = lint_result.get("warned_ids")
+        if not isinstance(target_ids, list) or not all(
+            valid_id(identifier) for identifier in target_ids
+        ):
+            raise TypeError("lint result warned_ids must be an array of valid ids")
+        if len(set(target_ids)) != len(target_ids):
+            raise ValueError("lint result warned_ids must be unique")
+        unknown_ids = [
+            identifier for identifier in target_ids if identifier not in original_ids
+        ]
+        if unknown_ids:
+            raise ValueError(f"lint result has unknown ids: {unknown_ids}")
+    except (OSError, TypeError, ValueError) as error:
+        result = {
+            **accepted,
+            "voice_repair": {
+                "target_ids": [],
+                "accepted_ids": [],
+                "unchanged_ids": [],
+                "reverted": [],
+                "anomalies": [],
+                "error": f"{type(error).__name__}: {error}",
+            },
+        }
+        print(json.dumps(result, ensure_ascii=False))
+        return 0
+
+    if lint_result.get("error") is not None:
+        result = {
+            **accepted,
+            "voice_repair": {
+                "target_ids": target_ids,
+                "accepted_ids": [],
+                "unchanged_ids": [],
+                "reverted": [],
+                "anomalies": [],
+                "error": str(lint_result["error"]),
+            },
+        }
+        print(json.dumps(result, ensure_ascii=False))
+        return 0
+
+    target_set = set(target_ids)
+    limited = {
+        **original,
+        "findings": [item for item in original["findings"] if item["id"] in target_set],
+    }
+    try:
+        responses = read_array(responses_path, fenced=True)
+        verdicts = read_array(preservation_path)
+        repaired = merge(limited, responses, verdicts)
+    except (OSError, TypeError, ValueError) as error:
+        repaired = merge(limited, [], [], f"{type(error).__name__}: {error}")
+
+    replacements = {item["id"]: item for item in repaired["findings"]}
+    report = {"target_ids": target_ids, **repaired["voice_preservation"]}
+    result = {
+        **accepted,
+        "findings": [
+            replacements.get(item["id"], item) for item in accepted["findings"]
+        ],
+        "voice_repair": report,
+    }
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == "repair":
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument("original", help="Full immutable pre-voice object")
+        parser.add_argument(
+            "accepted", help="Full object accepted by the first voice pass"
+        )
+        parser.add_argument("lint", help="Voice linter result with warned_ids")
+        parser.add_argument("responses", help="Repair response array")
+        parser.add_argument("preservation", help="Repair preservation verdicts")
+        args = parser.parse_args(sys.argv[2:])
+        return run_repair(
+            args.original,
+            args.accepted,
+            args.lint,
+            args.responses,
+            args.preservation,
+        )
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("original", help="Full immutable finding-quality object")
+    parser.add_argument("responses", help="Bare or four-backtick-fenced voice array")
+    parser.add_argument("preservation", help="Orchestrator's semantic verdicts")
+    args = parser.parse_args()
+    return run_merge(args.original, args.responses, args.preservation)
 
 
 if __name__ == "__main__":

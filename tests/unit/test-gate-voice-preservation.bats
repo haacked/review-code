@@ -174,6 +174,14 @@ PY
 
 @test "voice preservation: an existing severity prefix keeps its exact form" {
     update_json "$ORIGINAL" '.findings[0].description |= sub("`suggestion`:"; "**suggestion**:")'
+    update_json "$RESPONSES" '.[0].description |= sub("`suggestion`:"; "**suggestion**:")'
+
+    run_gate
+
+    assert_accepted 1
+    assert_accepted 2
+
+    update_json "$RESPONSES" '.[0].description |= sub("\\*\\*suggestion\\*\\*:"; "`suggestion`:")'
 
     run_gate
 
@@ -224,6 +232,19 @@ PY
     run_gate
     assert_accepted 1
 
+    cp "$ORIGINAL" "$BATS_TEST_TMPDIR/before-boundary-original.json"
+    cp "$RESPONSES" "$BATS_TEST_TMPDIR/before-boundary-responses.json"
+    update_json "$ORIGINAL" '.findings[0].proposed_fix = "x"'
+    update_json "$RESPONSES" '.[0].proposed_fix = "xx"'
+    run_gate
+    assert_accepted 1
+
+    update_json "$RESPONSES" '.[0].proposed_fix = "xxx"'
+    run_gate
+    assert_restored 1
+
+    cp "$BATS_TEST_TMPDIR/before-boundary-original.json" "$ORIGINAL"
+    cp "$BATS_TEST_TMPDIR/before-boundary-responses.json" "$RESPONSES"
     cp "$RESPONSES" "$BATS_TEST_TMPDIR/before-growth.json"
     for field in description proposed_fix; do
         cp "$BATS_TEST_TMPDIR/before-growth.json" "$RESPONSES"
@@ -385,4 +406,57 @@ PY
 
     assert_restored 1
     assert_accepted 2
+}
+
+@test "voice preservation repair: replaces warned ids and retains accepted neighbors" {
+    local accepted="$BATS_TEST_TMPDIR/accepted.json"
+    local lint_result="$BATS_TEST_TMPDIR/lint-result.json"
+    local repair_responses="$BATS_TEST_TMPDIR/repair-responses.json"
+    local repair_preservation="$BATS_TEST_TMPDIR/repair-preservation.json"
+
+    run_gate
+    cp "$RESULT" "$accepted"
+    printf '%s\n' '{"warned_ids": [1], "error": null}' > "$lint_result"
+    jq '[.[] | select(.id == 1) | .description |= sub("does not"; "cannot")]' "$RESPONSES" > "$repair_responses"
+    printf '%s\n' '[{"id": 1, "preserved": true, "notes": "Same claim."}]' > "$repair_preservation"
+
+    run "$GATE" repair "$ORIGINAL" "$accepted" "$lint_result" "$repair_responses" "$repair_preservation"
+
+    [ "$status" -eq 0 ]
+    printf '%s\n' "$output" > "$RESULT"
+    jq -e --slurpfile repairs "$repair_responses" --slurpfile accepted "$accepted" '
+        (.findings[] | select(.id == 1) | {description, proposed_fix})
+            == ($repairs[0][] | select(.id == 1) | {description, proposed_fix})
+        and (.findings[] | select(.id == 2))
+            == ($accepted[0].findings[] | select(.id == 2))
+        and .voice_repair.target_ids == [1]
+        and .voice_repair.accepted_ids == [1]
+    ' "$RESULT"
+}
+
+@test "voice preservation repair: missing and unexpected responses restore only warned ids" {
+    local accepted="$BATS_TEST_TMPDIR/accepted.json"
+    local lint_result="$BATS_TEST_TMPDIR/lint-result.json"
+    local repair_responses="$BATS_TEST_TMPDIR/repair-responses.json"
+    local repair_preservation="$BATS_TEST_TMPDIR/repair-preservation.json"
+
+    run_gate
+    cp "$RESULT" "$accepted"
+    printf '%s\n' '{"warned_ids": [1], "error": null}' > "$lint_result"
+    jq '[.[0] | .id = 99]' "$RESPONSES" > "$repair_responses"
+    printf '%s\n' '[{"id": 99, "preserved": true, "notes": "Unexpected."}]' > "$repair_preservation"
+
+    run "$GATE" repair "$ORIGINAL" "$accepted" "$lint_result" "$repair_responses" "$repair_preservation"
+
+    [ "$status" -eq 0 ]
+    printf '%s\n' "$output" > "$RESULT"
+    jq -e --slurpfile original "$ORIGINAL" --slurpfile accepted "$accepted" '
+        (.findings[] | select(.id == 1))
+            == ($original[0].findings[] | select(.id == 1))
+        and (.findings[] | select(.id == 2))
+            == ($accepted[0].findings[] | select(.id == 2))
+        and (.voice_repair.anomalies | length) == 2
+        and (.voice_repair.reverted[] | select(.id == 1) | .reasons)
+            == ["missing or duplicate response"]
+    ' "$RESULT"
 }

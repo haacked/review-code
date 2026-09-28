@@ -114,7 +114,21 @@ jq '[.findings[] | {id, description, proposed_fix}]' \
   > "<artifacts_dir>/voice-lint-result.json"
 ```
 
-Read `warned_ids` and `error` from the result; the linter exits zero even on errors. For warned ids, ask the same voice agent once to repair the flagged sentence. Claude may resume the voice task. Codex must dispatch a fresh, self-contained `code-reviewer-voice` prompt because it has no resume state. Use a fresh response file and fresh comparison decisions for the repair. Run the same preservation merge against the immutable pre-voice snapshot, limited to the warned ids, then replace only those ids in the accepted full object. Never compare a repair only with the first rewrite, reuse its preservation verdict, or let missing unrequested ids undo accepted neighbors. Regenerate the linter array and lint once. A remaining warning restores the pre-voice body. A missing linter or non-null `error` leaves the accepted voice bodies unchanged.
+Read `warned_ids` and `error` from the result; the linter exits zero even on errors. For warned ids, ask the same voice agent once to repair the flagged sentence. Claude may resume the voice task. Codex must dispatch a fresh, self-contained `code-reviewer-voice` prompt because it has no resume state. Use a fresh response file and fresh comparison decisions for the repair. Compare every repair with the immutable pre-voice snapshot, never with the first rewrite.
+
+Run the executable repair merge:
+
+```bash
+~/.agents/skills/review-code/scripts/gate-voice-preservation.py repair \
+  "<artifacts_dir>/finding-quality-prevoice.json" \
+  "<artifacts_dir>/finding-quality-voiced.json" \
+  "<artifacts_dir>/voice-lint-result.json" \
+  "<artifacts_dir>/voice-repair-output.json" \
+  "<artifacts_dir>/voice-repair-preservation.json" \
+  > "<artifacts_dir>/finding-quality-repaired.json"
+```
+
+Use its full output as `$finding_quality`. The command derives the target ids from `warned_ids`, validates those candidates against the immutable snapshot, and replaces only those ids in the accepted voiced object. Missing or rejected repairs restore their pre-voice finding; unexpected ids are ignored and recorded as anomalies. Regenerate the linter array and lint once. A remaining warning restores the pre-voice body. A missing linter or non-null `error` leaves the accepted voice bodies unchanged.
 
 Record voice usage, preservation failures, and `{total_tokens: 0, checked, clean, warned, bounced, reverted}` under the existing `$token_usage` keys. In debug mode, save the original snapshot, raw response, comparison decisions, merge diagnostics, and `11c-voice-rewrite` and `11c2-voice-lint` artifacts.
 
