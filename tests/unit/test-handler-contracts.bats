@@ -183,3 +183,14 @@ EOF
     [ "$(echo "$output" | jq -r '.findings[0].publishable')" = "true" ]
     [ "$(echo "$output" | jq '.withheld | length')" -eq 0 ]
 }
+
+@test "handler contracts: JSON-returning agents write the output path the handler names" {
+    # A background agent can hand back a prose summary in place of its reply, so
+    # the array has to reach the orchestrator through a file.
+    local rule="When the prompt names an output path, write the bare JSON array"
+    for agent in comprehension-gate code-reviewer-comment code-reviewer-voice; do
+        grep -qF "$rule" "$PROJECT_ROOT/agents/$agent.md"
+        grep -q "\`$agent\`.*output path" "$SKILL/handlers/review-finding-quality.md"
+    done
+    grep -qF 'Output path: <artifacts_dir>/<call>-output.json' "$SKILL/handlers/review-finding-quality.md"
+}

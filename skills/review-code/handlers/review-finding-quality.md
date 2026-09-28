@@ -4,6 +4,10 @@ Load this handler after finding validation and the optional adversary meta-revie
 
 When `$selected_agents` or the surviving finding pool is empty, set `$finding_quality` to `{"findings": [], "rewrites_needed": [], "withheld": []}` and skip to "Finalize Publication". A clean review still needs an explicit value because document composition, `--fix`, and PR output consume it.
 
+### Receive Agent Output Through a File
+
+`comprehension-gate`, `code-reviewer-comment`, and `code-reviewer-voice` each return one JSON array. Under Claude, end every dispatch prompt to them in this handler with `Output path: <artifacts_dir>/<call>-output.json`, using a `<call>` name that is unique within the run, such as `preflight`, `compose`, `voice`, `voice-repair`, `gate`, or `repair-3`. The agent writes the bare array to that path and replies with the path. Read the array from the file. If the file is missing or does not parse, parse the fenced array in the reply instead. The output counts as missing only when both fail, and each stage below says what a missing output means for it. A reply that only summarizes the output is not the output. Under Codex, name no path: `agent-dispatch.sh` saves the agent's final message to the output file it is given, and the Codex sandbox is read-only.
+
 ### Build and Validate the Contract
 
 Enumerate the surviving findings in stable review order. Assign every finding a unique sequential integer `id`, starting at 1, then read its cited code and relevant diff and build:
@@ -65,7 +69,7 @@ Record preflight usage under `$token_usage["comprehension-gate-preflight"]`. In 
 
 If the preflight produced no `rewrites_needed` entries, skip the composer call and record zero composer usage. Otherwise send only those entries to `code-reviewer-comment` with their current bodies, facts, preflight coverage, notes, unresolved phrases, `$diff_path`, `<artifacts_dir>/briefing.md`, and `$file_access_instructions`. The composer must compose from the facts and inspect cited code when a fact still uses internal shorthand.
 
-- **Claude:** start a Task with subagent_type `code-reviewer-comment`.
+- **Claude:** start a Task with subagent_type `code-reviewer-comment` and an output path.
 - **Codex:** write a self-contained prompt to `<artifacts_dir>/comment-compose-prompt.md`, then run `agent-dispatch.sh run code-reviewer-comment <prompt-file> <artifacts_dir>/comment-compose-output.md`.
 
 Parse by id and merge only `description` and `proposed_fix`. Ignore unknown extra ids and record a parse anomaly. Withhold each expected id that is missing, duplicated, malformed, or has a non-null `error`, using `quality_state: "composition_failed"` and the concrete reason.
@@ -78,7 +82,7 @@ Record composer usage under `$token_usage["code-reviewer-comment"]`. In debug mo
 
 ### Voice Pass
 
-Send each finding's `id`, `severity`, `location`, `comment_style`, `description`, and `proposed_fix` to `code-reviewer-voice`. Keep the facts and routing fields in `$finding_quality`, outside the voice payload.
+Send each finding's `id`, `severity`, `location`, `comment_style`, `description`, and `proposed_fix` to `code-reviewer-voice`, with an output path under Claude. Keep the facts and routing fields in `$finding_quality`, outside the voice payload. A missing voice output is a failed batch.
 
 Parse responses by id. `unchanged: true` keeps the current body. Ignore unknown ids and count them as anomalies. A missing id keeps the current body. Treat an array length difference greater than one as a failed batch and keep every current body.
 
@@ -103,7 +107,7 @@ Record voice usage, preservation failures, and `{total_tokens: 0, checked, clean
 
 Merge accepted voice bodies into `$finding_quality.findings`. Write the full object to `<artifacts_dir>/finding-contract-voiced.json` and its `findings` array to `<artifacts_dir>/comprehension-input.json` with `kind: "finding"`.
 
-- **Claude:** start a Task with subagent_type `comprehension-gate` and the input.
+- **Claude:** start a Task with subagent_type `comprehension-gate`, the input, and an output path.
 - **Codex:** point a self-contained prompt at `<artifacts_dir>/comprehension-input.json`, then run `agent-dispatch.sh run comprehension-gate <prompt-file> <artifacts_dir>/comprehension-output.md`. The gate may read that input file, but receives no diff or source-code path.
 
 Require the `comprehension-gate` agent's Output schema for both preflight and final verdicts. Write only the parsed JSON array, without Markdown fences, to `<artifacts_dir>/comprehension-verdicts.json`. Each entry must preserve its input `id` and contain `verdict`, `coverage`, `inference_required`, `unresolved`, and `notes`. Coverage has exactly six boolean keys: `problem`, `trigger`, `mechanism`, `result`, `requested_change`, and `regression_case`. Then run:
