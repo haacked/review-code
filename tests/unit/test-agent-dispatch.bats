@@ -28,6 +28,10 @@ while not all((state / f"{peer}.started").exists() for peer in spec.get("peers",
     if time.monotonic() > deadline:
         sys.exit(81)
     time.sleep(0.01)
+if spec.get("reject_started"):
+    time.sleep(0.2)
+    if (state / f"{spec['reject_started']}.started").exists():
+        sys.exit(83)
 if spec.get("after"):
     while not (state / f"{spec['after']}.done").exists():
         if time.monotonic() > deadline:
@@ -100,7 +104,21 @@ run_batch() {
         and ([.[].agent] | sort) == ["fast", "slow"]
         and all(.[]; .usage == {input_tokens: 10, output_tokens: 5})
         and all(.[]; .output_file | endswith(" output.md"))
+        and all(.[]; .exit_code == 0 and (.events_file | endswith(".events.jsonl")))
+        and all(.[]; (keys | sort) == ["agent", "events_file", "exit_code", "output_file", "usage"])
     '
+}
+
+@test "agent-dispatch: batch limits simultaneous reviewers" {
+    write_agent first '{"name":"first","peers":["second"],"reject_started":"third"}'
+    write_agent second '{"name":"second","peers":["first"],"after":"first"}'
+    write_agent third '{"name":"third","after":"first"}'
+    write_manifest first second third
+
+    run env REVIEW_CODE_AGENT_CONCURRENCY=2 bash -c 'env -u CLAUDECODE -u CLAUDE_CONFIG_DIR CODEX_HOME="$1" "$2" batch "$3"' _ "$TEST_CODEX_HOME" "$SCRIPT" "$MANIFEST"
+
+    [ "$status" -eq 0 ]
+    [ -f "$TEST_DIR/state/third.done" ]
 }
 
 @test "agent-dispatch: batch distinguishes repeated agents by output path" {

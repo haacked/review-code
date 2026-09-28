@@ -39,7 +39,7 @@ bash_call() {
     run "$SCRIPT" --dir "$ROOT" --bash-glue --json
 
     [ "$status" -eq 0 ]
-    echo "$output" | jq -e '.summary.sessions == 1 and .summary.bash_calls == 8 and .summary.glue_calls == 4 and .summary.glue_calls_per_session == 4 and .summary.by_kind == {noop: 1, sleep: 1, timestamp: 1, waiting: 1}'
+    echo "$output" | jq -e '.summary.sessions == 1 and .summary.bash_calls == 8 and .summary.glue_calls == 4 and .summary.glue_calls_per_session == 4 and .summary.short_non_skill_calls == 6 and .summary.by_kind == {noop: 1, sleep: 1, timestamp: 1, waiting: 1}'
 }
 
 @test "token-report --bash-glue: includes zero-glue sessions in denominator and respects since" {
@@ -63,4 +63,16 @@ bash_call() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"noop"* ]]
     [[ "$output" == *"1.00"* ]]
+}
+
+@test "token-report --bash-glue: returns JSON and text summaries for no sessions" {
+    rm "$MAIN"
+
+    run "$SCRIPT" --dir "$ROOT" --bash-glue --json
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.summary.sessions == 0 and .summary.glue_calls_per_session == 0 and .sessions == []'
+
+    run "$SCRIPT" --dir "$ROOT" --bash-glue
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Bash glue report: 0 sessions"* ]]
 }

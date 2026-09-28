@@ -93,6 +93,7 @@ PY
 @test "update-review-metadata: generates the current UTC timestamp when omitted" {
     local mode
     for mode in full delta; do
+        cp "$TEST_DIR/before.md" "$REVIEW"
         python3 -c 'from datetime import datetime, timezone; print(datetime.now(timezone.utc).timestamp())' > "$TEST_DIR/started"
 
         run "$SCRIPT" --file "$REVIEW" --set review_mode="$mode"

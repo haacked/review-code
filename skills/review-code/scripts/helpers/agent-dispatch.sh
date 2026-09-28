@@ -97,9 +97,14 @@ _run_agent_codex() {
 run_batch() {
     local manifest="$1"
     local rows agent prompt_file output_file result_file index exit_code
-    local failed=0
+    local concurrency="${REVIEW_CODE_AGENT_CONCURRENCY:-4}"
+    local failed=0 wait_index=0
     local -a pids=() agents=() prompts=() outputs=()
 
+    if [[ ! "${concurrency}" =~ ^[1-9][0-9]*$ ]] || ((${#concurrency} > 2)) || ((concurrency > 32)); then
+        echo "ERROR: REVIEW_CODE_AGENT_CONCURRENCY must be an integer from 1 to 32" >&2
+        return 2
+    fi
     if [[ "$(detect_harness)" != codex ]]; then
         echo "ERROR: batch requires Codex; Claude uses native Task completion notifications." >&2
         return 2
@@ -133,13 +138,23 @@ run_batch() {
     done <<< "${rows}"
 
     for index in "${!agents[@]}"; do
+        if ((index - wait_index >= concurrency)); then
+            if wait "${pids[wait_index]}"; then
+                :
+            else
+                exit_code=$?
+                echo "ERROR: agent ${agents[wait_index]} exited ${exit_code}: ${outputs[wait_index]}" >&2
+                failed=1
+            fi
+            ((wait_index += 1))
+        fi
         result_file="${outputs[index]}.dispatch.json"
         mkdir -p "$(dirname "${result_file}")"
         _run_agent_codex "${agents[index]}" "${prompts[index]}" "${outputs[index]}" > "${result_file}" &
         pids+=("$!")
     done
 
-    for index in "${!pids[@]}"; do
+    for ((index = wait_index; index < ${#pids[@]}; index++)); do
         if wait "${pids[index]}"; then
             continue
         else
