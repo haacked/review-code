@@ -78,8 +78,8 @@ reset_globals() {
     [[ "$output" == *'"area":"performance"'* ]]
 }
 
-@test "detect_area_keyword: identifies all six keywords" {
-    for keyword in security performance maintainability testing compatibility architecture; do
+@test "detect_area_keyword: identifies all supported keywords" {
+    for keyword in security performance maintainability testing compatibility architecture correctness frontend infra-config; do
         arg="$keyword"
         file_pattern=""
         run detect_area_keyword
@@ -108,6 +108,58 @@ reset_globals() {
     file_pattern=""
     run detect_area_keyword
     [ "$status" -eq 1 ]
+}
+
+@test "area CLI: correctness omits force_mode by default" {
+    run bash "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" correctness
+    [ "$status" -eq 0 ]
+    jq -e '.mode == "area" and .area == "correctness" and (has("force_mode") | not)' <<< "$output"
+}
+
+@test "area CLI: correctness preserves a file pattern without force" {
+    run bash "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" correctness "**/*.sh"
+    [ "$status" -eq 0 ]
+    jq -e '.mode == "area" and .area == "correctness" and .file_pattern == "**/*.sh" and (has("force_mode") | not)' <<< "$output"
+}
+
+@test "area CLI: force flags before correctness set force_mode" {
+    for flag in --force -f; do
+        run bash "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "$flag" correctness
+        [ "$status" -eq 0 ]
+        jq -e '.mode == "area" and .area == "correctness" and .force_mode == "true"' <<< "$output"
+    done
+}
+
+@test "area CLI: force flags after correctness set force_mode" {
+    for flag in --force -f; do
+        run bash "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" correctness "$flag"
+        [ "$status" -eq 0 ]
+        jq -e '.mode == "area" and .area == "correctness" and .force_mode == "true"' <<< "$output"
+    done
+}
+
+@test "area CLI: force flags before correctness preserve the file pattern" {
+    for flag in --force -f; do
+        run bash "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" "$flag" correctness "**/*.sh"
+        [ "$status" -eq 0 ]
+        jq -e '.mode == "area" and .area == "correctness" and .force_mode == "true" and .file_pattern == "**/*.sh"' <<< "$output"
+    done
+}
+
+@test "area CLI: force flags between correctness and the file pattern preserve both" {
+    for flag in --force -f; do
+        run bash "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" correctness "$flag" "**/*.sh"
+        [ "$status" -eq 0 ]
+        jq -e '.mode == "area" and .area == "correctness" and .force_mode == "true" and .file_pattern == "**/*.sh"' <<< "$output"
+    done
+}
+
+@test "area CLI: force flags after correctness and the file pattern preserve both" {
+    for flag in --force -f; do
+        run bash "$PROJECT_ROOT/skills/review-code/scripts/parse-review-arg.sh" correctness "**/*.sh" "$flag"
+        [ "$status" -eq 0 ]
+        jq -e '.mode == "area" and .area == "correctness" and .force_mode == "true" and .file_pattern == "**/*.sh"' <<< "$output"
+    done
 }
 
 # =============================================================================
