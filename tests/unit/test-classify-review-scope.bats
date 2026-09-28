@@ -248,3 +248,59 @@ ENDJSON
         echo "$result" | jq -e --argjson expected "$expected" '.agents == $expected'
     done
 }
+
+@test "large docs-only change skips security and compatibility" {
+    session=$(create_session 3000 '[
+        {"path":"docs/internal/cohorts/README.md","type":"source","is_infra_config":false,"is_test":false},
+        {"path":"docs/internal/cohorts/invariants.md","type":"source","is_infra_config":false,"is_test":false}
+    ]')
+
+    result=$("$SCRIPT" "$session")
+    echo "$result" | jq -e '.agents == ["performance", "correctness", "maintainability", "testing", "architecture"]'
+    echo "$result" | jq -e '.skipped_agents == ["security", "compatibility"]'
+    echo "$result" | jq -e '.reasoning | contains("docs-only")'
+}
+
+@test "tiny docs-only change drops security from the core agents" {
+    session=$(create_session 100 '[
+        {"path":"README.md","type":"source","is_infra_config":false,"is_test":false}
+    ]')
+
+    result=$("$SCRIPT" "$session")
+    echo "$result" | jq -e '.agents == ["correctness", "testing", "architecture"]'
+}
+
+@test "docs-only matches doc directories and well-known doc files" {
+    session=$(create_session 800 '[
+        {"path":"doc/setup.rst","type":"source","is_infra_config":false,"is_test":false},
+        {"path":"packages/web/docs/guide.mdx","type":"source","is_infra_config":false,"is_test":false},
+        {"path":"CHANGELOG.md","type":"source","is_infra_config":false,"is_test":false},
+        {"path":"old/docs/removed.md","type":"source","is_infra_config":false,"is_test":false,"deleted":true}
+    ]')
+
+    result=$("$SCRIPT" "$session")
+    echo "$result" | jq -e '.agents | contains(["security"]) | not'
+    echo "$result" | jq -e '.agents | contains(["correctness", "maintainability"])'
+}
+
+@test "docs mixed with source keeps security and compatibility" {
+    session=$(create_session 3000 '[
+        {"path":"docs/api.md","type":"source","is_infra_config":false,"is_test":false},
+        {"path":"backend/api.py","type":"source","is_infra_config":false,"is_test":false}
+    ]')
+
+    result=$("$SCRIPT" "$session")
+    echo "$result" | jq -e '.agents | contains(["security", "compatibility"])'
+    echo "$result" | jq -e '.reasoning | contains("docs-only") | not'
+}
+
+@test "markdown outside doc directories is not treated as docs" {
+    # Agent definitions and skill files are Markdown that the tooling executes as prompts.
+    session=$(create_session 3000 '[
+        {"path":"agents/code-reviewer-voice.md","type":"source","is_infra_config":false,"is_test":false},
+        {"path":"skills/review-code/SKILL.md","type":"source","is_infra_config":false,"is_test":false}
+    ]')
+
+    result=$("$SCRIPT" "$session")
+    echo "$result" | jq -e '.agents | contains(["security", "compatibility"])'
+}

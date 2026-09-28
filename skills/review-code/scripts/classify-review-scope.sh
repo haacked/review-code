@@ -26,7 +26,10 @@ if [[ ! -f "${session_file}" ]]; then
 fi
 
 # Extract classification inputs from session JSON (single jq invocation, no eval)
-read -r diff_tokens file_count has_frontend test_count config_count migration_count infra_config_count < <(
+# A Markdown file counts as docs only inside a docs directory or as a README, CHANGELOG or
+# CONTRIBUTING file. Elsewhere, such as agent definitions and skill files, Markdown is a prompt
+# that tooling executes, so it still gets every reviewer.
+read -r diff_tokens file_count has_frontend test_count config_count migration_count infra_config_count docs_count < <(
     jq -r '
         (.file_metadata.modified_files // []) as $files |
         [
@@ -36,7 +39,10 @@ read -r diff_tokens file_count has_frontend test_count config_count migration_co
             ([$files[] | select((.type == "test") or (.is_test == true))] | length),
             ([$files[] | select(.type == "config")] | length),
             ([$files[] | select(.type == "migration")] | length),
-            ([$files[] | select(.is_infra_config == true)] | length)
+            ([$files[] | select(.is_infra_config == true)] | length),
+            ([$files[] | select((.path // "") | test(
+                "(^|/)docs?/.*\\.(md|mdx|markdown|rst|adoc)$|(^|/)(README|CHANGELOG|CONTRIBUTING)[^/]*\\.(md|mdx|markdown|rst|adoc)$";
+                "i"))] | length)
         ] | @tsv
     ' "${session_file}"
 )
@@ -95,6 +101,19 @@ else
         agents+=("compatibility")
     fi
     reasoning="Small source change (${diff_tokens} diff tokens, ${file_count} files): focused agents"
+fi
+
+# A docs-only diff changes no code, so the security and compatibility reviewers have nothing to trace.
+if [[ "${docs_count}" -gt 0 ]] && [[ "${docs_count}" -eq "${file_count}" ]]; then
+    docs_agents=()
+    for agent in "${agents[@]}"; do
+        case "${agent}" in
+            security | compatibility) ;;
+            *) docs_agents+=("${agent}") ;;
+        esac
+    done
+    agents=("${docs_agents[@]}")
+    reasoning="${reasoning}, minus security and compatibility for a docs-only change"
 fi
 
 if [[ "${infra_config_count}" -gt 0 ]] && [[ "${infra_config_count}" -lt "${file_count}" ]]; then
