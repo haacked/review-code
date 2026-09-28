@@ -18,7 +18,7 @@ Loaded when the session JSON's `chunk_metadata.chunked` is `true`: the diff was 
 
    Dispatch one analysis per chunk in parallel using the harness and completion rules in `review.md`. For Codex, collect the entries below in one `agent-dispatch.sh batch` manifest and require that batch to finish successfully:
    - **Claude:** Use Task with `subagent_type: "Explore"`, `model: "sonnet"`. Explore is read-only, so request the complete summary as its final response, then save it once to the chunk's `analysis_path` using Write. If using an equivalent agent with a Write tool, request direct output to `analysis_path` and only a path and completion status in its response. If that agent cannot write, save its complete returned summary using Write instead.
-   - **Codex:** Write the prompt to a file and use `agent-dispatch.sh run code-review-context-explorer <prompt-file> <analysis_path>`. Request the complete summary as the final message; the read-only subprocess's output file captures it directly. Use the rendered agent's model. Do not read the summary into the orchestrator.
+   - **Codex:** Write each prompt to a file. Add one entry per chunk to the batch manifest with `agent`: `code-review-context-explorer`, `prompt_file`: `<prompt-file>`, and `output_file`: `$chunk.analysis_path`. Request the complete summary as the final message; the read-only subprocess's output file captures it directly. Use the rendered agent's model. Do not read the summary into the orchestrator.
 
    Use this prompt, adding the output instruction for the selected harness:
 

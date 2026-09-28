@@ -181,7 +181,10 @@ assert 'On the Claude fallback only, save the returned summary there using the W
 chunked = (handlers / "review-chunked.md").read_text()
 assert 'Explore is read-only' in chunked
 assert "save it once to the chunk's `analysis_path` using Write" in chunked
-assert 'agent-dispatch.sh run code-review-context-explorer <prompt-file> <analysis_path>' in chunked
+assert 'Add one entry per chunk to the batch manifest' in chunked
+assert '`agent`: `code-review-context-explorer`' in chunked
+assert '`output_file`: `$chunk.analysis_path`' in chunked
+assert 'agent-dispatch.sh run code-review-context-explorer <prompt-file> <analysis_path>' not in chunked
 assert "the read-only subprocess's output file captures it directly" in chunked
 assert 'Do not read the summary into the orchestrator.' in chunked
 PY

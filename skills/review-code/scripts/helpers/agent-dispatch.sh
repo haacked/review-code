@@ -96,9 +96,9 @@ _run_agent_codex() {
 
 run_batch() {
     local manifest="$1"
-    local rows agent prompt_file output_file index exit_code
+    local rows agent prompt_file output_file result_file index exit_code
     local failed=0
-    local -a pids=() agents=() prompts=() outputs=()
+    local -a pids=() agents=() prompts=() outputs=() results=()
 
     if [[ "$(detect_harness)" != codex ]]; then
         echo "ERROR: batch requires Codex; Claude uses native Task completion notifications." >&2
@@ -112,6 +112,10 @@ run_batch() {
                 and all(.prompt_file, .output_file;
                     type == "string" and length > 0 and (test("[[:cntrl:]]") | not)))
             and ([.[].output_file] | length == (unique | length))
+            and ([.[].output_file] as $outputs
+                 | all($outputs[];
+                       (. + ".dispatch.json") as $result
+                       | ($outputs | index($result) | not)))
         then .[] | [.agent, .prompt_file, .output_file] | join("\t")
         else error("expected nonempty agent entries with unique output paths") end
     ' "${manifest}"); then
@@ -129,8 +133,11 @@ run_batch() {
     done <<< "${rows}"
 
     for index in "${!agents[@]}"; do
-        _run_agent_codex "${agents[index]}" "${prompts[index]}" "${outputs[index]}" &
+        result_file="${outputs[index]}.dispatch.json"
+        mkdir -p "$(dirname "${result_file}")"
+        _run_agent_codex "${agents[index]}" "${prompts[index]}" "${outputs[index]}" > "${result_file}" &
         pids+=("$!")
+        results+=("${result_file}")
     done
 
     for index in "${!pids[@]}"; do
@@ -139,6 +146,17 @@ run_batch() {
         else
             exit_code=$?
             echo "ERROR: agent ${agents[index]} exited ${exit_code}: ${outputs[index]}" >&2
+            failed=1
+        fi
+    done
+    for index in "${!results[@]}"; do
+        if [[ ! -s "${results[index]}" ]]; then
+            echo "ERROR: agent ${agents[index]} did not produce a dispatch result: ${outputs[index]}" >&2
+            failed=1
+            continue
+        fi
+        if ! jq -ce --arg agent "${agents[index]}" '. + {agent: $agent}' "${results[index]}"; then
+            echo "ERROR: agent ${agents[index]} produced an invalid dispatch result: ${outputs[index]}" >&2
             failed=1
         fi
     done

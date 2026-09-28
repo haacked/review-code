@@ -87,6 +87,44 @@ run_batch() {
     [ "$(cat "$TEST_DIR/reports/fast output.md")" = 'Findings from fast.' ]
 }
 
+@test "agent-dispatch: batch emits each agent's usage with its manifest name" {
+    write_agent slow '{"name":"slow","peers":["fast"],"after":"fast"}'
+    write_agent fast '{"name":"fast","peers":["slow"]}'
+    write_manifest slow fast
+
+    run run_batch
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -se '
+        length == 2
+        and ([.[].agent] | sort) == ["fast", "slow"]
+        and all(.[]; .usage == {input_tokens: 10, output_tokens: 5})
+        and all(.[]; .output_file | endswith(" output.md"))
+    '
+}
+
+@test "agent-dispatch: batch distinguishes repeated agents by output path" {
+    local second_prompt="$TEST_DIR/prompts/reviewer retry.md"
+    local second_output="$TEST_DIR/reports/reviewer retry.md"
+    write_agent reviewer '{"name":"reviewer"}'
+    cp "$TEST_DIR/prompts/reviewer prompt.md" "$second_prompt"
+    jq -n --arg prompt "$TEST_DIR/prompts/reviewer prompt.md" --arg output "$TEST_DIR/reports/reviewer output.md" \
+        --arg retry_prompt "$second_prompt" --arg retry_output "$second_output" \
+        '[
+            {agent: "reviewer", prompt_file: $prompt, output_file: $output},
+            {agent: "reviewer", prompt_file: $retry_prompt, output_file: $retry_output}
+        ]' > "$MANIFEST"
+
+    run run_batch
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -se '
+        length == 2
+        and all(.[]; .agent == "reviewer")
+        and ([.[].output_file] | unique | length) == 2
+    '
+}
+
 @test "agent-dispatch: batch reports an early failure after waiting for successful siblings" {
     write_agent failed '{"name":"failed","peers":["slow"],"exit_code":7}'
     write_agent slow '{"name":"slow","peers":["failed"],"after":"failed"}'
@@ -183,6 +221,20 @@ PY
     write_agent second '{"name":"second"}'
     write_manifest first second
     jq '.[1].output_file = .[0].output_file' "$MANIFEST" > "$TEST_DIR/invalid.json"
+    mv "$TEST_DIR/invalid.json" "$MANIFEST"
+
+    run run_batch
+
+    [ "$status" -ne 0 ]
+    [ ! -e "$TEST_DIR/state/first.started" ]
+    [ ! -e "$TEST_DIR/state/second.started" ]
+}
+
+@test "agent-dispatch: rejects output paths reserved for dispatch results before launch" {
+    write_agent first '{"name":"first"}'
+    write_agent second '{"name":"second"}'
+    write_manifest first second
+    jq '.[1].output_file = .[0].output_file + ".dispatch.json"' "$MANIFEST" > "$TEST_DIR/invalid.json"
     mv "$TEST_DIR/invalid.json" "$MANIFEST"
 
     run run_batch
