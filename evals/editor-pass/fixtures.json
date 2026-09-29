@@ -1,0 +1,1306 @@
+{
+  "source": "Handwritten synthetic fixtures for safeguard behavior. These are not recorded experiment inputs or model responses. All files, claims, and verdicts describe fictional examples.",
+  "cases": [
+    {
+      "id": "valid_neighbor",
+      "findings": [
+        {
+          "id": 1,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/parcels.py",
+          "line": 12,
+          "location": "demo/parcels.py:12",
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "An empty parcel cannot be routed.",
+            "trigger": "The identifier is empty.",
+            "mechanism": [
+              "Validation checks only for null.",
+              "The queue accepts an empty identifier."
+            ],
+            "result": "The worker cannot route the parcel.",
+            "requested_change": "Reject empty identifiers before enqueueing.",
+            "regression_case": "An empty identifier never reaches the queue.",
+            "regression_rationale": null
+          }
+        },
+        {
+          "id": 2,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/thermostat.py",
+          "line": 27,
+          "location": "demo/thermostat.py:27",
+          "description": "`blocking`: When the calibration offset is missing, the reader substitutes zero. The threshold check then compares the raw temperature, so it can issue a false warning. Reject samples with missing offsets and test a missing offset with a raw temperature above the threshold. The required calibration is described in `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "A missing offset can cause a false warning.",
+            "trigger": "The calibration offset is missing.",
+            "mechanism": [
+              "The reader substitutes zero.",
+              "The threshold check compares the raw temperature."
+            ],
+            "result": "The device can issue a false warning.",
+            "requested_change": "Reject samples with missing calibration offsets.",
+            "regression_case": "A missing offset and a high raw temperature must not emit a warning.",
+            "regression_rationale": null
+          }
+        }
+      ],
+      "candidates": [
+        {
+          "id": 1,
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        },
+        {
+          "id": 2,
+          "description": "`blocking`: When the calibration offset is missing, the reader substitutes zero. The threshold check then compares the raw temperature, so it can issue a false warning. Reject samples with missing offsets and test a missing offset with a raw temperature above the threshold. The required calibration is described in `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        }
+      ],
+      "preservation": [],
+      "expected": {
+        "published_ids": [
+          1,
+          2
+        ],
+        "withheld_ids": []
+      }
+    },
+    {
+      "id": "lost_claim",
+      "findings": [
+        {
+          "id": 1,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/parcels.py",
+          "line": 12,
+          "location": "demo/parcels.py:12",
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "An empty parcel cannot be routed.",
+            "trigger": "The identifier is empty.",
+            "mechanism": [
+              "Validation checks only for null.",
+              "The queue accepts an empty identifier."
+            ],
+            "result": "The worker cannot route the parcel.",
+            "requested_change": "Reject empty identifiers before enqueueing.",
+            "regression_case": "An empty identifier never reaches the queue.",
+            "regression_rationale": null
+          }
+        },
+        {
+          "id": 2,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/thermostat.py",
+          "line": 27,
+          "location": "demo/thermostat.py:27",
+          "description": "`blocking`: When the calibration offset is missing, the reader substitutes zero. The threshold check then compares the raw temperature, so it can issue a false warning. Reject samples with missing offsets and test a missing offset with a raw temperature above the threshold. The required calibration is described in `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "A missing offset can cause a false warning.",
+            "trigger": "The calibration offset is missing.",
+            "mechanism": [
+              "The reader substitutes zero.",
+              "The threshold check compares the raw temperature."
+            ],
+            "result": "The device can issue a false warning.",
+            "requested_change": "Reject samples with missing calibration offsets.",
+            "regression_case": "A missing offset and a high raw temperature must not emit a warning.",
+            "regression_rationale": null
+          }
+        }
+      ],
+      "candidates": [
+        {
+          "id": 1,
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        },
+        {
+          "id": 2,
+          "description": "`blocking`: Missing calibration can cause a false warning. Reject samples with missing offsets and cover the absent-offset case in a test. See `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "unchanged": false,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        }
+      ],
+      "preservation": [
+        {
+          "id": 2,
+          "preserved": false,
+          "notes": "The rewrite drops the zero substitution and raw-temperature comparison claims."
+        }
+      ],
+      "expected": {
+        "published_ids": [
+          1
+        ],
+        "withheld_ids": [
+          2
+        ]
+      }
+    },
+    {
+      "id": "shortened_citation",
+      "findings": [
+        {
+          "id": 1,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/parcels.py",
+          "line": 12,
+          "location": "demo/parcels.py:12",
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "An empty parcel cannot be routed.",
+            "trigger": "The identifier is empty.",
+            "mechanism": [
+              "Validation checks only for null.",
+              "The queue accepts an empty identifier."
+            ],
+            "result": "The worker cannot route the parcel.",
+            "requested_change": "Reject empty identifiers before enqueueing.",
+            "regression_case": "An empty identifier never reaches the queue.",
+            "regression_rationale": null
+          }
+        },
+        {
+          "id": 2,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/thermostat.py",
+          "line": 27,
+          "location": "demo/thermostat.py:27",
+          "description": "`blocking`: When the calibration offset is missing, the reader substitutes zero. The threshold check then compares the raw temperature, so it can issue a false warning. Reject samples with missing offsets and test a missing offset with a raw temperature above the threshold. The required calibration is described in `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "A missing offset can cause a false warning.",
+            "trigger": "The calibration offset is missing.",
+            "mechanism": [
+              "The reader substitutes zero.",
+              "The threshold check compares the raw temperature."
+            ],
+            "result": "The device can issue a false warning.",
+            "requested_change": "Reject samples with missing calibration offsets.",
+            "regression_case": "A missing offset and a high raw temperature must not emit a warning.",
+            "regression_rationale": null
+          }
+        }
+      ],
+      "candidates": [
+        {
+          "id": 1,
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        },
+        {
+          "id": 2,
+          "description": "`blocking`: When the calibration offset is missing, the reader substitutes zero. The threshold check then compares the raw temperature, so it can issue a false warning. Reject samples with missing offsets and test a missing offset with a raw temperature above the threshold. The required calibration is described in `sensors.md:10-14`.",
+          "proposed_fix": null,
+          "unchanged": false,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        }
+      ],
+      "preservation": [
+        {
+          "id": 2,
+          "preserved": true,
+          "notes": "Deliberately mistaken fixture decision; structural checks must catch the lost full path."
+        }
+      ],
+      "expected": {
+        "published_ids": [
+          1
+        ],
+        "withheld_ids": [
+          2
+        ]
+      }
+    },
+    {
+      "id": "rejected_edit_verdict",
+      "findings": [
+        {
+          "id": 1,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/parcels.py",
+          "line": 12,
+          "location": "demo/parcels.py:12",
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "An empty parcel cannot be routed.",
+            "trigger": "The identifier is empty.",
+            "mechanism": [
+              "Validation checks only for null.",
+              "The queue accepts an empty identifier."
+            ],
+            "result": "The worker cannot route the parcel.",
+            "requested_change": "Reject empty identifiers before enqueueing.",
+            "regression_case": "An empty identifier never reaches the queue.",
+            "regression_rationale": null
+          }
+        },
+        {
+          "id": 2,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/thermostat.py",
+          "line": 27,
+          "location": "demo/thermostat.py:27",
+          "description": "`blocking`: A missing calibration offset prevents every warning. Reject samples with missing offsets and test that case. See `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "A missing offset can cause a false warning.",
+            "trigger": "The calibration offset is missing.",
+            "mechanism": [
+              "The reader substitutes zero.",
+              "The threshold check compares the raw temperature."
+            ],
+            "result": "The device can issue a false warning.",
+            "requested_change": "Reject samples with missing calibration offsets.",
+            "regression_case": "A missing offset and a high raw temperature must not emit a warning.",
+            "regression_rationale": null
+          }
+        }
+      ],
+      "candidates": [
+        {
+          "id": 1,
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        },
+        {
+          "id": 2,
+          "description": "`blocking`: When the calibration offset is missing, the reader substitutes zero. The threshold check then compares the raw temperature, so it can issue a false warning. Reject samples with missing offsets and test a missing offset with a raw temperature above the threshold. The required calibration is described in `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "unchanged": false,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        }
+      ],
+      "preservation": [
+        {
+          "id": 2,
+          "preserved": false,
+          "notes": "The rewrite reverses the original claim about whether warnings occur."
+        }
+      ],
+      "expected": {
+        "published_ids": [
+          1
+        ],
+        "withheld_ids": [
+          2
+        ]
+      }
+    },
+    {
+      "id": "unchanged_fix_contamination",
+      "findings": [
+        {
+          "id": 1,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/parcels.py",
+          "line": 12,
+          "location": "demo/parcels.py:12",
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "An empty parcel cannot be routed.",
+            "trigger": "The identifier is empty.",
+            "mechanism": [
+              "Validation checks only for null.",
+              "The queue accepts an empty identifier."
+            ],
+            "result": "The worker cannot route the parcel.",
+            "requested_change": "Reject empty identifiers before enqueueing.",
+            "regression_case": "An empty identifier never reaches the queue.",
+            "regression_rationale": null
+          }
+        },
+        {
+          "id": 2,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/thermostat.py",
+          "line": 27,
+          "location": "demo/thermostat.py:27",
+          "description": "`blocking`: When the calibration offset is missing, the reader substitutes zero. The threshold check then compares the raw temperature, so it can issue a false warning. Reject samples with missing offsets and test a missing offset with a raw temperature above the threshold. The required calibration is described in `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "A missing offset can cause a false warning.",
+            "trigger": "The calibration offset is missing.",
+            "mechanism": [
+              "The reader substitutes zero.",
+              "The threshold check compares the raw temperature."
+            ],
+            "result": "The device can issue a false warning.",
+            "requested_change": "Reject samples with missing calibration offsets.",
+            "regression_case": "A missing offset and a high raw temperature must not emit a warning.",
+            "regression_rationale": null
+          }
+        }
+      ],
+      "candidates": [
+        {
+          "id": 1,
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        },
+        {
+          "id": 2,
+          "description": "`blocking`: When the calibration offset is missing, the reader substitutes zero. The threshold check then compares the raw temperature, so it can issue a false warning. Reject samples with missing offsets and test a missing offset with a raw temperature above the threshold. The required calibration is described in `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": "Reject empty parcel identifiers before enqueueing.",
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        }
+      ],
+      "preservation": [],
+      "expected": {
+        "published_ids": [
+          1
+        ],
+        "withheld_ids": [
+          2
+        ]
+      }
+    },
+    {
+      "id": "identical_body_recovery",
+      "findings": [
+        {
+          "id": 1,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/parcels.py",
+          "line": 12,
+          "location": "demo/parcels.py:12",
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "An empty parcel cannot be routed.",
+            "trigger": "The identifier is empty.",
+            "mechanism": [
+              "Validation checks only for null.",
+              "The queue accepts an empty identifier."
+            ],
+            "result": "The worker cannot route the parcel.",
+            "requested_change": "Reject empty identifiers before enqueueing.",
+            "regression_case": "An empty identifier never reaches the queue.",
+            "regression_rationale": null
+          }
+        },
+        {
+          "id": 2,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/thermostat.py",
+          "line": 27,
+          "location": "demo/thermostat.py:27",
+          "description": "`blocking`: When the calibration offset is missing, the reader substitutes zero. The threshold check then compares the raw temperature, so it can issue a false warning. Reject samples with missing offsets and test a missing offset with a raw temperature above the threshold. The required calibration is described in `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "A missing offset can cause a false warning.",
+            "trigger": "The calibration offset is missing.",
+            "mechanism": [
+              "The reader substitutes zero.",
+              "The threshold check compares the raw temperature."
+            ],
+            "result": "The device can issue a false warning.",
+            "requested_change": "Reject samples with missing calibration offsets.",
+            "regression_case": "A missing offset and a high raw temperature must not emit a warning.",
+            "regression_rationale": null
+          }
+        }
+      ],
+      "candidates": [
+        {
+          "id": 1,
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        },
+        {
+          "id": 2,
+          "description": "`blocking`: When the calibration offset is missing, the reader substitutes zero. The threshold check then compares the raw temperature, so it can issue a false warning. Reject samples with missing offsets and test a missing offset with a raw temperature above the threshold. The required calibration is described in `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": "Reject empty parcel identifiers before enqueueing.",
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        }
+      ],
+      "preservation": [],
+      "expected": {
+        "published_ids": [
+          1,
+          2
+        ],
+        "withheld_ids": []
+      },
+      "recover_identical_body": true
+    },
+    {
+      "id": "self_approval_without_cold_read",
+      "findings": [
+        {
+          "id": 1,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/parcels.py",
+          "line": 12,
+          "location": "demo/parcels.py:12",
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "An empty parcel cannot be routed.",
+            "trigger": "The identifier is empty.",
+            "mechanism": [
+              "Validation checks only for null.",
+              "The queue accepts an empty identifier."
+            ],
+            "result": "The worker cannot route the parcel.",
+            "requested_change": "Reject empty identifiers before enqueueing.",
+            "regression_case": "An empty identifier never reaches the queue.",
+            "regression_rationale": null
+          }
+        },
+        {
+          "id": 2,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/thermostat.py",
+          "line": 27,
+          "location": "demo/thermostat.py:27",
+          "description": "`blocking`: A missing calibration offset can cause a false warning. Reject samples with missing offsets and test a missing offset with a high raw temperature. See `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "A missing offset can cause a false warning.",
+            "trigger": "The calibration offset is missing.",
+            "mechanism": [
+              "The reader substitutes zero.",
+              "The threshold check compares the raw temperature."
+            ],
+            "result": "The device can issue a false warning.",
+            "requested_change": "Reject samples with missing calibration offsets.",
+            "regression_case": "A missing offset and a high raw temperature must not emit a warning.",
+            "regression_rationale": null
+          }
+        }
+      ],
+      "candidates": [
+        {
+          "id": 1,
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        },
+        {
+          "id": 2,
+          "description": "`blocking`: A missing calibration offset can cause a false warning. Reject samples with missing offsets and test a missing offset with a high raw temperature. See `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        }
+      ],
+      "preservation": [],
+      "expected": {
+        "published_ids": [
+          1,
+          2
+        ],
+        "withheld_ids": []
+      }
+    },
+    {
+      "id": "incomplete_causal_explanation",
+      "findings": [
+        {
+          "id": 1,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/parcels.py",
+          "line": 12,
+          "location": "demo/parcels.py:12",
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "An empty parcel cannot be routed.",
+            "trigger": "The identifier is empty.",
+            "mechanism": [
+              "Validation checks only for null.",
+              "The queue accepts an empty identifier."
+            ],
+            "result": "The worker cannot route the parcel.",
+            "requested_change": "Reject empty identifiers before enqueueing.",
+            "regression_case": "An empty identifier never reaches the queue.",
+            "regression_rationale": null
+          }
+        },
+        {
+          "id": 2,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/thermostat.py",
+          "line": 27,
+          "location": "demo/thermostat.py:27",
+          "description": "`blocking`: A missing calibration offset can cause a false warning. Reject samples with missing offsets and test a missing offset with a high raw temperature. See `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "A missing offset can cause a false warning.",
+            "trigger": "The calibration offset is missing.",
+            "mechanism": [
+              "The reader substitutes zero.",
+              "The threshold check compares the raw temperature."
+            ],
+            "result": "The device can issue a false warning.",
+            "requested_change": "Reject samples with missing calibration offsets.",
+            "regression_case": "A missing offset and a high raw temperature must not emit a warning.",
+            "regression_rationale": null
+          }
+        }
+      ],
+      "candidates": [
+        {
+          "id": 1,
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        },
+        {
+          "id": 2,
+          "description": "`blocking`: A missing calibration offset can cause a false warning. Reject samples with missing offsets and test a missing offset with a high raw temperature. See `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        }
+      ],
+      "preservation": [],
+      "expected": {
+        "published_ids": [
+          1
+        ],
+        "withheld_ids": [
+          2
+        ]
+      },
+      "independent_verdicts": [
+        {
+          "id": 1,
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        },
+        {
+          "id": 2,
+          "description": "`blocking`: A missing calibration offset can cause a false warning. Reject samples with missing offsets and test a missing offset with a high raw temperature. See `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": false,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": true,
+          "unresolved": [],
+          "verdict": "REWRITE",
+          "notes": "The body omits why a missing offset changes the threshold comparison."
+        }
+      ]
+    },
+    {
+      "id": "rewrite_after_completed_edit",
+      "findings": [
+        {
+          "id": 1,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/parcels.py",
+          "line": 12,
+          "location": "demo/parcels.py:12",
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "An empty parcel cannot be routed.",
+            "trigger": "The identifier is empty.",
+            "mechanism": [
+              "Validation checks only for null.",
+              "The queue accepts an empty identifier."
+            ],
+            "result": "The worker cannot route the parcel.",
+            "requested_change": "Reject empty identifiers before enqueueing.",
+            "regression_case": "An empty identifier never reaches the queue.",
+            "regression_rationale": null
+          }
+        },
+        {
+          "id": 2,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/thermostat.py",
+          "line": 27,
+          "location": "demo/thermostat.py:27",
+          "description": "`blocking`: When the calibration offset is missing, the reader substitutes zero. The threshold check then compares the raw temperature, so it can issue a false warning. Reject samples with missing offsets and test a missing offset with a raw temperature above the threshold. The required calibration is described in `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "A missing offset can cause a false warning.",
+            "trigger": "The calibration offset is missing.",
+            "mechanism": [
+              "The reader substitutes zero.",
+              "The threshold check compares the raw temperature."
+            ],
+            "result": "The device can issue a false warning.",
+            "requested_change": "Reject samples with missing calibration offsets.",
+            "regression_case": "A missing offset and a high raw temperature must not emit a warning.",
+            "regression_rationale": null
+          }
+        }
+      ],
+      "candidates": [
+        {
+          "id": 1,
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        },
+        {
+          "id": 2,
+          "description": "`blocking`: When the calibration offset is missing, the reader substitutes zero. The threshold check then compares the raw temperature, so it can issue a false warning. Reject samples with missing offsets and test a missing offset with a raw temperature above the threshold. The required calibration is described in `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "REWRITE",
+          "notes": "Add an absent-offset regression case, which this synthetic body already states."
+        }
+      ],
+      "preservation": [],
+      "expected": {
+        "published_ids": [
+          1
+        ],
+        "withheld_ids": [
+          2
+        ]
+      }
+    },
+    {
+      "id": "missing_verdict",
+      "findings": [
+        {
+          "id": 1,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/parcels.py",
+          "line": 12,
+          "location": "demo/parcels.py:12",
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "An empty parcel cannot be routed.",
+            "trigger": "The identifier is empty.",
+            "mechanism": [
+              "Validation checks only for null.",
+              "The queue accepts an empty identifier."
+            ],
+            "result": "The worker cannot route the parcel.",
+            "requested_change": "Reject empty identifiers before enqueueing.",
+            "regression_case": "An empty identifier never reaches the queue.",
+            "regression_rationale": null
+          }
+        },
+        {
+          "id": 2,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/thermostat.py",
+          "line": 27,
+          "location": "demo/thermostat.py:27",
+          "description": "`blocking`: When the calibration offset is missing, the reader substitutes zero. The threshold check then compares the raw temperature, so it can issue a false warning. Reject samples with missing offsets and test a missing offset with a raw temperature above the threshold. The required calibration is described in `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "A missing offset can cause a false warning.",
+            "trigger": "The calibration offset is missing.",
+            "mechanism": [
+              "The reader substitutes zero.",
+              "The threshold check compares the raw temperature."
+            ],
+            "result": "The device can issue a false warning.",
+            "requested_change": "Reject samples with missing calibration offsets.",
+            "regression_case": "A missing offset and a high raw temperature must not emit a warning.",
+            "regression_rationale": null
+          }
+        }
+      ],
+      "candidates": [
+        {
+          "id": 1,
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        },
+        {
+          "id": 2,
+          "description": "`blocking`: When the calibration offset is missing, the reader substitutes zero. The threshold check then compares the raw temperature, so it can issue a false warning. Reject samples with missing offsets and test a missing offset with a raw temperature above the threshold. The required calibration is described in `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "notes": ""
+        }
+      ],
+      "preservation": [],
+      "expected": {
+        "published_ids": [
+          1
+        ],
+        "withheld_ids": [
+          2
+        ]
+      }
+    },
+    {
+      "id": "nonboolean_coverage",
+      "findings": [
+        {
+          "id": 1,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/parcels.py",
+          "line": 12,
+          "location": "demo/parcels.py:12",
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "An empty parcel cannot be routed.",
+            "trigger": "The identifier is empty.",
+            "mechanism": [
+              "Validation checks only for null.",
+              "The queue accepts an empty identifier."
+            ],
+            "result": "The worker cannot route the parcel.",
+            "requested_change": "Reject empty identifiers before enqueueing.",
+            "regression_case": "An empty identifier never reaches the queue.",
+            "regression_rationale": null
+          }
+        },
+        {
+          "id": 2,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/thermostat.py",
+          "line": 27,
+          "location": "demo/thermostat.py:27",
+          "description": "`blocking`: When the calibration offset is missing, the reader substitutes zero. The threshold check then compares the raw temperature, so it can issue a false warning. Reject samples with missing offsets and test a missing offset with a raw temperature above the threshold. The required calibration is described in `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "A missing offset can cause a false warning.",
+            "trigger": "The calibration offset is missing.",
+            "mechanism": [
+              "The reader substitutes zero.",
+              "The threshold check compares the raw temperature."
+            ],
+            "result": "The device can issue a false warning.",
+            "requested_change": "Reject samples with missing calibration offsets.",
+            "regression_case": "A missing offset and a high raw temperature must not emit a warning.",
+            "regression_rationale": null
+          }
+        }
+      ],
+      "candidates": [
+        {
+          "id": 1,
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        },
+        {
+          "id": 2,
+          "description": "`blocking`: When the calibration offset is missing, the reader substitutes zero. The threshold check then compares the raw temperature, so it can issue a false warning. Reject samples with missing offsets and test a missing offset with a raw temperature above the threshold. The required calibration is described in `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": 1,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        }
+      ],
+      "preservation": [],
+      "expected": {
+        "published_ids": [
+          1
+        ],
+        "withheld_ids": [
+          2
+        ]
+      }
+    },
+    {
+      "id": "duplicate_candidate",
+      "findings": [
+        {
+          "id": 1,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/parcels.py",
+          "line": 12,
+          "location": "demo/parcels.py:12",
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "An empty parcel cannot be routed.",
+            "trigger": "The identifier is empty.",
+            "mechanism": [
+              "Validation checks only for null.",
+              "The queue accepts an empty identifier."
+            ],
+            "result": "The worker cannot route the parcel.",
+            "requested_change": "Reject empty identifiers before enqueueing.",
+            "regression_case": "An empty identifier never reaches the queue.",
+            "regression_rationale": null
+          }
+        },
+        {
+          "id": 2,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/thermostat.py",
+          "line": 27,
+          "location": "demo/thermostat.py:27",
+          "description": "`blocking`: When the calibration offset is missing, the reader substitutes zero. The threshold check then compares the raw temperature, so it can issue a false warning. Reject samples with missing offsets and test a missing offset with a raw temperature above the threshold. The required calibration is described in `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "A missing offset can cause a false warning.",
+            "trigger": "The calibration offset is missing.",
+            "mechanism": [
+              "The reader substitutes zero.",
+              "The threshold check compares the raw temperature."
+            ],
+            "result": "The device can issue a false warning.",
+            "requested_change": "Reject samples with missing calibration offsets.",
+            "regression_case": "A missing offset and a high raw temperature must not emit a warning.",
+            "regression_rationale": null
+          }
+        }
+      ],
+      "candidates": [
+        {
+          "id": 1,
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        },
+        {
+          "id": 2,
+          "description": "`blocking`: When the calibration offset is missing, the reader substitutes zero. The threshold check then compares the raw temperature, so it can issue a false warning. Reject samples with missing offsets and test a missing offset with a raw temperature above the threshold. The required calibration is described in `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        },
+        {
+          "id": 2,
+          "description": "`blocking`: When the calibration offset is missing, the reader substitutes zero. The threshold check then compares the raw temperature, so it can issue a false warning. Reject samples with missing offsets and test a missing offset with a raw temperature above the threshold. The required calibration is described in `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        }
+      ],
+      "preservation": [],
+      "expected": {
+        "published_ids": [
+          1
+        ],
+        "withheld_ids": [
+          2
+        ]
+      }
+    },
+    {
+      "id": "missing_candidate",
+      "findings": [
+        {
+          "id": 1,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/parcels.py",
+          "line": 12,
+          "location": "demo/parcels.py:12",
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "An empty parcel cannot be routed.",
+            "trigger": "The identifier is empty.",
+            "mechanism": [
+              "Validation checks only for null.",
+              "The queue accepts an empty identifier."
+            ],
+            "result": "The worker cannot route the parcel.",
+            "requested_change": "Reject empty identifiers before enqueueing.",
+            "regression_case": "An empty identifier never reaches the queue.",
+            "regression_rationale": null
+          }
+        },
+        {
+          "id": 2,
+          "severity": "blocking",
+          "comment_style": "detailed",
+          "file": "demo/thermostat.py",
+          "line": 27,
+          "location": "demo/thermostat.py:27",
+          "description": "`blocking`: When the calibration offset is missing, the reader substitutes zero. The threshold check then compares the raw temperature, so it can issue a false warning. Reject samples with missing offsets and test a missing offset with a raw temperature above the threshold. The required calibration is described in `demo/manual/sensors.md:10-14`.",
+          "proposed_fix": null,
+          "facts": {
+            "problem": "A missing offset can cause a false warning.",
+            "trigger": "The calibration offset is missing.",
+            "mechanism": [
+              "The reader substitutes zero.",
+              "The threshold check compares the raw temperature."
+            ],
+            "result": "The device can issue a false warning.",
+            "requested_change": "Reject samples with missing calibration offsets.",
+            "regression_case": "A missing offset and a high raw temperature must not emit a warning.",
+            "regression_rationale": null
+          }
+        }
+      ],
+      "candidates": [
+        {
+          "id": 1,
+          "description": "`blocking`: An empty parcel identifier reaches the dispatch queue because validation checks only for null. The worker then cannot route the parcel. Reject empty identifiers before enqueueing and cover that input in a regression test.",
+          "proposed_fix": null,
+          "unchanged": true,
+          "coverage": {
+            "problem": true,
+            "trigger": true,
+            "mechanism": true,
+            "result": true,
+            "requested_change": true,
+            "regression_case": true
+          },
+          "inference_required": false,
+          "unresolved": [],
+          "verdict": "PASS",
+          "notes": ""
+        }
+      ],
+      "preservation": [],
+      "expected": {
+        "published_ids": [
+          1
+        ],
+        "withheld_ids": [
+          2
+        ]
+      }
+    }
+  ]
+}
