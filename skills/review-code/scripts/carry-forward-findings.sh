@@ -4,14 +4,14 @@ set -euo pipefail
 # carry-forward-findings.sh - Update a review document in place after a delta review.
 #
 # A delta re-review looks only at the files that changed since the last pass, so
-# the earlier review's findings on untouched files are still good and its
-# findings on touched files have just been re-derived. Merging those two by hand
+# findings on untouched files and from skipped reviewers stay in the earlier
+# review. Re-run reviewers re-derive findings on touched files. Merging them by hand
 # means the orchestrator reads the old document (median 11.7KB, p90 29.7KB) and
 # writes it back out, on the run that is supposed to be the cheap one. This does
 # the merge on disk instead: the old bodies never enter a conversation.
 #
-# The work is: cut the findings whose file the delta touched, append whatever the
-# run composed, and move the metadata header forward to the SHA just reviewed.
+# The script cuts findings from re-run reviewers whose files the delta touched,
+# appends the new review, and advances the metadata header to the reviewed SHA.
 #
 # Usage:
 #   carry-forward-findings.sh --review-file <path> --delta-diff <path> [options]
@@ -20,6 +20,7 @@ set -euo pipefail
 #   --append-file <path>  Markdown to append after the carried-forward content
 #   --head-sha <sha>      New review_commit for the metadata header
 #   --delta-from <sha>    Recorded as delta_from in the metadata header
+#   --reviewed-agents     Space-separated areas to replace on touched files; omitted means all
 #   --dry-run             Report what would happen; change nothing
 #
 # Output: a JSON object on stdout. Counts and flags only, plus the list of files
@@ -47,6 +48,7 @@ APPEND_FILE=""
 HEAD_SHA=""
 DELTA_FROM=""
 DRY_RUN=false
+REVIEWED_AGENTS_JSON=null
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -68,6 +70,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --delta-from)
             DELTA_FROM="${2:-}"
+            shift 2
+            ;;
+        --reviewed-agents)
+            if [[ $# -lt 2 ]]; then
+                error "--reviewed-agents requires a value"
+                exit 1
+            fi
+            REVIEWED_AGENTS_JSON=$(jq -nc --arg agents "$2" '$agents | [scan("[^\\s]+") ]')
             shift 2
             ;;
         --dry-run)
@@ -139,11 +149,12 @@ DELTA_FILES_JSON=$(jq -R -s 'split("\n") | map(select(length > 0))' < "${DELTA_F
 # One pass emits the three partitions the rest of the script needs; the counts
 # are read off them at output time rather than tallied into variables here.
 CLASSIFIED=$("${SCRIPT_DIR}/parse-review-findings.sh" --with-spans "${REVIEW_FILE}" \
-    | jq -c --argjson touched "${DELTA_FILES_JSON}" '
+    | jq -c --argjson touched "${DELTA_FILES_JSON}" --argjson reviewed "${REVIEWED_AGENTS_JSON}" '
         ($touched | map(split("/") | last)) as $bases
         | [ .[] as $f
             | $f + { touched: (
                 $f.file != ""
+                and ($reviewed == null or ($reviewed | index($f.agent)) != null)
                 and (
                     ($touched | index($f.file)) != null
                     or (($f.file | contains("/") | not) and ($bases | index($f.file)) != null)
@@ -172,7 +183,7 @@ PRUNED=false
 if [[ -z "${RANGES}" ]]; then
     # Nothing to cut, so the original stands as the base the append lands on.
     PRUNED_FILE="${REVIEW_FILE}"
-    PRUNE_REASON="no findings on the delta's files"
+    PRUNE_REASON="no findings to replace on the delta's files"
 else
     EXPECTED=$(jq -c '.carried + .kept_undeletable' <<< "${CLASSIFIED}" | identity)
     # Cut each finding's lines, then swallow the blank lines it left behind so

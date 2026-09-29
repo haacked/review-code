@@ -56,7 +56,7 @@ DIFF
 }
 
 build_selected_briefing() {
-    "$SCRIPTS/classify-review-scope.sh" "$SESSION_FILE" > "$BATS_TEST_TMPDIR/classification.json"
+    "$SCRIPTS/classify-review-scope.sh" "$SESSION_FILE" "$@" > "$BATS_TEST_TMPDIR/classification.json"
     local agents
     agents=$(jq -r '.agents | join(" ")' "$BATS_TEST_TMPDIR/classification.json")
     run "$SCRIPTS/build-agent-briefing.sh" "$SESSION_FILE" --agents "$agents" "$@"
@@ -81,6 +81,14 @@ write_real_rename_diff() {
     prepare_session false
 
     jq -e '.file_metadata | .file_count == 1 and .deleted_file_count == 0 and .modified_files == [{path: "new.tf", deleted: false, type: "config", language: "unknown", is_test: false, is_infra_config: true, likely_test_path: ""}]' "$SESSION_FILE"
+}
+
+@test "pure rename conservatively selects every reviewer without routing evidence" {
+    write_real_rename_diff new.tf
+    prepare_session false
+
+    result=$("$SCRIPTS/classify-review-scope.sh" "$SESSION_FILE" --diff-file "$ARTIFACTS/diff.patch")
+    jq -e '(.agents | length) == 9 and .skipped_agents == []' <<< "$result"
 }
 
 @test "pure rename with b slash in the old path retains the complete scoped patch" {
@@ -171,6 +179,7 @@ DIFF
 
     build_selected_briefing --diff-file "$delta"
 
+    jq -e '(.agents | length) == 9 and .skipped_agents == []' "$BATS_TEST_TMPDIR/classification.json"
     cmp "$delta" "$ARTIFACTS/diff-infra-config.patch"
     echo "$output" | jq -e --arg delta "$delta" '.diff_path == $delta and .scoped_diffs["diff-infra-config.patch"] > 0'
 }

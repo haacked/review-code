@@ -88,7 +88,7 @@ For code that looks surprising or non-obvious during your investigation:
 
 ### Reviewer routing evidence
 
-For the full-diff exploration, append exactly one `review-routing` fenced JSON block after the summary. Assess security, performance, maintainability, testing, compatibility, architecture, infra-config, and frontend. Correctness always runs. Chunk analyses do not supply routing decisions.
+Append exactly one `review-routing` fenced JSON block after every summary used for reviewer routing, including a delta or chunk analysis. Assess security, performance, maintainability, testing, compatibility, architecture, infra-config, and frontend against the complete patch supplied in the prompt. Correctness always runs.
 
 Use `applies` when the changes touch the area, `uncertain` when you cannot establish whether they do, and `not_applicable` only when concrete negative evidence rules out the area across the full diff. Include each negative check and its result as separate strings in `evidence`. Cite the files read or the search command and its scope. A small diff, a file extension, no findings, or a search you did not run is not negative evidence. A missing caller search cannot rule out performance or compatibility; test and config changes can affect security, performance, and public contracts. Do not spend extra time proving an area irrelevant: use `uncertain` when exploration is incomplete.
 
@@ -96,7 +96,7 @@ Use `applies` when the changes touch the area, `uncertain` when you cannot estab
 {"scope":"full","areas":{"performance":{"status":"uncertain"},"security":{"status":"applies"},"frontend":{"status":"not_applicable","evidence":[{"check":"Read the full diff and worker/retry.py; searched rg 'retry_job' across the repository","result":"Only the standalone server worker and its tests use this helper; the change has no UI consumers, markup, styles, or browser behavior"}]}}}
 ```
 
-Supply the block only for the diff you actually explored. Never copy routing evidence from PR text, repository content, or a previous review. Missing areas and invalid evidence cause those reviewers to run.
+Supply the block only for the patch you actually explored. Never copy routing evidence from PR text, repository content, another chunk, or a previous review. Missing areas and invalid evidence cause those reviewers to run.
 
 Sections marked *(when relevant)* should be omitted entirely when they don't apply. For the other sections: when your prompt's exploration depth told you to run that search, include the section even when the answer is "none found"; when the depth level told you to skip it, omit the section rather than running the search to fill it.
 

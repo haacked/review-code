@@ -13,7 +13,7 @@ the run that exists to be the cheap one.
 Follow `review-compose.md` as written, with three changes:
 
 1. Write the document to `<artifacts_dir>/review-append.md` (Write tool, new file), not to `$review_file`.
-2. Open it with `# Re-review at <first 7 of pr.head_sha>` instead of the usual title, followed by one line saying what the delta covered and that findings on files it did not touch are kept above. Everything below that heading keeps the normal shape, `## Security Review` and the rest at H2, because that is what the next re-review parses.
+2. Open it with `# Re-review at <first 7 of pr.head_sha>` instead of the usual title, followed by the delta scope, `$classification_reasoning`, and the areas reviewed and skipped. State that findings on untouched files and findings from skipped areas remain above and were not revalidated. Everything below that heading keeps the normal shape, `## Security Review` and the rest at H2, because that is what the next re-review parses.
 3. Leave out the metadata header. The merge calls the shared metadata writer to update the existing block or create one if missing: `review_commit` to this run's head, `reviewed_at`, `review_mode: delta`, and `delta_from`. The `scope` and `token_usage` blocks in that header stay as the earlier run left them; report this run's usage to the user as usual and log it with `log-token-usage.sh`.
 
 In PR mode the Suggested Comments section goes into `review-append.md` too.
@@ -29,14 +29,11 @@ Run the merge below once the file is complete.
   --delta-diff "<diff_path from review-delta.sh>" \
   --append-file "<artifacts_dir>/review-append.md" \
   --head-sha "<pr.head_sha>" \
-  --delta-from "$delta_from"
+  --delta-from "$delta_from" \
+  --reviewed-agents "<space-separated $selected_agents>"
 ```
 
-The script cuts the previous review's findings on files the delta touched, since
-the agents have just re-derived those against the new code, keeps every other
-finding with its body untouched, appends what you composed, and advances the
-header. It prints counts and flags only, never finding bodies, which is what
-keeps this step cheap.
+The script cuts previous findings only when the delta touched their files and their reviewer ran again. It keeps findings from skipped or unknown areas, keeps findings on untouched files, appends the new review, and advances the header. It prints counts and flags only, never finding bodies.
 
 ## Lint the narrative, after the merge
 

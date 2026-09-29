@@ -209,3 +209,22 @@ MARKDOWN
         all(.agents[]; .subagent_type == ("code-reviewer-" + .area))
     '
 }
+
+@test "review handlers classify the reviewed patch and dispatch each chunk selection" {
+    run python3 - "$PROJECT_ROOT/skills/review-code/handlers" <<'PY'
+from pathlib import Path
+import sys
+handlers = Path(sys.argv[1])
+review = (handlers / "review.md").read_text()
+chunks = (handlers / "review-chunked.md").read_text()
+carry = (handlers / "review-carry-forward.md").read_text()
+assert 'Leave the scope classifier on the full diff' not in review
+assert '--diff-file' in review.split('### Classify Review Scope')[1].split('### Debug Mode Setup')[0]
+dispatch = chunks.split('2. After all per-chunk analyses complete', 1)[1].split('3. Split each domain reviewer report', 1)[0]
+assert 'for each agent in `$chunk.classification.agents`' in dispatch
+assert '$chunk.classification.skipped_agents' in chunks
+assert '--area' in chunks
+assert '--reviewed-agents' in carry
+PY
+    [ "$status" -eq 0 ]
+}

@@ -78,6 +78,8 @@ Mode-specific fields:
 - **Branch/commit/range modes:** `branch`, `base_branch`, `commit`, `range`. Branch mode also carries `base_source` (how the base was chosen: `parent-flag`, `pr-base`, `stack-parent`, or `default`) and `base_lookup_degraded: "true"`, present only when the open PR's base could not be used (lookup failed, base not fetched locally, or unrelated history) and the base consequently fell back to the default branch.
 - **Area-specific reviews:** `area`
 
+Set `$review_diff_path` to `REVIEW_FIELDS.diff_path`. A delta review replaces it below. This is the patch whose size controls exploration and whose contents the explorer must assess.
+
 ### Load Conditional Instructions
 
 Some steps apply only to certain sessions, and their instructions live in separate handler files. Check `REVIEW_FIELDS` now and Read every file whose condition holds, in one pass, before continuing:
@@ -112,21 +114,22 @@ A re-review normally pays full freight: every agent reads the whole diff again e
 Read `mode` from the JSON it prints:
 
 - **`no-change`** — head is where the last review left it. Tell the user, show them the existing review's path, and stop. Do not dispatch agents; there is nothing new to look at.
-- **`delta`** — set `$review_mode` to `delta` and `$delta_from` to the returned `delta_from`. Pass the returned `diff_path` to `build-agent-briefing.sh` as `--diff-file`, along with `--previous-review "<file_info.file_path>"` so agents can see what was already raised; agents then read that diff instead of the full one. Leave the scope classifier on the full diff: classifying the smaller delta would select fewer agents, and a re-review should not be shallower than the first pass.
+- **`delta`** — set `$review_mode` to `delta` and `$delta_from` to the returned `delta_from`. Set `$review_diff_path` to the returned `diff_path`. Pass that path to `build-agent-briefing.sh` as `--diff-file`, along with `--previous-review "<file_info.file_path>"` so agents can see what was already raised. The classifier and explorer also use this patch, so any skipped area has evidence about the delta that the reviewers actually read.
 - **`full`** — set `$review_mode` to `full` and continue normally with the whole diff.
 
 **Always tell the user which path this took, and for `full`, the `reason` the script gave.** A silent fallback looks identical to a delta review that found nothing, and the difference matters: a full re-review costs what it always did.
 
 **Advance the recorded SHA.** `review_commit` in the metadata header must end up at the head this run actually reviewed. If it keeps the old value, the next re-review computes its delta from the original SHA and the saving disappears after one round. On `--append`, update the existing header rather than adding a second one.
 
-**Carrying findings forward.** On the `delta` path the compose step loads `review-carry-forward.md`, which merges this run's sections into the existing review on disk, cuts the previous findings on files the delta touched so the agents' fresh ones stand alone, and advances the header. Never Read the previous review document: its bodies are the cost the delta path exists to avoid.
+**Carrying findings forward.** On the `delta` path the compose step loads `review-carry-forward.md`, which merges this run's sections into the existing review on disk, replaces findings from reviewers that reran on touched files, preserves findings from skipped areas, and advances the header. Never Read the previous review document: its bodies are the cost the delta path exists to avoid.
 
 ### Classify Review Scope
 
-Run the scope classifier to determine exploration depth. Before exploration, all nine reviewers remain selected:
+Run the scope classifier to determine exploration depth from the patch this run will review. Before exploration, all nine reviewers remain selected. Reviewer selection happens after the explorer records evidence:
 
 ```bash
-~/.agents/skills/review-code/scripts/classify-review-scope.sh "$SESSION_FILE"
+~/.agents/skills/review-code/scripts/classify-review-scope.sh "$SESSION_FILE" \
+  --diff-file "$review_diff_path"
 ```
 
 Parse the JSON output and store:
@@ -282,9 +285,9 @@ Return the complete summary as your final message.
 **File Metadata:**
 $file_metadata
 
-**Diff:** read the full diff from `REVIEW_FIELDS.diff_path`, substituting its actual path. Use this full diff even for a delta review; routing evidence must cover the full review scope.
+**Diff:** read `$review_diff_path`, substituting its actual path. This is the complete scope for this run. For a delta review, it contains only the changes since the previous review.
 
-Append the `review-routing` JSON block required by your output contract. Use `uncertain` for any area you could not investigate within the exploration time. A reviewer can be skipped only with concrete negative evidence for its area.
+Append the `review-routing` JSON block required by your output contract. Base every decision on this patch. Use `uncertain` for any area you could not investigate within the exploration time. A reviewer can be skipped only with concrete negative evidence for its area.
 
 $file_access_instructions
 

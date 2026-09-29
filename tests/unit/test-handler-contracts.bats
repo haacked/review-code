@@ -5,6 +5,16 @@ setup() {
     SKILL="$PROJECT_ROOT/skills/review-code"
     ARTIFACTS="$BATS_TEST_TMPDIR/artifacts with spaces"
     mkdir -p "$ARTIFACTS"
+    REVIEW_DIFF="$ARTIFACTS/review.patch"
+    cat > "$REVIEW_DIFF" <<'PATCH'
+diff --git a/backend/api.py b/backend/api.py
+index 1111111..2222222 100644
+--- a/backend/api.py
++++ b/backend/api.py
+@@ -1 +1 @@
+-old value
++new value
+PATCH
 }
 
 extract_documented_block() {
@@ -33,7 +43,7 @@ Context summary stays on disk.
 ```
 EOF
     extract_documented_block "$SKILL/handlers/review-routing.md" bash classify-review-scope.sh > "$ARTIFACTS/route.sh"
-    run env SESSION_FILE="$SESSION_FILE" architectural_context_path="$architectural_context_path" bash -e "$ARTIFACTS/route.sh"
+    run env SESSION_FILE="$SESSION_FILE" review_diff_path="$REVIEW_DIFF" architectural_context_path="$architectural_context_path" bash -e "$ARTIFACTS/route.sh"
     [ "$status" -eq 0 ]
     jq -e '.skipped_agents == ["frontend"] and (.agents | contains(["correctness", "security"]))' "$ARTIFACTS/review-routing.json"
     agents=$(jq -r '.agents | join(" ")' "$ARTIFACTS/review-routing.json")
@@ -69,9 +79,9 @@ for manual_override in (
     "Update the saved JSON's",
 ):
     assert manual_override not in routing
-assert "Chunk analysis does not remove reviewers" in routing
+assert 'Each chunk analysis produces its own routing evidence' in routing
 chunked = (handlers / "review-chunked.md").read_text()
-assert "for each agent in `$selected_agents` from the full-diff routing decisions" in chunked
+assert 'for each agent in `$chunk.classification.agents`' in chunked
 PY
     [ "$status" -eq 0 ]
 }
@@ -87,7 +97,7 @@ PY
 EOF
     extract_documented_block "$SKILL/handlers/review-routing.md" bash classify-review-scope.sh > "$ARTIFACTS/route.sh"
 
-    run env SESSION_FILE="$SESSION_FILE" architectural_context_path="$architectural_context_path" area=security bash -e "$ARTIFACTS/route.sh"
+    run env SESSION_FILE="$SESSION_FILE" review_diff_path="$REVIEW_DIFF" architectural_context_path="$architectural_context_path" area=security bash -e "$ARTIFACTS/route.sh"
 
     [ "$status" -eq 0 ]
     jq -e '
@@ -117,11 +127,11 @@ EOF
 EOF
     extract_documented_block "$SKILL/handlers/review-routing.md" bash classify-review-scope.sh > "$ARTIFACTS/route.sh"
 
-    run env SESSION_FILE="$SESSION_FILE" architectural_context_path="$architectural_context_path" area= bash -e "$ARTIFACTS/route.sh"
+    run env SESSION_FILE="$SESSION_FILE" review_diff_path="$REVIEW_DIFF" architectural_context_path="$architectural_context_path" area= bash -e "$ARTIFACTS/route.sh"
 
     [ "$status" -eq 0 ]
     jq -e '
-        .exploration_depth == "thorough" and
+        .exploration_depth == "minimal" and
         (.agents | length) == 8 and
         (.agents | index("correctness")) != null and
         .skipped_agents == ["security"] and

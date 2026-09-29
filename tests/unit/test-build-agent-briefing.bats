@@ -509,3 +509,71 @@ run_briefing() {
     run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
     [ ! -e "$output/comments.json" ]
 }
+
+@test "build-agent-briefing: delta specialist paths come from the delta itself" {
+    local id delta
+    id=$(create_test_session)
+    delta="$BATS_TEST_TMPDIR/delta.patch"
+    cat > "$delta" <<'PATCH'
+diff --git a/web/Removed.tsx b/web/Removed.tsx
+deleted file mode 100644
+--- a/web/Removed.tsx
++++ /dev/null
+@@ -1 +0,0 @@
+-export const Removed = () => null
+diff --git a/deploy/removed.yaml b/deploy/removed.yaml
+deleted file mode 100644
+--- a/deploy/removed.yaml
++++ /dev/null
+@@ -1 +0,0 @@
+-replicas: 1
+PATCH
+    run "$SCRIPT" "$id" --agents "frontend infra-config" --diff-file "$delta"
+    [ "$status" -eq 0 ]
+    local dir
+    dir=$(jq -r '.artifacts_dir' <<< "$output")
+    jq -e '.scoped_diffs | has("diff-frontend.patch") and has("diff-infra-config.patch")' <<< "$output"
+    grep -q '^diff --git a/web/Removed.tsx' "$dir/diff-frontend.patch"
+    grep -q '^diff --git a/deploy/removed.yaml' "$dir/diff-infra-config.patch"
+}
+
+@test "build-agent-briefing: a delta cannot reuse specialist patches from a previous build" {
+    local id delta dir
+    id=$(create_test_session)
+    run "$SCRIPT" "$id" --agents infra-config
+    [ "$status" -eq 0 ]
+    dir=$(jq -r '.artifacts_dir' <<< "$output")
+    [ -s "$dir/diff-infra-config.patch" ]
+    delta="$BATS_TEST_TMPDIR/backend.patch"
+    cat > "$delta" <<'PATCH'
+diff --git a/backend/api.py b/backend/api.py
+--- a/backend/api.py
++++ b/backend/api.py
+@@ -1 +1 @@
+-old()
++new()
+PATCH
+    run "$SCRIPT" "$id" --agents correctness --diff-file "$delta"
+    [ "$status" -eq 0 ]
+    jq -e '.scoped_diffs == {}' <<< "$output"
+    [ ! -e "$dir/diff-infra-config.patch" ]
+}
+
+@test "build-agent-briefing: HTML delta retains the frontend specialist patch" {
+    local id delta dir
+    id=$(create_test_session)
+    delta="$BATS_TEST_TMPDIR/markup.patch"
+    cat > "$delta" <<'PATCH'
+diff --git a/templates/form.html b/templates/form.html
+--- a/templates/form.html
++++ b/templates/form.html
+@@ -1 +1 @@
+-<input>
++<input aria-label="Name">
+PATCH
+    run "$SCRIPT" "$id" --agents frontend --diff-file "$delta"
+    [ "$status" -eq 0 ]
+    dir=$(jq -r '.artifacts_dir' <<< "$output")
+    jq -e '.scoped_diffs | has("diff-frontend.patch")' <<< "$output"
+    grep -q '^diff --git a/templates/form.html' "$dir/diff-frontend.patch"
+}

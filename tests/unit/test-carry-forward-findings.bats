@@ -314,7 +314,7 @@ EOF
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.dropped == 0' > /dev/null
     echo "$output" | jq -e '.carried == 3' > /dev/null
-    echo "$output" | jq -e '.prune_reason == "no findings on the delta'"'"'s files"' > /dev/null
+    echo "$output" | jq -e '.prune_reason == "no findings to replace on the delta'"'"'s files"' > /dev/null
 }
 
 @test "carry-forward-findings.sh: a pure rename counts as a touched file" {
@@ -430,4 +430,240 @@ EOF
     # The delta touched src/auth.py, so that finding goes and the other stays.
     ! grep -q 'src/auth.py:45' "$TEST_DIR/long.md"
     grep -q 'src/untouched.py:10' "$TEST_DIR/long.md"
+}
+
+@test "carry-forward-findings.sh: preserves touched findings from reviewers omitted by the delta" {
+    run "$SCRIPT" --review-file "$TEST_DIR/review.md" --delta-diff "$TEST_DIR/delta.patch" \
+        --reviewed-agents 'testing correctness maintainability'
+    [ "$status" -eq 0 ]
+    jq -e '.dropped == 0 and .carried == 3 and .dropped_files == []' <<< "$output"
+    grep -q "Token comparison is not constant time" "$TEST_DIR/review.md"
+    grep -q "must not look like a heading" "$TEST_DIR/review.md"
+    grep -q "Missing input validation on the forwarded header" "$TEST_DIR/review.md"
+}
+
+@test "carry-forward-findings.sh: prunes only rerun reviewers on a file with several findings" {
+    cat >> "$TEST_DIR/review.md" <<'EOF'
+
+## Testing Review
+
+#### `src/auth.py:46`
+
+The fallback branch has no regression test.
+
+## Correctness Review
+
+#### `src/auth.py:47`
+
+The fallback branch compares the wrong token.
+EOF
+
+    run "$SCRIPT" --review-file "$TEST_DIR/review.md" --delta-diff "$TEST_DIR/delta.patch" \
+        --reviewed-agents 'testing correctness'
+    [ "$status" -eq 0 ]
+    jq -e '.pruned == true and .dropped == 2 and .carried == 3 and .dropped_files == ["src/auth.py"]' <<< "$output"
+    grep -q "Token comparison is not constant time" "$TEST_DIR/review.md"
+    ! grep -q "The fallback branch has no regression test" "$TEST_DIR/review.md"
+    ! grep -q "The fallback branch compares the wrong token" "$TEST_DIR/review.md"
+    grep -q "Missing input validation on the forwarded header" "$TEST_DIR/review.md"
+    grep -q "Typo in the heading" "$TEST_DIR/review.md"
+}
+
+@test "carry-forward-findings.sh: rerun reviewer still preserves its untouched findings" {
+    run "$SCRIPT" --review-file "$TEST_DIR/review.md" --delta-diff "$TEST_DIR/delta.patch" \
+        --reviewed-agents security
+    [ "$status" -eq 0 ]
+    jq -e '.pruned == true and .dropped == 1 and .carried == 2' <<< "$output"
+    ! grep -q "Token comparison is not constant time" "$TEST_DIR/review.md"
+    grep -q "Missing input validation on the forwarded header" "$TEST_DIR/review.md"
+}
+
+@test "carry-forward-findings.sh: an explicit empty reviewer set preserves every finding" {
+    run "$SCRIPT" --review-file "$TEST_DIR/review.md" --delta-diff "$TEST_DIR/delta.patch" \
+        --reviewed-agents ''
+    [ "$status" -eq 0 ]
+    jq -e '.dropped == 0 and .carried == 3' <<< "$output"
+    grep -q "Token comparison is not constant time" "$TEST_DIR/review.md"
+    grep -q "Missing input validation on the forwarded header" "$TEST_DIR/review.md"
+    grep -q "Typo in the heading" "$TEST_DIR/review.md"
+}
+
+@test "carry-forward-findings.sh: unknown reviewer attribution is retained when selection is explicit" {
+    cat > "$TEST_DIR/unknown.md" <<'EOF'
+#### `src/auth.py:45`
+
+The authentication fallback bypasses validation.
+EOF
+
+    run "$SCRIPT" --review-file "$TEST_DIR/unknown.md" --delta-diff "$TEST_DIR/delta.patch" \
+        --reviewed-agents 'security correctness testing'
+    [ "$status" -eq 0 ]
+    jq -e '.dropped == 0 and .carried == 1' <<< "$output"
+    grep -q "The authentication fallback bypasses validation" "$TEST_DIR/unknown.md"
+}
+
+create_infra_findings() {
+    cat > "$TEST_DIR/infra-review.md" <<'EOF'
+## Security Review
+
+#### `terraform/main.tf:2`
+
+The policy permits access from every external network.
+
+## Infra-Config Review
+
+#### `terraform/main.tf:5`
+
+The service references a missing production subnet.
+EOF
+    cat > "$TEST_DIR/infra.patch" <<'EOF'
+diff --git a/terraform/main.tf b/terraform/main.tf
+--- a/terraform/main.tf
++++ b/terraform/main.tf
+@@ -1 +1 @@
+-old configuration
++new configuration
+EOF
+}
+
+@test "carry-forward-findings.sh: a security rerun preserves touched infra findings after its section" {
+    create_infra_findings
+
+    run "$SCRIPT" --review-file "$TEST_DIR/infra-review.md" --delta-diff "$TEST_DIR/infra.patch" \
+        --reviewed-agents security
+    [ "$status" -eq 0 ]
+    jq -e '.pruned == true and .dropped == 1 and .carried == 1' <<< "$output"
+    ! grep -q "The policy permits access from every external network" "$TEST_DIR/infra-review.md"
+    grep -q "The service references a missing production subnet" "$TEST_DIR/infra-review.md"
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/infra-review.md"
+    [ "$status" -eq 0 ]
+    jq -e 'length == 1 and .[0].agent == "infra-config"' <<< "$output"
+}
+
+@test "carry-forward-findings.sh: an infra rerun prunes its finding without pruning security" {
+    create_infra_findings
+
+    run "$SCRIPT" --review-file "$TEST_DIR/infra-review.md" --delta-diff "$TEST_DIR/infra.patch" \
+        --reviewed-agents infra-config
+    [ "$status" -eq 0 ]
+    jq -e '.pruned == true and .dropped == 1 and .carried == 1' <<< "$output"
+    grep -q "The policy permits access from every external network" "$TEST_DIR/infra-review.md"
+    ! grep -q "The service references a missing production subnet" "$TEST_DIR/infra-review.md"
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/infra-review.md"
+    [ "$status" -eq 0 ]
+    jq -e 'length == 1 and .[0].agent == "security"' <<< "$output"
+}
+
+create_suggested_comments() {
+    cat > "$TEST_DIR/suggested-review.md" <<'EOF'
+## Security Review
+
+#### `src/auth.py:45`
+
+The token comparison leaks timing information.
+
+## Testing Review
+
+#### `src/auth.py:46`
+
+The fallback branch lacks a regression test.
+
+---
+
+## Suggested Comments
+
+These suggestions are for posting as inline PR review comments.
+
+### New Comments
+
+#### `src/auth.py:45`
+
+```text
+Use a constant-time comparison to prevent the token timing leak.
+```
+
+*From: Security (95% confidence)*
+
+---
+
+### Build Upon Existing
+
+#### `src/auth.py:46`
+
+**Existing comment by @reviewer:**
+> Add coverage for authentication errors.
+
+**Add to discussion:**
+
+```text
+Add a regression test that exercises the fallback branch.
+```
+
+*From: Testing (90% confidence)*
+EOF
+}
+
+@test "carry-forward-findings.sh: security rerun prunes its suggested comment by From attribution" {
+    create_suggested_comments
+
+    run "$SCRIPT" --review-file "$TEST_DIR/suggested-review.md" --delta-diff "$TEST_DIR/delta.patch" \
+        --reviewed-agents security
+    [ "$status" -eq 0 ]
+    jq -e '.pruned == true and .dropped == 2 and .carried == 2' <<< "$output"
+    ! grep -q "The token comparison leaks timing information" "$TEST_DIR/suggested-review.md"
+    ! grep -q "Use a constant-time comparison to prevent the token timing leak" "$TEST_DIR/suggested-review.md"
+    grep -q "The fallback branch lacks a regression test" "$TEST_DIR/suggested-review.md"
+    grep -q "Add a regression test that exercises the fallback branch" "$TEST_DIR/suggested-review.md"
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/suggested-review.md"
+    [ "$status" -eq 0 ]
+    jq -e 'length == 2 and all(.[]; .agent == "testing")' <<< "$output"
+}
+
+@test "carry-forward-findings.sh: testing rerun preserves security suggestions after its section" {
+    create_suggested_comments
+
+    run "$SCRIPT" --review-file "$TEST_DIR/suggested-review.md" --delta-diff "$TEST_DIR/delta.patch" \
+        --reviewed-agents testing
+    [ "$status" -eq 0 ]
+    jq -e '.pruned == true and .dropped == 2 and .carried == 2' <<< "$output"
+    grep -q "The token comparison leaks timing information" "$TEST_DIR/suggested-review.md"
+    grep -q "Use a constant-time comparison to prevent the token timing leak" "$TEST_DIR/suggested-review.md"
+    ! grep -q "The fallback branch lacks a regression test" "$TEST_DIR/suggested-review.md"
+    ! grep -q "Add a regression test that exercises the fallback branch" "$TEST_DIR/suggested-review.md"
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/suggested-review.md"
+    [ "$status" -eq 0 ]
+    jq -e 'length == 2 and all(.[]; .agent == "security")' <<< "$output"
+}
+
+@test "carry-forward-findings.sh: suggestions with unknown or missing attribution do not inherit preceding reviewer" {
+    create_suggested_comments
+    cat >> "$TEST_DIR/suggested-review.md" <<'EOF'
+
+---
+
+#### `src/auth.py:47`
+
+```text
+The retry loop can keep the authentication worker occupied.
+```
+
+*From: Unrecognized (95% confidence)*
+
+---
+
+#### `src/auth.py:48`
+
+```text
+The empty token reaches the privileged fallback path.
+```
+EOF
+
+    run "$SCRIPT" --review-file "$TEST_DIR/suggested-review.md" --delta-diff "$TEST_DIR/delta.patch" \
+        --reviewed-agents testing
+    [ "$status" -eq 0 ]
+    jq -e '.pruned == true and .dropped == 2 and .carried == 4' <<< "$output"
+    grep -q "The retry loop can keep the authentication worker occupied" "$TEST_DIR/suggested-review.md"
+    grep -q "The empty token reaches the privileged fallback path" "$TEST_DIR/suggested-review.md"
+    ! grep -q "The fallback branch lacks a regression test" "$TEST_DIR/suggested-review.md"
+    ! grep -q "Add a regression test that exercises the fallback branch" "$TEST_DIR/suggested-review.md"
 }

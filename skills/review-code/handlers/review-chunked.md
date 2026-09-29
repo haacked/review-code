@@ -2,7 +2,7 @@
 
 Loaded when the session JSON's `chunk_metadata.chunked` is `true`: the diff was too large for one pass and was split into chunks. These instructions modify the review flow in `review.md`.
 
-**After extracting session data**, set `is_chunked = true`, extract `chunk_count` from `chunk_metadata.chunk_count` and the `chunks` array, and display to the user:
+**When dispatch selects the chunked route**, set `is_chunked = true`, extract `chunk_count` from `chunk_metadata.chunk_count` and the `chunks` array, and display to the user:
 
 "This is a large PR ({chunk_metadata.reason}). Splitting into {chunk_count} chunks for focused review."
 
@@ -14,10 +14,10 @@ Loaded when the session JSON's `chunk_metadata.chunked` is `true`: the diff was 
    ~/.agents/skills/review-code/scripts/prepare-chunk-artifacts.py "$SESSION_FILE"
    ```
 
-   Require success before dispatch. Keep the returned `manifest_path` and `chunks` entries. Each entry includes `metadata_path`, `analysis_path`, and `diff_lines`. The helper writes metadata for only that chunk's files and a compact cross-chunk manifest with file ownership and artifact paths. It does not copy architectural context or analysis bodies.
+   Require success before dispatch. Keep the returned `manifest_path` and `chunks` entries. Each entry includes `metadata_path`, `analysis_path`, `routing_path`, and `diff_lines`. The helper writes metadata for only that chunk's files and a compact cross-chunk manifest with file ownership and artifact paths. It does not copy architectural context or analysis bodies.
 
    Dispatch one analysis per chunk in parallel using the harness and completion rules in `review.md`. For Codex, collect the entries below in one `agent-dispatch.sh batch` manifest and require that batch to finish successfully:
-   - **Claude:** Use Task with `subagent_type: "Explore"`, `model: "sonnet"`. Explore is read-only, so request the complete summary as its final response, then save it once to the chunk's `analysis_path` using Write. If using an equivalent agent with a Write tool, request direct output to `analysis_path` and only a path and completion status in its response. If that agent cannot write, save its complete returned summary using Write instead.
+   - **Claude:** Use Task with `subagent_type: "code-review-context-explorer"` and follow the registered-agent fallback in `review.md` if that name is unavailable. The named agent owns the routing schema and negative-evidence rules. Request direct output to `analysis_path` when the agent has a Write tool. Otherwise request the complete summary as its final response, then save it once to the chunk's `analysis_path` using Write.
    - **Codex:** Write each prompt to a file. Add one entry per chunk to the batch manifest with `agent`: `code-review-context-explorer`, `prompt_file`: `<prompt-file>`, and `output_file`: `$chunk.analysis_path`. Request the complete summary as the final message; the read-only subprocess's output file captures it directly. Use the rendered agent's model. Do not read the summary into the orchestrator.
 
    Use this prompt, adding the output instruction for the selected harness:
@@ -42,13 +42,27 @@ Loaded when the session JSON's `chunk_metadata.chunked` is `true`: the diff was 
    2. Chunk-specific implementation details: data flow, error handling, edge cases
    3. Integration points with other system components
 
+   Append the `review-routing` JSON block required by your output contract. Base every decision on this chunk's patch. Do not reuse the full-patch decisions or another chunk's evidence.
+
    Time-box to 1-2 minutes of exploration.
    ```
 
    Require successful dispatch and a nonempty, readable analysis artifact for every chunk. If an analyzer returns `BRIEFING_UNAVAILABLE` (including in the Codex output file), stop and report the failure before dispatching reviewers. Never interpolate a summary into a shell command or heredoc. Extract available usage metadata and record it in `$token_usage` as `chunk-{id}-analysis`.
 
-2. After all per-chunk analyses complete, for each chunk in the `chunks` array, for each agent in `$selected_agents` from the full-diff routing decisions:
-   - Point the agent at the chunk's `diff_path` instead of the single-pass diff, with the chunk's `diff_lines` count.
+   Classify every chunk after its analysis completes. The helper passes each chunk patch and matching analysis artifact to the classifier, then writes the per-chunk decisions and aggregate `review-routing.json`:
+
+   ```bash
+   chunk_routing_args=("$SESSION_FILE" --classify)
+   if [[ -n "${area:-}" ]]; then
+     chunk_routing_args+=(--area "$area")
+   fi
+   ~/.agents/skills/review-code/scripts/prepare-chunk-artifacts.py "${chunk_routing_args[@]}"
+   ```
+
+   Require success and replace the earlier `chunks` entries with the returned entries, which attach each result as `$chunk.classification`. The helper retries a failed classification without explorer evidence, which retains every specialist unless an explicit area excludes it. If that fallback fails, stop. Set `$selected_agents`, `$skipped_agents`, and `$classification_reasoning` from the returned aggregate. A reviewer that runs on one chunk remains in the run list, but this does not claim coverage for chunks where it was skipped.
+
+2. After all per-chunk analyses complete, for each chunk in the `chunks` array, for each agent in `$chunk.classification.agents`:
+   - Point every selected agent, including specialists, at the chunk's `diff_path` with the chunk's `diff_lines` count. Do not apply the full-session scoped-diff filter or intersect with the initial global agent selection. Correctness always runs. A specialist is absent only when this chunk's explorer supplied concrete negative evidence or the user explicitly narrowed the review.
    - Add these artifact references to the normal reviewer prompt:
      ```
      You are reviewing chunk $chunk.id of $chunk_count: $chunk.label.
@@ -78,3 +92,5 @@ Do not pass a chunk's line count as `--diff-lines`: the chunk-0 agents and the c
   ```markdown
   > **Review Scope:** This review covered $chunk_count chunks ($total_file_count files total).
   ```
+
+  Include a compact table with each chunk's label, `$chunk.classification.agents`, `$chunk.classification.skipped_agents`, and classification reasoning. An area reviewed in one chunk does not imply coverage in the others. Set `$classification_reasoning` to a summary of this per-chunk selection for the metadata header. Retain each `$chunk.routing_path` beside the other coverage artifacts and link it from this table so every skip reason and its negative evidence remains inspectable after session cleanup.

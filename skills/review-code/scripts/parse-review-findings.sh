@@ -119,6 +119,9 @@ save_finding() {
 # Args: $1=deletable (default true; false when the opener is body text, where
 #       the finding's extent is a guess no caller may cut on)
 begin_finding() {
+    if [[ "${in_suggested_comments:-false}" == true ]]; then
+        current_agent=""
+    fi
     in_finding=true
     finding_start="${lineno}"
     finding_end=0
@@ -191,6 +194,7 @@ main() {
     # Parse the review file and extract findings as JSONL (one JSON object per line)
     local findings_jsonl=""
     local current_agent=""
+    local in_suggested_comments=false
     local current_confidence=""
     local in_finding=false
     local finding_file=""
@@ -215,6 +219,8 @@ main() {
     local standalone_loc_re='^`([^:`]+):([0-9]+)(-[0-9]+)?`[[:space:]]*$'
     local plain_loc_re='^([^[:space:]:`|]+):([0-9]+)(-[0-9]+)?[[:space:]]*$'
     local confidence_trailer_re='^Location:[[:space:]]+(.+)[[:space:]]+\|[[:space:]]+Confidence:[[:space:]]+(100|[0-9]{1,2})%[[:space:]]*$'
+    local from_agent_re='^\*From:[[:space:]]+([[:alpha:]-]+)[[:space:]]+\([0-9]+%[[:space:]]+confidence\)\*[[:space:]]*$'
+    local recognized_agent_re='(Security|Performance|Correctness|Maintainability|Testing|Compatibility|Architecture|Frontend|Infra-Config)'
     # Fenced code block delimiter, with the marker run and whatever follows it
     # captured separately. Nesting is counted rather than toggled: this repo's
     # own finding format puts a ```suggestion block inside a ```text body, which
@@ -280,11 +286,24 @@ main() {
             fi
         fi
 
+        if [[ "${line}" =~ ^##[[:space:]]+Suggested[[:space:]]+Comments[[:space:]]*$ ]]; then
+            flush_pending_finding
+            in_finding=false
+            current_agent=""
+            in_suggested_comments=true
+            continue
+        fi
+        if [[ "${in_suggested_comments}" == true && "${in_finding}" == true && "${finding_end}" -eq 0 ]] \
+            && [[ "${line}" =~ ${from_agent_re} ]]; then
+            current_agent=$(echo "${BASH_REMATCH[1]}" | tr '[:upper:]' '[:lower:]')
+        fi
+
         # Detect agent section headers (## Security Review, ## Performance Review, etc.)
-        if [[ "${line}" =~ ^##[[:space:]]+(Security|Performance|Correctness|Maintainability|Testing|Compatibility|Architecture|Frontend)[[:space:]]+Review ]]; then
+        if [[ "${line}" =~ ^##[[:space:]]+${recognized_agent_re}[[:space:]]+Review ]]; then
             flush_pending_finding
             in_finding=false
             current_agent=$(echo "${BASH_REMATCH[1]}" | tr '[:upper:]' '[:lower:]')
+            in_suggested_comments=false
             finding_file=""
             finding_line=""
             finding_description=""
@@ -403,7 +422,7 @@ main() {
         fi
 
         # Pattern 4: [Agent 85%] description (file.py:123)
-        if [[ "${line}" =~ \[(Security|Performance|Correctness|Maintainability|Testing|Compatibility|Architecture|Frontend)[[:space:]]+([0-9]+)%\][[:space:]]+(.+)[[:space:]]+\(([^:]+):([0-9]+)\) ]]; then
+        if [[ "${line}" =~ \[${recognized_agent_re}[[:space:]]+([0-9]+)%\][[:space:]]+(.+)[[:space:]]+\(([^:]+):([0-9]+)\) ]]; then
             flush_pending_finding
 
             local agent_name
