@@ -38,6 +38,8 @@ bin/lint
 
 Requirements: `shellcheck` (install: `brew install shellcheck`)
 
+Use ShellCheck **0.11.0** to match [CI](../.github/workflows/ci.yml). `bin/lint` warns if your installed version differs, since versions can report different findings. The warning does not fail linting; ShellCheck and Ruff findings still do.
+
 ### bin/token-report
 
 Measures review costs from Claude transcripts. Use prompt mode to locate large dispatches by date, agent, and transcript path:
