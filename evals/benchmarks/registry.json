@@ -115,6 +115,24 @@
       "languages": ["typescript"],
       "areas": ["maintainability"],
       "difficulty": "hard"
+    },
+    {
+      "id": "portal-deployment",
+      "category": "crafted",
+      "name": "Portal Deployment",
+      "description": "Deploy an HTTP status endpoint to the production namespace through the existing nginx ingress controller. The manifests contain all application resources required for the deployment.",
+      "languages": ["yaml"],
+      "areas": ["infra-config"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "workspace-directory",
+      "category": "crafted",
+      "name": "Workspace Directory",
+      "description": "Add a member assignment view with a workspace selector and asynchronous member loading. The API returns the members belonging to the requested workspace, and onAssign receives the workspace and member chosen in the view.",
+      "languages": ["typescript"],
+      "areas": ["frontend"],
+      "difficulty": "medium"
     }
   ]
 }

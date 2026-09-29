@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "expected_findings": [
+    {
+      "id": "runtime-config-namespace",
+      "description": "The Deployment runs in production, but portal-runtime is created only in staging. A configMapRef resolves within the Pod namespace, so the required ConfigMap is absent and the production containers cannot start. Create the ConfigMap in production.",
+      "area": "infra-config",
+      "severity": "blocking",
+      "weight": 10,
+      "file": "deploy/portal.yaml",
+      "line_start": 13,
+      "line_end": 43,
+      "keywords": ["namespace", "configmap", "staging", "production", "CreateContainerConfigError", "cannot start"]
+    },
+    {
+      "id": "ingress-service-port",
+      "description": "The Ingress selects Service port 8080, but portal exposes only Service port 80. The container port does not satisfy an Ingress backend Service port reference. Even after the ConfigMap is fixed and Pods become ready, the route cannot resolve its backend. Select port 80 or the Service port name web.",
+      "area": "infra-config",
+      "severity": "blocking",
+      "weight": 10,
+      "file": "deploy/portal.yaml",
+      "line_start": 82,
+      "line_end": 86,
+      "keywords": ["service port", "8080", "80", "backend", "ingress", "503"]
+    }
+  ],
+  "false_positive_traps": [
+    {
+      "id": "named-target-port",
+      "description": "Service targetPort http correctly resolves to the container port named http, which listens on 8080. A Service may expose 80 while targeting 8080. Changing targetPort to web or 80 would break the working Service-to-Pod mapping; the separate Ingress backend port is the defect.",
+      "area": "infra-config",
+      "file": "deploy/portal.yaml",
+      "line_start": 64,
+      "line_end": 67,
+      "trap_keywords": ["targetport", "target port", "port name", "named port", "mismatch"]
+    }
+  ],
+  "clean_areas": []
+}

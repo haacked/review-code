@@ -1,0 +1,403 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-29",
+  "baseline_sha": "496e3eab2b3117a4b4509d2426867110b19b1869",
+  "candidate_sha": "03f053a72fac7e87d3363579976706a9c066f0e0",
+  "approach": "run-eval.sh baseline with direct domain agent and model override",
+  "cost_basis": "Claude Code reported API-equivalent amounts, not subscription charges",
+  "score_method": "Manual causal-fact matching against source; automatic scores invalid for direct output format",
+  "summary": {
+    "opus": {
+      "completed_calls": 5,
+      "reported_total_cost_usd": 15.3327756,
+      "requested_model_cost_usd": 5.9061456,
+      "other_model_cost_usd": 9.42663,
+      "duration_ms": 868725,
+      "keyed_blocking_facts_covered": 7,
+      "keyed_blocking_facts_total": 7
+    },
+    "sonnet": {
+      "completed_calls": 5,
+      "reported_total_cost_usd": 2.274248,
+      "requested_model_cost_usd": 2.274248,
+      "other_model_cost_usd": 0,
+      "duration_ms": 99216,
+      "keyed_blocking_facts_covered": 7,
+      "keyed_blocking_facts_total": 7
+    }
+  },
+  "calls": [
+    {
+      "domain": "compatibility",
+      "benchmark": "breaking-changes",
+      "model_alias": "opus",
+      "duration_ms": 116644,
+      "request_sha256": "970f9011fc9cb82a3f4a9187b25c2db1872afeed904f40d5ca61fee8003d2e94",
+      "review_sha256": "a26052664e4116ea996efb6dcef5610be423f814bf68885770aab286828eb1c3",
+      "resolved_model": "claude-opus-5-5",
+      "reported_total_cost_usd": 3.165185,
+      "requested_model_cost_usd": 1.486145,
+      "other_model_cost_usd": {
+        "claude-fable-5-1": 1.67904
+      },
+      "requested_model_tokens": {
+        "inputTokens": 14,
+        "outputTokens": 5788,
+        "cacheReadInputTokens": 849945,
+        "cacheCreationInputTokens": 151256
+      },
+      "spawned_agents": 0
+    },
+    {
+      "domain": "compatibility",
+      "benchmark": "breaking-changes",
+      "model_alias": "sonnet",
+      "duration_ms": 21169,
+      "request_sha256": "970f9011fc9cb82a3f4a9187b25c2db1872afeed904f40d5ca61fee8003d2e94",
+      "review_sha256": "1acbd28ea346284444f29c296c0ac2a73e66ba7930258307366b8351962e45ea",
+      "resolved_model": "claude-sonnet-5-5",
+      "reported_total_cost_usd": 0.6761812,
+      "requested_model_cost_usd": 0.6761812,
+      "other_model_cost_usd": {},
+      "requested_model_tokens": {
+        "inputTokens": 8,
+        "outputTokens": 2315,
+        "cacheReadInputTokens": 421176,
+        "cacheCreationInputTokens": 142195
+      },
+      "spawned_agents": 0
+    },
+    {
+      "domain": "maintainability",
+      "benchmark": "analytics-emitter-batching",
+      "model_alias": "opus",
+      "duration_ms": 158786,
+      "request_sha256": "03c1889200b5f1678c252a2a1ad4fcf226f323cd48cb3f83ce7aff5a277a6afa",
+      "review_sha256": "9b8fa29f19d888438e40fbe9b82e152140558fd3645f8e97bf80bcd725fe2a44",
+      "resolved_model": "claude-opus-5-5",
+      "reported_total_cost_usd": 2.3270408,
+      "requested_model_cost_usd": 0.5677108,
+      "other_model_cost_usd": {
+        "claude-fable-5-1": 1.75933
+      },
+      "requested_model_tokens": {
+        "inputTokens": 14,
+        "outputTokens": 8269,
+        "cacheReadInputTokens": 1005649,
+        "cacheCreationInputTokens": 25613
+      },
+      "spawned_agents": 0
+    },
+    {
+      "domain": "maintainability",
+      "benchmark": "analytics-emitter-batching",
+      "model_alias": "sonnet",
+      "duration_ms": 19938,
+      "request_sha256": "03c1889200b5f1678c252a2a1ad4fcf226f323cd48cb3f83ce7aff5a277a6afa",
+      "review_sha256": "0568b602cd466bd64b313634628fee84b5f125dd89a8eda7a4fc34de42455f94",
+      "resolved_model": "claude-sonnet-5-5",
+      "reported_total_cost_usd": 0.8811886,
+      "requested_model_cost_usd": 0.8811886,
+      "other_model_cost_usd": {},
+      "requested_model_tokens": {
+        "inputTokens": 6,
+        "outputTokens": 1854,
+        "cacheReadInputTokens": 127743,
+        "cacheCreationInputTokens": 209272
+      },
+      "spawned_agents": 0
+    },
+    {
+      "domain": "testing",
+      "benchmark": "canonical-log-parallel",
+      "model_alias": "opus",
+      "duration_ms": 284129,
+      "request_sha256": "fe9f5a0f04c439e8166c88ef28de92c77d9ce16616b3e5d0e617ee392a6818c8",
+      "review_sha256": "ab793754405012c84917e1f0f92de6bf1ce4ca39b85e48ce3eda7aec9b014f36",
+      "resolved_model": "claude-opus-5-5",
+      "reported_total_cost_usd": 5.284427,
+      "requested_model_cost_usd": 2.847867,
+      "other_model_cost_usd": {
+        "claude-fable-5-1": 2.43656
+      },
+      "requested_model_tokens": {
+        "inputTokens": 34,
+        "outputTokens": 19536,
+        "cacheReadInputTokens": 3014780,
+        "cacheCreationInputTokens": 232331
+      },
+      "spawned_agents": 0
+    },
+    {
+      "domain": "testing",
+      "benchmark": "canonical-log-parallel",
+      "model_alias": "sonnet",
+      "duration_ms": 29135,
+      "request_sha256": "fe9f5a0f04c439e8166c88ef28de92c77d9ce16616b3e5d0e617ee392a6818c8",
+      "review_sha256": "3681c1496c492b103cdfb1b5136d0a1fc42874faa778a0739c50cf3101070c65",
+      "resolved_model": "claude-sonnet-5-5",
+      "reported_total_cost_usd": 0.4132234,
+      "requested_model_cost_usd": 0.4132234,
+      "other_model_cost_usd": {},
+      "requested_model_tokens": {
+        "inputTokens": 14,
+        "outputTokens": 3904,
+        "cacheReadInputTokens": 1067737,
+        "cacheCreationInputTokens": 40152
+      },
+      "spawned_agents": 0
+    },
+    {
+      "domain": "infra-config",
+      "benchmark": "portal-deployment",
+      "model_alias": "opus",
+      "duration_ms": 123430,
+      "request_sha256": "f0be83cc2cb08a9dcab938dbb1f8d65ad0bf3c51465c0a43a31997dcf128b0be",
+      "review_sha256": "fc9cdae72f24e94a9f2a104a7b841b442699308a1a2e891979dcd77a64189721",
+      "resolved_model": "claude-opus-5-5",
+      "reported_total_cost_usd": 2.135031,
+      "requested_model_cost_usd": 0.428781,
+      "other_model_cost_usd": {
+        "claude-fable-5-1": 1.70625
+      },
+      "requested_model_tokens": {
+        "inputTokens": 12,
+        "outputTokens": 5345,
+        "cacheReadInputTokens": 835585,
+        "cacheCreationInputTokens": 20775
+      },
+      "spawned_agents": 0
+    },
+    {
+      "domain": "infra-config",
+      "benchmark": "portal-deployment",
+      "model_alias": "sonnet",
+      "duration_ms": 13123,
+      "request_sha256": "f0be83cc2cb08a9dcab938dbb1f8d65ad0bf3c51465c0a43a31997dcf128b0be",
+      "review_sha256": "23fe3c9d0f7e9d3ed4f2fdec35657a675d5010903ab234317b9859e7d945857d",
+      "resolved_model": "claude-sonnet-5-5",
+      "reported_total_cost_usd": 0.1474322,
+      "requested_model_cost_usd": 0.1474322,
+      "other_model_cost_usd": {},
+      "requested_model_tokens": {
+        "inputTokens": 6,
+        "outputTokens": 1278,
+        "cacheReadInputTokens": 407821,
+        "cacheCreationInputTokens": 13269
+      },
+      "spawned_agents": 0
+    },
+    {
+      "domain": "frontend",
+      "benchmark": "workspace-directory",
+      "model_alias": "opus",
+      "duration_ms": 185736,
+      "request_sha256": "446840f389c47ba9f56a8d4191e1b8bdd9506663ea116d7bf8356957d5cfab2c",
+      "review_sha256": "3dcb691bc8f3087f4e8e417113e464df24fc7edacfaa82efa80dcdeb03cc01b7",
+      "resolved_model": "claude-opus-5-5",
+      "reported_total_cost_usd": 2.4210918,
+      "requested_model_cost_usd": 0.5756418,
+      "other_model_cost_usd": {
+        "claude-fable-5-1": 1.84545
+      },
+      "requested_model_tokens": {
+        "inputTokens": 14,
+        "outputTokens": 9779,
+        "cacheReadInputTokens": 987309,
+        "cacheCreationInputTokens": 24750
+      },
+      "spawned_agents": 0
+    },
+    {
+      "domain": "frontend",
+      "benchmark": "workspace-directory",
+      "model_alias": "sonnet",
+      "duration_ms": 15851,
+      "request_sha256": "446840f389c47ba9f56a8d4191e1b8bdd9506663ea116d7bf8356957d5cfab2c",
+      "review_sha256": "95ef2bf1247ebff60b185321e832721c8d3a604fd8aca4346be4f59b6bdf641c",
+      "resolved_model": "claude-sonnet-5-5",
+      "reported_total_cost_usd": 0.1562226,
+      "requested_model_cost_usd": 0.1562226,
+      "other_model_cost_usd": {},
+      "requested_model_tokens": {
+        "inputTokens": 6,
+        "outputTokens": 1730,
+        "cacheReadInputTokens": 408913,
+        "cacheCreationInputTokens": 14282
+      },
+      "spawned_agents": 0
+    }
+  ],
+  "assessments": [
+    {
+      "case": "breaking-changes",
+      "opus": {
+        "keyed_blockers_covered": [
+          "renamed-export",
+          "removed-response-fields",
+          "added-required-parameter"
+        ],
+        "independent_blocking_findings": 2,
+        "additive_delete_trap": false,
+        "unsupported_nonblocking_findings": [
+          "authentication change with no concrete caller",
+          "default page size with hypothetical client"
+        ],
+        "quality_notes": [
+          "Correctly says UserResponse renames break profile.ts type checking but do not change route JSON because formatUser is unused."
+        ]
+      },
+      "sonnet": {
+        "keyed_blockers_covered": [
+          "renamed-export",
+          "removed-response-fields",
+          "added-required-parameter"
+        ],
+        "independent_blocking_findings": 2,
+        "additive_delete_trap": false,
+        "unsupported_nonblocking_findings": [
+          "authentication change with no concrete caller",
+          "default page size with hypothetical client",
+          "POST fields with no known caller",
+          "formatUser compatibility nit despite no callers"
+        ],
+        "quality_notes": [
+          "Falsely infers TypeScript UserResponse field rename changes the HTTP JSON; handlers call res.json on raw service result and never call formatUser.",
+          "The proposed interface marks new created field deprecated with use-created instruction, rather than deprecating the old createdAt field."
+        ]
+      },
+      "interpretation": "Both cover three overlapping keyed blockers in two reports. Sonnet saves cost but adds an incorrect runtime consequence to a real type error. Neither model obeys the rule to drop nonblocking compatibility claims without concrete consumers.",
+      "independent_blind_check": {
+        "a": "sonnet",
+        "b": "opus",
+        "verdict": "B is factually stronger; blocking-fact recall equal",
+        "additional_caveats": [
+          "Both discuss pagination as though listUsers returns a page, but the scratch service returns an empty array. The default-limit suggestion is not used as evidence of a real consumer regression.",
+          "A asserts auth rejects requests without an implementation to establish that; B makes that conditional.",
+          "Missing runtime exports may fail module loading rather than always become undefined."
+        ]
+      }
+    },
+    {
+      "case": "analytics-emitter-batching",
+      "opus": {
+        "keyed_domain_findings_covered": [
+          "track-event-string-literal-copies"
+        ],
+        "keyed_domain_blockers": [],
+        "retry_policy_trap": false,
+        "quality_notes": [
+          "Correct source anchors and explicit acceptance of separate endpoint configurations.",
+          "Incorrectly treats equal current values as contradicting independent tuning.",
+          "Unused retry constants are observable, but missing transport code prevents establishing whether requests retry internally.",
+          "Recognizes both keyed correctness defects, outside domain coverage; treats the dropped remainder as a documentation suggestion."
+        ]
+      },
+      "sonnet": {
+        "keyed_domain_findings_covered": [
+          "track-event-string-literal-copies"
+        ],
+        "keyed_domain_blockers": [],
+        "retry_policy_trap": true,
+        "quality_notes": [
+          "Advises splitting retry policies only when values differ, contradicting their documented independent tuning.",
+          "Falsely concludes requests do not retry despite the unavailable transport implementation.",
+          "Anchors generally exceed source positions by 12 lines; the tracking-function range ends at 81 in a 69-line file.",
+          "Reports both keyed correctness defects as blockers; these do not increase maintainability-domain recall."
+        ]
+      },
+      "shared_caveats": [
+        "Both say flushAll returns before sends begin; the actual defect is failure to await completion or propagate rejection."
+      ],
+      "independent_blind_check": {
+        "a": "opus",
+        "b": "sonnet",
+        "verdict": "A is modestly stronger within the maintainability domain; keyed domain recall equal."
+      }
+    },
+    {
+      "case": "canonical-log-parallel",
+      "excluded_original_key": "missing-nonzero-base-test",
+      "exclusion_reason": "Existing two-delta test detects every numeric += to = mutation; independently confirmed before assessing these reports.",
+      "opus": {
+        "keyed_domain_findings_covered": [
+          "panic-safety-untested"
+        ],
+        "keyed_domain_blockers": [],
+        "nonzero_base_trap": false,
+        "quality_notes": [
+          "Correct source anchors; reports panic cleanup as a nit rather than the key's suggestion severity.",
+          "Finds missing parallel-log integration assertions and a possible one-worker barrier deadlock.",
+          "Correctly observes that existing rollout-only test flags do not increment merged counters.",
+          "Suggested device-bucketing test also needs a nonempty device_id and accessible helper setup."
+        ]
+      },
+      "sonnet": {
+        "keyed_domain_findings_covered": [
+          "panic-safety-untested"
+        ],
+        "keyed_domain_blockers": [],
+        "nonzero_base_trap": false,
+        "quality_notes": [
+          "Finds the same missing integration assertion and one-worker barrier deadlock.",
+          "Wrong anchors for thread isolation (341-368 vs 976-1004), guard cleanup (126-130 vs 49-68), and replacement test (301-309 vs 936-945).",
+          "Claim that a stale log leaks counters into the next flag is unsupported: each flag installs a fresh default log.",
+          "Advice to drop the first guard explicitly either weakens the replacement test or clears the newly installed log, depending on placement."
+        ]
+      },
+      "independent_blind_check": {
+        "a": "sonnet",
+        "b": "opus",
+        "verdict": "B is stronger; keyed fact coverage equal."
+      },
+      "shared_input_limit": "The baseline prompt renderer replaced 22 ampersands with {diff_content} placeholders. Both models inspected the correct pinned source checkout."
+    },
+    {
+      "case": "portal-deployment",
+      "opus": {
+        "keyed_blockers_covered": [
+          "runtime-config-namespace",
+          "ingress-service-port"
+        ],
+        "named_target_port_trap": false,
+        "quality_notes": [
+          "Correct source anchors and fixes for both blockers; extra speculative suggestions are not counted as true positives."
+        ]
+      },
+      "sonnet": {
+        "keyed_blockers_covered": [
+          "runtime-config-namespace",
+          "ingress-service-port"
+        ],
+        "named_target_port_trap": false,
+        "quality_notes": [
+          "Correct mechanisms and fixes for both blockers, but anchors are 11 lines too high: ConfigMap 22-28 vs 11-17, Ingress 96-97 vs 85-86. The file contains only 86 lines."
+        ]
+      }
+    },
+    {
+      "case": "workspace-directory",
+      "shared_input_limit": "The baseline prompt renderer replaced && in the diff with repeated {diff_content} placeholders. Both reports explicitly detected this and reviewed the correct checkout instead.",
+      "opus": {
+        "keyed_blockers_covered": [
+          "selection-survives-workspace-change",
+          "radio-keyboard-activation"
+        ],
+        "guarded_request_trap": false,
+        "quality_notes": [
+          "Correct source anchors and primary fixes; explicitly distinguishes keyboard-only users from screen reader activation. Optional live-region behavior was not exercised."
+        ]
+      },
+      "sonnet": {
+        "keyed_blockers_covered": [
+          "selection-survives-workspace-change",
+          "radio-keyboard-activation"
+        ],
+        "guarded_request_trap": false,
+        "quality_notes": [
+          "Correct blocker mechanisms and primary fixes, but keyboard anchor is line 69 in an 11-line file and selection anchors miss the referenced code. Optional live-region behavior was not exercised."
+        ]
+      }
+    }
+  ]
+}
