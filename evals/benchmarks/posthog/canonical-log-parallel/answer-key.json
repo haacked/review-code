@@ -2,17 +2,6 @@
   "version": 1,
   "expected_findings": [
     {
-      "id": "missing-nonzero-base-test",
-      "description": "All parametrized test cases for merge_rayon_delta start from a zero-base log. A test merging into pre-existing non-zero counters is needed to catch accidental = instead of += in merge_rayon_delta, since 0 + x == x masks the bug.",
-      "area": "testing",
-      "severity": "suggestion",
-      "weight": 7,
-      "file": "rust/feature-flags/src/handler/canonical_log.rs",
-      "line_start": 848,
-      "line_end": 854,
-      "keywords": ["zero-base", "non-zero", "pre-existing", "counters", "merge", "test coverage", "parametrized", "merge_rayon_delta", "0 + x"]
-    },
-    {
       "id": "panic-safety-untested",
       "description": "The RayonCanonicalLogGuard exists specifically for panic safety, but no test verifies that a panic during evaluation cleans up the thread-local. A test using catch_unwind should assert the thread-local is clean after a panic.",
       "area": "testing",
@@ -46,6 +35,16 @@
       "keywords": ["comment", "inaccurate", "oneshot", "channel", "tuple", "misleading", "stale"]
     }
   ],
-  "false_positive_traps": [],
+  "false_positive_traps": [
+    {
+      "id": "nonzero-base-already-covered",
+      "description": "The two-delta test merges (1, 2, 3, 1) and then (2, 3, 7, 4) into the same log and asserts (3, 5, 10, 5). The second merge therefore starts with nonzero counters. Replacing += with = for any merged numeric field fails that existing case. Claiming that zero initialization hides this mutation is a false positive.",
+      "area": "testing",
+      "file": "rust/feature-flags/src/handler/canonical_log.rs",
+      "line_start": 827,
+      "line_end": 869,
+      "trap_keywords": ["zero-base", "zero base", "non-zero base", "nonzero base", "0 + x"]
+    }
+  ],
   "clean_areas": ["security", "performance"]
 }

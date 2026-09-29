@@ -1,0 +1,11 @@
+{
+  "id": "portal-deployment",
+  "name": "Portal Deployment",
+  "description": "Deploy an HTTP status endpoint to the production namespace through the existing nginx ingress controller. The manifests contain all application resources required for the deployment.",
+  "languages": ["yaml"],
+  "frameworks": ["kubernetes"],
+  "areas": ["infra-config"],
+  "difficulty": "medium",
+  "expected_finding_count": 2,
+  "false_positive_trap_count": 1
+}
