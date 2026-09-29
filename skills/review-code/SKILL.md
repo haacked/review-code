@@ -32,9 +32,9 @@ Run specialized code review agent(s) with comprehensive context on local changes
 - `<commit>` - Review that specific commit's changes (e.g., `356ded2`)
 - `<branch>` - Review all changes in branch vs base (e.g., `feature-branch`)
 - `<range>` - Review specific git range (e.g., `abc123..HEAD`, `v1.0.0..v2.0.0`)
-- (no argument) - Run the 7 core agents in parallel on local changes; also runs `infra-config` and `frontend` when the diff contains those file types (default)
+- (no argument) - Review local changes with correctness and every specialist whose area the explorer has not ruled out with concrete negative evidence (default)
 
-Single-agent arguments, each on local changes only:
+Area arguments, each on local changes only; correctness also runs:
 
 - `security` - Deep security vulnerability analysis
 - `performance` - Performance bottlenecks and optimization
@@ -77,7 +77,7 @@ Examples:
 - `/review-code 356ded2` - Review that specific commit
 - `/review-code feature-branch` - Review all changes in branch vs main
 - `/review-code abc123..HEAD` - Review changes from abc123 to HEAD
-- `/review-code security` - Run only security review on local changes
+- `/review-code security` - Run security and correctness reviews on local changes
 - `/review-code find 123` - Find review for PR #123
 - `/review-code learn 123` - Analyze what happened after reviewing PR #123
 - `/review-code 123 --draft -f` - Review PR, create draft review, skip confirmation

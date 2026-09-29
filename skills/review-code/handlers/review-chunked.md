@@ -47,7 +47,7 @@ Loaded when the session JSON's `chunk_metadata.chunked` is `true`: the diff was 
 
    Require successful dispatch and a nonempty, readable analysis artifact for every chunk. If an analyzer returns `BRIEFING_UNAVAILABLE` (including in the Codex output file), stop and report the failure before dispatching reviewers. Never interpolate a summary into a shell command or heredoc. Extract available usage metadata and record it in `$token_usage` as `chunk-{id}-analysis`.
 
-2. After all per-chunk analyses complete, for each chunk in the `chunks` array, for each applicable agent:
+2. After all per-chunk analyses complete, for each chunk in the `chunks` array, for each agent in `$selected_agents` from the full-diff routing decisions:
    - Point the agent at the chunk's `diff_path` instead of the single-pass diff, with the chunk's `diff_lines` count.
    - Add these artifact references to the normal reviewer prompt:
      ```

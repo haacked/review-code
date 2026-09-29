@@ -378,8 +378,6 @@ run_briefing() {
     [ "$status" -eq 0 ]
     local dir; dir=$(echo "$output" | jq -r '.artifacts_dir')
     [ ! -f "$dir/diff-frontend.patch" ]
-    # No entry means the caller has nothing to point the frontend agent at, so
-    # it drops out of the dispatch rather than getting the unscoped diff.
     [ "$(echo "$output" | jq -r '.scoped_diffs["diff-frontend.patch"] // "absent"')" = "absent" ]
 }
 

@@ -26,7 +26,7 @@ its text is not carried through every earlier turn of the run.
 - Infra-Config Review (if "infra-config" in `$selected_agents`)
 - Frontend Review (if "frontend" in `$selected_agents`)
 
-**For area-specific reviews**, include only that area's findings.
+**For area-specific reviews**, include correctness and the requested area's findings.
 
 Before linking evidence, retain every expected reviewer report beside the review so session cleanup cannot remove it. A missing manifest or report means a reviewer did not produce evidence, so stop the review:
 
@@ -48,6 +48,14 @@ done < "$manifest"
 ```
 
 Require every copy to succeed. Link each agent's retained investigation and coverage artifacts from its section, using the returned paths. Include every unresolved coverage gap. Do not read or copy the investigation text into the conversation to write the review.
+
+Retain the routing decisions with this run's coverage artifacts:
+
+```bash
+cp "<artifacts_dir>/review-routing.json" "${review_file}.artifacts/<SESSION_ID>/review-routing.json"
+```
+
+Require the copy to succeed. Include a scope section listing the reviewers run and skipped, each skip's reason and negative evidence (or explicit user scope override), and a link to the retained JSON. A skipped reviewer did not review the code; do not report its area as clean. Preserve this section on both full and delta append reviews.
 
 If the session has `fix: true`, place the `## Fix Summary` section (built by the fix pass in `review-fix.md`) directly after the metadata header (and after the chunked "Review Scope" note, when present) and before the per-agent sections.
 

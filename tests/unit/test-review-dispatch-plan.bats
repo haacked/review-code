@@ -21,6 +21,12 @@ setup() {
     [ "$(printf '%s' "$output" | jq -c .)" = '{"handler":null,"agents":[{"area":"correctness","subagent_type":"code-reviewer-correctness"}]}' ]
 }
 
+@test "dispatch keeps correctness when a requested specialist is the only supplied area" {
+    run python3 "$SCRIPT" --fields "$FIELDS" --agents 'security'
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" | jq -e '[.agents[].area] == ["correctness", "security"]'
+}
+
 @test "chunked review selects its handler without ordinary agent invocations" {
     printf '%s\n' '{"chunk_metadata":{"chunked":true,"chunk_count":2},"chunks":[{"id":1,"label":"backend","files":["a.py"],"diff_path":"one.patch"},{"id":2,"label":"frontend","files":["b.ts"],"diff_path":"two.patch"}]}' > "$FIELDS"
     run python3 "$SCRIPT" --fields "$FIELDS" --agents 'security correctness'
@@ -109,7 +115,7 @@ setup() {
 }
 
 @test "review handler chooses routing before specialized dispatch" {
-    run python3 - "$PROJECT_ROOT/skills/review-code/handlers/review.md" <<'PY'
+    run python3 - "$PROJECT_ROOT/skills/review-code/handlers/review.md" << 'PY'
 import pathlib
 import sys
 
@@ -122,7 +128,7 @@ PY
 }
 
 @test "review handler defers synthesis and validation in order" {
-    run python3 - "$PROJECT_ROOT/skills/review-code/handlers/review.md" <<'PY'
+    run python3 - "$PROJECT_ROOT/skills/review-code/handlers/review.md" << 'PY'
 import pathlib
 import sys
 
@@ -138,7 +144,7 @@ PY
 }
 
 @test "PR output and fix procedures load only at their stages" {
-    run python3 - "$PROJECT_ROOT/skills/review-code/handlers/review.md" <<'PY'
+    run python3 - "$PROJECT_ROOT/skills/review-code/handlers/review.md" << 'PY'
 import pathlib
 import sys
 
@@ -157,7 +163,7 @@ PY
 }
 
 @test "deferred handlers retain synthesis and validation safeguards" {
-    run python3 - "$PROJECT_ROOT/skills/review-code/handlers" <<'PY'
+    run python3 - "$PROJECT_ROOT/skills/review-code/handlers" << 'PY'
 import pathlib
 import sys
 
@@ -170,4 +176,36 @@ for required in ("diff-position-mapper.sh", 'subagent_type` "finding-validator"'
     assert required in validation
 PY
     [ "$status" -eq 0 ]
+}
+
+@test "ordinary dispatch runs every area when the classifier has only metadata" {
+    printf '%s\n' '{"diff_tokens":100,"file_metadata":{"modified_files":[{"path":"package.json","type":"config"}],"file_count":1},"languages":{"has_frontend":false}}' > "$FIELDS"
+    classification=$("$PROJECT_ROOT/skills/review-code/scripts/classify-review-scope.sh" "$FIELDS")
+    agents=$(printf '%s' "$classification" | jq -r '.agents | join(" ")')
+    run python3 "$SCRIPT" --fields "$FIELDS" --agents "$agents"
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" | jq -e '
+        .handler == null and
+        ([.agents[].area] | sort) == (["security","performance","correctness","maintainability","testing","compatibility","architecture","frontend","infra-config"] | sort)
+    '
+}
+
+@test "ordinary dispatch skips only the specialist with concrete explorer evidence" {
+    context="$BATS_TEST_TMPDIR/explorer.md"
+    cat > "$context" << 'MARKDOWN'
+# Explorer findings
+
+```review-routing
+{"scope":"full","areas":{"performance":{"status":"not_applicable","evidence":[{"check":"Read every changed file and searched the call sites","result":"The diff changes only static response text without changing execution paths."}]},"security":{"status":"uncertain"},"correctness":{"status":"not_applicable","evidence":[{"check":"Read every changed file","result":"The diff changes only static response text."}]}}}
+```
+MARKDOWN
+    classification=$("$PROJECT_ROOT/skills/review-code/scripts/classify-review-scope.sh" "$FIELDS" --explorer-context "$context")
+    agents=$(printf '%s' "$classification" | jq -r '.agents | join(" ")')
+    run python3 "$SCRIPT" --fields "$FIELDS" --agents "$agents"
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" | jq -e '
+        .handler == null and
+        ([.agents[].area] | sort) == (["security","correctness","maintainability","testing","compatibility","architecture","frontend","infra-config"] | sort) and
+        all(.agents[]; .subagent_type == ("code-reviewer-" + .area))
+    '
 }

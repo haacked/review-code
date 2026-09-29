@@ -30,6 +30,8 @@ def main():
         areas = list(dict.fromkeys(args.agents.split()))
         if not areas or any(area not in AREAS for area in areas):
             raise ValueError("agents must name known review areas")
+        if "correctness" not in areas:
+            areas.insert(0, "correctness")
         if args.review_mode == "delta":
             metadata = {}
             chunked = False

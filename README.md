@@ -14,7 +14,9 @@ This system was built with three core objectives:
 
 Specialized agents each focus on a distinct aspect of code quality, ensuring nothing falls through the cracks:
 
-**Core Review Agents (Always Run):**
+Correctness always runs. Other reviewers run unless the context explorer supplies concrete negative evidence that their area does not apply.
+
+**Core Review Agents:**
 - **Security**: Vulnerabilities, OWASP Top 10, secret management
 - **Performance**: Database optimization, N+1 queries, algorithmic complexity
 - **Correctness**: Intent verification, integration boundaries, functional correctness
@@ -23,9 +25,9 @@ Specialized agents each focus on a distinct aspect of code quality, ensuring not
 - **Compatibility**: Breaking changes, backward compatibility
 - **Architecture**: System design, patterns, necessity
 
-**Domain-Specific Agents (Conditional):**
-- **Frontend**: React, Kea state management, accessibility, hooks (runs only when `.tsx`/`.jsx` files are detected)
-- **Infra-Config**: Helm values, Kubernetes manifests, Terraform, ArgoCD, CI/CD pipelines (runs only when matching files are detected)
+**Domain-Specific Agents:**
+- **Frontend**: React, Kea state management, accessibility, hooks
+- **Infra-Config**: Helm values, Kubernetes manifests, Terraform, ArgoCD, CI/CD pipelines
 
 **Supporting Agents:**
 - **Context Explorer**: Pre-review pass that gathers architectural context for the specialized reviewers
@@ -63,7 +65,7 @@ A review's cost is dominated by the orchestrating conversation, not by the size 
 - **The diff stays on disk**: The session record holds a path, not the diff bytes. The orchestrator never loads the diff into its own context, and agents, the position mapper, and the adversary pass all read it from the file.
 - **Diff Compression**: Minimal context lines (1 vs 3) - agents can read full files when needed
 - **Smart Context Loading**: Only loads guidelines for detected languages/frameworks
-- **Scope classification**: `classify-review-scope.sh` picks exploration depth and which agents run, based on diff size and file types
+- **Scope classification**: `classify-review-scope.sh` picks exploration depth from diff size and file types. Correctness always runs; specialists run unless the explorer records concrete negative evidence that their area does not apply. The review retains each routing decision and its evidence.
 - **Incremental re-review**: With `--append`, a re-review covers only what changed since the last one, using the commit recorded in the previous review's metadata. Force-pushes, rebases, a moved base, or a delta covering most of the PR fall back to a full review and say why.
 - **Bash Scripts for Heavy Lifting**: Uses shell scripts for diff generation, file detection, and context preparation instead of consuming tokens
 
@@ -87,7 +89,7 @@ This creates a virtuous cycle where reviews get better as you identify new patte
 
 - **Specialized Review Agents**: Each agent focuses on a specific aspect of code quality
   - **Core Agents (7)**: Security, Performance, Correctness, Maintainability, Testing, Compatibility, Architecture
-  - **Conditional Agents (2)**: Frontend (React/TypeScript files), Infra-Config (Helm/Terraform/K8s/CI-CD files)
+  - **Domain-Specific Agents (2)**: Frontend (React/TypeScript files), Infra-Config (Helm/Terraform/K8s/CI-CD files)
   - **Supporting Agents**: Context Explorer (pre-review), Finding Validator (adversarial pass), Comment Composer (code-aware composition), Voice (wording), Comprehension Gate (final semantic check)
 - **Hierarchical Context Loading**: Automatically loads language, framework, org, and repo-specific guidelines
 - **PR and Local Review Modes**: Review pull requests, branches, commits, ranges, or uncommitted changes
@@ -328,7 +330,7 @@ This eliminates confusion about what's being reviewed and lets you cancel if the
 
 ## Review Agents
 
-The system includes seven core agents (always run), two conditional agents (run when matching files are detected), and five supporting agents for context, validation, semantic composition, comprehension, and voice.
+The system includes nine reviewers and five supporting agents for context, validation, semantic composition, comprehension, and voice. Correctness always runs. The explorer can exclude another reviewer only with concrete negative evidence; uncertainty keeps it enabled. An explicit area request runs that specialist and correctness.
 
 ### Core Agents
 
@@ -408,11 +410,11 @@ Focuses on:
 - Necessity (YAGNI)
 - Code reuse opportunities
 
-### Conditional Agents
+### Domain-Specific Agents
 
 #### Frontend (`code-reviewer-frontend`)
 
-**Runs only when:** `.tsx`, `.jsx`, or frontend-related files are detected in the diff
+**Runs unless:** The explorer supplies concrete negative evidence that the changes do not affect frontend behavior.
 
 Focuses on:
 
@@ -424,11 +426,9 @@ Focuses on:
 - TypeScript type safety for components
 - Component lifecycle and side effects
 
-**Why conditional?** Frontend expertise is only needed for React/TypeScript changes. Running it unconditionally wastes tokens on backend-only changes.
-
 #### Infra-Config (`code-reviewer-infra-config`)
 
-**Runs only when:** Infrastructure config files are detected in the diff (Helm `values.yaml`, `Chart.yaml`, `.tf`/`.tfvars`, Kubernetes manifests, ArgoCD configs, `Dockerfile`, GitHub Actions workflows, `kustomization.yaml`, etc.)
+**Runs unless:** The explorer supplies concrete negative evidence that the changes do not affect infrastructure configuration or deployment behavior.
 
 Focuses on:
 
