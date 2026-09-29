@@ -56,7 +56,7 @@ DIFF
 }
 
 build_selected_briefing() {
-    "$SCRIPTS/classify-review-scope.sh" "$SESSION_FILE" > "$BATS_TEST_TMPDIR/classification.json"
+    "$SCRIPTS/classify-review-scope.sh" "$SESSION_FILE" "$@" > "$BATS_TEST_TMPDIR/classification.json"
     local agents
     agents=$(jq -r '.agents | join(" ")' "$BATS_TEST_TMPDIR/classification.json")
     run "$SCRIPTS/build-agent-briefing.sh" "$SESSION_FILE" --agents "$agents" "$@"
@@ -171,6 +171,7 @@ DIFF
 
     build_selected_briefing --diff-file "$delta"
 
+    jq -e '.agents == ["infra-config"] and (.skipped_agents | contains(["frontend"]))' "$BATS_TEST_TMPDIR/classification.json"
     cmp "$delta" "$ARTIFACTS/diff-infra-config.patch"
     echo "$output" | jq -e --arg delta "$delta" '.diff_path == $delta and .scoped_diffs["diff-infra-config.patch"] > 0'
 }

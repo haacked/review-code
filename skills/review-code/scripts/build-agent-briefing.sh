@@ -234,13 +234,19 @@ fi
 cat "${SHARED}" >> "${BRIEFING}"
 
 # ------------------------------------------------------- area-scoped diffs
+rm -f "${ARTIFACTS_DIR}/diff-frontend.patch" "${ARTIFACTS_DIR}/diff-infra-config.patch"
+if [[ -n "${DIFF_OVERRIDE}" ]]; then
+    SCOPE_METADATA=$("${SCRIPT_DIR}/pre-review-context.sh" < "${DIFF_PATH}" | jq '{file_metadata: .}')
+else
+    SCOPE_METADATA=$(jq '{file_metadata}' "${SESSION_FILE}")
+fi
 # The frontend and infra-config agents review only their own file types, so they
 # get a diff holding just those hunks plus a list of the paths left out.
 write_scoped_diff() {
     local name="$1" filter="$2"
     local out="${ARTIFACTS_DIR}/diff-${name}.patch"
     local paths
-    paths=$(jq -r "${filter} | @json" "${SESSION_FILE}" | sort -u)
+    paths=$(jq -r "${filter} | @json" <<< "${SCOPE_METADATA}" | sort -u)
     if [[ -z "${paths}" ]]; then
         return 1
     fi
@@ -262,7 +268,7 @@ if [[ " ${AGENTS} " == *" frontend "* ]]; then
             | split("/")[:-1] | join("/")] | unique) as $ui_dirs
         | $files[]
         | select(
-            (.path | test("\\.(tsx|jsx|vue|svelte|css|scss|sass|less)$"))
+            (.path | test("\\.(tsx|jsx|vue|svelte|css|scss|sass|less|html?)$"))
             or ((.path | test("\\.(ts|js|mjs|cjs)$"))
                 and ((.path | test("^(frontend|web|client|ui)/") or test("(^|/)(components|pages|views|hooks|stores?|contexts?)/"))
                      or ((.path | split("/")[:-1] | join("/")) as $d | $ui_dirs | index($d) != null)))

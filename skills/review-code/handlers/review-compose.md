@@ -57,6 +57,8 @@ cp "<artifacts_dir>/review-routing.json" "${review_file}.artifacts/<SESSION_ID>/
 
 Require the copy to succeed. Include a scope section listing the reviewers run and skipped, each skip's reason and negative evidence (or explicit user scope override), and a link to the retained JSON. A skipped reviewer did not review the code; do not report its area as clean. Preserve this section on both full and delta append reviews.
 
+For a chunked review, also copy every `$chunk.routing_path` into `${review_file}.artifacts/<SESSION_ID>/` and require every copy to succeed. Link each retained chunk routing file from the chunk scope table. The top-level routing artifact describes the whole patch; each chunk artifact is the decision record for the patch that chunk's reviewers received.
+
 If the session has `fix: true`, place the `## Fix Summary` section (built by the fix pass in `review-fix.md`) directly after the metadata header (and after the chunked "Review Scope" note, when present) and before the per-agent sections.
 
 Compose per-agent findings from `$finding_publication.findings`. Use `description` as the complete public comment, and retain full `facts` and `proposed_fix` as internal evidence in the local review. Only `description` passed the public wording checks; never append internal evidence to Suggested Comments.

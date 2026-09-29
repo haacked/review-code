@@ -2,7 +2,9 @@
 
 import argparse
 import json
+import subprocess
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 from helpers.markdown_fences import FENCE, walk_fences
@@ -124,6 +126,21 @@ def classify(session, assessments, fallback_reason):
     }
 
 
+def session_for_patch(session, patch_path):
+    if patch_path is None:
+        return session
+    patch = Path(patch_path).read_bytes()
+    metadata = json.loads(
+        subprocess.check_output(
+            [str(Path(__file__).with_name("pre-review-context.sh"))], input=patch
+        )
+    )
+    scoped = deepcopy(session)
+    scoped["diff_tokens"] = len(patch) // 4
+    scoped["file_metadata"] = metadata
+    return scoped
+
+
 def apply_area_override(result, requested_area):
     if requested_area is None:
         return result
@@ -151,17 +168,25 @@ def apply_area_override(result, requested_area):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("session_file")
+    parser.add_argument("--diff-file")
     parser.add_argument("--explorer-context")
     parser.add_argument("--area", choices=AREAS)
     args = parser.parse_args()
     try:
         with open(args.session_file) as source:
             session = json.load(source)
+        session = session_for_patch(session, args.diff_file)
         assessments, fallback_reason = read_routing(args.explorer_context)
         result = apply_area_override(
             classify(session, assessments, fallback_reason), args.area
         )
-    except (OSError, ValueError, TypeError, AttributeError) as error:
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        AttributeError,
+        subprocess.CalledProcessError,
+    ) as error:
         json.dump({"error": str(error)}, sys.stdout)
         sys.stdout.write("\n")
         parser.exit(1, f"review scope classification: {error}\n")

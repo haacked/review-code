@@ -23,6 +23,19 @@ write_routing() {
     printf '# Explorer findings\n\n```review-routing\n%s\n```\n' "$1" > "$CONTEXT"
 }
 
+write_patch() {
+    local path="$1"
+    cat <<PATCH
+diff --git a/$path b/$path
+index 1111111..2222222 100644
+--- a/$path
++++ b/$path
+@@ -1 +1 @@
+-old value
++new value
+PATCH
+}
+
 assert_complete_decisions() {
     printf '%s' "$output" | jq -e --argjson areas "$ALL_AREAS" '
         (.agent_decisions | keys | sort) == ($areas | sort) and
@@ -342,4 +355,21 @@ EOF
         .agent_decisions.performance.evidence == $routing.areas.performance.evidence
     '
     cmp "$SESSION" "$BATS_TEST_TMPDIR/session-before.json"
+}
+
+@test "diff override sizes exploration from the reviewed patch without changing evidence routing" {
+    create_session 50000 '[{"path":"large/full.py","type":"source"}]'
+    write_patch tests/test_delta.py > "$BATS_TEST_TMPDIR/delta.patch"
+    write_routing '{"scope":"full","areas":{"frontend":{"status":"not_applicable","evidence":[{"check":"Read the delta and searched its changed symbols","result":"The delta changes one backend test and has no UI consumer."}]}}}'
+
+    run "$SCRIPT" "$SESSION" --diff-file "$BATS_TEST_TMPDIR/delta.patch" --explorer-context "$CONTEXT"
+
+    [ "$status" -eq 0 ]
+    assert_complete_decisions
+    printf '%s' "$output" | jq -e '
+        .exploration_depth == "minimal" and
+        .skipped_agents == ["frontend"] and
+        (.agents | index("correctness")) != null and
+        .agent_decisions.frontend.evidence[0].result == "The delta changes one backend test and has no UI consumer."
+    '
 }

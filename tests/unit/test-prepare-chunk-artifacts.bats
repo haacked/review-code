@@ -8,8 +8,8 @@ setup() {
     SESSION="$TEST_DIR/session.json"
     mkdir -p "$ARTIFACTS"
     printf 'architecture sentinel\n' > "$ARTIFACTS/architectural-context.md"
-    printf 'diff sentinel\nsecond line\n' > "$ARTIFACTS/first diff.patch"
-    printf 'other diff\n' > "$ARTIFACTS/second.patch"
+    write_chunk_patch 'src/a name;literal.py' "$ARTIFACTS/first diff.patch"
+    write_chunk_patch src/b.py "$ARTIFACTS/second.patch"
     jq -n --arg dir "$ARTIFACTS" '{
         artifacts_dir: $dir,
         chunks: [
@@ -33,20 +33,57 @@ change_session() {
     mv "$TEST_DIR/changed.json" "$SESSION"
 }
 
+write_chunk_patch() {
+    local file="$1"
+    local patch="$2"
+    cat > "$patch" <<PATCH
+diff --git a/$file b/$file
+index 1111111..2222222 100644
+--- a/$file
++++ b/$file
+@@ -1 +1 @@
+-old value
++new value
+PATCH
+}
+
+create_scoped_chunks() {
+    write_chunk_patch tests/test_api.py "$ARTIFACTS/tests.patch"
+    write_chunk_patch backend/api.py "$ARTIFACTS/source.patch"
+    write_chunk_patch terraform/main.tf "$ARTIFACTS/infra.patch"
+    write_chunk_patch frontend/App.tsx "$ARTIFACTS/frontend.patch"
+    change_session '
+        .diff_tokens = 50000 |
+        .languages.has_frontend = true |
+        .chunks = [
+            {id:"tests",label:"Tests",files:["tests/test_api.py"],diff_path:(.artifacts_dir + "/tests.patch")},
+            {id:"source",label:"Source",files:["backend/api.py"],diff_path:(.artifacts_dir + "/source.patch")},
+            {id:"infra",label:"Infrastructure",files:["terraform/main.tf"],diff_path:(.artifacts_dir + "/infra.patch")},
+            {id:"frontend",label:"Frontend",files:["frontend/App.tsx"],diff_path:(.artifacts_dir + "/frontend.patch")}
+        ] |
+        .file_metadata.modified_files = [
+            {path:"tests/test_api.py",type:"source",is_infra_config:true},
+            {path:"backend/api.py",type:"test",is_test:true},
+            {path:"terraform/main.tf",type:"source",is_infra_config:false},
+            {path:"frontend/App.tsx",type:"test",is_test:true}
+        ]'
+}
+
 @test "writes scoped metadata and a cross-chunk manifest with literal safe paths" {
     run python3 "$SCRIPT" "$SESSION"
     [ "$status" -eq 0 ]
     RESULT="$output"
     [ "$(jq -r '.manifest_path' <<< "$RESULT")" = "$ARTIFACTS/chunk-manifest.json" ]
-    [ "$(jq '.chunks[0].diff_lines' <<< "$RESULT")" -eq 2 ]
-    [ "$(jq '.chunks[1].diff_lines' <<< "$RESULT")" -eq 1 ]
+    [ "$(jq '.chunks[0].diff_lines' <<< "$RESULT")" -eq 7 ]
+    [ "$(jq '.chunks[1].diff_lines' <<< "$RESULT")" -eq 7 ]
     [ "$(jq -r '.chunks[0].metadata_path' <<< "$RESULT")" = "$ARTIFACTS/chunk-0-metadata.json" ]
     [ "$(jq -r '.chunks[0].analysis_path' <<< "$RESULT")" = "$ARTIFACTS/chunk-0-analysis.md" ]
-    jq -e '. == {modified_files:[{path:"src/a name;literal.py",additions:2,nested:{keep:true}}]}' "$ARTIFACTS/chunk-0-metadata.json"
-    jq -e '. == {modified_files:[{path:"src/b.py",additions:1}]}' "$ARTIFACTS/chunk-1-metadata.json"
+    [ "$(jq -r '.chunks[0].routing_path' <<< "$RESULT")" = "$ARTIFACTS/chunk-0-routing.json" ]
+    jq -e '.modified_files == [{path:"src/a name;literal.py",additions:2,nested:{keep:true},deleted:false,type:"source",language:"python",is_test:false,is_infra_config:false,likely_test_path:"src/test_a name;literal.py"}]' "$ARTIFACTS/chunk-0-metadata.json"
+    jq -e '.modified_files == [{path:"src/b.py",additions:1,deleted:false,type:"source",language:"python",is_test:false,is_infra_config:false,likely_test_path:"src/test_b.py"}]' "$ARTIFACTS/chunk-1-metadata.json"
     jq -e 'length == 2 and (.[0].id == "../unsafe;$(touch sentinel)") and (.[0].files == ["src/a name;literal.py"]) and (.[1].id == "second") and (all(.[]; keys == ["analysis_path","diff_path","files","id","label","metadata_path"]))' "$ARTIFACTS/chunk-manifest.json"
     [[ "$RESULT" != *"architecture sentinel"* ]]
-    [[ "$RESULT" != *"diff sentinel"* ]]
+    [[ "$RESULT" != *"old value"* ]]
 }
 
 @test "does not overwrite existing chunk analysis" {
@@ -106,11 +143,11 @@ PY
     [ "$status" -ne 0 ]
 }
 
-@test "allows deleted chunk files without metadata" {
+@test "derives chunk metadata when session metadata is missing" {
     change_session '.file_metadata.modified_files |= map(select(.path != "src/b.py"))'
     run python3 "$SCRIPT" "$SESSION"
     [ "$status" -eq 0 ]
-    jq -e '. == {modified_files:[]}' "$ARTIFACTS/chunk-1-metadata.json"
+    jq -e '.modified_files == [{path:"src/b.py",deleted:false,type:"source",language:"python",is_test:false,is_infra_config:false,likely_test_path:"src/test_b.py"}]' "$ARTIFACTS/chunk-1-metadata.json"
 }
 
 @test "rejects duplicate chunk ids" {
@@ -208,4 +245,62 @@ assert 'include its chunk analysis and manifest in the fallback' in text
 assert 'Do not accept an unavailable result as a clean review.' in text
 PY
     [ "$status" -eq 0 ]
+}
+
+@test "classifies chunks from their own evidence and aggregates the run routing" {
+    create_scoped_chunks
+    run python3 "$SCRIPT" "$SESSION"
+    [ "$status" -eq 0 ]
+    printf '```review-routing\n%s\n```\n' '{"scope":"full","areas":{"frontend":{"status":"not_applicable","evidence":[{"check":"Read the test chunk and searched UI imports","result":"The test chunk has no UI consumer."}]},"infra-config":{"status":"applies"}}}' > "$ARTIFACTS/chunk-0-analysis.md"
+    printf '```review-routing\n%s\n```\n' '{"scope":"full","areas":{"frontend":{"status":"applies"},"infra-config":{"status":"not_applicable","evidence":[{"check":"Read the source chunk and searched deployment references","result":"The source chunk changes no deployment configuration."}]}}}' > "$ARTIFACTS/chunk-1-analysis.md"
+    for index in 2 3; do
+        printf '```review-routing\n{"scope":"full","areas":{}}\n```\n' > "$ARTIFACTS/chunk-$index-analysis.md"
+    done
+
+    run python3 "$SCRIPT" "$SESSION" --classify
+
+    [ "$status" -eq 0 ]
+    jq -e '
+        (.chunks[0].classification.skipped_agents | index("frontend")) != null and
+        (.chunks[0].classification.agents | index("infra-config")) != null and
+        (.chunks[1].classification.agents | index("frontend")) != null and
+        (.chunks[1].classification.skipped_agents | index("infra-config")) != null and
+        all(.chunks[]; (.classification.agents | index("correctness")) != null)
+    ' <<< "$output"
+    jq -e '
+        .scope == "chunks" and
+        (.agents | length) == 9 and
+        .skipped_agents == [] and
+        (.chunks | length) == 4 and
+        .agent_decisions.correctness.decision == "run"
+    ' "$ARTIFACTS/review-routing.json"
+}
+
+@test "missing chunk routing evidence keeps every specialist for that chunk" {
+    create_scoped_chunks
+    run python3 "$SCRIPT" "$SESSION"
+    [ "$status" -eq 0 ]
+    printf 'analysis without a routing block\n' > "$ARTIFACTS/chunk-0-analysis.md"
+    for index in 1 2 3; do
+        printf '```review-routing\n{"scope":"full","areas":{}}\n```\n' > "$ARTIFACTS/chunk-$index-analysis.md"
+    done
+
+    run python3 "$SCRIPT" "$SESSION" --classify
+
+    [ "$status" -eq 0 ]
+    jq -e '(.chunks[0].classification.agents | length) == 9 and .chunks[0].classification.skipped_agents == []' <<< "$output"
+}
+
+@test "explicit area keeps correctness in every chunk" {
+    create_scoped_chunks
+    run python3 "$SCRIPT" "$SESSION"
+    [ "$status" -eq 0 ]
+    for index in 0 1 2 3; do
+        printf '```review-routing\n{"scope":"full","areas":{}}\n```\n' > "$ARTIFACTS/chunk-$index-analysis.md"
+    done
+
+    run python3 "$SCRIPT" "$SESSION" --classify --area compatibility
+
+    [ "$status" -eq 0 ]
+    jq -e '(.agents | sort) == (["compatibility", "correctness"] | sort) and all(.chunks[]; (.classification.agents | sort) == (["compatibility", "correctness"] | sort))' <<< "$output"
 }
