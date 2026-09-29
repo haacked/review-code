@@ -533,8 +533,8 @@ PATCH
     local dir
     dir=$(jq -r '.artifacts_dir' <<< "$output")
     jq -e '.scoped_diffs | has("diff-frontend.patch") and has("diff-infra-config.patch")' <<< "$output"
-    rg -q '^diff --git a/web/Removed.tsx' "$dir/diff-frontend.patch"
-    rg -q '^diff --git a/deploy/removed.yaml' "$dir/diff-infra-config.patch"
+    grep -q '^diff --git a/web/Removed.tsx' "$dir/diff-frontend.patch"
+    grep -q '^diff --git a/deploy/removed.yaml' "$dir/diff-infra-config.patch"
 }
 
 @test "build-agent-briefing: a delta cannot reuse specialist patches from a previous build" {
@@ -575,5 +575,5 @@ PATCH
     [ "$status" -eq 0 ]
     dir=$(jq -r '.artifacts_dir' <<< "$output")
     jq -e '.scoped_diffs | has("diff-frontend.patch")' <<< "$output"
-    rg -q '^diff --git a/templates/form.html' "$dir/diff-frontend.patch"
+    grep -q '^diff --git a/templates/form.html' "$dir/diff-frontend.patch"
 }

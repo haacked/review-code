@@ -49,7 +49,11 @@ def classify_chunk(session_path, record, area):
     try:
         output = subprocess.check_output(command, text=True)
     except subprocess.CalledProcessError:
-        command = [item for item in command if item not in ("--explorer-context", record["analysis_path"])]
+        command = [
+            item
+            for item in command
+            if item not in ("--explorer-context", record["analysis_path"])
+        ]
         output = subprocess.check_output(command, text=True)
     classification = json.loads(output)
     Path(record["routing_path"]).write_text(json.dumps(classification) + "\n")
@@ -66,9 +70,7 @@ def aggregate_routing(records, artifacts):
     decisions = {}
     for area in AREAS:
         matching = [
-            record
-            for record in records
-            if area in record["classification"]["agents"]
+            record for record in records if area in record["classification"]["agents"]
         ]
         if matching:
             labels = ", ".join(record["label"] for record in matching)

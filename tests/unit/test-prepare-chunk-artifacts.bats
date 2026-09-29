@@ -216,7 +216,9 @@ assert 'Return the complete summary as your final message.' in review
 assert 'For Codex, pass `$architectural_context_path` as the output file to `agent-dispatch.sh run`' in review
 assert 'On the Claude fallback only, save the returned summary there using the Write tool' in review
 chunked = (handlers / "review-chunked.md").read_text()
-assert 'Explore is read-only' in chunked
+assert 'subagent_type: "code-review-context-explorer"' in chunked
+assert 'registered-agent fallback in `review.md`' in chunked
+assert 'The named agent owns the routing schema and negative-evidence rules.' in chunked
 assert "save it once to the chunk's `analysis_path` using Write" in chunked
 assert 'Add one entry per chunk to the batch manifest' in chunked
 assert '`agent`: `code-review-context-explorer`' in chunked
