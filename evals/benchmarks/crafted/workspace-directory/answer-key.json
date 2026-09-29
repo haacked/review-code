@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "expected_findings": [
+    {
+      "id": "selection-survives-workspace-change",
+      "description": "Selecting a North member and then switching to South leaves selectedId set to the North member. Once South finishes loading, Assign becomes enabled even if no South radio is checked, and invokes onAssign with South and the North member ID. Reset the selection when the workspace changes and ensure it belongs to the displayed member list before assignment.",
+      "area": "frontend",
+      "severity": "blocking",
+      "weight": 10,
+      "file": "src/Directory.tsx",
+      "line_start": 8,
+      "line_end": 38,
+      "keywords": ["selectedid", "selection", "workspace", "stale", "reset", "previous", "onassign"]
+    },
+    {
+      "id": "radio-keyboard-activation",
+      "description": "The member choices are div elements with role=radio and tabIndex, but only onClick changes the selection. Focusing a div does not give it native radio keyboard behavior, and no parent handles keyboard input. Keyboard users cannot select any member with Space or arrow keys, so Assign remains disabled. Use native radio inputs or implement the radio keyboard interaction.",
+      "area": "frontend",
+      "severity": "blocking",
+      "weight": 10,
+      "file": "src/MemberOption.tsx",
+      "line_start": 7,
+      "line_end": 7,
+      "keywords": ["keyboard", "space", "arrow", "onkeydown", "native radio", "radio input"]
+    }
+  ],
+  "false_positive_traps": [
+    {
+      "id": "guarded-request-results",
+      "description": "Each effect invocation has its own active flag. Cleanup clears that flag when the workspace changes or the component unmounts, and both success and error handlers check it before updating state. A slower prior request cannot overwrite the new workspace result. AbortController may save work but is not required to prevent stale results or state updates after unmount here.",
+      "area": "frontend",
+      "file": "src/useMembers.ts",
+      "line_start": 23,
+      "line_end": 38,
+      "trap_keywords": ["race", "abortcontroller", "cancel", "unmount", "out of order", "stale response", "overwrite"]
+    }
+  ],
+  "clean_areas": []
+}

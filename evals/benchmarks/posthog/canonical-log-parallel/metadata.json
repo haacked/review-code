@@ -8,7 +8,8 @@
   "frameworks": [],
   "areas": ["correctness", "testing", "maintainability"],
   "difficulty": "hard",
-  "expected_finding_count": 4,
-  "false_positive_trap_count": 0,
+  "expected_finding_count": 3,
+  "false_positive_trap_count": 1,
+  "source_sha": "40f667424a3abc5691e5addeb874c4c0c33e93bf",
   "frozen_diff": true
 }
