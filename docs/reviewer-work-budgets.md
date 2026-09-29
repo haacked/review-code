@@ -35,6 +35,6 @@ Two read-only Claude contract smoke tests returned valid reports. The normal fix
 
 A full `/review-code correctness --force` smoke attempt on a two-line fixture could not start: automatic approval review rejected the broad tool allowlist, and the restricted retry required approval for the argument-parser script. This is not an end-to-end validation result.
 
-`bin/setup`, formatting, and changed-script Ruff and ShellCheck checks passed. The full lint command reports 36 unrelated existing Python errors. Simplify, comment cleanup, and a correctness review completed with no remaining findings.
+`bin/setup`, formatting, and changed-script Ruff and ShellCheck checks passed. All Python scripts pass with CI's pinned Ruff 0.13.0. The helper import carries an E402 exemption because bytecode generation must be disabled before importing from the installed skill tree. Local Ruff 0.16.8 accepts that ordering without an exemption, so validation uses the pinned version. Simplify, comment cleanup, and a correctness review completed with no remaining findings.
 
 The before and after `bin/token-report --prompts --all-stages --since 2026-09-01 --json` runs both reported 1,044 dispatches. The cost report changed from 97 to 99 sessions as the local smoke sessions were recorded. Those changing aggregates do not measure a savings from the budget policy.

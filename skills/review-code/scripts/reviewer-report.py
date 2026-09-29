@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 
-from helpers.reviewer_budget import validate_budget
+from helpers.reviewer_budget import validate_budget  # noqa: E402
 
 
 def render_limitations(name, coverage, budget):
