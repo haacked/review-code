@@ -19,6 +19,8 @@ Used only when an agent replies `BRIEFING_UNAVAILABLE`, meaning it could not rea
 $file_access_instructions
 ```
 
+Keep the same report path, report name, and harness in the fallback prompt. Carry forward any investigation counts from the first attempt. If the counts cannot be recovered, report that reviewer as incomplete instead of starting a fresh budget.
+
 Nothing else changes: same agent, same domain lens, same finding format.
 
 ## Report it

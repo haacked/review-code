@@ -410,13 +410,13 @@ It reads this session's subagent transcripts (`--session` defaults to `$CLAUDE_C
 
 Each agent is sized against the patch file it actually read — the chunk or scoped diff named in its own tool calls — not against one shared count. `--diff-lines` is only the fallback for an agent whose transcript names no readable patch file, so pass the full diff's line count here even for a chunked or scoped review. Same-type agents are told apart by the `diff_path` field on each row.
 
-For each agent in `below_threshold`, resume it (using its agent ID from the Task tool) and give it the `unread_ranges` the script reported:
+For each agent in `below_threshold`, first check its saved budget. If it is `limited` or either counter has reached its limit, set `coverage.budget.status` to `limited` and append each unread range to that report's `coverage.gaps`, naming the reviewer, diff path, and range, before retention. Preserve existing gaps and do not resume the agent. Otherwise, resume it (using its agent ID from the Task tool) and give it the `unread_ranges` the script reported:
 
 ```
-You did not read all of `<artifacts_dir>/<agent-diff-file>`. These line ranges are still unread: <ranges>. Read them now with `sed -n '<start>,<end>p' <path>` and report any findings they contain, in the same format. Write this retry to `$report_path` using the report JSON contract, with an empty findings string if there are none.
+Carry forward your earlier budget counts: <tool_calls> tool calls and <searches> searches. Only the unused portion of the original budget remains. You did not read all of `<artifacts_dir>/<agent-diff-file>`. These line ranges are still unread: <ranges>. Read them now with `sed -n '<start>,<end>p' <path>` and report any findings they contain, in the same format. Write this retry to `$report_path` using the report JSON contract, with an empty findings string if there are none.
 ```
 
-Use a distinct coverage-retry report under the same output contract. Split the report before merging its findings into the pool. One re-dispatch per agent; take what you get. Record each resume's usage in `$token_usage` as `coverage-bounce-{N}`.
+Use a distinct coverage-retry report named `coverage-bounce-<N>-<original-report-name>` under the same output contract. Include the earlier counters in the retry prompt, including for a resumed agent. Never reset them or automatically retry a budget-limited review. Split the report before merging its findings into the pool. One re-dispatch per agent; take what you get. Record each resume's usage in `$token_usage` as `coverage-bounce-{N}`.
 
 If the script errors (no transcripts yet, unreadable directory), say so in the review and continue. A missing coverage check is worth a line in the output; it is not worth blocking a completed review.
 

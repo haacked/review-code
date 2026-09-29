@@ -220,6 +220,8 @@ Pass `<artifacts_dir>/draft-input.json` unchanged to `create-draft-review.sh`.
 
 **Extracting `line_content`:** The executable draft assembly reads `original_diff_path` and copies the code at each target line on its selected side into `line_content`. Drift detection searches the same side, so a `LEFT` comment cannot move onto an added line with matching text.
 
+When `review-coverage.md` is nonempty, include every reviewer and named coverage gap in the draft summary, with budget counts for limited reviewers. Say the review is incomplete. This disclosure takes precedence over the short-summary defaults below; never use an unqualified "LGTM" with gaps.
+
 **Writing the summary:** The `summary` field is the casual top-level comment on a GitHub review. Keep it to 1-2 short sentences. The author knows what their PR does, so never restate or narrate the approach back to them.
 
 Don't catalog or preview the inline comments either. The author scrolls down and sees them. Mention something in the summary only if it doesn't have a natural inline target (cross-cutting concerns, missing tests for a behavior that spans files, false-positive callouts on prior reviews).

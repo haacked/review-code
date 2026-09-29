@@ -36,18 +36,23 @@ if [[ ! -s "$manifest" ]]; then
     echo "ERROR: no reviewer reports were registered" >&2
     exit 1
 fi
+coverage_summary="<artifacts_dir>/review-coverage.md"
+: > "$coverage_summary"
 while IFS= read -r report_path; do
     if [[ ! -f "$report_path" || ! -r "$report_path" ]]; then
         echo "ERROR: expected reviewer report missing or unreadable: $report_path" >&2
         exit 1
     fi
     report_name="$(basename "$report_path" .json)"
-    python3 ~/.agents/skills/review-code/scripts/reviewer-report.py \
-      --input "$report_path" --output-dir "${review_file}.artifacts/<SESSION_ID>" --name "$report_name" || exit 1
+    report_result=$(python3 ~/.agents/skills/review-code/scripts/reviewer-report.py \
+      --input "$report_path" --output-dir "${review_file}.artifacts/<SESSION_ID>" --name "$report_name" --require-budget) || exit 1
+    printf '%s\n' "$report_result"
+    limitations_path=$(jq -er '.limitations_path' <<< "$report_result") || exit 1
+    cat "$limitations_path" >> "$coverage_summary" || exit 1
 done < "$manifest"
 ```
 
-Require every copy to succeed. Link each agent's retained investigation and coverage artifacts from its section, using the returned paths. Include every unresolved coverage gap. Do not read or copy the investigation text into the conversation to write the review.
+Require every copy to succeed. Link each agent's retained investigation and coverage artifacts from its section, using the returned paths. If `review-coverage.md` is nonempty, include it verbatim under `## Coverage limitations` before per-agent findings, including in delta append documents. It names every reviewer with gaps and the counts for each budget-limited report. Preserve these disclosures even when another reviewer found no issues in the same file. Do not describe a review with gaps as clean or fully checked. Do not read or copy the investigation text into the conversation to write the review.
 
 If the session has `fix: true`, place the `## Fix Summary` section (built by the fix pass in `review-fix.md`) directly after the metadata header (and after the chunked "Review Scope" note, when present) and before the per-agent sections.
 
@@ -118,7 +123,7 @@ Set `$review_commit` to the reviewed PR head SHA in PR mode, or to an empty stri
 
 Re-running is safe: it replaces any section an earlier run left, and drops the section when the prose comes back clean. A nonzero `error` field, or a missing script, leaves the review as composed. On the `delta` path this step runs after the carry-forward merge, against the merged file; `review-carry-forward.md` says where. In debug mode, save the stage `11c2-voice-lint` narrative artifacts (see `review-debug.md`).
 
-Then inform the user with a clickable file link:
+Then inform the user with a clickable file link. When coverage gaps remain, say the review is incomplete and list each reviewer and named gap from `review-coverage.md`, including budget counts when limited. Use "Review saved with coverage gaps" instead of "Review complete" below. Do not hide the limitations behind an artifact link:
 
 ```
 Review complete!

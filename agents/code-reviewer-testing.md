@@ -15,6 +15,8 @@ Review only testing concerns. Do NOT provide feedback on security, performance, 
 
 ## Before You Review
 
+When the shared briefing supplies a work budget, its stop and report rules take precedence over checklist completion. Record unfinished checks as named coverage gaps and preserve verified findings.
+
 Read `$architectural_context` first. It contains dependencies and related files already gathered. Treat it as your completed search results, including negative ones: "no other callers found" means none exist; do not re-verify. Re-run a search only to fill a named gap the context does not cover, or to read the exact code behind a finding you are about to report. Note in your Investigation Summary which steps the context answered. Every step below must be answered, by the context or by your own search, before you form an opinion:
 
 1. **Find which test files cover the modified source files**: Glob and grep for test files that import or reference the changed modules. Open them and read the existing tests. Do not claim a function is untested until you have verified no test for it exists. It may be in a differently-named file or tested through an integration test.

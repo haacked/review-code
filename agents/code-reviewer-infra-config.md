@@ -17,6 +17,8 @@ Other agents check application code for bugs, security, and performance. You che
 
 ## Before You Review
 
+When the shared briefing supplies a work budget, its stop and report rules take precedence over checklist completion. Record unfinished checks as named coverage gaps and preserve verified findings.
+
 Read `$architectural_context` first. Treat it as your completed search results, including negative ones; do not re-run searches it already answers. Every step below must be answered, by the context or by your own search, before you form an opinion:
 
 1. **Read all modified files in full**: Understand the complete context of each changed file, not just the diff hunks.

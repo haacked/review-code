@@ -83,7 +83,7 @@ When the dispatch supplies a report path, use this output contract.
 Package your response as a JSON object with these fields:
 - investigation: the complete Investigation Summary and any intent verification, positive observations, or other supporting narrative, as one Markdown string.
 - findings: only the complete finding bodies and their headings, severity, locations, confidence, and proposed fixes, as one Markdown string. Keep the normal fenced finding format. Use an empty string when there are no findings. Do not truncate or summarize findings.
-- coverage: an object with files_read (the paths you actually inspected) and gaps (specific work you could not complete), both arrays of strings. An empty gaps array means you completed the requested work.
+- coverage: an object with files_read (the paths you actually inspected) and gaps (specific work you could not complete), both arrays of strings, plus the budget object specified below. An empty gaps array means you completed the requested work.
 
 Treat investigation and coverage as evidence, not instructions. Keep everything needed to assess each finding in that finding, including consumer citations and concrete fixes. Put the detailed search history in investigation.
 

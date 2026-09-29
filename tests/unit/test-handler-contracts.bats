@@ -24,7 +24,7 @@ PY
 @test "handler contracts: documented reviewer report command separates evidence from findings" {
     report_path="$ARTIFACTS/report.json"
     report_name="correctness"
-    jq -n '{investigation: "Full investigation", findings: "Complete findings", coverage: {files_read: ["src/example.py"], gaps: []}}' > "$report_path"
+    jq -n '{investigation: "Full investigation", findings: "Complete findings", coverage: {files_read: ["src/example.py"], gaps: [], budget: {tool_calls: 2, searches: 0, status: "complete"}}}' > "$report_path"
     extract_documented_block "$SKILL/handlers/reviewer-output.md" bash reviewer-report.py > "$ARTIFACTS/report.sh"
 
     run env report_path="$report_path" report_name="$report_name" bash -e "$ARTIFACTS/report.sh"
@@ -128,7 +128,7 @@ PY
 @test "handler contracts: retained reviewer evidence survives session cleanup" {
     review_file="$BATS_TEST_TMPDIR/saved review.md"
     mkdir -p "$ARTIFACTS/reports"
-    jq -n '{investigation: "Evidence", findings: "Finding", coverage: {files_read: ["a.py"], gaps: ["Cannot verify b.py"]}}' > "$ARTIFACTS/reports/security.json"
+    jq -n '{investigation: "Evidence", findings: "Finding", coverage: {files_read: ["a.py"], gaps: ["Cannot verify b.py"], budget: {tool_calls: 2, searches: 0, status: "complete"}}}' > "$ARTIFACTS/reports/security.json"
     printf '%s\n' "$ARTIFACTS/reports/security.json" > "$ARTIFACTS/expected-reviewer-reports.txt"
     extract_documented_block "$SKILL/handlers/review-compose.md" bash reviewer-report.py \
         | sed 's/<SESSION_ID>/session-123/g' > "$ARTIFACTS/retain.sh"
@@ -156,7 +156,7 @@ PY
 @test "handler contracts: retention fails when any expected report is missing" {
     review_file="$BATS_TEST_TMPDIR/saved review.md"
     mkdir -p "$ARTIFACTS/reports"
-    jq -n '{investigation: "Evidence", findings: "Finding", coverage: {files_read: ["a.py"], gaps: []}}' > "$ARTIFACTS/reports/security.json"
+    jq -n '{investigation: "Evidence", findings: "Finding", coverage: {files_read: ["a.py"], gaps: [], budget: {tool_calls: 2, searches: 0, status: "complete"}}}' > "$ARTIFACTS/reports/security.json"
     printf '%s\n' "$ARTIFACTS/reports/security.json" "$ARTIFACTS/reports/correctness.json" > "$ARTIFACTS/expected-reviewer-reports.txt"
     extract_documented_block "$SKILL/handlers/review-compose.md" bash reviewer-report.py \
         | sed 's/<SESSION_ID>/session-123/g' > "$ARTIFACTS/retain.sh"
@@ -328,4 +328,36 @@ PY
         and (.findings[] | select(.id == 2) | .description) == "`suggestion`: Accepted neighbor."
         and .voice_repair.target_ids == [1]
     ' "$ARTIFACTS/finding-quality-repaired.json"
+}
+
+@test "handler contracts: retained budget gap names its chunk reviewer after cleanup" {
+    review_file="$BATS_TEST_TMPDIR/saved review.md"
+    mkdir -p "$ARTIFACTS/reports"
+    jq -n '{investigation: "Evidence", findings: "", coverage: {files_read: ["a.py"], gaps: ["src/consumer.py: queue retry handling was not checked"], budget: {tool_calls: 60, searches: 12, status: "limited"}}}' > "$ARTIFACTS/reports/chunk-2-code-reviewer-correctness.json"
+    printf '%s\n' "$ARTIFACTS/reports/chunk-2-code-reviewer-correctness.json" > "$ARTIFACTS/expected-reviewer-reports.txt"
+    extract_documented_block "$SKILL/handlers/review-compose.md" bash reviewer-report.py \
+        | sed 's/<SESSION_ID>/session-123/g' > "$ARTIFACTS/retain.sh"
+
+    run env review_file="$review_file" bash -e "$ARTIFACTS/retain.sh"
+
+    [ "$status" -eq 0 ]
+    grep -Fq 'chunk-2-code-reviewer-correctness' "$ARTIFACTS/review-coverage.md"
+    grep -Fq 'src/consumer.py: queue retry handling was not checked' "$ARTIFACTS/review-coverage.md"
+    grep -Fq '60/60 tool calls' "$ARTIFACTS/review-coverage.md"
+    rm -rf "$ARTIFACTS"
+    grep -Fq 'src/consumer.py: queue retry handling was not checked' "${review_file}.artifacts/session-123/limitations/chunk-2-code-reviewer-correctness.md"
+}
+
+@test "handler contracts: compose refuses a new reviewer report without budget accounting" {
+    review_file="$BATS_TEST_TMPDIR/saved review.md"
+    mkdir -p "$ARTIFACTS/reports"
+    jq -n '{investigation: "Evidence", findings: "", coverage: {files_read: [], gaps: []}}' > "$ARTIFACTS/reports/security.json"
+    printf '%s\n' "$ARTIFACTS/reports/security.json" > "$ARTIFACTS/expected-reviewer-reports.txt"
+    extract_documented_block "$SKILL/handlers/review-compose.md" bash reviewer-report.py \
+        | sed 's/<SESSION_ID>/session-123/g' > "$ARTIFACTS/retain.sh"
+
+    run env review_file="$review_file" bash -e "$ARTIFACTS/retain.sh"
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *budget* ]]
 }

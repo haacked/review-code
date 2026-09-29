@@ -511,3 +511,19 @@ run_briefing() {
     run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
     [ ! -e "$output/comments.json" ]
 }
+
+@test "build-agent-briefing: includes the shared reviewer budget policy once" {
+    local id artifacts
+    id=$(create_test_session)
+    run "$SCRIPT" "$id" --arch-context-file "$ARCH_FILE" --agents "correctness frontend"
+    [ "$status" -eq 0 ]
+    artifacts=$(echo "$output" | tail -1 | jq -r '.artifacts_dir')
+    python3 "$PROJECT_ROOT/skills/review-code/scripts/helpers/reviewer_budget.py" > "$BATS_TEST_TMPDIR/policy.md"
+    python3 - "$artifacts/briefing.md" "$BATS_TEST_TMPDIR/policy.md" <<'PY'
+import sys
+from pathlib import Path
+briefing, policy = (Path(path).read_text() for path in sys.argv[1:])
+assert briefing.count(policy) == 1
+assert briefing.index(policy) > briefing.index('Accuracy Requirements')
+PY
+}

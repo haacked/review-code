@@ -232,6 +232,7 @@ if [[ ! -f "${SHARED}" ]]; then
     exit 1
 fi
 cat "${SHARED}" >> "${BRIEFING}"
+python3 "${SCRIPT_DIR}/helpers/reviewer_budget.py" >> "${BRIEFING}"
 
 # ------------------------------------------------------- area-scoped diffs
 # The frontend and infra-config agents review only their own file types, so they

@@ -67,7 +67,7 @@ Loaded when the session JSON's `chunk_metadata.chunked` is `true`: the diff was 
 ~/.claude/skills/review-code/scripts/check-diff-coverage.sh --diff-lines <full diff_lines> --json
 ```
 
-Do not pass a chunk's line count as `--diff-lines`: the chunk-0 agents and the chunk-1 agents read different files of different lengths, and one number cannot size both. The script sizes every agent against the patch it actually read (from its own tool calls), so a complete read of a short chunk reports as complete, a truncated read of a long chunk cannot wrap past 100%, and the two chunk instances of the same reviewer come back as separate rows named by their `diff_path`. `--diff-lines` is only the fallback for an agent whose transcript names no readable patch. Re-dispatch any `below_threshold` agent against the `unread_ranges` of its own `diff_path`.
+Do not pass a chunk's line count as `--diff-lines`: the chunk-0 agents and the chunk-1 agents read different files of different lengths, and one number cannot size both. The script sizes every agent against the patch it actually read (from its own tool calls), so a complete read of a short chunk reports as complete, a truncated read of a long chunk cannot wrap past 100%, and the two chunk instances of the same reviewer come back as separate rows named by their `diff_path`. `--diff-lines` is only the fallback for an agent whose transcript names no readable patch. Apply `review.md`'s budget check before re-dispatching a `below_threshold` agent against the `unread_ranges` of its own `diff_path`. Each chunk reviewer has its own budget; retries carry that assignment's counts forward.
 
 **Notes that apply at later steps:**
 

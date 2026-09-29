@@ -17,6 +17,8 @@ Other agents check if code is secure, performant, maintainable, or well-tested. 
 
 ## Before You Review
 
+When the shared briefing supplies a work budget, its stop and report rules take precedence over checklist completion. Record unfinished checks as named coverage gaps and preserve verified findings.
+
 Read `$architectural_context` first. It contains callers, dependencies, and similar patterns already gathered. Treat it as your completed search results, including negative ones: "no other callers found" means none exist; do not re-verify. Re-run a search only to fill a named gap the context does not cover, or to read the exact code behind a finding you are about to report. Note in your Investigation Summary which steps the context answered. Every step below must be answered, by the context or by your own search, before you form an opinion:
 
 1. **Trace every integration boundary crossing in the diff**: For each cache write, queue publish, API call, or database write, grep for the reader or consumer and open its code. Verify the format, encoding, and field names match. Do not claim a mismatch without reading both sides.
