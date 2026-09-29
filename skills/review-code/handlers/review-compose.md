@@ -123,7 +123,7 @@ Set `$review_commit` to the reviewed PR head SHA in PR mode, or to an empty stri
 
 Re-running is safe: it replaces any section an earlier run left, and drops the section when the prose comes back clean. A nonzero `error` field, or a missing script, leaves the review as composed. On the `delta` path this step runs after the carry-forward merge, against the merged file; `review-carry-forward.md` says where. In debug mode, save the stage `11c2-voice-lint` narrative artifacts (see `review-debug.md`).
 
-Then inform the user with a clickable file link. When coverage gaps remain, say the review is incomplete and list each reviewer and named gap from `review-coverage.md`, including budget counts when limited. Use "Review saved with coverage gaps" instead of "Review complete" below. Do not hide the limitations behind an artifact link:
+Then inform the user with a clickable file link. When coverage gaps remain, say the review is incomplete and list each reviewer and named gap from `review-coverage.md`, including budget counts for every reviewer with a budget. Use "Review saved with coverage gaps" instead of "Review complete" below. Do not hide the limitations behind an artifact link:
 
 ```
 Review complete!

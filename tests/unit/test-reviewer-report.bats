@@ -98,6 +98,19 @@ assert_outputs_unchanged() {
     [ "$(jq -c '.gaps' <<< "$output")" = '[]' ]
 }
 
+@test "reviewer report: allows a complete in-flight overrun without a gap" {
+    set_budget '{"tool_calls":61,"searches":31,"status":"complete"}'
+
+    run publish_report --require-budget
+    [ "$status" -eq 0 ]
+
+    [ "$(jq -r '.budget.status' <<< "$output")" = complete ]
+    [ "$(jq '.budget.tool_calls' <<< "$output")" -eq 61 ]
+    [ "$(jq '.budget.searches' <<< "$output")" -eq 31 ]
+    [ "$(jq -c '.budget.limits_reached' <<< "$output")" = '["tool_calls","searches"]' ]
+    [ "$(jq -c '.gaps' <<< "$output")" = '[]' ]
+}
+
 @test "reviewer report: keeps ordinary coverage gaps separate from a complete budget" {
     set_budget '{"tool_calls":8,"searches":2,"status":"complete"}' '["src/worker.py: dependency is unavailable"]'
 
@@ -107,6 +120,8 @@ assert_outputs_unchanged() {
     [ "$(jq -r '.budget.status' <<< "$output")" = complete ]
     [ "$(jq -c '.budget.limits_reached' <<< "$output")" = '[]' ]
     [ "$(jq -c '.gaps' <<< "$output")" = '["src/worker.py: dependency is unavailable"]' ]
+    grep -Fq 'Review incomplete: coverage gaps remain (8/60 tool calls, 2/30 searches).' "$ARTIFACTS/limitations/$NAME.md"
+    grep -Fq 'src/worker.py: dependency is unavailable' "$ARTIFACTS/limitations/$NAME.md"
 }
 
 @test "reviewer report: names limit-hit reviewers even when they found no defects" {
@@ -253,8 +268,6 @@ null
 {"tool_calls":2,"searches":2,"status":"stopped"}
 {"tool_calls":2,"searches":2,"status":null}
 {"tool_calls":2,"searches":2,"status":true}
-{"tool_calls":61,"searches":2,"status":"complete"}
-{"tool_calls":40,"searches":31,"status":"complete"}
 {"tool_calls":59,"searches":29,"status":"limited"}
 JSON
 }

@@ -19,10 +19,8 @@ spec.loader.exec_module(module)
 assert module.TOOL_CALL_LIMIT == 60
 assert module.SEARCH_LIMIT == 30
 policy = subprocess.check_output([sys.executable, str(path)], text=True)
-assert str(module.TOOL_CALL_LIMIT) in policy
-assert str(module.SEARCH_LIMIT) in policy
-assert "tool" in policy.lower()
-assert "search" in policy.lower()
+assert f"{module.TOOL_CALL_LIMIT} investigation tool calls" in policy
+assert f"{module.SEARCH_LIMIT} searches" in policy
 PY
     [ "$status" -eq 0 ]
 }

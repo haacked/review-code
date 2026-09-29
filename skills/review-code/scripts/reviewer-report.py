@@ -17,14 +17,18 @@ def render_limitations(name, coverage, budget):
     if not coverage["gaps"]:
         return ""
     heading = f"### {name}\n\n"
-    if budget and budget["status"] == "limited":
+    reason = (
+        "soft work budget reached"
+        if budget and budget["status"] == "limited"
+        else "coverage gaps remain"
+    )
+    heading += f"Review incomplete: {reason}"
+    if budget:
         heading += (
-            "Review incomplete: soft work budget reached "
-            f"({budget['tool_calls']}/{budget['limits']['tool_calls']} tool calls, "
-            f"{budget['searches']}/{budget['limits']['searches']} searches).\n\n"
+            f" ({budget['tool_calls']}/{budget['limits']['tool_calls']} tool calls, "
+            f"{budget['searches']}/{budget['limits']['searches']} searches)"
         )
-    else:
-        heading += "Review incomplete: coverage gaps remain.\n\n"
+    heading += ".\n\n"
     gaps = []
     for gap in coverage["gaps"]:
         text = html.escape(" ".join(gap.splitlines()), quote=False)

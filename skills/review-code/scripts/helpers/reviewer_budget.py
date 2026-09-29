@@ -25,12 +25,6 @@ def validate_budget(coverage, required=False):
         raise ValueError(
             "a limited budget requires a reached limit and named coverage gaps"
         )
-    if status == "complete" and any(
-        budget[field] > limit for field, limit in LIMITS.items()
-    ):
-        raise ValueError(
-            "work beyond a budget must report limited status and named coverage gaps"
-        )
     return {**budget, "limits": LIMITS, "limits_reached": reached}
 
 
@@ -43,7 +37,7 @@ Count each underlying tool invocation, including reads of the briefing, diff, an
 
 Read the supplied context and assigned diff first. Keep a checklist of the files, symbols, and domain checks still pending. Reuse the explorer's answers. Before each new call, check both counts; do not start work that would exceed either limit. When a count reaches its limit and investigation remains, stop new investigation and report what is unfinished. This stop rule takes precedence over instructions to complete every checklist item or follow every caller. Never omit unread diff ranges from the gaps.
 
-Return coverage.budget as {{"tool_calls": <count>, "searches": <count>, "status": "complete" or "limited"}}. Use limited when a limit stopped work, with at least one specific coverage.gaps entry naming a path or symbol and the check left undone. For example: "src/queue.py consume(): retry behavior after a failed acknowledgement was not checked". "Budget exhausted" alone is insufficient. Complete means the budget did not stop work; unrelated access gaps still belong in coverage.gaps. Finishing all work exactly at a limit is complete. If an in-flight call overshoots a limit, report limited and name what remains unchecked.
+Return coverage.budget as {{"tool_calls": <count>, "searches": <count>, "status": "complete" or "limited"}}. Use limited when a limit stopped work, with at least one specific coverage.gaps entry naming a path or symbol and the check left undone. For example: "src/queue.py consume(): retry behavior after a failed acknowledgement was not checked". "Budget exhausted" alone is insufficient. Complete means the budget did not stop work; unrelated access gaps still belong in coverage.gaps. Finishing all work exactly at a limit is complete. If an in-flight call overshoots and work remains, report limited and name what remains unchecked. If it finishes all pending work, report complete with the actual counters.
 
 Preserve every verified finding and its full evidence. Put hypotheses you could not verify in coverage.gaps, never turn them into speculative findings or questions to the author. Empty findings with gaps mean an incomplete review, not a clean review. Always finish and deliver the report after stopping investigation.
 
