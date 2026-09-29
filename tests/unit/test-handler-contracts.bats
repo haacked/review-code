@@ -63,12 +63,73 @@ fallback = review.split("If `scoped_diffs` has no entry", 1)[1].split("\n\n", 1)
 assert "dispatch it against the returned `diff_path` with `diff_lines`" in fallback
 assert "Drop it" not in fallback
 routing = (handlers / "review-routing.md").read_text()
-assert "select correctness and the requested area" in routing
+assert '--area "$area"' in routing
+for manual_override in (
+    "Mark all other areas as skipped",
+    "Update the saved JSON's",
+):
+    assert manual_override not in routing
 assert "Chunk analysis does not remove reviewers" in routing
 chunked = (handlers / "review-chunked.md").read_text()
 assert "for each agent in `$selected_agents` from the full-diff routing decisions" in chunked
 PY
     [ "$status" -eq 0 ]
+}
+
+@test "handler contracts: explicit security routing also keeps correctness" {
+    SESSION_FILE="$ARTIFACTS/session.json"
+    architectural_context_path="$ARTIFACTS/explorer.md"
+    printf '%s\n' '{"diff_tokens":3000}' > "$SESSION_FILE"
+    cat > "$architectural_context_path" <<'EOF'
+```review-routing
+{"scope":"full","areas":{"security":{"status":"not_applicable","evidence":[{"check":"Read every changed file","result":"No security-sensitive path changed."}]},"performance":{"status":"applies"}}}
+```
+EOF
+    extract_documented_block "$SKILL/handlers/review-routing.md" bash classify-review-scope.sh > "$ARTIFACTS/route.sh"
+
+    run env SESSION_FILE="$SESSION_FILE" architectural_context_path="$architectural_context_path" area=security bash -e "$ARTIFACTS/route.sh"
+
+    [ "$status" -eq 0 ]
+    jq -e '
+        (.agents | sort) == ["correctness", "security"] and
+        (.skipped_agents | length) == 7 and
+        (.reasoning | ascii_downcase | contains("explicit user scope override")) and
+        .agent_decisions.correctness.decision == "run" and
+        (.agent_decisions.correctness.reason | ascii_downcase | contains("correctness always runs")) and
+        (.agent_decisions.correctness.reason | ascii_downcase | contains("explicit user scope override") | not) and
+        .agent_decisions.security.decision == "run" and
+        (.agent_decisions.security.reason | ascii_downcase | contains("explicit user scope override")) and
+        ([.skipped_agents[] as $area |
+            .agent_decisions[$area].decision == "skip" and
+            (.agent_decisions[$area].reason | ascii_downcase | contains("explicit user scope override")) and
+            .agent_decisions[$area].evidence == []] | all)
+    ' "$ARTIFACTS/review-routing.json"
+}
+
+@test "handler contracts: routing without an explicit area uses explorer evidence" {
+    SESSION_FILE="$ARTIFACTS/session.json"
+    architectural_context_path="$ARTIFACTS/explorer.md"
+    printf '%s\n' '{"diff_tokens":3000}' > "$SESSION_FILE"
+    cat > "$architectural_context_path" <<'EOF'
+```review-routing
+{"scope":"full","areas":{"security":{"status":"not_applicable","evidence":[{"check":"Read every changed file","result":"Only documentation text changed; no executable or deployment files changed."}]},"correctness":{"status":"not_applicable","evidence":[{"check":"Read every changed file","result":"Only documentation text changed; no executable or deployment files changed."}]}}}
+```
+EOF
+    extract_documented_block "$SKILL/handlers/review-routing.md" bash classify-review-scope.sh > "$ARTIFACTS/route.sh"
+
+    run env SESSION_FILE="$SESSION_FILE" architectural_context_path="$architectural_context_path" area= bash -e "$ARTIFACTS/route.sh"
+
+    [ "$status" -eq 0 ]
+    jq -e '
+        .exploration_depth == "thorough" and
+        (.agents | length) == 8 and
+        (.agents | index("correctness")) != null and
+        .skipped_agents == ["security"] and
+        .agent_decisions.correctness.decision == "run" and
+        (.agent_decisions.correctness.reason | ascii_downcase | contains("correctness always runs")) and
+        .agent_decisions.security.decision == "skip" and
+        (.agent_decisions.security.evidence | length) == 1
+    ' "$ARTIFACTS/review-routing.json"
 }
 
 @test "handler contracts: documented reviewer report command separates evidence from findings" {

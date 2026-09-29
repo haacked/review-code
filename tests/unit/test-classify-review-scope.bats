@@ -48,6 +48,30 @@ assert_all_run() {
     '
 }
 
+assert_area_override() {
+    local requested_area="$1"
+    [ "$status" -eq 0 ]
+    assert_complete_decisions
+    printf '%s' "$output" | jq -e --arg area "$requested_area" --argjson areas "$ALL_AREAS" '
+        (["correctness", $area] | unique) as $selected |
+        .exploration_depth == "standard" and
+        (.agents | sort) == $selected and
+        (.skipped_agents | sort) == ($areas - $selected | sort) and
+        (.reasoning | ascii_downcase | contains("explicit user scope override")) and
+        .agent_decisions.correctness.decision == "run" and
+        (.agent_decisions.correctness.reason | ascii_downcase | contains("correctness always runs")) and
+        (.agent_decisions.correctness.reason | ascii_downcase | contains("explicit user scope override") | not) and
+        (if $area == "correctness" then true else
+            .agent_decisions[$area].decision == "run" and
+            (.agent_decisions[$area].reason | ascii_downcase | contains("explicit user scope override"))
+        end) and
+        ([.skipped_agents[] as $skipped |
+            .agent_decisions[$skipped].decision == "skip" and
+            (.agent_decisions[$skipped].reason | ascii_downcase | contains("explicit user scope override")) and
+            .agent_decisions[$skipped].evidence == []] | all)
+    '
+}
+
 @test "metadata alone cannot skip specialists at any exploration depth" {
     for tokens in 100 500 1999 2000 4000; do
         for frontend in false true; do
@@ -126,6 +150,22 @@ assert_all_run() {
     '
 }
 
+@test "concrete negative explorer evidence can skip security" {
+    create_session
+    write_routing '{"scope":"full","areas":{
+        "security":{"status":"not_applicable","evidence":[{"check":"Read every changed file and searched authentication and authorization call sites","result":"The diff changes only static response text and does not touch an authentication boundary."}]}
+    }}'
+    run "$SCRIPT" "$SESSION" --explorer-context "$CONTEXT"
+    [ "$status" -eq 0 ]
+    assert_complete_decisions
+    printf '%s' "$output" | jq -e '
+        .agent_decisions.security.decision == "skip" and
+        .agent_decisions.security.evidence == [{check:"Read every changed file and searched authentication and authorization call sites",result:"The diff changes only static response text and does not touch an authentication boundary."}] and
+        (.agents | index("security")) == null and
+        .skipped_agents == ["security"]
+    '
+}
+
 @test "correctness always runs even when every area has negative evidence" {
     create_session 3000
     routing=$(jq -nc --argjson areas "$ALL_AREAS" '{scope:"full",areas:($areas | map({key:.,value:{status:"not_applicable",evidence:[{check:"Read every changed file and searched its callers",result:"Only documentation text changed; no executable or deployment files changed."}]}}) | from_entries)}')
@@ -133,7 +173,41 @@ assert_all_run() {
     run "$SCRIPT" "$SESSION" --explorer-context "$CONTEXT"
     [ "$status" -eq 0 ]
     assert_complete_decisions
-    printf '%s' "$output" | jq -e '.agents == ["correctness"] and (.skipped_agents | length) == 8'
+    printf '%s' "$output" | jq -e '
+        .agents == ["correctness"] and
+        (.skipped_agents | length) == 8 and
+        (.agent_decisions.correctness.reason | ascii_downcase | contains("correctness always runs"))
+    '
+}
+
+@test "every explicit area keeps correctness and the requested reviewer despite negative evidence" {
+    create_session 3000
+    routing=$(jq -nc --argjson areas "$ALL_AREAS" '{scope:"full",areas:($areas | map({key:.,value:{status:"not_applicable",evidence:[{check:"Read every changed file and searched its callers",result:"Only documentation text changed; no executable or deployment files changed."}]}}) | from_entries)}')
+    write_routing "$routing"
+    for area in $(jq -r '.[]' <<< "$ALL_AREAS"); do
+        run "$SCRIPT" "$SESSION" --explorer-context "$CONTEXT" --area "$area"
+        assert_area_override "$area"
+    done
+}
+
+@test "every explicit area keeps correctness with missing or malformed explorer evidence" {
+    create_session 3000
+    write_routing '{'
+    for area in $(jq -r '.[]' <<< "$ALL_AREAS"); do
+        run "$SCRIPT" "$SESSION" --area "$area"
+        assert_area_override "$area"
+        for context_path in "$BATS_TEST_TMPDIR/missing.md" "$CONTEXT"; do
+            run "$SCRIPT" "$SESSION" --explorer-context "$context_path" --area "$area"
+            assert_area_override "$area"
+        done
+    done
+}
+
+@test "unknown explicit areas are rejected" {
+    create_session
+    run "$SCRIPT" "$SESSION" --area unknown
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"invalid choice: 'unknown'"* ]]
 }
 
 @test "malformed area entries do not invalidate another area's concrete evidence" {

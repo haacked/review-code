@@ -124,16 +124,43 @@ def classify(session, assessments, fallback_reason):
     }
 
 
+def apply_area_override(result, requested_area):
+    if requested_area is None:
+        return result
+
+    selected = list(dict.fromkeys(("correctness", requested_area)))
+    reason = f"Explicit user scope override: requested area '{requested_area}'"
+    decisions = {
+        area: {
+            "decision": "run" if area in selected else "skip",
+            "reason": "Correctness always runs" if area == "correctness" else reason,
+            "evidence": [],
+        }
+        for area in AREAS
+    }
+    return {
+        **result,
+        "exploration_depth": "standard",
+        "agents": selected,
+        "skipped_agents": [area for area in AREAS if area not in selected],
+        "reasoning": f"Correctness always runs. {reason}",
+        "agent_decisions": decisions,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("session_file")
     parser.add_argument("--explorer-context")
+    parser.add_argument("--area", choices=AREAS)
     args = parser.parse_args()
     try:
         with open(args.session_file) as source:
             session = json.load(source)
         assessments, fallback_reason = read_routing(args.explorer_context)
-        result = classify(session, assessments, fallback_reason)
+        result = apply_area_override(
+            classify(session, assessments, fallback_reason), args.area
+        )
     except (OSError, ValueError, TypeError, AttributeError) as error:
         json.dump({"error": str(error)}, sys.stdout)
         sys.stdout.write("\n")
