@@ -12,12 +12,12 @@ Two- and ten-finding batches ran three times each, followed by one six-finding h
 
 | Batch | Baseline cost | Editor cost | Reduction |
 | --- | ---: | ---: | ---: |
-| Small, three runs | $0.2604 | $0.2168 | 16.7% |
-| Mixed, three completed runs | $0.3729 | $0.3250 | 12.8% |
-| Held out | $0.1466 | $0.1238 | 15.6% |
-| Total | $0.7798 | $0.6656 | 14.7% |
+| Small, three runs | $0.2603862 | $0.2167978 | 16.7% |
+| Mixed, three completed runs | $0.3728578 | $0.3249979 | 12.8% |
+| Held out | $0.1465898 | $0.1237893 | 15.6% |
+| Total | $0.7798338 | $0.6655850 | 14.7% |
 
-One editor call timed out at 240 seconds without reporting usage. Its successful retry is included above; the timed-out call's unknown cost is excluded, not counted as zero. The retry and held-out calls had a 720-second allowance. An independent cold-read audit cost $0.059647 and is excluded from both totals.
+Each reduction uses the unrounded costs shown in its row. One editor call timed out at 240 seconds without reporting usage. Its successful retry is included above; the timed-out call's unknown cost is excluded, not counted as zero. The retry and held-out calls had a 720-second allowance. An independent cold-read audit cost $0.059647 and is excluded from both totals.
 
 Input tokens, including cache reads/writes, fell from 225,612 to 111,819. Output tokens, including thinking, rose from 114,523 to 119,643. Summed completed-call time was 1,179.8 seconds for the baseline and 1,198.0 seconds for the editor. These are sums across concurrent experiments, not task wall time.
 
