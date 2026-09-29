@@ -38,6 +38,18 @@ if [[ ! -s "$manifest" ]]; then
 fi
 coverage_summary="<artifacts_dir>/review-coverage.md"
 : > "$coverage_summary"
+briefing_path="<artifacts_dir>/briefing.md"
+if [[ ! -f "$briefing_path" || ! -s "$briefing_path" || ! -r "$briefing_path" ]]; then
+    echo "BRIEFING_UNAVAILABLE: review briefing missing, empty, or unreadable: $briefing_path" >&2
+    exit 1
+fi
+report_args=()
+if grep -Fq '## Soft Reviewer Work Budget' "$briefing_path"; then
+    report_args+=(--require-budget)
+elif [[ $? -ne 1 ]]; then
+    echo "BRIEFING_UNAVAILABLE: could not read review briefing: $briefing_path" >&2
+    exit 1
+fi
 while IFS= read -r report_path; do
     if [[ ! -f "$report_path" || ! -r "$report_path" ]]; then
         echo "ERROR: expected reviewer report missing or unreadable: $report_path" >&2
@@ -45,12 +57,14 @@ while IFS= read -r report_path; do
     fi
     report_name="$(basename "$report_path" .json)"
     report_result=$(python3 ~/.agents/skills/review-code/scripts/reviewer-report.py \
-      --input "$report_path" --output-dir "${review_file}.artifacts/<SESSION_ID>" --name "$report_name" --require-budget) || exit 1
+      --input "$report_path" --output-dir "${review_file}.artifacts/<SESSION_ID>" --name "$report_name" "${report_args[@]}") || exit 1
     printf '%s\n' "$report_result"
     limitations_path=$(jq -er '.limitations_path' <<< "$report_result") || exit 1
     cat "$limitations_path" >> "$coverage_summary" || exit 1
 done < "$manifest"
 ```
+
+The persisted briefing is the version marker. A briefing with `## Soft Reviewer Work Budget` requires budget accounting; an older briefing lets its in-flight review finish with the historical report shape.
 
 Require every copy to succeed. Link each agent's retained investigation and coverage artifacts from its section, using the returned paths. If `review-coverage.md` is nonempty, include it verbatim under `## Coverage limitations` before per-agent findings, including in delta append documents. It names every reviewer with gaps and the counts for each budget-limited report. Preserve these disclosures even when another reviewer found no issues in the same file. Do not describe a review with gaps as clean or fully checked. Do not read or copy the investigation text into the conversation to write the review.
 

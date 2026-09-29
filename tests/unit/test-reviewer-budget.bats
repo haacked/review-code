@@ -21,6 +21,8 @@ assert module.SEARCH_LIMIT == 30
 policy = subprocess.check_output([sys.executable, str(path)], text=True)
 assert f"{module.TOOL_CALL_LIMIT} investigation tool calls" in policy
 assert f"{module.SEARCH_LIMIT} searches" in policy
+assert "When a count reaches its limit and investigation remains" in policy
+assert "A resume or delivery retry for the same assignment carries the earlier counts forward" in policy
 PY
     [ "$status" -eq 0 ]
 }

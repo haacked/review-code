@@ -15,13 +15,25 @@ fi
 
 For Codex, add each parallel reviewer invocation to the `agent-dispatch.sh batch` manifest with `output_file` set to `$report_path`. Use `agent-dispatch.sh run` only for a single agent or retry, passing `$report_path` as its output-file argument. Follow the completion rules in `review.md` for both harnesses. Each Codex result names the report and event-log files; do not read the event log or raw report into the conversation. For the Claude fallback, save the returned JSON to `$report_path` using the Write tool, with content separate from the path. Never interpolate agent output into shell commands.
 
-After each successful dispatch, split the saved report:
+After each successful dispatch, split the saved report. Sessions created before the soft-budget contract have no budget section in their persisted briefing, so keep accepting their historical report shape. New sessions must include budget accounting:
 
 ```bash
+briefing_path="<artifacts_dir>/briefing.md"
+if [[ ! -f "$briefing_path" || ! -s "$briefing_path" || ! -r "$briefing_path" ]]; then
+    echo "BRIEFING_UNAVAILABLE: review briefing missing, empty, or unreadable: $briefing_path" >&2
+    exit 1
+fi
+report_args=()
+if grep -Fq '## Soft Reviewer Work Budget' "$briefing_path"; then
+    report_args+=(--require-budget)
+elif [[ $? -ne 1 ]]; then
+    echo "BRIEFING_UNAVAILABLE: could not read review briefing: $briefing_path" >&2
+    exit 1
+fi
 python3 ~/.agents/skills/review-code/scripts/reviewer-report.py \
   --input "$report_path" \
   --output-dir "<artifacts_dir>" \
-  --name "$report_name" --require-budget
+  --name "$report_name" "${report_args[@]}"
 ```
 
 Require success before accepting the result. A missing, malformed, or unavailable report is a failed review, never a clean review. For `BRIEFING_UNAVAILABLE`, follow the existing briefing-repair procedure and retry using this same output contract.

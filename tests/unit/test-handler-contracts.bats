@@ -5,6 +5,15 @@ setup() {
     SKILL="$PROJECT_ROOT/skills/review-code"
     ARTIFACTS="$BATS_TEST_TMPDIR/artifacts with spaces"
     mkdir -p "$ARTIFACTS"
+    cat > "$ARTIFACTS/briefing.md" << 'EOF'
+# Review briefing
+
+Review the changed files and report findings with supporting evidence.
+
+## Soft Reviewer Work Budget
+
+Report budget counts and any coverage gaps.
+EOF
 }
 
 extract_documented_block() {
@@ -21,6 +30,40 @@ print(matches[0].replace("~/.agents/skills/review-code", skill).replace("<artifa
 PY
 }
 
+assert_briefing_rejected() {
+    local handler="$1"
+    local report_name="security"
+    local report_path="$ARTIFACTS/reports/$report_name.json"
+    local review_file="$BATS_TEST_TMPDIR/saved review.md"
+    local evidence_dir="$ARTIFACTS"
+    if [ "$handler" = review-compose ]; then
+        evidence_dir="${review_file}.artifacts/session-123"
+    fi
+    mkdir -p "$ARTIFACTS/reports"
+    jq -n '{investigation: "Evidence", findings: "", coverage: {files_read: ["src/example.py"], gaps: []}}' > "$report_path"
+    printf '%s\n' "$report_path" > "$ARTIFACTS/expected-reviewer-reports.txt"
+    extract_documented_block "$SKILL/handlers/$handler.md" bash reviewer-report.py \
+        | sed 's/<SESSION_ID>/session-123/g' > "$ARTIFACTS/check-briefing.sh"
+
+    run env PATH="$ARTIFACTS/bin:$PATH" report_path="$report_path" report_name="$report_name" review_file="$review_file" bash -e "$ARTIFACTS/check-briefing.sh"
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *BRIEFING_UNAVAILABLE* ]]
+    [ ! -e "$evidence_dir/findings/$report_name.md" ]
+    [ ! -e "$evidence_dir/investigations/$report_name.md" ]
+    [ ! -e "$evidence_dir/coverage/$report_name.json" ]
+}
+
+stub_briefing_read_error() {
+    mkdir -p "$ARTIFACTS/bin"
+    cat > "$ARTIFACTS/bin/grep" << 'EOF'
+#!/usr/bin/env bash
+echo 'simulated briefing read failure' >&2
+exit 2
+EOF
+    chmod +x "$ARTIFACTS/bin/grep"
+}
+
 @test "handler contracts: documented reviewer report command separates evidence from findings" {
     report_path="$ARTIFACTS/report.json"
     report_name="correctness"
@@ -33,6 +76,57 @@ PY
     [ "$(cat "$ARTIFACTS/findings/correctness.md")" = "Complete findings" ]
     [ "$(cat "$ARTIFACTS/investigations/correctness.md")" = "Full investigation" ]
     [[ "$output" != *"Full investigation"* ]]
+}
+
+@test "handler contracts: reviewer output accepts an in-flight report from before budget accounting" {
+    report_path="$ARTIFACTS/report.json"
+    report_name="correctness"
+    printf '%s\n' '# Review briefing' '' 'Review the changed files and report findings with supporting evidence.' > "$ARTIFACTS/briefing.md"
+    jq -n '{investigation: "Evidence", findings: "", coverage: {files_read: ["src/example.py"], gaps: []}}' > "$report_path"
+    extract_documented_block "$SKILL/handlers/reviewer-output.md" bash reviewer-report.py > "$ARTIFACTS/report.sh"
+
+    run env report_path="$report_path" report_name="$report_name" bash -e "$ARTIFACTS/report.sh"
+
+    [ "$status" -eq 0 ]
+    jq -e 'has("budget") | not' <<< "$output"
+}
+
+@test "handler contracts: reviewer output requires budget accounting for a new briefing" {
+    report_path="$ARTIFACTS/report.json"
+    report_name="correctness"
+    jq -n '{investigation: "Evidence", findings: "", coverage: {files_read: ["src/example.py"], gaps: []}}' > "$report_path"
+    extract_documented_block "$SKILL/handlers/reviewer-output.md" bash reviewer-report.py > "$ARTIFACTS/report.sh"
+
+    run env report_path="$report_path" report_name="$report_name" bash -e "$ARTIFACTS/report.sh"
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *budget* ]]
+}
+
+@test "handler contracts: reviewer output rejects a missing briefing" {
+    rm "$ARTIFACTS/briefing.md"
+
+    assert_briefing_rejected reviewer-output
+}
+
+@test "handler contracts: reviewer output rejects an empty briefing" {
+    : > "$ARTIFACTS/briefing.md"
+
+    assert_briefing_rejected reviewer-output
+}
+
+@test "handler contracts: reviewer output rejects a directory at the briefing path" {
+    rm "$ARTIFACTS/briefing.md"
+    mkdir "$ARTIFACTS/briefing.md"
+
+    assert_briefing_rejected reviewer-output
+}
+
+@test "handler contracts: reviewer output rejects a briefing read error" {
+    stub_briefing_read_error
+
+    assert_briefing_rejected reviewer-output
+    [[ "$output" == *'simulated briefing read failure'* ]]
 }
 
 @test "handler contracts: reviewer dispatch registers its expected report" {
@@ -218,7 +312,7 @@ PY
 }
 
 @test "handler contracts: finding quality Codex dispatch uses the installed helper path" {
-    run python3 - "$SKILL/handlers/review-finding-quality.md" <<'PY'
+    run python3 - "$SKILL/handlers/review-finding-quality.md" << 'PY'
 import sys
 from pathlib import Path
 
@@ -360,4 +454,63 @@ PY
 
     [ "$status" -ne 0 ]
     [[ "$output" == *budget* ]]
+}
+
+@test "handler contracts: compose accepts an in-flight report from before budget accounting" {
+    review_file="$BATS_TEST_TMPDIR/saved review.md"
+    mkdir -p "$ARTIFACTS/reports"
+    printf '%s\n' '# Review briefing' '' 'Review the changed files and report findings with supporting evidence.' > "$ARTIFACTS/briefing.md"
+    jq -n '{investigation: "Evidence", findings: "", coverage: {files_read: [], gaps: []}}' > "$ARTIFACTS/reports/security.json"
+    printf '%s\n' "$ARTIFACTS/reports/security.json" > "$ARTIFACTS/expected-reviewer-reports.txt"
+    extract_documented_block "$SKILL/handlers/review-compose.md" bash reviewer-report.py \
+        | sed 's/<SESSION_ID>/session-123/g' > "$ARTIFACTS/retain.sh"
+
+    run env review_file="$review_file" bash -e "$ARTIFACTS/retain.sh"
+
+    [ "$status" -eq 0 ]
+    jq -e 'has("budget") | not' <<< "$output"
+}
+
+@test "handler contracts: compose rejects a missing briefing" {
+    rm "$ARTIFACTS/briefing.md"
+
+    assert_briefing_rejected review-compose
+}
+
+@test "handler contracts: compose rejects an empty briefing" {
+    : > "$ARTIFACTS/briefing.md"
+
+    assert_briefing_rejected review-compose
+}
+
+@test "handler contracts: compose rejects a directory at the briefing path" {
+    rm "$ARTIFACTS/briefing.md"
+    mkdir "$ARTIFACTS/briefing.md"
+
+    assert_briefing_rejected review-compose
+}
+
+@test "handler contracts: compose rejects a briefing read error" {
+    stub_briefing_read_error
+
+    assert_briefing_rejected review-compose
+    [[ "$output" == *'simulated briefing read failure'* ]]
+}
+
+@test "handler contracts: static instructions require coverage disclosures in saved reviews and draft summaries" {
+    run python3 - "$SKILL/handlers/review-compose.md" "$SKILL/handlers/review-pr-output.md" << 'PY'
+import sys
+from pathlib import Path
+
+compose = Path(sys.argv[1]).read_text()
+pr_output = Path(sys.argv[2]).read_text()
+
+assert "include it verbatim under `## Coverage limitations`" in compose
+assert "Do not describe a review with gaps as clean or fully checked" in compose
+assert "include every reviewer and named coverage gap in the draft summary" in pr_output
+assert "Say the review is incomplete" in pr_output
+assert 'never use an unqualified "LGTM" with gaps' in pr_output
+PY
+
+    [ "$status" -eq 0 ]
 }
