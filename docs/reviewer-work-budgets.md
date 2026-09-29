@@ -29,12 +29,12 @@ No before/after review-cost reduction is claimed. The historical cost report is 
 
 ## Validation
 
-The full `bin/test` run passed 2,374 unit tests and 25 integration tests. Test files ran concurrently through a local Bats wrapper; each file kept its tests sequential and used separate log directories. Two additional limitations-rendering tests passed afterward. The final focused run passed 80 tests covering budget validation, exact thresholds, limited reports with no findings, chunk and retry identities, escaped Markdown, briefing generation, and retention after cleanup.
+The full `bin/test` run passed 2,361 unit tests and 25 integration tests. Test files ran concurrently through a local Bats wrapper; each file kept its tests sequential and used separate log directories. Two additional limitations-rendering tests passed afterward. The final focused run passed 80 tests covering budget validation, exact thresholds, limited reports with no findings, chunk and retry identities, escaped Markdown, briefing generation, and retention after cleanup.
 
 Two read-only Claude contract smoke tests returned valid reports. The normal fixture reported four tool calls, zero searches, and no gaps. The resumed fixture started at 60 calls and 12 searches, made no further investigation calls, and named the unchecked `source.py identity()` return contract. Both reports passed `reviewer-report.py --require-budget`.
 
 A full `/review-code correctness --force` smoke attempt on a two-line fixture could not start: automatic approval review rejected the broad tool allowlist, and the restricted retry required approval for the argument-parser script. This is not an end-to-end validation result.
 
-`bin/setup`, formatting, and changed-script Ruff and ShellCheck checks passed. The full lint command reports 36 unrelated existing Python warnings. Simplify, comment cleanup, and a correctness review completed with no remaining findings.
+`bin/setup`, formatting, and changed-script Ruff and ShellCheck checks passed. The full lint command reports 36 unrelated existing Python errors. Simplify, comment cleanup, and a correctness review completed with no remaining findings.
 
 The before and after `bin/token-report --prompts --all-stages --since 2026-09-01 --json` runs both reported 1,044 dispatches. The cost report changed from 97 to 99 sessions as the local smoke sessions were recorded. Those changing aggregates do not measure a savings from the budget policy.
