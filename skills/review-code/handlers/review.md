@@ -123,7 +123,7 @@ Read `mode` from the JSON it prints:
 
 ### Classify Review Scope
 
-Run the scope classifier to determine exploration depth and agent selection based on diff size and file characteristics:
+Run the scope classifier to determine exploration depth. Before exploration, all nine reviewers remain selected:
 
 ```bash
 ~/.agents/skills/review-code/scripts/classify-review-scope.sh "$SESSION_FILE"
@@ -136,15 +136,8 @@ Parse the JSON output and store:
 - `$classification_reasoning`: human-readable explanation
 
 **Override rules:**
-- If the user specified an `area` (e.g., `/review-code pr 123 security`), ignore the classifier output and use only that area's agent. Set `$selected_agents` to `["$area"]`, `$skipped_agents` to all other agents, `$classification_reasoning` to `"Area override: user requested area '$area'"`, and `$exploration_depth` to "standard" for area-specific reviews.
-- If the classifier errors, fall back to all 7 core agents (+ frontend if applicable) and "thorough" exploration.
-
-If agents are being skipped, briefly note this to the user:
-
-```
-Scope: $classification_reasoning
-Skipping: $skipped_agents (join with ", ")
-```
+- If the user specified an `area`, set `$exploration_depth` to "standard". Apply the requested scope after exploration as described below.
+- If the classifier errors, keep all nine reviewers and use "thorough" exploration. Correctness always runs.
 
 ### Debug Mode Setup
 
@@ -289,11 +282,13 @@ Return the complete summary as your final message.
 **File Metadata:**
 $file_metadata
 
-**Diff:** read it from `$diff_path` — do not expect it inline.
+**Diff:** read the full diff from `REVIEW_FIELDS.diff_path`, substituting its actual path. Use this full diff even for a delta review; routing evidence must cover the full review scope.
+
+Append the `review-routing` JSON block required by your output contract. Use `uncertain` for any area you could not investigate within the exploration time. A reviewer can be skipped only with concrete negative evidence for its area.
 
 $file_access_instructions
 
-{If exploration_depth == "minimal" and "infra-config" is the only agent in $selected_agents:}
+{If exploration_depth == "minimal" and all modified files have is_infra_config == true:}
 Time-box yourself to 30 seconds. This is an infrastructure config review (Helm values, K8s manifests, Terraform, ArgoCD, CI/CD).
 Focus on:
 - Read the modified files to understand what each configures (service, route, resource)
@@ -301,7 +296,7 @@ Focus on:
 - Note service and resource names referenced in the config
 Do NOT search for code callers, function patterns, or application architecture.
 
-{If exploration_depth == "minimal" (non-infra):}
+{If exploration_depth == "minimal" and the files are not exclusively infrastructure config:}
 Time-box yourself to 45 seconds. Gather only context that can change the review outcome:
 - Read the modified files to identify changed symbols and newly introduced calls
 - Find direct callers of changed symbols, limiting results to the 3 most relevant callers per symbol
@@ -335,6 +330,8 @@ Time-box yourself to 2-3 minutes of exploration.
 Require a successful dispatch and a nonempty, readable `$architectural_context_path` before proceeding. On the Claude fallback only, save the returned summary there using the Write tool, passing content separately from the path. Never interpolate agent output into a shell command or heredoc. If output is missing or writing fails, stop and report the failure. Keep only the path and completion status in conversation; do not read the artifact back. Extract available usage metadata and record it in `$token_usage["context_explorer"]`.
 
 ### Choose Review Dispatch
+
+Read `~/.agents/skills/review-code/handlers/review-routing.md` and follow it before generating the dispatch plan. It finalizes `$selected_agents`, `$skipped_agents`, and `$classification_reasoning` from the explorer's evidence and saves the decisions for coverage reporting.
 
 Write the compact orchestration fields directly to disk, then generate the dispatch plan:
 
@@ -374,11 +371,11 @@ It writes `briefing.md` and — when those agents run — `diff-frontend.patch` 
 
 It prints JSON: `artifacts_dir`, `diff_path`, `briefing_lines`, `diff_lines`, and a `scoped_diffs` map of line counts. Keep those — the agent prompt needs them.
 
-For the unchunked route only, invoke every entry in `$dispatch_plan.agents` whose `area` remains in `$selected_agents` after applying the scoped-diff filter below. Each entry supplies the `area` and `subagent_type`; do not derive either value again.
+For the unchunked route only, invoke every entry in `$dispatch_plan.agents`. Each entry supplies the `area` and `subagent_type`; do not derive either value again.
 
 **The prompt for each agent** is then short. Substitute the agent's own diff file: `diff-frontend.patch` for frontend and `diff-infra-config.patch` for infra-config when `scoped_diffs` lists them, otherwise the `diff_path` the script returned. Use the returned `diff_path` rather than the literal `diff.patch`: on a delta re-review it points at the delta, and naming `diff.patch` there would hand every unscoped agent the whole PR while the run reports itself as incremental.
 
-If `scoped_diffs` has no entry for a scoped agent, no file matched that agent's rule. Drop it from `$selected_agents` and add it to `$skipped_agents` so the compose step reports it as skipped. Do not dispatch it against the unscoped diff; that spends a full reviewer's tokens on files it was just filtered out of.
+If `scoped_diffs` has no entry for a selected agent, dispatch it against the returned `diff_path` with `diff_lines`. A filename filter cannot establish that an area does not apply. Keep the selected agent and record this fallback in the coverage notes.
 
 The line count in the prompt is that agent's own file: its `scoped_diffs` entry when it has one, otherwise `diff_lines`. Quoting the unscoped count to a scoped agent sends it paging for lines that do not exist, and an agent that receives a fraction of what it was promised may decide the briefing is broken and reply `BRIEFING_UNAVAILABLE`.
 

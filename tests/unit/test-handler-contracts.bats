@@ -21,6 +21,56 @@ print(matches[0].replace("~/.agents/skills/review-code", skill).replace("<artifa
 PY
 }
 
+@test "handler contracts: routing evidence reaches dispatch and survives session cleanup" {
+    SESSION_FILE="$ARTIFACTS/session.json"
+    architectural_context_path="$ARTIFACTS/explorer.md"
+    review_file="$BATS_TEST_TMPDIR/saved review.md"
+    printf '%s\n' '{"diff_tokens":100}' > "$SESSION_FILE"
+    cat > "$architectural_context_path" <<'EOF'
+Context summary stays on disk.
+```review-routing
+{"scope":"full","areas":{"frontend":{"status":"not_applicable","evidence":[{"check":"Read worker.py and searched callers across the repository","result":"Only server workers call the changed function; no UI consumers or browser behavior"}]},"security":{"status":"uncertain"}}}
+```
+EOF
+    extract_documented_block "$SKILL/handlers/review-routing.md" bash classify-review-scope.sh > "$ARTIFACTS/route.sh"
+    run env SESSION_FILE="$SESSION_FILE" architectural_context_path="$architectural_context_path" bash -e "$ARTIFACTS/route.sh"
+    [ "$status" -eq 0 ]
+    jq -e '.skipped_agents == ["frontend"] and (.agents | contains(["correctness", "security"]))' "$ARTIFACTS/review-routing.json"
+    agents=$(jq -r '.agents | join(" ")' "$ARTIFACTS/review-routing.json")
+    run python3 "$SKILL/scripts/review-dispatch-plan.py" --fields "$SESSION_FILE" --agents "$agents"
+    [ "$status" -eq 0 ]
+    printf '%s\n' "$output" | jq -e '[.agents[].area] | contains(["correctness", "security"]) and (index("frontend") == null)'
+
+    mkdir -p "${review_file}.artifacts/session-123"
+    extract_documented_block "$SKILL/handlers/review-compose.md" bash 'cp ' \
+        | sed 's/<SESSION_ID>/session-123/g' > "$ARTIFACTS/retain-routing.sh"
+    run env review_file="$review_file" bash -e "$ARTIFACTS/retain-routing.sh"
+    [ "$status" -eq 0 ]
+    rm -rf "$ARTIFACTS"
+    jq -e '.agent_decisions.frontend | .decision == "skip" and (.evidence[0].check | contains("worker.py"))' "${review_file}.artifacts/session-123/review-routing.json"
+}
+
+@test "handler contracts: routing follows exploration and empty scoped diffs do not skip reviewers" {
+    run python3 - "$SKILL/handlers" <<'PY'
+import sys
+from pathlib import Path
+
+handlers = Path(sys.argv[1])
+review = (handlers / "review.md").read_text()
+assert review.index("### Gather Architectural Context") < review.index("review-routing.md") < review.index("scripts/review-dispatch-plan.py")
+assert "REVIEW_FIELDS.diff_path" in review
+fallback = review.split("If `scoped_diffs` has no entry", 1)[1].split("\n\n", 1)[0]
+assert "dispatch it against the returned `diff_path` with `diff_lines`" in fallback
+assert "Drop it" not in fallback
+routing = (handlers / "review-routing.md").read_text()
+assert "select correctness and the requested area" in routing
+assert "Chunk analysis does not remove reviewers" in routing
+chunked = (handlers / "review-chunked.md").read_text()
+assert "for each agent in `$selected_agents` from the full-diff routing decisions" in chunked
+PY
+    [ "$status" -eq 0 ]
+}
+
 @test "handler contracts: documented reviewer report command separates evidence from findings" {
     report_path="$ARTIFACTS/report.json"
     report_name="correctness"
