@@ -29,7 +29,7 @@ No before/after review-cost reduction is claimed. The historical cost report is 
 
 ## Validation
 
-The full `bin/test` run passed 2,361 unit tests and 25 integration tests. Test files ran concurrently through a local Bats wrapper; each file kept its tests sequential and used separate log directories. Two additional limitations-rendering tests passed afterward. The final focused run passed 80 tests covering budget validation, exact thresholds, limited reports with no findings, chunk and retry identities, escaped Markdown, briefing generation, and retention after cleanup.
+The full `bin/test` run passed 2,361 unit tests and 25 integration tests. Test files ran concurrently through a local Bats wrapper; each file kept its tests sequential and used separate log directories. Three additional limitations-rendering tests passed afterward. The final focused run passed 81 tests covering budget validation, exact thresholds, limited reports with no findings, chunk and retry identities, escaped Markdown, briefing generation, and retention after cleanup.
 
 Two read-only Claude contract smoke tests returned valid reports. The normal fixture reported four tool calls, zero searches, and no gaps. The resumed fixture started at 60 calls and 12 searches, made no further investigation calls, and named the unchecked `source.py identity()` return contract. Both reports passed `reviewer-report.py --require-budget`.
 

@@ -199,6 +199,34 @@ PY
     [ ! -s "$ARTIFACTS/findings/$NAME.md" ]
 }
 
+@test "reviewer report: preserves apostrophes and quotes in the coverage gap text" {
+    set_budget '{"tool_calls":60,"searches":20,"status":"limited"}'
+    python3 - "$INPUT" << 'PY'
+import json
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+report = json.loads(path.read_text())
+report["coverage"]["gaps"] = ['src/a.py: caller\'s "retry" contract was not checked']
+path.write_text(json.dumps(report))
+PY
+
+    run publish_report --require-budget
+    [ "$status" -eq 0 ]
+
+    run python3 - "$INPUT" "$ARTIFACTS/limitations/$NAME.md" << 'PY'
+import json
+from pathlib import Path
+import sys
+
+gap = json.loads(Path(sys.argv[1]).read_text())["coverage"]["gaps"][0]
+assert f"- {gap}" in Path(sys.argv[2]).read_text().splitlines()
+PY
+    [ "$status" -eq 0 ]
+    [ "$(jq -S -c '.coverage' "$INPUT")" = "$(jq -S -c '.' "$ARTIFACTS/coverage/$NAME.json")" ]
+}
+
 @test "reviewer report: rejects malformed budgets before changing existing artifacts" {
     seed_outputs
     local invalid_budget

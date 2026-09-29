@@ -27,7 +27,7 @@ def render_limitations(name, coverage, budget):
         heading += "Review incomplete: coverage gaps remain.\n\n"
     gaps = []
     for gap in coverage["gaps"]:
-        text = html.escape(" ".join(gap.splitlines()))
+        text = html.escape(" ".join(gap.splitlines()), quote=False)
         text = re.sub(r"([\\`*_{}\[\]#|])", r"\\\1", text)
         gaps.append(f"- {text}\n")
     return heading + "".join(gaps) + "\n"
