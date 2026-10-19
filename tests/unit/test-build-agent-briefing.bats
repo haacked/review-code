@@ -491,6 +491,50 @@ run_briefing() {
     grep -q "A resolved thread collapses to one line" "$output/briefing.md"
 }
 
+@test "build-agent-briefing: Comment structure note says where each comment's URL appears" {
+    local id; id=$(create_commented_session)
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
+    grep '^Comment structure:' "$output/briefing.md" | grep -q "shows its URL before the body"
+}
+
+# Rewrites the test session with a jq filter, rebuilds the briefing, and leaves
+# its last line in $last_line.
+briefing_last_line_after() {
+    local id="$1" filter="$2"
+    local session="$CLAUDE_SESSION_DIR/review-code/$id.json"
+    jq "$filter" "$session" > "$session.tmp" && mv "$session.tmp" "$session"
+    run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"
+    [ "$status" -eq 0 ]
+    last_line=$(tail -n 1 "$output/briefing.md")
+}
+
+@test "build-agent-briefing: permits local test runs in a same-repo PR checkout" {
+    local id; id=$(create_test_session)
+    briefing_last_line_after "$id" '.git.working_dir = "/work/pr" | .pr.is_fork = false'
+    [ "$last_line" = '**Local test runs:** permitted in `/work/pr`' ]
+
+    briefing_last_line_after "$id" '.file_ref = "abc123" | .git.local_clone = "/clones/repo"'
+    [ "$last_line" = '**Local test runs:** permitted in `/work/pr`' ]
+}
+
+@test "build-agent-briefing: refuses local test runs without a checkout of the reviewed code" {
+    local id; id=$(create_test_session)
+    briefing_last_line_after "$id" '.pr.is_fork = false'
+    [[ "$last_line" == '**Local test runs:** not permitted: no local checkout'* ]]
+
+    briefing_last_line_after "$id" '.git.working_dir = "/work/main" | .file_ref = "abc123"'
+    [[ "$last_line" == '**Local test runs:** not permitted: the local checkout is on a different branch'* ]]
+}
+
+@test "build-agent-briefing: refuses local test runs for a fork PR or an unknown fork status" {
+    local id; id=$(create_test_session)
+    briefing_last_line_after "$id" '.git.working_dir = "/work/pr" | .pr.is_fork = true'
+    [[ "$last_line" == '**Local test runs:** not permitted: the PR comes from a fork'* ]]
+
+    briefing_last_line_after "$id" 'del(.pr.is_fork)'
+    [[ "$last_line" == '**Local test runs:** not permitted: the PR comes from a fork'* ]]
+}
+
 @test "build-agent-briefing: writes the uncapped comments to comments.json" {
     local id; id=$(create_commented_session)
     run_briefing "$id" --arch-context-file "$ARCH_FILE" --agents "correctness"

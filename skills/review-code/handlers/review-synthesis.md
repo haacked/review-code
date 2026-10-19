@@ -41,3 +41,16 @@ The final `description` becomes the literal PR comment body; `proposed_fix` reta
 3. Corroborated suggestions
 4. Solo suggestions (>= 40% confidence)
 5. Questions and nits
+
+**Problems other reviewers raised that are still open**
+
+Each reviewer lists in `open_from_others` the problems that other reviewers raised and that are not fixed, and the report splitter saves them under `open-from-others/`. After every report has been split, merge them once. Run the merge in the same turn as the Reads of the findings files, so it adds no turn of its own:
+
+```bash
+python3 ~/.agents/skills/review-code/scripts/merge-open-from-others.py \
+  --artifacts-dir "<artifacts_dir>"
+```
+
+Require success. It saves the merged list as `<artifacts_dir>/open-from-others.json` and prints only its `count`.
+
+These problems already exist on the PR. They never become findings, Suggested Comments, draft comments, or fixes.

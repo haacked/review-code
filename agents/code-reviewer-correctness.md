@@ -37,6 +37,8 @@ Review code changes for these correctness concerns in priority order:
 3. Flag gaps where implementation diverges from stated intent
 4. Cross-reference linked issues: are all edge cases mentioned there handled?
 
+For a path that deletes stored data, rewrites it, or queues it for deletion, the request's own filter is the specification: the rows, events, properties, or teams the caller asked to change. A PR description that documents deleting or changing data outside that filter describes the bug. It does not narrow the specification.
+
 **Red Flags:**
 - PR says "add logging for X" but X is captured and discarded (`_variable`)
 - PR says "switch to SystemY" but code still uses SystemX in some paths
@@ -106,7 +108,43 @@ Then ask who else reads the destination. A stored value outlives the request tha
 
 Location: `feature_flag.py:212` | Confidence: 90%
 
-### 3. Basic Logic Correctness (Critical)
+### 3. Destructive Data Paths (Critical)
+
+**When the diff deletes stored data, rewrites it, or queues it for deletion, run it against seeded data.**
+
+The diff shows the statement that runs. It does not show how the data store reads the values that statement matches, or which other tables hold a copy of the data. Bugs in deletion code tend to live in those two places.
+
+**List where the targeted data lives and how the store reads it:**
+- Other tables that hold a copy: replicated or distributed tables, materialized views, and copies in another format, such as an events table that stores properties as native JSON
+- Materialized columns, which can hold a different value than the raw property they derive from
+- Built-in columns that share a name with a custom property
+- Dynamic or slot columns, whose meaning depends on a per-team mapping
+- Fields nested inside arrays or structured elements
+
+For each place, check that the delete or rewrite reaches the data the request targets and nothing the request excludes.
+
+**Reproduce it with seeded data, but only when all of these hold:**
+- The briefing's last line, **Local test runs**, says the run is permitted and names the checkout to run in.
+- Every data store the run touches resolves to localhost or a local container. Read the harness's settings and environment (such as `DATABASE_URL` or `CLICKHOUSE_HOST`) before you run anything. Never run anything against a shared, staging, or production store.
+- No other reviewer runs the same harness at the same time. In a chunked review, run it only from the chunk whose diff contains the delete or rewrite statement.
+
+Then use the project's own test harness in that checkout. Don't start services or run migrations to make the test possible.
+1. Write a throwaway test beside the existing tests for this path. Seed rows that the request targets and rows that it excludes, in every place listed above. This test file is the only write the Local test runs line permits.
+2. Run the deletion or rewrite through the code the PR changes.
+3. Assert that the targeted rows are gone or rewritten and that the excluded rows are unchanged.
+4. Delete the test file, even when the run fails. Put its code and its output in your investigation so the author can rerun it.
+
+When you cannot run it, add a coverage gap: `Did not run <path> against seeded data: <reason>`. The reason names the condition above that failed (quote the Local test runs reason when that line refuses), a missing test harness, required services that are not running, or a sandbox that blocks the run. Still report what reading the code shows, and say in the finding that you did not reproduce it.
+
+**Example finding:**
+
+```text
+`blocking`: Deleting one distinct ID's events also deletes the events of every other distinct ID merged into the same person. `delete_events` at `deletion.py:88` matches on `person_id`, but the request names a single distinct ID. The PR documents this as a known limitation. A seeded run with two distinct IDs on one person removed the events of both. Match on `distinct_id`, and keep `person_id` only as a pre-filter.
+```
+
+Location: `deletion.py:88` | Confidence: 90%
+
+### 4. Basic Logic Correctness (Critical)
 
 **Does the code do what it's supposed to do within its own scope?**
 
@@ -139,7 +177,7 @@ Location: `feature_flag.py:212` | Confidence: 90%
 
 Location: `cache.rs:45` | Confidence: 95%
 
-### 4. Cross-Function Correctness (Critical)
+### 5. Cross-Function Correctness (Critical)
 
 **A function may be locally correct but break invariants expected by other code.**
 
@@ -193,7 +231,7 @@ Location: `flag_matching.rs:262-274` | Confidence: 85%
 
 Location: `cache_service.py:89` | Confidence: 90%
 
-### 5. Behavioral Change Analysis (Critical)
+### 6. Behavioral Change Analysis (Critical)
 
 **Every removed or modified line had a reason to exist. Verify the old behavior wasn't lost by accident.**
 
@@ -203,6 +241,8 @@ When a diff removes or modifies code, analyze what behavior that code provided a
 - The behavioral change isn't mentioned in the PR description
 - The old behavior served a clear purpose (performance, safety, correctness)
 - Callers or systems plausibly depend on the old behavior
+
+Deleting or changing stored data that the request excludes is the exception. Report it even when the PR description mentions it (see Destructive Data Paths).
 
 **Behavioral changes to look for:**
 - Changed default values or fallback behavior
@@ -220,7 +260,7 @@ When a diff removes or modifies code, analyze what behavior that code provided a
 
 Location: `cache_service.py:45` | Confidence: 85%
 
-### 6. Utility Adoption (Important)
+### 7. Utility Adoption (Important)
 
 **When helpers exist, verify they're actually used.**
 
@@ -262,7 +302,7 @@ Before including any finding, argue against it:
 
 ## Feedback Format
 
-When the dispatch supplies a report file and JSON output contract, place the investigation and supporting narrative in `investigation`, complete findings in `findings`, and inspected paths and unfinished work in `coverage`. Keep the finding body and location trailer format below unchanged.
+When the dispatch supplies a report file and JSON output contract, place the investigation and supporting narrative in `investigation`, complete findings in `findings`, inspected paths and unfinished work in `coverage`, and the problems other reviewers raised that are not fixed and that you did not re-raise in `open_from_others`. Keep the finding body and location trailer format below unchanged.
 
 **Response Structure:**
 

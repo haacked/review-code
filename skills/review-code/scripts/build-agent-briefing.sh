@@ -178,7 +178,7 @@ if jq -e '(.pr.comments // {}) | (( .conversation // [] ) + ( .reviews // [] ) +
     jq -c '.pr.comments // {}' "${SESSION_FILE}" | tee "${ARTIFACTS_DIR}/comments.json" \
         | "${SCRIPT_DIR}/format-existing-comments.sh" >> "${BRIEFING}"
     emit ""
-    emit "Comment structure: \`conversation\` (discussion), \`reviews\` (approve/changes), \`inline\` (line-level, one bullet per thread). A resolved thread collapses to one line; an open thread (marked \`outdated\` when the anchor line moved, which does not mean the issue is fixed) shows its root comment plus a reply-count summary. Bodies are capped — the uncapped text is in \`comments.json\`, alongside this briefing."
+    emit "Comment structure: \`conversation\` (discussion), \`reviews\` (approve/changes), \`inline\` (line-level, one bullet per thread). A resolved thread collapses to one line; an open thread (marked \`outdated\` when the anchor line moved, which does not mean the issue is fixed) shows its root comment plus a reply-count summary. Bodies are capped — the uncapped text is in \`comments.json\`, alongside this briefing. A conversation comment or thread root shows its URL before the body."
     emit ""
 fi
 
@@ -232,6 +232,25 @@ if [[ ! -f "${SHARED}" ]]; then
     exit 1
 fi
 cat "${SHARED}" >> "${BRIEFING}"
+
+# ------------------------------------------------------------ local test runs
+# The correctness reviewer runs a destructive path against seeded data only when
+# this line permits it. The line follows the shared instructions because the
+# briefing marks everything before them as text from the PR's author and
+# commenters. A run needs a checkout of the reviewed code. A fork's tests would
+# run code from outside the repository's collaborators on this machine.
+LOCAL_TEST_RUNS=$(jq -r '
+    if (.git.working_dir // "") == "" then
+        "not permitted: no local checkout of the reviewed code"
+    elif (.file_ref // "") != "" and (.git.local_clone // "") == "" then
+        "not permitted: the local checkout is on a different branch than the reviewed code"
+    elif .mode == "pr" and .pr.is_fork != false then
+        "not permitted: the PR comes from a fork, or its fork status is unknown"
+    else
+        "permitted in `\(.git.working_dir)`"
+    end' "${SESSION_FILE}")
+emit ""
+emit "**Local test runs:** ${LOCAL_TEST_RUNS}"
 
 # ------------------------------------------------------- area-scoped diffs
 rm -f "${ARTIFACTS_DIR}/diff-frontend.patch" "${ARTIFACTS_DIR}/diff-infra-config.patch"

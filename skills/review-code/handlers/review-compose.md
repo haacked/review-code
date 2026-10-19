@@ -67,6 +67,14 @@ Compose per-agent findings from `$finding_publication.findings`. Use `descriptio
 
 If `$finding_publication.withheld` is non-empty, add a `## Withheld from draft` section after the per-agent sections and before Suggested Comments. For each entry, show its location, the concrete `quality_state`, and its `reasons`. Keep enough of the technical finding for the user to repair it locally. Label it as non-publishable and never format it as a Suggested Comment. Do not silently substitute the original reviewer body.
 
+If the open-from-others merge in synthesis reported a nonzero `count`, Read `<artifacts_dir>/open-from-others.json`. When the reviewers' statements in one entry describe different problems, as when one review summary lists several, split it into one entry per problem. When two entries describe the same problem under different locations, combine them and use the location where the problem occurs. Then add a `## Still open from other reviewers` section after the per-agent sections and Withheld from draft, before Suggested Comments. Write one bullet per entry, never a `###` or `####` heading. `parse-review-findings.sh` reads such a heading with a `path:line` as a finding, and carry-forward, learning, and thread resolution would then treat the entry as one of this review's findings. Each bullet gives the location, the commenter linked to the comment, the problem, each reviewer's assessment and severity, and why it was not re-raised:
+
+```markdown
+- `posthog/models/deletion.py:88` ([@frank](https://github.com/PostHog/posthog/pull/1#discussion_r1)): Deleting one distinct ID's events also deletes the events of every other distinct ID on the same person. Valid, blocking (code-reviewer-correctness). Not re-raised: @frank's thread is still open.
+```
+
+Never format an entry as a Suggested Comment.
+
 For a new review, include the metadata header below at the top of the file. For a full `--append` review, append the new sections without another header; preserve the existing header. The shared writer records the review identity after saving.
 
 ```html
@@ -99,6 +107,8 @@ If `mode` is `branch` and `base_source` is not `"default"`, add a scope note dir
 > **Review Scope:** Reviewed against base `$base_branch` (<phrase matching `base_source`: "the open PR's base branch" / "the recorded stack parent" / "the `--parent` override">), not the repository default branch.
 
 **Narrative voice.** The Inline Comment Voice rules govern the comment bodies; the narrative you compose here (Overview, findings prose, per-agent sections, the metadata `reasoning` field) needs the same register. The voice agent rewrites finding bodies only and never sees this prose, so it is yours to get right. Write it the way you'd write a Slack summary to a colleague who has not read the diff and shouldn't have to decode anything: plain verbs, short sentences, one idea per sentence, no ceremony. Four tells to avoid outright: em dashes (restructure with a comma, colon, parentheses, or two sentences), bold inside a prose sentence (lead with the point instead), inflation vocabulary ("critical", "robust", "comprehensive", "leverage", "ensure", "It's not just X, it's Y"), and naming a category where the behavior belongs, whether that's a coined label ("the staleness window"), logic vocabulary ("vacuously true"), test-theory jargon ("weak positive assertion"), or pipeline vocabulary the author never sees ("corroborated", "sibling").
+
+When a still-open entry has a reviewer assessment of `valid` with severity `blocking`, the Overview names it: what goes wrong and who raised it. This applies even when the review has no blocking findings of its own.
 
 An Overview paragraph in the right register reads like:
 

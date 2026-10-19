@@ -171,7 +171,7 @@ Build `$file_access_instructions` based on `REVIEW_FIELDS`. This block is includ
 **If `working_dir` is set and `file_ref` is set and `local_clone` is set:**
 ```
 **File Access:**
-A detached worktree checked out to this PR is available at the path given by `git.working_dir` in `REVIEW_FIELDS`. Use Read, Grep, and Glob normally; they operate on that directory. Do not run `git checkout` or `git switch` anywhere, and do not run other write operations in the worktree; the orchestrator owns its lifetime.
+A detached worktree checked out to this PR is available at the path given by `git.working_dir` in `REVIEW_FIELDS`. Use Read, Grep, and Glob normally; they operate on that directory. Do not run `git checkout` or `git switch` anywhere, and do not run other write operations in the worktree except a test run that the briefing's **Local test runs** line permits; the orchestrator owns its lifetime.
 ```
 
 **If `working_dir` is set and `file_ref` is set and `local_clone` is null:**
@@ -413,7 +413,7 @@ Each agent is sized against the patch file it actually read — the chunk or sco
 For each agent in `below_threshold`, resume it (using its agent ID from the Task tool) and give it the `unread_ranges` the script reported:
 
 ```
-You did not read all of `<artifacts_dir>/<agent-diff-file>`. These line ranges are still unread: <ranges>. Read them now with `sed -n '<start>,<end>p' <path>` and report any findings they contain, in the same format. Write this retry to `$report_path` using the report JSON contract, with an empty findings string if there are none.
+You did not read all of `<artifacts_dir>/<agent-diff-file>`. These line ranges are still unread: <ranges>. Read them now with `sed -n '<start>,<end>p' <path>` and report any findings they contain, in the same format. Write this retry to `$report_path` using the report JSON contract, with an empty findings string if there are none. Return an empty `open_from_others` array, because your first pass already covered the existing comments.
 ```
 
 Use a distinct coverage-retry report under the same output contract. Split the report before merging its findings into the pool. One re-dispatch per agent; take what you get. Record each resume's usage in `$token_usage` as `coverage-bounce-{N}`.

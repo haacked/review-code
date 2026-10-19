@@ -31,6 +31,15 @@ print(matches[0].replace("~/.agents/skills/review-code", skill).replace("<artifa
 PY
 }
 
+# The redirection opens the FIFO for reading and writing.
+# The command's stdin never reaches EOF because its own write end stays open.
+# A command that reads stdin hangs until the alarm kills it with status 142.
+run_with_open_stdin() {
+    local fifo="$BATS_TEST_TMPDIR/stdin.fifo"
+    mkfifo "$fifo"
+    run perl -e 'alarm shift; exec @ARGV or die "exec: $!"' 10 "$@" <> "$fifo"
+}
+
 @test "handler contracts: routing evidence reaches dispatch and survives session cleanup" {
     SESSION_FILE="$ARTIFACTS/session.json"
     architectural_context_path="$ARTIFACTS/explorer.md"
@@ -145,7 +154,7 @@ EOF
 @test "handler contracts: documented reviewer report command separates evidence from findings" {
     report_path="$ARTIFACTS/report.json"
     report_name="correctness"
-    jq -n '{investigation: "Full investigation", findings: "Complete findings", coverage: {files_read: ["src/example.py"], gaps: []}}' > "$report_path"
+    jq -n '{investigation: "Full investigation", findings: "Complete findings", coverage: {files_read: ["src/example.py"], gaps: []}, open_from_others: []}' > "$report_path"
     extract_documented_block "$SKILL/handlers/reviewer-output.md" bash reviewer-report.py > "$ARTIFACTS/report.sh"
 
     run env report_path="$report_path" report_name="$report_name" bash -e "$ARTIFACTS/report.sh"
@@ -249,7 +258,7 @@ PY
 @test "handler contracts: retained reviewer evidence survives session cleanup" {
     review_file="$BATS_TEST_TMPDIR/saved review.md"
     mkdir -p "$ARTIFACTS/reports"
-    jq -n '{investigation: "Evidence", findings: "Finding", coverage: {files_read: ["a.py"], gaps: ["Cannot verify b.py"]}}' > "$ARTIFACTS/reports/security.json"
+    jq -n '{investigation: "Evidence", findings: "Finding", coverage: {files_read: ["a.py"], gaps: ["Cannot verify b.py"]}, open_from_others: []}' > "$ARTIFACTS/reports/security.json"
     printf '%s\n' "$ARTIFACTS/reports/security.json" > "$ARTIFACTS/expected-reviewer-reports.txt"
     extract_documented_block "$SKILL/handlers/review-compose.md" bash reviewer-report.py \
         | sed 's/<SESSION_ID>/session-123/g' > "$ARTIFACTS/retain.sh"
@@ -260,6 +269,79 @@ PY
     rm -rf "$ARTIFACTS"
     [ "$(cat "${review_file}.artifacts/session-123/investigations/security.md")" = "Evidence" ]
     jq -e '.gaps == ["Cannot verify b.py"]' "${review_file}.artifacts/session-123/coverage/security.json"
+    [ "$(jq -c '.' "${review_file}.artifacts/session-123/open-from-others/security.json")" = '[]' ]
+}
+
+@test "handler contracts: documented synthesis merge groups open problems by link, location, and commenter" {
+    local thread="https://github.com/org/repo/pull/1#discussion_r1"
+    local pr="https://github.com/org/repo/pull/1"
+    mkdir -p "$ARTIFACTS/open-from-others"
+    jq -n --arg thread "$thread" --arg pr "$pr" '[
+        {location: "posthog/deletion.py:88", raised_by: "@frank", link: $thread,
+         problem: "Deleting by person_id misses rows in the materialized column at posthog/deletion.py:88.",
+         assessment: "valid", severity: "blocking", why_not_reraised: "The thread is open."},
+        {location: "PR", raised_by: "@alice", link: $pr,
+         problem: "The migration at posthog/migrations/0042.py:12 has no rollback.",
+         assessment: "unsure", severity: "question", why_not_reraised: "The review summary already asks for it."},
+        {location: "PR", raised_by: "@bob", link: $pr,
+         problem: "The deletion job at posthog/tasks/delete.py:30 has no retry.",
+         assessment: "valid", severity: "suggestion", why_not_reraised: "The review summary is still open."}
+    ]' > "$ARTIFACTS/open-from-others/chunk-1-correctness.json"
+    jq -n --arg thread "$thread" '[
+        {location: "posthog/deletion.py:88", raised_by: "@frank", link: $thread,
+         problem: "Rows left behind at posthog/deletion.py:88 keep personal data after a deletion request.",
+         assessment: "valid", severity: "suggestion", why_not_reraised: "Correctness owns the deletion path."}
+    ]' > "$ARTIFACTS/open-from-others/security.json"
+    extract_documented_block "$SKILL/handlers/review-synthesis.md" bash open-from-others > "$ARTIFACTS/merge.sh"
+
+    run bash -e "$ARTIFACTS/merge.sh"
+
+    [ "$status" -eq 0 ]
+    [ "$output" = '{"count": 3}' ]
+    jq -e --arg thread "$thread" --arg pr "$pr" '
+        length == 3 and
+        (.[] | select(.link == $thread) |
+            .location == "posthog/deletion.py:88" and .raised_by == "@frank" and
+            .assessments == [
+                {reviewer: "correctness", problem: "Deleting by person_id misses rows in the materialized column at posthog/deletion.py:88.",
+                 assessment: "valid", severity: "blocking", why_not_reraised: "The thread is open."},
+                {reviewer: "security", problem: "Rows left behind at posthog/deletion.py:88 keep personal data after a deletion request.",
+                 assessment: "valid", severity: "suggestion", why_not_reraised: "Correctness owns the deletion path."}
+            ]) and
+        ([.[] | select(.link == $pr) | .raised_by] | sort) == ["@alice", "@bob"] and
+        (.[] | select(.raised_by == "@bob") |
+            .assessments[0].problem == "The deletion job at posthog/tasks/delete.py:30 has no retry.")
+    ' "$ARTIFACTS/open-from-others.json"
+}
+
+@test "handler contracts: documented synthesis merge keeps every problem one review summary raised" {
+    local pr="https://github.com/org/repo/pull/1"
+    mkdir -p "$ARTIFACTS/open-from-others"
+    jq -n --arg pr "$pr" '[
+        {location: "PR", raised_by: "@alice", link: $pr, problem: "The deletion job has no retry.",
+         assessment: "valid", severity: "suggestion", why_not_reraised: "The review summary is open."},
+        {location: "PR", raised_by: "@alice", link: $pr, problem: "The migration has no rollback.",
+         assessment: "valid", severity: "suggestion", why_not_reraised: "The review summary is open."}
+    ]' > "$ARTIFACTS/open-from-others/code-reviewer-correctness.json"
+    extract_documented_block "$SKILL/handlers/review-synthesis.md" bash open-from-others > "$ARTIFACTS/merge.sh"
+
+    run bash -e "$ARTIFACTS/merge.sh"
+
+    [ "$status" -eq 0 ]
+    jq -e '
+        length == 1 and
+        ([.[0].assessments[].problem] | sort) == ["The deletion job has no retry.", "The migration has no rollback."]
+    ' "$ARTIFACTS/open-from-others.json"
+}
+
+@test "handler contracts: documented synthesis merge writes an empty list without reading stdin" {
+    mkdir -p "$ARTIFACTS/open-from-others"
+    extract_documented_block "$SKILL/handlers/review-synthesis.md" bash open-from-others > "$ARTIFACTS/merge.sh"
+
+    run_with_open_stdin bash -e "$ARTIFACTS/merge.sh"
+
+    [ "$status" -eq 0 ]
+    [ "$(jq -c '.' "$ARTIFACTS/open-from-others.json")" = '[]' ]
 }
 
 @test "handler contracts: retention fails when no reports were registered" {
@@ -277,7 +359,7 @@ PY
 @test "handler contracts: retention fails when any expected report is missing" {
     review_file="$BATS_TEST_TMPDIR/saved review.md"
     mkdir -p "$ARTIFACTS/reports"
-    jq -n '{investigation: "Evidence", findings: "Finding", coverage: {files_read: ["a.py"], gaps: []}}' > "$ARTIFACTS/reports/security.json"
+    jq -n '{investigation: "Evidence", findings: "Finding", coverage: {files_read: ["a.py"], gaps: []}, open_from_others: []}' > "$ARTIFACTS/reports/security.json"
     printf '%s\n' "$ARTIFACTS/reports/security.json" "$ARTIFACTS/reports/correctness.json" > "$ARTIFACTS/expected-reviewer-reports.txt"
     extract_documented_block "$SKILL/handlers/review-compose.md" bash reviewer-report.py \
         | sed 's/<SESSION_ID>/session-123/g' > "$ARTIFACTS/retain.sh"

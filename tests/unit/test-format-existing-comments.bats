@@ -16,6 +16,38 @@ run_script() {
     [[ "$output" == "- [conversation] @alice: Looks good" ]]
 }
 
+@test "format-existing-comments: a conversation comment shows its URL before the body" {
+    run_script '{"conversation":[{"author":"alice","body":"Looks good","url":"https://github.com/org/repo/pull/1#issuecomment-7"}]}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "- [conversation] @alice https://github.com/org/repo/pull/1#issuecomment-7: Looks good" ]]
+}
+
+@test "format-existing-comments: an open inline thread root shows its own URL before the body" {
+    run_script '{"inline":[
+        {"id":1,"author":"eve","body":"root","path":"foo.py","line":10,"in_reply_to_id":null,"resolved":false,"outdated":false,"url":"https://github.com/org/repo/pull/1#discussion_r1"},
+        {"id":2,"author":"frank","body":"a reply","path":"foo.py","line":10,"in_reply_to_id":1,"resolved":false,"outdated":false,"url":"https://github.com/org/repo/pull/1#discussion_r2"}
+    ]}'
+    [ "$status" -eq 0 ]
+    [[ "$(echo "$output" | head -1)" == "- [inline] @eve foo.py:10 https://github.com/org/repo/pull/1#discussion_r1: root" ]]
+}
+
+@test "format-existing-comments: a resolved inline thread shows its URL before the first line" {
+    run_script '{"inline":[{"id":1,"author":"eve","body":"first line\nsecond line","path":"foo.py","line":1,"in_reply_to_id":null,"resolved":true,"outdated":false,"url":"https://github.com/org/repo/pull/1#discussion_r3"}]}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == "- [inline, resolved] @eve foo.py:1 https://github.com/org/repo/pull/1#discussion_r3: first line" ]]
+}
+
+@test "format-existing-comments: comments without a URL render without one" {
+    run_script '{"conversation":[{"author":"alice","body":"Looks good"}],"inline":[
+        {"id":1,"author":"eve","body":"open note","path":"foo.py","line":10,"in_reply_to_id":null,"resolved":false,"outdated":false},
+        {"id":2,"author":"eve","body":"settled note","path":"bar.py","line":3,"in_reply_to_id":null,"resolved":true,"outdated":false}
+    ]}'
+    [ "$status" -eq 0 ]
+    [ "$output" = "- [conversation] @alice: Looks good
+- [inline] @eve foo.py:10: open note
+- [inline, resolved] @eve bar.py:3: settled note" ]
+}
+
 @test "format-existing-comments: renders a review with its state" {
     run_script '{"reviews":[{"author":"bob","state":"APPROVED","body":"LGTM"}]}'
     [ "$status" -eq 0 ]
