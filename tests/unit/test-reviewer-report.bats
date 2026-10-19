@@ -23,6 +23,7 @@ report = {
     "investigation": "# Investigation\n\nRead the caller and checked its error handling.\n",
     "findings": "",
     "coverage": {"files_read": ["src/main.py", "src/worker.py"], "gaps": []},
+    "open_from_others": [],
 }
 with open(sys.argv[1], "w") as handle:
     json.dump(report, handle)
@@ -34,16 +35,30 @@ publish_report() {
 }
 
 seed_outputs() {
-    mkdir -p "$ARTIFACTS/investigations" "$ARTIFACTS/findings" "$ARTIFACTS/coverage"
+    mkdir -p "$ARTIFACTS/investigations" "$ARTIFACTS/findings" "$ARTIFACTS/coverage" "$ARTIFACTS/open-from-others"
     printf 'previous investigation' > "$ARTIFACTS/investigations/$NAME.md"
     printf 'previous findings' > "$ARTIFACTS/findings/$NAME.md"
     printf '{"previous":true}' > "$ARTIFACTS/coverage/$NAME.json"
+    printf '[{"previous":true}]' > "$ARTIFACTS/open-from-others/$NAME.json"
 }
 
 assert_outputs_unchanged() {
     [ "$(cat "$ARTIFACTS/investigations/$NAME.md")" = 'previous investigation' ]
     [ "$(cat "$ARTIFACTS/findings/$NAME.md")" = 'previous findings' ]
     [ "$(cat "$ARTIFACTS/coverage/$NAME.json")" = '{"previous":true}' ]
+    [ "$(cat "$ARTIFACTS/open-from-others/$NAME.json")" = '[{"previous":true}]' ]
+}
+
+valid_open_entry() {
+    jq -n '{
+        location: "posthog/deletion.py:88",
+        raised_by: "@frank",
+        link: "https://github.com/org/repo/pull/1#discussion_r1",
+        problem: "Deleting by person_id misses rows in the materialized column at posthog/deletion.py:88.",
+        assessment: "valid",
+        severity: "blocking",
+        why_not_reraised: "@frank'"'"'s thread is open."
+    }'
 }
 
 @test "reviewer report: writes a clean report and returns artifact paths with spaces" {
@@ -61,6 +76,33 @@ assert_outputs_unchanged() {
     jq -j '.investigation' "$INPUT" > "$TEST_DIR/expected.md"
     cmp "$TEST_DIR/expected.md" "$ARTIFACTS/investigations/$NAME.md"
     [ "$(jq -S -c '.coverage' "$INPUT")" = "$(jq -S -c '.' "$ARTIFACTS/coverage/$NAME.json")" ]
+    [ "$(jq '.open_from_others_count' <<< "$output")" -eq 0 ]
+    [ "$(jq -c '.' "$ARTIFACTS/open-from-others/$NAME.json")" = '[]' ]
+}
+
+@test "reviewer report: writes open problems from other reviewers to an artifact and only counts them on stdout" {
+    jq --argjson first "$(valid_open_entry | jq '.problem = "OPEN_PROBLEM_ONLY: rows survive the delete at posthog/deletion.py:88."')" '
+        .open_from_others = [
+            $first,
+            {
+                location: "PR",
+                raised_by: "@alice",
+                link: "http://ghe.example.com/org/repo/pull/7",
+                problem: "OPEN_PROBLEM_ONLY: the migration at posthog/migrations/0042.py:12 has no rollback.",
+                assessment: "unsure",
+                severity: "question",
+                why_not_reraised: "The review summary already asks for a rollback plan."
+            }
+        ]' "$INPUT" > "$TEST_DIR/with-open.json"
+    mv "$TEST_DIR/with-open.json" "$INPUT"
+
+    run publish_report
+    [ "$status" -eq 0 ]
+
+    [ "$(jq '.open_from_others_count' <<< "$output")" -eq 2 ]
+    [ "$(jq -S -c '.open_from_others' "$INPUT")" = "$(jq -S -c '.' "$ARTIFACTS/open-from-others/$NAME.json")" ]
+    [[ "$output" != *'OPEN_PROBLEM_ONLY'* ]]
+    jq -e 'has("open_from_others") | not' <<< "$output"
 }
 
 @test "reviewer report: preserves long findings with nested fences and a Location trailer" {
@@ -143,7 +185,7 @@ PY
 
 @test "reviewer report: validates the full schema before changing existing artifacts" {
     seed_outputs
-    local invalid_report
+    local invalid_report invalid_entry
     while IFS= read -r invalid_report; do
         printf '%s' "$invalid_report" > "$INPUT"
         run publish_report
@@ -166,7 +208,50 @@ null
 {"investigation":"read the caller","findings":"","coverage":{"files_read":[null],"gaps":[]}}
 {"investigation":"read the caller","findings":"","coverage":{"files_read":[],"gaps":"missing file"}}
 {"investigation":"read the caller","findings":"","coverage":{"files_read":[],"gaps":[42]}}
+{"investigation":"read the caller","findings":"","coverage":{"files_read":[],"gaps":[]}}
+{"investigation":"read the caller","findings":"","coverage":{"files_read":[],"gaps":[]},"open_from_others":null}
+{"investigation":"read the caller","findings":"","coverage":{"files_read":[],"gaps":[]},"open_from_others":{}}
+{"investigation":"read the caller","findings":"","coverage":{"files_read":[],"gaps":[]},"open_from_others":"none"}
+{"investigation":"read the caller","findings":"","coverage":{"files_read":[],"gaps":[]},"open_from_others":[42]}
+{"investigation":"read the caller","findings":"","coverage":{"files_read":[],"gaps":[]},"open_from_others":["posthog/deletion.py:88"]}
+{"investigation":"read the caller","findings":"","coverage":{"files_read":[],"gaps":[]},"open_from_others":[null]}
 JSON
+
+    local valid key
+    valid=$(valid_open_entry)
+    while IFS= read -r invalid_entry; do
+        jq -n --argjson valid "$valid" --argjson entry "$invalid_entry" \
+            '{investigation: "read the caller", findings: "", coverage: {files_read: [], gaps: []}, open_from_others: [$valid, ($valid + $entry)]}' > "$INPUT"
+        run publish_report
+        [ "$status" -ne 0 ]
+        assert_outputs_unchanged
+    done << 'JSON'
+{"location":88}
+{"assessment":"maybe"}
+{"assessment":"Valid"}
+{"severity":"critical"}
+{"severity":"Blocking"}
+{"link":"discussion_r1"}
+{"link":"github.com/org/repo/pull/1"}
+{"link":"ftp://github.com/org/repo/pull/1"}
+{"link":"javascript:alert(1)"}
+JSON
+
+    for key in location raised_by link problem assessment severity why_not_reraised; do
+        jq -n --argjson valid "$valid" --arg key "$key" \
+            '{investigation: "read the caller", findings: "", coverage: {files_read: [], gaps: []}, open_from_others: [$valid, ($valid | del(.[$key]))]}' > "$INPUT"
+        run publish_report
+        [ "$status" -ne 0 ]
+        [[ "$output" == *"$key"* ]]
+        assert_outputs_unchanged
+
+        jq -n --argjson valid "$valid" --arg key "$key" \
+            '{investigation: "read the caller", findings: "", coverage: {files_read: [], gaps: []}, open_from_others: [$valid, ($valid | .[$key] = "")]}' > "$INPUT"
+        run publish_report
+        [ "$status" -ne 0 ]
+        [[ "$output" == *"$key"* ]]
+        assert_outputs_unchanged
+    done
 }
 
 @test "reviewer report: rejects BRIEFING_UNAVAILABLE without changing existing artifacts" {

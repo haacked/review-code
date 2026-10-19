@@ -113,7 +113,7 @@ Before including any finding, argue against it:
 
 ## Feedback Format
 
-When the dispatch supplies a report file and JSON output contract, place the investigation and supporting narrative in `investigation`, complete findings in `findings`, and inspected paths and unfinished work in `coverage`. Keep the finding body and location trailer format below unchanged.
+When the dispatch supplies a report file and JSON output contract, place the investigation and supporting narrative in `investigation`, complete findings in `findings`, inspected paths and unfinished work in `coverage`, and the problems other reviewers raised that are not fixed and that you did not re-raise in `open_from_others`. Keep the finding body and location trailer format below unchanged.
 
 **Response structure:**
 

@@ -26,7 +26,10 @@ set -euo pipefail
 #
 # Output: markdown bullet lines, one per conversation comment, one per review,
 # and one or two per inline thread (root, plus a reply summary when the
-# thread is open and has replies).
+# thread is open and has replies). A conversation comment or thread root that
+# has a `url` carries it before the body. A reviewer uses it to link the comment
+# it assessed. The URL cannot follow the body because an open thread's body can
+# span several lines. Reviews have no URL.
 
 BODY_CAP=800
 REPLY_PREVIEW_CAP=150
@@ -45,7 +48,9 @@ def firstline($n):
   ((. // "") | split("\n")) as $lines
   | ($lines[0] // "") | rtrimstr("\r") | trunc($n);
 
-( (.conversation // [])[] | "- [conversation] @\(.author): \(.body | trunc($body_cap))" ),
+def link: if .url then " \(.url)" else "" end;
+
+( (.conversation // [])[] | "- [conversation] @\(.author)\(link): \(.body | trunc($body_cap))" ),
 
 ( (.reviews // [])[] | "- [review/\(.state // "comment")] @\(.author): \((.body // "") | trunc($body_cap))" ),
 
@@ -57,10 +62,10 @@ def firstline($n):
   | (($thread | map(select(.in_reply_to_id == null)) | first) // $thread[0]) as $root
   | ($thread | length) as $n
   | if $root.resolved == true then
-      "- [inline, resolved] @\($root.author) \($root.path):\($root.line // "?"): \($root.body | firstline($index_cap))"
+      "- [inline, resolved] @\($root.author) \($root.path):\($root.line // "?")\($root | link): \($root.body | firstline($index_cap))"
     else
       (
-        "- [inline\(if $root.outdated == true then ", outdated" else "" end)] @\($root.author) \($root.path):\($root.line // "?"): \($root.body | trunc($body_cap))",
+        "- [inline\(if $root.outdated == true then ", outdated" else "" end)] @\($root.author) \($root.path):\($root.line // "?")\($root | link): \($root.body | trunc($body_cap))",
         (if $n > 1 then
           ($thread[-1]) as $last
           | "  (\($n - 1) repl\(if ($n - 1) == 1 then "y" else "ies" end), last by @\($last.author): \($last.body | firstline($reply_cap)))"

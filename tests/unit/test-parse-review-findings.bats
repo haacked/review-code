@@ -703,6 +703,34 @@ EOF
     echo "$output" | jq -e '.[0].deletable == false' > /dev/null
 }
 
+@test "parse-review-findings.sh: a Still open from other reviewers section adds no findings" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Correctness Review
+
+#### `posthog/models.py:42`
+
+```text
+[P1] The cache key ignores the team id.
+```
+Location: posthog/models.py:42 | Confidence: 90%
+
+## Still open from other reviewers
+
+- `posthog/deletion.py:88` (@frank, https://github.com/org/repo/pull/1#discussion_r1): Deleting by person_id misses rows in the materialized column. Assessment: valid, blocking (correctness). Not re-raised: @frank's thread is open.
+- `PR` (@alice, https://github.com/org/repo/pull/1): The migration has no rollback. Assessment: unsure, question (security). Not re-raised: @alice's review summary already asks for one.
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'length == 1' > /dev/null
+    echo "$output" | jq -e '.[0].file == "posthog/models.py" and .[0].line == 42' > /dev/null
+    echo "$output" | jq -e '.[0].description | contains("cache key ignores the team id")' > /dev/null
+    echo "$output" | jq -e '
+        .[0].description as $description
+        | ["Still open", "@frank", "@alice", "discussion_r1", "deletion.py", "person_id", "rollback", "Assessment", "Not re-raised"]
+        | all(. as $text | $description | contains($text) | not)
+    ' > /dev/null
+}
+
 @test "parse-review-findings.sh: a description stops where the span stops" {
     # The span and the description must end at the same place. When they did
     # not, cutting a finding's span left the tail of its body in the document
