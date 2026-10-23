@@ -1,0 +1,168 @@
+{
+  "source": "https://github.com/PostHog/posthog/pull/121510",
+  "base_sha": "c5355d6ca0559c144ea2556b37217b70c2d958b7",
+  "head_sha": "c692b280bc259d04b2a94d7c2ee68167b8797d32",
+  "comment_style": "concise",
+  "cases": [
+    {
+      "location": "posthog/api/cohort.py:1994",
+      "agent": "compatibility",
+      "severity": "blocking",
+      "confidence": 75,
+      "draft": "`blocking`: Editing a static cohort's description from the taxonomic filter popover now fails while that cohort's population runs. The popover saves by sending the whole cohort object back, and that object includes the stored `query` (`frontend/src/lib/components/DefinitionPopover/definitionPopoverLogic.ts:259-264`). The serializer treats any PATCH with a non-empty `query` as a population request. So the claim at `posthog/api/cohort.py:1994-1995` rejects the edit with \"This cohort is still being populated\", and the description is not saved. A static cohort created from a query stays in that state for minutes to hours after creation. Each popover edit also queues a new population, so a second edit made soon after the first fails too. The popover's catch block shows the error and then still shows \"Cohort definition saved\" (`definitionPopoverLogic.ts:267-272`), so the user can believe the edit went through.\n\nSend only the edited field from the popover. This also stops description edits from queuing a full re-population, which they do on master.\n\n```diff\n definition = await api.update(\n     `api/projects/${values.currentProjectId}/cohorts/${_cohort.id}`,\n-    _cohort\n+    { description: _cohort.description }\n )\n```",
+      "before": "`blocking`: Editing a static query cohort's description from the definition popover now fails while its population runs. The popover [PATCHes the whole cohort object](https://github.com/PostHog/posthog/blob/c692b280bc259d04b2a94d7c2ee68167b8797d32/frontend/src/lib/components/DefinitionPopover/definitionPopoverLogic.ts#L257-L264) from the taxonomic list. That object includes the stored `query`. So `populate_from_query` is true here, and the claim rejects the request. The description is never saved. The popover still shows [its success toast](https://github.com/PostHog/posthog/blob/c692b280bc259d04b2a94d7c2ee68167b8797d32/frontend/src/lib/components/DefinitionPopover/definitionPopoverLogic.ts#L267-L272) afterwards.\n\nHave the popover send only the field it edits. That also stops a popover description save from queuing a full re-population after the run finishes.\n\n```diff\n definition = await api.update(\n     `api/projects/${values.currentProjectId}/cohorts/${_cohort.id}`,\n-    _cohort\n+    { description: _cohort.description }\n )\n```",
+      "after": null,
+      "proposed_fix": "```diff\n--- a/frontend/src/lib/components/DefinitionPopover/definitionPopoverLogic.ts\n+++ b/frontend/src/lib/components/DefinitionPopover/definitionPopoverLogic.ts\n definition = await api.update(\n     `api/projects/${values.currentProjectId}/cohorts/${_cohort.id}`,\n-    _cohort\n+    { description: _cohort.description }\n )\n```\nAdd a kea logic test that saves a cohort definition and asserts the PATCH body contains only `description`.",
+      "facts": {
+        "problem": "Editing a static query cohort's description from the definition popover fails while the cohort's population runs, and the new description is not saved.",
+        "trigger": "A user edits the description of a static cohort created from a query in the taxonomic filter's definition popover while its population is still running, for example minutes after the cohort was created or soon after an earlier popover edit queued a new population.",
+        "mechanism": [
+          "The popover saves by PATCHing the whole cohort object from the taxonomic list (definitionPopoverLogic.ts:257-264). That list is loaded without basic=true, so the object carries the cohort's stored query.",
+          "update sets populate_from_query to true for any static cohort whose PATCH carries a non-empty query (posthog/api/cohort.py:1990-1992).",
+          "_claim_static_population matches no row because is_calculating is already true, so it raises the 'This cohort is still being populated' 400 inside the transaction before cohort.save() runs (posthog/api/cohort.py:1993-1996).",
+          "The popover's catch block shows the error toast, and the code after it still shows the 'Cohort definition saved' success toast (definitionPopoverLogic.ts:267-272)."
+        ],
+        "result": "The description edit is lost, and the user sees a success toast after the error, so they can believe the edit was saved.",
+        "requested_change": "Have the popover PATCH only the field it edits, { description: _cohort.description }, instead of the whole cohort object. This also stops a popover description edit from queuing a full re-population of the cohort, which it does on master.",
+        "regression_case": "A kea logic test that saves a cohort definition from the popover and asserts that the PATCH body contains only description.",
+        "regression_rationale": null
+      }
+    },
+    {
+      "location": "posthog/api/cohort.py:1796",
+      "agent": "architecture",
+      "severity": "suggestion",
+      "confidence": 70,
+      "draft": "`suggestion`: The new \"still being populated\" 400 never reaches the user in the UI. The only frontend caller that PATCHes a static cohort with a `query` is the \"Save to cohort\" modal at `frontend/src/lib/components/SaveToCohortModalContent/saveToCohortModalContentLogic.ts:170`. Its catch block at lines 180-183 shows a fixed \"Save to cohort failed\" toast and drops the server's message. So a user who saves query results into a cohort while an earlier save is still populating gets a generic failure with no hint to wait. The cohort edit form already shows the server's reason with an `error.detail` fallback at `frontend/src/scenes/cohorts/cohortEditLogic.ts:1014`. Use the same fallback in the modal, so the user reads the copy written at `posthog/api/cohort.py:1796` and `posthog/api/cohort.py:2013`.",
+      "before": "`suggestion`: Saving query results from the Save to cohort modal into a static cohort that is still populating shows only \"Save to cohort failed\", so the user cannot tell that a retry after the population finishes will work. This happens when saving into a cohort created a few minutes earlier, or saving into the same cohort twice in a row. The modal sends the query in a PATCH, and this change rejects that PATCH while the population runs with \"This cohort is still being populated. Try again when it finishes.\" The modal's [catch block](https://github.com/PostHog/posthog/blob/c692b280bc259d04b2a94d7c2ee68167b8797d32/frontend/src/lib/components/SaveToCohortModalContent/saveToCohortModalContentLogic.ts#L180-L183) ignores that message in `error.detail` and shows its fixed toast.\n\nConsider showing the server's message with the fallback that `cohortEditLogic.ts` already uses: `lemonToast.error(error.detail || 'Save to cohort failed')`.",
+      "after": null,
+      "proposed_fix": "```diff\n--- a/frontend/src/lib/components/SaveToCohortModalContent/saveToCohortModalContentLogic.ts\n+++ b/frontend/src/lib/components/SaveToCohortModalContent/saveToCohortModalContentLogic.ts\n-            } catch (error) {\n+            } catch (error: any) {\n                 console.error('Save to cohort failed:', error)\n                 lemonToast.dismiss(toastId)\n-                lemonToast.error('Save to cohort failed')\n+                lemonToast.error(error.detail || 'Save to cohort failed')\n             }\n```",
+      "facts": {
+        "problem": "When the server rejects a Save to cohort request because the static cohort is still populating, the modal shows only 'Save to cohort failed', so the user cannot tell that a retry after the population finishes will work.",
+        "trigger": "A user saves query results from the Save to cohort modal into a static cohort whose population is still running, such as a cohort created a few minutes earlier or a cohort the user saved into just before.",
+        "mechanism": [
+          "The modal adds a query's people to an existing static cohort by PATCHing { query } (saveToCohortModalContentLogic.ts:170-172).",
+          "While the population runs, the claim rejects that PATCH with a 400 whose detail is 'This cohort is still being populated. Try again when it finishes.' (posthog/api/cohort.py:1796).",
+          "The modal's catch block (saveToCohortModalContentLogic.ts:180-183) ignores error.detail and shows a fixed 'Save to cohort failed' toast."
+        ],
+        "result": "The save fails with a generic error and no hint to wait. On master the same request returned 200 while a population ran.",
+        "requested_change": "Show the server's message in the modal's catch block with the fallback that cohortEditLogic.ts already uses: lemonToast.error(error.detail || 'Save to cohort failed'), with the caught error typed as any.",
+        "regression_case": null,
+        "regression_rationale": null
+      }
+    },
+    {
+      "location": "posthog/api/cohort.py:1792",
+      "agent": "correctness",
+      "severity": "suggestion",
+      "confidence": 70,
+      "draft": "`suggestion`: A static cohort can end up locked for good. Every query PATCH returns \"This cohort is still being populated\" while no population runs, and nothing clears the flag.\n\nThe stuck-cohort sweep only resets static cohorts whose `errors_calculating` is below 20 (`posthog/tasks/calculate_cohort.py:243`, with `MAX_ERRORS_CALCULATING` at line 181). Each reset adds 1 (line 359). The population task clears `is_calculating` only in its `finally` block (`calculate_cohort.py:1015`). A worker that is OOM-killed, or killed by a deploy, never runs that block. Celery has no `acks_late`, so the task is not redelivered. So a cohort at the error cap keeps `is_calculating=True` after its run dies. A cohort with a slow query that keeps dying gets to 20 on its own, because every sweep reset adds 1.\n\nBefore this PR, a query PATCH was how a user got out of that state. It queued a new run, and a successful run cleared the flag and reset the error count (`products/cohorts/backend/models/cohort.py:1351-1355`). `_claim_static_population` at `posthog/api/cohort.py:1792` now refuses that PATCH. The PR description says a dead task does not lock the cohort, but that stops being true at the cap. The only ways out are adding a person by hand or uploading a CSV, because both clear the flag as a side effect. Nothing tells the user that.\n\nLet the claim also take a cohort that the sweep no longer resets. Add a test that seeds `is_calculating=True` and `errors_calculating=20`, then expects the query PATCH to return 200 and queue one run:\n\n```python\ndef _claim_static_population(self, cohort: Cohort) -> None:\n    from posthog.tasks.calculate_cohort import MAX_ERRORS_CALCULATING\n\n    # The stuck sweep skips cohorts at the error cap, so their flag can outlive every run.\n    claimable = Q(is_calculating=False) | Q(errors_calculating__gte=MAX_ERRORS_CALCULATING)\n    claimed = Cohort.objects.filter(claimable, pk=cohort.pk, team_id=cohort.team_id).update(is_calculating=True)\n    if not claimed:\n        raise ValidationError({\"query\": [\"This cohort is still being populated. Try again when it finishes.\"]})\n    cohort.is_calculating = True\n```\n\nThis lets one duplicate through if the sweep's final retry is still alive at the cap. That costs less than a cohort nobody can re-run.",
+      "before": null,
+      "after": null,
+      "proposed_fix": "```diff\n-        # cannot both claim it. The population task clears is_calculating when it finishes, and the stuck-cohort sweep\n-        # clears it if the task dies.\n+        # cannot both claim it. The population task clears is_calculating when it finishes. The stuck-cohort sweep\n+        # clears it if the task dies, but only while errors_calculating is below MAX_ERRORS_CALCULATING.\n```\n\nWhen the PR adds a field that records when the claim was taken (it records none yet), also let _claim_static_population take a cohort whose claim is older than the longest expected population run. Do not let the claim take every cohort with errors_calculating >= MAX_ERRORS_CALCULATING, because the sweep re-dispatches a live run while the count is 20 (posthog/tasks/calculate_cohort.py:376).",
+      "facts": {
+        "problem": "A static cohort at the stuck sweep's error cap keeps is_calculating set after its population run is killed, and the claim now rejects every query PATCH for it, so a query PATCH can no longer re-run that cohort.",
+        "trigger": "A static query cohort's population run is killed, for example by a worker OOM or a deploy, on a run made when errors_calculating is at the cap of 20.",
+        "mechanism": [
+          "The worker dies before the finally block of insert_cohort_from_query runs, so the task never sets is_calculating back to false. The task has no acks_late, so Celery does not redeliver it.",
+          "The stuck static sweep selects only cohorts whose errors_calculating is below MAX_ERRORS_CALCULATING, which is 20 (posthog/tasks/calculate_cohort.py:181, 243), so it never resets a cohort at the cap.",
+          "_claim_static_population only claims a row whose is_calculating is false (posthog/api/cohort.py:1792-1794), so every query PATCH for that cohort gets the 'This cohort is still being populated' 400."
+        ],
+        "result": "Every query PATCH returns 400 while no population runs. On master a query PATCH re-ran the population, and a successful run cleared is_calculating and reset the error count. Now only a CSV upload or the Django admin 'Re-sync static cohort from source query' action clears the flag. The comment at posthog/api/cohort.py:1790-1791 says the stuck-cohort sweep clears the flag if the task dies, which is false at the cap.",
+        "requested_change": "Change the comment ending at posthog/api/cohort.py:1791 to say that the sweep clears the flag only while errors_calculating is below MAX_ERRORS_CALCULATING. When the PR adds a field that records when the claim was taken (it records none yet), also let _claim_static_population take a cohort whose claim is older than the longest expected population run. Do not let the claim take every cohort with errors_calculating >= 20, because the sweep re-dispatches a live run while the count is 20 (posthog/tasks/calculate_cohort.py:376).",
+        "regression_case": null,
+        "regression_rationale": null
+      }
+    },
+    {
+      "location": "posthog/api/test/test_cohort.py:674",
+      "agent": "testing",
+      "severity": "suggestion",
+      "confidence": 60,
+      "draft": "`suggestion`: Nothing tests the guarantee the comment at `posthog/api/cohort.py:1789-1790` states: two concurrent requests cannot both claim the cohort. `test_static_cohort_patch_with_query_rejected_while_population_in_flight` sends its two PATCHes one after another, so the second request loads a cohort that already reads `is_calculating=True` from the database. A version of `_claim_static_population` that checked the in-memory flag and then saved would pass this test. That version lets two requests that both loaded the cohort before either claim both queue a population.\n\nServing the second PATCH a cohort loaded before the first claim reproduces that interleaving without threads:\n\n```python\nstale = Cohort.objects.get(pk=cohort.pk)\nfirst = self.client.patch(url, data={\"query\": query})\nwith patch.object(CohortViewSet, \"get_object\", return_value=stale):\n    second = self.client.patch(url, data={\"query\": query})\n```",
+      "before": "`suggestion`: No test covers the comment's claim that two concurrent requests can't both claim the cohort. This test sends its PATCHes one after another, so the second request already loads `is_calculating=True` from the database. A version of `_claim_static_population` that checked the in-memory flag and then saved would pass it too.\n\nServing the second request a cohort loaded before the first claim reproduces the race without threads:\n\n```python\nstale = Cohort.objects.get(pk=cohort.pk)\nfirst = self.client.patch(url, data={\"query\": query})\nwith patch.object(CohortViewSet, \"get_object\", return_value=stale):\n    second = self.client.patch(url, data={\"query\": query})\n```\n\nThen assert that the second PATCH returns 400 on `query` and that `delay` ran once.",
+      "after": null,
+      "proposed_fix": "```python\nfrom posthog.api.cohort import COHORT_USED_IN_PAGE_SIZE, CohortFilters, CohortViewSet\n\n@patch(\"posthog.tasks.calculate_cohort.insert_cohort_from_query.delay\")\ndef test_static_cohort_patch_with_query_rejected_when_cohort_loaded_before_claim(self, mock_delay: MagicMock):\n    cohort = Cohort.objects.create(team=self.team, name=\"static\", is_static=True)\n    query = {\"kind\": \"ActorsQuery\", \"properties\": []}\n    url = f\"/api/projects/{self.team.id}/cohorts/{cohort.pk}\"\n    stale = Cohort.objects.get(pk=cohort.pk)\n\n    first = self.client.patch(url, data={\"query\": query})\n    with patch.object(CohortViewSet, \"get_object\", return_value=stale):\n        second = self.client.patch(url, data={\"query\": query})\n\n    self.assertEqual(first.status_code, 200, first.json())\n    self.assertEqual(second.status_code, 400, second.json())\n    self.assertEqual(second.json()[\"attr\"], \"query\")\n    mock_delay.assert_called_once_with(cohort.pk, self.team.id)\n```",
+      "facts": {
+        "problem": "No test covers the guarantee in the claim's comment that two concurrent requests cannot both claim the cohort.",
+        "trigger": "Two query PATCHes on the same static cohort that both loaded the cohort before either one claimed it.",
+        "mechanism": [
+          "test_static_cohort_patch_with_query_rejected_while_population_in_flight sends its two PATCHes one after another, so the second request loads a cohort whose is_calculating is already true in the database.",
+          "A version of _claim_static_population that checked the in-memory is_calculating flag and then saved would also reject that second request, so it passes the test.",
+          "That version accepts a request whose cohort was loaded before the first claim, so two such requests both call insert_cohort_from_query.delay."
+        ],
+        "result": "If the conditional UPDATE were replaced with a check-then-save, two concurrent query PATCHes would both queue a population, and every test would still pass.",
+        "requested_change": "Add a test that serves the second PATCH a cohort loaded before the first claim, by patching CohortViewSet.get_object to return that stale instance, and assert that the second PATCH returns 400 on query and that delay ran once.",
+        "regression_case": "Load stale = Cohort.objects.get(pk=cohort.pk), send the first query PATCH, then send the second with CohortViewSet.get_object patched to return stale. Expect 200 for the first, 400 with attr 'query' for the second, and mock_delay called once with (cohort.pk, self.team.id).",
+        "regression_rationale": null
+      }
+    },
+    {
+      "location": "posthog/api/test/test_cohort.py:679",
+      "agent": "testing",
+      "severity": "suggestion",
+      "confidence": 50,
+      "draft": "`suggestion`: Nothing tests the other side of the new guard. A PATCH without a query, such as a rename from the cohort edit page, should still return 200 while a population holds the cohort, and it should leave the claim in place. The name-only PATCH in `test_static_cohort_csv_upload_end_to_end` runs after the population has finished, so it never meets a held claim. A rename between the two query PATCHes in `test_static_cohort_patch_with_query_rejected_while_population_in_flight`, with the existing 400 assertion after it, covers both.",
+      "before": "`suggestion`: No test checks that a PATCH without a query still succeeds while a population runs, or that it leaves the claim in place.\n\nConsider adding a rename between the two query PATCHes here and asserting that it returns 200. Keep the 400 assertion on the second query PATCH after it.",
+      "after": null,
+      "proposed_fix": "```python\nurl = f\"/api/projects/{self.team.id}/cohorts/{cohort.pk}\"\nfirst = self.client.patch(url, data={\"query\": query})\nrenamed = self.client.patch(url, data={\"name\": \"renamed\"})\nsecond = self.client.patch(url, data={\"query\": query})\n\nself.assertEqual(first.status_code, 200, first.json())\nself.assertEqual(renamed.status_code, 200, renamed.json())\nself.assertEqual(second.status_code, 400, second.json())\nself.assertEqual(second.json()[\"attr\"], \"query\")\nmock_delay.assert_called_once_with(cohort.pk, self.team.id)\n```",
+      "facts": {
+        "problem": "No test checks that a PATCH without a query still succeeds while a population runs, or that it leaves the claim in place.",
+        "trigger": "A rename of a static cohort, for example from the cohort edit page, while the cohort's query population runs.",
+        "mechanism": [
+          "update takes the claim only when the PATCH carries a query (populate_from_query checks bool(validated_data.get('query')) at posthog/api/cohort.py:1990-1992), so a rename skips the claim.",
+          "The only query-less PATCH on a static cohort under test, in test_static_cohort_csv_upload_end_to_end, runs after the population has finished, when is_calculating is already false."
+        ],
+        "result": "A change that rejected renames during a population, or that cleared is_calculating on a rename so the next query PATCH queued a second population, would pass every test.",
+        "requested_change": "In test_static_cohort_patch_with_query_rejected_while_population_in_flight, send a name-only PATCH between the two query PATCHes, assert that it returns 200, and keep the 400 assertion on the second query PATCH after it.",
+        "regression_case": "First query PATCH returns 200, the rename PATCH returns 200, the second query PATCH returns 400 with attr 'query', and delay is called once.",
+        "regression_rationale": null
+      }
+    },
+    {
+      "location": "posthog/api/cohort.py:2004",
+      "agent": "maintainability",
+      "severity": "nit",
+      "confidence": 60,
+      "draft": "`nit`: The claim on `is_calculating` and its release sit about 220 lines apart. `_claim_static_population` at `posthog/api/cohort.py:1787` sets the flag. The code that clears it when the enqueue fails is inline in `update` at `posthog/api/cohort.py:2005-2014`. The PR defers a follow-up that records a claim time for the stuck-cohort sweep, and that change has to touch both places. Someone who edits the claim helper won't see the release unless they read all of `update`, which is already over 200 lines. The CSV path keeps its flag set, enqueue, and reset together in `_enqueue_csv_ids` at `posthog/api/cohort.py:1425`.\n\nMove the enqueue and the release into a helper directly below `_claim_static_population`. The `elif populate_from_query:` branch in `update` then becomes `self._enqueue_query_population(cohort)`:\n\n```python\ndef _enqueue_query_population(self, cohort: Cohort) -> None:\n    from posthog.tasks.calculate_cohort import insert_cohort_from_query\n\n    try:\n        insert_cohort_from_query.delay(cohort.pk, self.context[\"team_id\"])\n    except Exception as e:\n        # Without a release, every retry is rejected for a run that was never queued.\n        Cohort.objects.filter(pk=cohort.pk, team_id=cohort.team_id).update(is_calculating=False)\n        cohort.is_calculating = False\n        capture_exception(e, additional_properties={\"cohort_id\": cohort.pk, \"team_id\": cohort.team_id})\n        raise ValidationError({\"query\": [\"Couldn't start populating this cohort. Try again in a few minutes.\"]}) from e\n```\n\nAfter the move, nothing else in `update` uses the local import of `insert_cohort_from_query` at `posthog/api/cohort.py:1999`, so it can go. The tests patch `insert_cohort_from_query.delay` on the task object, so they still work.",
+      "before": "`nit`: The claim is set in `_claim_static_population`, but its release after a failed enqueue sits inline in `update`, about 220 lines below, so the deferred change that records a claim time has to edit both places and can easily miss the release. Perhaps move the `delay` call and its release into an `_enqueue_query_population(cohort)` helper directly below `_claim_static_population`, as `_enqueue_csv_ids` does for the CSV path, and move the local `insert_cohort_from_query` import into that helper.",
+      "after": null,
+      "proposed_fix": "```python\ndef _enqueue_query_population(self, cohort: Cohort) -> None:\n    from posthog.tasks.calculate_cohort import insert_cohort_from_query\n\n    try:\n        insert_cohort_from_query.delay(cohort.pk, self.context[\"team_id\"])\n    except Exception as e:\n        # Without a release, every retry is rejected for a run that was never queued.\n        Cohort.objects.filter(pk=cohort.pk, team_id=cohort.team_id).update(is_calculating=False)\n        cohort.is_calculating = False\n        capture_exception(e, additional_properties={\"cohort_id\": cohort.pk, \"team_id\": cohort.team_id})\n        raise ValidationError({\"query\": [\"Couldn't start populating this cohort. Try again in a few minutes.\"]}) from e\n```\nThe `elif populate_from_query:` branch in `update` becomes `self._enqueue_query_population(cohort)`.",
+      "facts": {
+        "problem": "The code that releases the claim after a failed enqueue sits inline in update, about 220 lines below _claim_static_population, which sets the claim.",
+        "trigger": "A later change to the claim, such as the change the PR defers that records when the claim was taken for the stuck-cohort sweep.",
+        "mechanism": [
+          "_claim_static_population (posthog/api/cohort.py:1787) sets is_calculating.",
+          "The code that sets it back to false when insert_cohort_from_query.delay raises is inline in update at posthog/api/cohort.py:2005-2014, and update is already over 200 lines.",
+          "The CSV path keeps its flag set, enqueue and release together in _enqueue_csv_ids (posthog/api/cohort.py:1425)."
+        ],
+        "result": "Someone who edits the claim helper does not see the release unless they read all of update, so a change to the claim can miss it.",
+        "requested_change": "Move the delay call and its release into an _enqueue_query_population(cohort) helper directly below _claim_static_population, as _enqueue_csv_ids does for the CSV path, call it from the elif populate_from_query branch, and move the local insert_cohort_from_query import into the helper.",
+        "regression_case": null,
+        "regression_rationale": null
+      }
+    },
+    {
+      "location": "posthog/api/cohort.py:1789",
+      "agent": "maintainability",
+      "severity": "nit",
+      "confidence": 75,
+      "draft": "`nit`: \"Only one run may hold the cohort at a time\" at `posthog/api/cohort.py:1789` doesn't say what holding does. The next sentence says the conditional update locks the row, so a reader can take \"hold\" to mean the run keeps a row lock for hours. The repo already uses the phrase in that sense: `products/cohorts/backend/backfill/runs.py:501` says the create path \"holds the cohort row FOR UPDATE\". The code here sets `is_calculating` and rejects any query PATCH while the flag stays set.\n\nReplace that sentence with \"The claim sets is_calculating, and a query PATCH gets a 400 until it is cleared.\"",
+      "before": "`nit`: \"Only one run may hold the cohort at a time\" reads as though the run keeps a row lock, because the next sentence is about the conditional update locking the row. Something like \"The claim sets is_calculating, and a query PATCH gets a 400 until it is cleared\" says what happens.",
+      "after": null,
+      "proposed_fix": "```diff\n         # A query population can run on ClickHouse for hours, and each PATCH would otherwise queue another full run.\n-        # Only one run may hold the cohort at a time. The conditional update locks the row, so two concurrent requests\n-        # cannot both claim it. The population task clears is_calculating when it finishes, and the stuck-cohort sweep\n-        # clears it if the task dies.\n+        # The claim sets is_calculating, and a query PATCH gets a 400 until it is cleared. The conditional update locks\n+        # the row, so two concurrent requests cannot both claim it. The population task clears is_calculating when it\n+        # finishes, and the stuck-cohort sweep clears it if the task dies.\n```",
+      "facts": {
+        "problem": "The comment sentence 'Only one run may hold the cohort at a time' does not say what holding does, and a reader can take it to mean that the run keeps a row lock.",
+        "trigger": null,
+        "mechanism": [
+          "The next sentence says the conditional update locks the row, so 'hold' reads as the population run keeping that row lock for as long as it runs.",
+          "The code sets is_calculating and rejects any query PATCH with a 400 while the flag stays set. The repo already uses 'holds the cohort row FOR UPDATE' to mean a row lock (products/cohorts/backend/backfill/runs.py:501)."
+        ],
+        "result": "A maintainer can believe that a population run keeps the cohort row locked for hours.",
+        "requested_change": "Replace that sentence with 'The claim sets is_calculating, and a query PATCH gets a 400 until it is cleared.'",
+        "regression_case": null,
+        "regression_rationale": null
+      }
+    }
+  ]
+}

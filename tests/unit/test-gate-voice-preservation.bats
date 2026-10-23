@@ -255,6 +255,25 @@ PY
     done
 }
 
+@test "voice preservation: a concise body may grow by a quarter, and a detailed body may double" {
+    local original_length
+    original_length=$(jq -r '.findings[0].description | gsub("\\s"; "") | length' "$ORIGINAL")
+    cp "$RESPONSES" "$BATS_TEST_TMPDIR/before-style-growth.json"
+
+    update_json "$RESPONSES" ".[0].description += (\"x\" * ($original_length / 4 | floor))"
+    run_gate
+    assert_accepted 1
+
+    update_json "$RESPONSES" '.[0].description += "xx"'
+    run_gate
+    assert_restored 1
+    [ "$(jq -r '.voice_preservation.reverted[] | select(.id == 1) | .reasons | join(" ")' "$RESULT")" = "description: exceeds the 1.25x growth limit" ]
+
+    update_json "$ORIGINAL" '.findings[0].comment_style = "detailed"'
+    run_gate
+    assert_accepted 1
+}
+
 @test "voice preservation: null proposed_fix cannot become a new fix" {
     update_json "$RESPONSES" '.[1].proposed_fix = "Use a shared timeout constant."'
 

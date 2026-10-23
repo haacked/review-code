@@ -200,7 +200,7 @@ def verdict_map(verdicts: Any) -> dict[Any, dict[str, Any]]:
 
 
 def evaluate_verdict(
-    item: dict[str, Any], verdict: dict[str, Any] | None
+    item: dict[str, Any], verdict: dict[str, Any] | None, final: bool
 ) -> tuple[str, list[str]]:
     if verdict is None:
         return "gate_error", ["semantic gate returned no unique verdict"]
@@ -230,12 +230,27 @@ def evaluate_verdict(
         return "gate_error", ["semantic gate returned invalid unresolved phrases"]
     if not isinstance(verdict.get("notes"), str):
         return "gate_error", ["semantic gate returned invalid notes"]
+    trim_only = verdict.get("trim_only", False)
+    if not isinstance(trim_only, bool):
+        return "gate_error", ["semantic gate returned a non-boolean trim_only"]
 
     uncovered = [
         field for field in applicable_coverage(item) if coverage.get(field) is not True
     ]
-    if verdict_value == "PASS" and not inference_required and not uncovered:
-        return "passed", []
+    if not inference_required and not uncovered:
+        if verdict_value == "PASS":
+            return "passed", []
+        # A second rewrite would withhold the finding. A long comment is better
+        # than a lost one. The gate marks a rewrite trim-only when length
+        # is its only reason, which applies only to the concise style.
+        if (
+            final
+            and trim_only
+            and not unresolved
+            and item.get("comment_style", "concise") == "concise"
+        ):
+            notes = text(verdict.get("notes")) or "the gate asked for a shorter body"
+            return "passed", [f"published without the requested trim: {notes}"]
 
     reasons = []
     if uncovered:
@@ -261,12 +276,14 @@ def gate(composed: Any, verdicts: Any, final: bool) -> dict[str, list[dict[str, 
     verdicts_by_id = verdict_map(verdicts)
 
     for item in composed["findings"]:
-        state, reasons = evaluate_verdict(item, verdicts_by_id.get(item.get("id")))
+        state, reasons = evaluate_verdict(
+            item, verdicts_by_id.get(item.get("id")), final
+        )
         result = dict(item)
         if state == "passed":
             result["publishable"] = True
             result["quality_state"] = state
-            result["reasons"] = []
+            result["reasons"] = reasons
             publishable.append(result)
         elif state == "gate_error":
             withheld_findings.append(withheld(result, state, reasons))

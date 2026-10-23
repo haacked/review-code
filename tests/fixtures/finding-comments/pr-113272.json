@@ -1,0 +1,275 @@
+{
+  "source": "https://github.com/PostHog/posthog/pull/113272",
+  "base_sha": "448d802cda683dda6ec4fba42322b1a1a19875f3",
+  "head_sha": "35cd9393503528fb30813e3b5de37a619100c7ad",
+  "comment_style": "concise",
+  "cases": [
+    {
+      "location": "frontend/src/scenes/feature-flags/RulesV2ValueInput.tsx:41",
+      "agent": "frontend",
+      "severity": "suggestion",
+      "confidence": 80,
+      "draft": "`suggestion`: On a boolean flag, a screen reader user editing an experiment rule hears each variant's value as a bare \"true, button\" and \"false, button\", with nothing to say which variant it belongs to. `RulesV2VariantsField` passes `aria-label=\"Variant N value\"` (`RulesV2ExperimentFields.tsx:154`). `RulesV2ValueInput` applies that label only in its string branch. Its boolean branch renders `LemonSegmentedButton` (`RulesV2ValueInput.tsx:41`), which accepts neither `aria-label` nor `id`, so both props are lost.\n\nThe lost `id` has a second effect on boolean flags. The new `htmlFor` on the \"Default value\" label (`FeatureFlagRulesV2Editor.tsx:159`) and on the rule \"Value\" label (`RulesV2RuleEditor.tsx:145`) points at an id that no element has. The editor test checks the variant labels only on a string flag, so it does not catch either problem.\n\n`ScopeAccessGroup.tsx:90` already names a segmented button by wrapping it in a labelled group:\n\n```tsx\nreturn (\n    <div role=\"group\" aria-label={ariaLabel}>\n        <LemonSegmentedButton … />\n    </div>\n)\n```\n\nA `<label for>` cannot name a `div`, so the \"Default value\" and rule \"Value\" callers would also pass `aria-label`.",
+      "before": "`suggestion`: On a boolean flag, each variant's value control has no accessible name, so a screen reader announces \"true\" and \"false\" with nothing saying which variant they belong to. `RulesV2VariantsField` passes `aria-label=\"Variant N value\"`, but this branch renders `LemonSegmentedButton`, which accepts neither `aria-label` nor `id`, so both are dropped. The lost `id` also leaves the `htmlFor` on \"Default value\" ([`FeatureFlagRulesV2Editor.tsx:159`](https://github.com/PostHog/posthog/blob/35cd9393503528fb30813e3b5de37a619100c7ad/frontend/src/scenes/feature-flags/FeatureFlagRulesV2Editor.tsx#L159)) and on the rule \"Value\" ([`RulesV2RuleEditor.tsx:145`](https://github.com/PostHog/posthog/blob/35cd9393503528fb30813e3b5de37a619100c7ad/frontend/src/scenes/feature-flags/RulesV2RuleEditor.tsx#L145)) pointing at no element on boolean flags.\n\nWrapping it in a labelled group, as [`ScopeAccessGroup.tsx:90`](https://github.com/PostHog/posthog/blob/35cd9393503528fb30813e3b5de37a619100c7ad/frontend/src/lib/components/ScopeAccessRow/ScopeAccessGroup.tsx#L90) does, names the variant controls:\n\n```tsx\n<div role=\"group\" aria-label={ariaLabel}>\n    <LemonSegmentedButton … />\n</div>\n```\n\nA `<label for>` can't name a `div`, so the \"Default value\" and \"Value\" callers would pass `aria-label` too. The \"labels every variant input\" test only renders a string flag. A boolean case there would catch this.",
+      "after": "`suggestion`: `LemonSegmentedButton` drops `aria-label` and `id`, so boolean values have no accessible name. Wrap it in a labelled group:\n\n```tsx\n<div role=\"group\" aria-label={ariaLabel}>\n    <LemonSegmentedButton … />\n</div>\n```",
+      "proposed_fix": "Wrap the boolean branch in <div role=\"group\" aria-label={ariaLabel}> (pattern from frontend/src/lib/components/ScopeAccessRow/ScopeAccessGroup.tsx:90). Pass aria-label=\"Default value\" and aria-label=\"Value\" from FeatureFlagRulesV2Editor.tsx:159 and RulesV2RuleEditor.tsx:145. Add a boolean experiment fixture to the \"labels every variant input\" test asserting screen.getByRole('group', { name: 'Variant 1 value' }).",
+      "facts": {
+        "problem": "Boolean variant value controls, the boolean default value and the boolean rule value have no accessible name.",
+        "trigger": "Editing an experiment rule (or the default value / rule value) on a boolean flag with a screen reader.",
+        "mechanism": [
+          "RulesV2VariantsField passes aria-label=\"Variant N value\" and the default/rule value fields pass id to RulesV2ValueInput.",
+          "RulesV2ValueInput applies id and aria-label only in its string branch (LemonInput).",
+          "The boolean branch renders LemonSegmentedButton, whose props (LemonSegmentedButton.tsx:21-29) include neither aria-label nor id, so both are dropped.",
+          "LemonField.Pure htmlFor on 'Default value' (FeatureFlagRulesV2Editor.tsx:159) and rule 'Value' (RulesV2RuleEditor.tsx:145) points at an id no element has."
+        ],
+        "result": "A screen reader announces bare 'true'/'false' buttons with no indication of which variant or field they belong to.",
+        "requested_change": "Wrap the segmented button in a div with role=group and aria-label, and pass aria-label from the Default value and rule Value callers.",
+        "regression_case": "Add a boolean flag case to the 'labels every variant input' test.",
+        "regression_rationale": null
+      }
+    },
+    {
+      "location": "frontend/src/scenes/feature-flags/RulesV2ExperimentFields.tsx:133",
+      "agent": "frontend",
+      "severity": "suggestion",
+      "confidence": 75,
+      "draft": "`suggestion`: A keyboard user who presses \"Move up\" twice on a variant ends up back where they started. The variant rows are keyed by their index (`frontend/src/scenes/feature-flags/RulesV2ExperimentFields.tsx:133`), so after a move React keeps the same button element in the same row position. Focus stays on that position, which now holds the neighbouring variant. The second press moves the neighbour back.\n\nThe rule cards in this editor avoid this on purpose. `ruleKeys` keeps one key per rule (`featureFlagRulesV2EditorLogic.ts:119`), and `FeatureFlagRulesV2Editor.test.tsx:128` checks that focus follows a moved rule. The comment at `RulesV2ExperimentFields.tsx:132` covers row state but not focus. A row key held in local state gives the variant rows the same behaviour:\n\n```tsx\nlet lastVariantRowKey = 0\nconst nextVariantRowKey = (): number => ++lastVariantRowKey\n\n// in RulesV2VariantsField\nconst [rowKeys, setRowKeys] = useState(() => variants.map(nextVariantRowKey))\nconst moveVariant = (from: number, to: number): void => {\n    setVariants(moved(variants, from, to))\n    setRowKeys(moved(rowKeys, from, to))\n}\nconst removeVariant = (at: number): void => {\n    setVariants(variants.filter((_, i) => i !== at))\n    setRowKeys(rowKeys.filter((_, i) => i !== at))\n}\nconst addVariant = (): void => {\n    setVariants([...variants, newVariant(returnType, variants.length)])\n    setRowKeys([...rowKeys, nextVariantRowKey()])\n}\n// on the row: key={rowKeys[variantIndex] ?? `row-${variantIndex}`}\n```\n\nA copy of the rule-card focus test that clicks `rules-v2-move-variant-down` would fail before this change and pass after it.",
+      "before": "`suggestion`: Keyboard focus does not follow a moved variant. The variant rows use `key={variantIndex}`, so after a move React keeps each row's DOM elements at the same index. Pressing \"Move up\" twice on C in [A, B, C] first gives [A, C, B]. Focus stays on the third row's button, which now renders B, so the second press moves B back and the order returns to [A, B, C].\n\nConsider keeping stable row keys in `useState` and updating them in the add, move and remove handlers, as `ruleKeys` does for rule cards. These keys would replace `key={variantIndex}` and its \"Rows hold no state of their own\" comment:\n\n```tsx\nlet lastVariantRowKey = 0\nconst nextVariantRowKey = (): number => ++lastVariantRowKey\n\nconst [rowKeys, setRowKeys] = useState(() => variants.map(nextVariantRowKey))\n// move: setVariants(moved(variants, from, to)); setRowKeys(moved(rowKeys, from, to))\n// remove: filter both arrays by index\n// add: append nextVariantRowKey()\n// row: key={rowKeys[variantIndex] ?? `row-${variantIndex}`}\n```\n\nA focus test like the one at [`FeatureFlagRulesV2Editor.test.tsx:128`](https://github.com/PostHog/posthog/blob/35cd9393503528fb30813e3b5de37a619100c7ad/frontend/src/scenes/feature-flags/FeatureFlagRulesV2Editor.test.tsx#L128), but moving a variant instead of a rule, would check that focus follows the variant.",
+      "after": "`suggestion`: With index keys, focus stays on the row position after a move, so pressing \"Move up\" twice moves two different variants. Use stable row keys, as `ruleKeys` does for rule cards.",
+      "proposed_fix": "let lastVariantRowKey = 0\nconst nextVariantRowKey = (): number => ++lastVariantRowKey\n\nconst [rowKeys, setRowKeys] = useState(() => variants.map(nextVariantRowKey))\n// move: setVariants(moved(variants, from, to)); setRowKeys(moved(rowKeys, from, to))\n// remove: filter both arrays by index\n// add: append nextVariantRowKey()\n// row: key={rowKeys[variantIndex] ?? `row-${variantIndex}`}\n\nAdd a copy of the rule-card focus test that clicks rules-v2-move-variant-down and asserts focus follows the variant.",
+      "facts": {
+        "problem": "Keyboard focus does not follow a variant when it is moved, so repeated moves act on different variants.",
+        "trigger": "A keyboard user presses 'Move up' twice on the third variant of [A, B, C].",
+        "mechanism": [
+          "Variant rows use key={variantIndex} (RulesV2ExperimentFields.tsx:133).",
+          "Moving a variant reorders the array but React keeps the same DOM elements at each index.",
+          "The focused Move up button stays in row 3, which now renders variant B."
+        ],
+        "result": "The first press gives [A, C, B]; the second press moves B back, giving [A, B, C].",
+        "requested_change": "Keep stable per-variant row keys in useState and update them in the add, move and remove handlers, as ruleKeys does for rule cards; correct or remove the 'Rows hold no state' comment.",
+        "regression_case": "A focus test like FeatureFlagRulesV2Editor.test.tsx:128 that moves a variant and checks focus follows it.",
+        "regression_rationale": null
+      }
+    },
+    {
+      "location": "frontend/src/scenes/feature-flags/featureFlagRulesV2Draft.ts:63",
+      "agent": "testing",
+      "severity": "suggestion",
+      "confidence": 80,
+      "draft": "`suggestion`: Nothing tests that editing a variant's key leaves its value alone when the value differs from the key. The only test that edits a key through the editor does it on a new variant whose key and value are both empty, so it only takes the branch where the value follows the key. If the `variant.value === variant.key` check in `withVariantKey` (`featureFlagRulesV2Draft.ts:63`) were dropped, renaming `control`, which serves `standard`, would silently change the value it serves, and every test would still pass. `adds, moves and removes variants and distributes their weights` already renders that `control`/`standard` variant.",
+      "before": "`suggestion`: No test checks that renaming a string variant keeps a value that differs from its key. The only key edit in the editor tests is on a new variant whose key and value are both empty. If the `variant.value === variant.key` check were dropped, renaming `control` (which serves `standard`) would also rewrite its value, and every test would still pass.\n\nConsider adding these two lines to a test in the `an experiment rule` block of `FeatureFlagRulesV2Editor.test.tsx`, where the flag's first variant is `control` with the value `standard`:\n\n```ts\nfireEvent.change(screen.getByLabelText('Variant 1 key'), { target: { value: 'baseline' } })\nexpect(screen.getByLabelText('Variant 1 value')).toHaveValue('standard')\n```",
+      "after": "`suggestion`: No test covers renaming a variant whose value differs from its key. In the `control`/`standard` editor test:\n\n```ts\nfireEvent.change(screen.getByLabelText('Variant 1 key'), { target: { value: 'baseline' } })\nexpect(screen.getByLabelText('Variant 1 value')).toHaveValue('standard')\n```",
+      "proposed_fix": null,
+      "facts": {
+        "problem": "The branch of withVariantKey that keeps a value which differs from its key is untested.",
+        "trigger": "Renaming a string variant whose value differs from its key, such as control serving standard.",
+        "mechanism": [
+          "withVariantKey rewrites the value only when returnType is string and variant.value === variant.key.",
+          "The only editor test that edits a key does it on a new variant with an empty key and empty value, so it only takes the follows-key branch."
+        ],
+        "result": "Dropping the equality check would silently change the value a renamed variant serves without any test failing.",
+        "requested_change": "Add an assertion that renaming 'control' keeps its 'standard' value.",
+        "regression_case": "Edit Variant 1 key to 'baseline' in the existing control/standard fixture and expect Variant 1 value to stay 'standard'.",
+        "regression_rationale": null
+      }
+    },
+    {
+      "location": "frontend/src/scenes/feature-flags/RulesV2ValueInput.tsx:31",
+      "agent": "testing",
+      "severity": "suggestion",
+      "confidence": 75,
+      "draft": "`suggestion`: Nothing tests that clearing a string flag's default value stores `null`. `RulesV2ValueInput` turns an empty input into `null` only when `nullable` is set (`RulesV2ValueInput.tsx:31`), and no test types into the default value input. The client draft checks don't look at `default_value`, and the server rejects an empty string there (`config_validation.py:275-283`). If that mapping broke, a user who cleared the default on a string flag could not save the flag.",
+      "before": "`suggestion`: Nothing tests that clearing a string flag's default value stores `null`. The client draft checks skip `default_value`, and the server rejects `\"\"` there. If this mapping broke, a user who cleared the default on a string flag couldn't save.\n\nA test that types into \"Default value\", clears it, and asserts `draft.config.default_value` is `null` covers it (the first change is needed because React fires no change event for an already empty input):\n\n```ts\nfireEvent.change(screen.getByLabelText('Default value'), { target: { value: 'compact' } })\nfireEvent.change(screen.getByLabelText('Default value'), { target: { value: '' } })\nexpect(featureFlagRulesV2EditorLogic({ id: 9 }).values.draft.config.default_value).toBeNull()\n```",
+      "after": "`suggestion`: No test covers clearing a string default to `null`. The server rejects `\"\"`, so a break here would block saving.",
+      "proposed_fix": null,
+      "facts": {
+        "problem": "The mapping from an empty nullable string input to null is untested.",
+        "trigger": "A user clears the default value on a string flag.",
+        "mechanism": [
+          "RulesV2ValueInput maps '' to null only when nullable is set.",
+          "No test types into the Default value input.",
+          "Client draft checks do not validate default_value; the server rejects '' for default_value (config_validation.py:275-283)."
+        ],
+        "result": "A regression here would block saving a string flag whose default was cleared, with no test failing.",
+        "requested_change": "Add a test that sets and then clears the Default value and expects default_value to be null.",
+        "regression_case": "Type 'compact' then '' into Default value and assert draft.config.default_value is null.",
+        "regression_rationale": null
+      }
+    },
+    {
+      "location": "frontend/src/scenes/feature-flags/featureFlagRulesV2EditorLogic.test.ts:181",
+      "agent": "testing",
+      "severity": "suggestion",
+      "confidence": 70,
+      "draft": "`suggestion`: Nothing checks the variant values a new experiment rule starts with on a boolean flag (control `false`, test `true`). `sends a new experiment rule and a new holdout with only the fields the server accepts` builds one on a boolean flag but asserts only its key names. If `initialVariantValue` (`featureFlagRulesV2Draft.ts:34-36`) gave both variants the same value, a new boolean experiment would serve `true` to control and test alike, and neither the client checks nor the server would object. (The `rules.map` in `withReturnType` at `featureFlagRulesV2Draft.ts:86-96` has no coverage either: the only `setReturnType` call in the tests runs before any rule exists.)",
+      "before": "`suggestion`: This test builds a boolean experiment rule but only checks its key names, so the starting values (control `false`, test `true`) aren't asserted. If `initialVariantValue` gave both variants the same value, a new boolean experiment would serve the same value to both arms, and neither the client checks nor the server would object.\n\n```ts\nexpect(sent.variants).toEqual([\n    { key: 'control', weight: 50, value: false },\n    { key: 'test', weight: 50, value: true },\n])\n```",
+      "after": "`suggestion`: Assert the starting values too, so both arms can't end up serving the same value:\n\n```ts\nexpect(sent.variants).toEqual([\n    { key: 'control', weight: 50, value: false },\n    { key: 'test', weight: 50, value: true },\n])\n```",
+      "proposed_fix": null,
+      "facts": {
+        "problem": "The initial variant values of a new boolean experiment rule are not asserted.",
+        "trigger": "A user adds an experiment rule on a boolean flag.",
+        "mechanism": [
+          "initialVariantValue returns index > 0 for boolean flags, giving control false and test true.",
+          "The test 'sends a new experiment rule and a new holdout...' only asserts Object.keys(sent) and sent.holdout."
+        ],
+        "result": "A regression giving both arms the same value would ship unnoticed, since no client or server check rejects it.",
+        "requested_change": "Assert sent.variants equals control false / test true with weight 50 each.",
+        "regression_case": "expect(sent.variants).toEqual([...]) after the existing key assertion.",
+        "regression_rationale": null
+      }
+    },
+    {
+      "location": "products/feature_flags/frontend/featureFlagConfigFormat.ts:135",
+      "agent": "testing",
+      "severity": "suggestion",
+      "confidence": 60,
+      "draft": "`suggestion`: No jest test runs the targeted release and percentage rollout branch of `isRulesV2EditableRule` (`featureFlagConfigFormat.ts:133-135`), which decides whether a flag with those rules opens the editor. Every row in the new table in `featureFlagConfigFormat.test.ts` builds an experiment rule, and the `featureFlagLogic` cases use flags with no rules or only an experiment rule. If that branch accepted only booleans, as the old check did, every string flag with a targeted release or rollout would open read-only, and only a Storybook snapshot diff would show it. A row with a string-valued targeted release in that table covers it.",
+      "before": "`suggestion`: No jest test checks that a string flag with a targeted release or percentage rollout rule opens the rules v2 editor. Every row in the `decides whether a flag with %s opens the editor` table builds an experiment rule, and the `featureFlagLogic` `editorKind` tests use no rules or only an experiment rule. None of them reach the `targeted_release` and `percentage_rollout` case of `isRulesV2EditableRule` with a string value. If that case regressed to accept only booleans, those flags would open read-only, and only a Storybook snapshot diff would show it.\n\nConsider adding one row to that table:\n\n```ts\n['a string targeted release', stringFlag({ rule_type: 'targeted_release', value: 'compact' }), true],\n```",
+      "after": "`suggestion`: No test covers this branch with a string value. One row in the editability table would:\n\n```ts\n['a string targeted release', stringFlag({ rule_type: 'targeted_release', value: 'compact' }), true],\n```",
+      "proposed_fix": null,
+      "facts": {
+        "problem": "The targeted release / percentage rollout branch of isRulesV2EditableRule has no jest coverage for string values.",
+        "trigger": "Opening a string flag whose rules include a targeted release or percentage rollout.",
+        "mechanism": [
+          "isRulesV2EditableRule checks isRulesV2Value(rule.value, returnType) for targeted_release and percentage_rollout.",
+          "All rows in the 'decides whether a flag with %s opens the editor' table build experiment rules; featureFlagLogic cases use no rules or only an experiment rule."
+        ],
+        "result": "A regression that rejected string values here would make those flags read-only, caught only by a visual snapshot diff.",
+        "requested_change": "Add a string targeted release row to the editability table.",
+        "regression_case": "['a string targeted release', stringFlag({ rule_type: 'targeted_release', value: 'compact' }), true]",
+        "regression_rationale": null
+      }
+    },
+    {
+      "location": "frontend/src/scenes/feature-flags/featureFlagRulesV2Draft.ts:38",
+      "agent": "architecture",
+      "severity": "suggestion",
+      "confidence": 50,
+      "draft": "`suggestion`: The defaults for a new experiment rule now live in two files. `NEW_EXPERIMENT_ROLLOUT_FIELDS` (100% rollout, continue on miss, `sha1_60_v1`, person) is defined at `featureFlagRulesV2EditorLogic.ts:110-117`. `newExperimentFields` (not paused, `control`/`test` at 50/50) is defined at `featureFlagRulesV2Draft.ts:38-49`. The split exists because the draft module cannot import from the logic, which already imports the draft module. `withRuleType` (`featureFlagRulesV2EditorLogic.ts:128-161`) is the only caller of `newExperimentFields`, and this PR rewrites almost all of its body.\n\nMove `withRuleType`, `NEW_TARGETED_RELEASE_RULE` and the two rollout-field constants into `featureFlagRulesV2Draft.ts`, next to `withReturnType` and `withVariantKey`. Then put the `paused` and `variants` defaults directly in the experiment case and delete `newExperimentFields` and its partial `Pick` return type. After the move, the logic file holds only kea code, and one file shows what every new rule looks like.",
+      "before": "`suggestion`: A reader has to check two files to see what a new experiment rule contains: its rollout defaults are `NEW_EXPERIMENT_ROLLOUT_FIELDS` in `featureFlagRulesV2EditorLogic.ts`, and its `paused` and variant defaults are `newExperimentFields` here. They are split because the logic imports this module. This module cannot import the logic without a cycle.\n\nConsider moving `withRuleType`, `NEW_TARGETED_RELEASE_RULE`, `NEW_ROLLOUT_FIELDS` and `NEW_EXPERIMENT_ROLLOUT_FIELDS` into this file. The `experiment` branch of `withRuleType` could then set `paused` and the `control`/`test` variants inline. `newExperimentFields`, whose only caller is `withRuleType`, could be deleted.",
+      "after": "`suggestion`: New experiment defaults are split between this and `NEW_EXPERIMENT_ROLLOUT_FIELDS` in the logic. Move `withRuleType` and the new-rule constants here and drop `newExperimentFields`.",
+      "proposed_fix": "Move withRuleType, NEW_TARGETED_RELEASE_RULE, NEW_ROLLOUT_FIELDS and NEW_EXPERIMENT_ROLLOUT_FIELDS into featureFlagRulesV2Draft.ts. Inline paused: false and the control/test variants in the experiment case. Delete newExperimentFields. Update imports in featureFlagRulesV2EditorLogic.ts, RulesV2RuleEditor.tsx and featureFlagRulesV2EditorLogic.test.ts.",
+      "facts": {
+        "problem": "New experiment rule defaults are defined in two files.",
+        "trigger": null,
+        "mechanism": [
+          "NEW_EXPERIMENT_ROLLOUT_FIELDS lives in featureFlagRulesV2EditorLogic.ts; newExperimentFields lives in featureFlagRulesV2Draft.ts.",
+          "The draft module cannot import from the logic, which imports the draft module, so the defaults were split.",
+          "withRuleType is the only production caller of newExperimentFields."
+        ],
+        "result": "A reader has to look in two files to see what a new experiment rule contains.",
+        "requested_change": "Move withRuleType and the new-rule constants into featureFlagRulesV2Draft.ts and delete newExperimentFields.",
+        "regression_case": null,
+        "regression_rationale": "Pure code move; existing withRuleType tests cover behaviour."
+      }
+    },
+    {
+      "location": "frontend/src/scenes/feature-flags/featureFlagRulesV2Draft.ts:74",
+      "agent": "maintainability",
+      "severity": "nit",
+      "confidence": 60,
+      "draft": "`nit`: The doc comment on `withReturnType` at `featureFlagRulesV2Draft.ts:74` only mentions variant values (\"Every variant value follows the new return type\"). The function also replaces the default value (line 85) and the value of every targeted release and percentage rollout rule (line 95).\n\n\"Follows\" also suggests the old values are converted to the new type. In fact they are thrown away and replaced with the new type's starting value. For example, switching to string sets each variant's value to its key, so a `test` variant whose value was `true` becomes `\"test\"`, not `\"true\"`.\n\nSuggested wording: \"Replaces the default value, every rule value and every variant value with the new type's starting value. The return type only changes before the flag is created.\"",
+      "before": "`nit`: The `withReturnType` doc comment mentions only variant values, but the function replaces `default_value`, every targeted release and percentage rollout value, and every variant value with the new type's starting value instead of converting them (a `test` variant whose value was `true` becomes `\"test\"`). Perhaps reword it to say it replaces the default, rule and variant values with the new type's starting values.",
+      "after": "`nit`: This also resets `default_value` and rule values, and it replaces them rather than converting them:\n\n```suggestion\n/**\n * Resets the default, rule and variant values to the new type's starting values.\n * A type change only happens before the flag is created.\n */\n```",
+      "proposed_fix": null,
+      "facts": {
+        "problem": "The withReturnType doc comment describes less than the function does.",
+        "trigger": null,
+        "mechanism": [
+          "withReturnType sets default_value to rulesV2InitialDefault, every non-experiment rule value to rulesV2InitialValue, and every variant value to initialVariantValue.",
+          "The comment says only 'Every variant value follows the new return type'."
+        ],
+        "result": "A reader may expect values to be converted and may not expect the default and rule values to be reset.",
+        "requested_change": "Reword the doc comment to say it replaces the default, rule and variant values with the new type's starting values.",
+        "regression_case": null,
+        "regression_rationale": null
+      }
+    },
+    {
+      "location": "frontend/src/scenes/feature-flags/RulesV2ValueInput.tsx:5",
+      "agent": "architecture",
+      "severity": "nit",
+      "confidence": 60,
+      "draft": "`nit`: After this change, `BOOLEAN_OPTIONS` (`featureFlagRulesV2EditorLogic.ts:98-101`) has one consumer, `RulesV2ValueInput.tsx:45`, which imports the editor's kea logic module only for this constant. Move the constant into `RulesV2ValueInput.tsx` and drop the export.",
+      "before": "`nit`: `BOOLEAN_OPTIONS` now has one consumer, this file, which imports the editor's kea logic only to get it. Moving the constant here and dropping the export from `featureFlagRulesV2EditorLogic.ts` keeps it next to the only input that renders it.",
+      "after": "`nit`: This is now the only consumer of `BOOLEAN_OPTIONS`, so move it here from the logic.",
+      "proposed_fix": null,
+      "facts": {
+        "problem": "BOOLEAN_OPTIONS is exported from the kea logic but used only by RulesV2ValueInput.",
+        "trigger": null,
+        "mechanism": [
+          "This PR removed the other imports of BOOLEAN_OPTIONS from FeatureFlagRulesV2Editor.tsx and RulesV2RuleEditor.tsx."
+        ],
+        "result": "RulesV2ValueInput imports the editor logic module only for a constant.",
+        "requested_change": "Move BOOLEAN_OPTIONS into RulesV2ValueInput.tsx and drop the export.",
+        "regression_case": null,
+        "regression_rationale": null
+      }
+    },
+    {
+      "location": "frontend/src/scenes/feature-flags/FeatureFlagRulesV2Editor.tsx:23",
+      "agent": "architecture",
+      "severity": "nit",
+      "confidence": 55,
+      "draft": "`nit`: `RULES_V2_EDITABLE_RETURN_TYPES` (`featureFlagConfigFormat.ts:118`) is exported, but nothing imports it, and `RETURN_TYPE_OPTIONS` (`FeatureFlagRulesV2Editor.tsx:23-26`) lists the same two types by hand. Build the options from the shared list with `capitalizeFirstLetter`, as the read-only page does for its return-type label (`FeatureFlagRulesV2Readonly.tsx:120`), so the types a new flag can choose and the types the editor opens come from one list.",
+      "before": "`nit`: This repeats the two types in `RULES_V2_EDITABLE_RETURN_TYPES` ([`featureFlagConfigFormat.ts:118`](https://github.com/PostHog/posthog/blob/35cd9393503528fb30813e3b5de37a619100c7ad/products/feature_flags/frontend/featureFlagConfigFormat.ts#L118)), which is exported but not imported anywhere. Consider building the options from it, which keeps the types a new flag can pick and the types the editor opens in one list:\n\n```ts\nconst RETURN_TYPE_OPTIONS = RULES_V2_EDITABLE_RETURN_TYPES.map((value) => ({\n    value,\n    label: capitalizeFirstLetter(value),\n}))\n```",
+      "after": "`nit`: Build this from `RULES_V2_EDITABLE_RETURN_TYPES` so the two lists can't drift.",
+      "proposed_fix": null,
+      "facts": {
+        "problem": "The editable return types are listed twice.",
+        "trigger": null,
+        "mechanism": [
+          "RULES_V2_EDITABLE_RETURN_TYPES in featureFlagConfigFormat.ts is exported and used only within that file.",
+          "RETURN_TYPE_OPTIONS lists boolean and string by hand."
+        ],
+        "result": "Adding an editable return type requires updating two lists.",
+        "requested_change": "Build RETURN_TYPE_OPTIONS from RULES_V2_EDITABLE_RETURN_TYPES with capitalizeFirstLetter from lib/utils/strings.",
+        "regression_case": null,
+        "regression_rationale": null
+      }
+    },
+    {
+      "location": "frontend/src/types.ts:4536",
+      "agent": "architecture",
+      "severity": "nit",
+      "confidence": 45,
+      "draft": "`nit`: `FeatureFlagRulesV2Holdout.seed` is now optional on the stored type (`types.ts:4536-4539`), although the contract schema requires a seed on every stored holdout. The draft union at `types.ts:4572-4575` already makes the server-assigned `id` and `seed` optional only on the draft, so give the draft experiment rule a holdout type with `seed?: string` and keep `seed: string` on the stored one.",
+      "before": "`nit`: Making `seed` optional on `FeatureFlagRulesV2Holdout` means the stored holdout type no longer matches the contract schema, which requires a seed on every stored holdout. `FeatureFlagRulesV2DraftRule` already handles the rule-level `id` and `seed` this way: both stay required on the stored rule types and become optional only on the draft.\n\nConsider keeping `seed: string` on `FeatureFlagRulesV2Holdout` and adding a `FeatureFlagRulesV2DraftHoldout` type with `seed?: string`. The draft experiment rule's `holdout` and `NEW_HOLDOUT` would then use the draft type.",
+      "after": "`nit`: The schema requires `seed` on stored holdouts. Keep it required here and make it optional only on the draft type, as with rule `id` and `seed`.",
+      "proposed_fix": "export interface FeatureFlagRulesV2Holdout { seed: string; exclusion_percentage: number }\nexport type FeatureFlagRulesV2DraftHoldout = Omit<FeatureFlagRulesV2Holdout, 'seed'> & { seed?: string }\nand use holdout?: FeatureFlagRulesV2DraftHoldout in the draft experiment rule; type NEW_HOLDOUT as FeatureFlagRulesV2DraftHoldout.",
+      "facts": {
+        "problem": "The stored holdout type marks seed optional although stored holdouts always have one.",
+        "trigger": null,
+        "mechanism": [
+          "config.schema.json:365-370 lists seed as required on holdout.",
+          "FeatureFlagRulesV2DraftRule already makes rule id and seed optional only on the draft."
+        ],
+        "result": "The stored type no longer reflects the contract, unlike the rule-level seed.",
+        "requested_change": "Keep seed required on FeatureFlagRulesV2Holdout and add a draft holdout type with an optional seed.",
+        "regression_case": null,
+        "regression_rationale": null
+      }
+    },
+    {
+      "location": "frontend/src/scenes/feature-flags/RulesV2ExperimentFields.tsx:32",
+      "agent": "maintainability",
+      "severity": "nit",
+      "confidence": 50,
+      "draft": "`nit`: At its call site (`RulesV2RuleEditor.tsx:113`), the name `RulesV2ExperimentGuards` does not say that it renders the Paused switch and the holdout fields, and the flags code does not use \"guard\" for either. Renaming it `RulesV2PauseAndHoldoutFields` matches its sibling `RulesV2VariantsField` and the file name `RulesV2ExperimentFields.tsx`.",
+      "before": "`nit`: `RulesV2ExperimentGuards` doesn't say that it renders the Paused switch and the holdout fields, and nothing else in the flags code calls those \"guards\". Something like `RulesV2PauseAndHoldoutFields` would match `RulesV2VariantsField` next to it.",
+      "after": "`nit`: \"Guards\" doesn't say what this renders. `RulesV2PauseAndHoldoutFields` would.",
+      "proposed_fix": null,
+      "facts": {
+        "problem": "The component name RulesV2ExperimentGuards does not describe what it renders.",
+        "trigger": null,
+        "mechanism": [
+          "The component renders the Paused switch and holdout fields; 'guard' is not used for either elsewhere in the flags code."
+        ],
+        "result": "At the call site in RulesV2RuleEditor.tsx a reader cannot tell what the component shows.",
+        "requested_change": "Rename to RulesV2PauseAndHoldoutFields (or similar).",
+        "regression_case": null,
+        "regression_rationale": null
+      }
+    }
+  ]
+}

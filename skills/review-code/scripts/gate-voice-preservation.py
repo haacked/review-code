@@ -25,6 +25,10 @@ PREFIX = re.compile(rf"^(?:`{SEVERITY}`|\*\*{SEVERITY}\*\*|{SEVERITY}):", re.IGN
 INLINE_CODE = re.compile(r"(?<!`)(`+)(?!`)(.+?)(?<!`)\1(?!`)", re.DOTALL)
 
 
+# A concise body is already short, so a voice rewrite may only split sentences.
+CONCISE_GROWTH_LIMIT = 1.25
+
+
 def read_array(path: str, *, fenced: bool = False) -> list:
     raw = Path(path).read_text(encoding="utf-8").strip()
     if fenced:
@@ -73,7 +77,7 @@ def markdown_parts(body: str) -> tuple[list[str], Counter[str]]:
 
 
 def field_failures(
-    original: str | None, candidate: str | None, field: str
+    original: str | None, candidate: str | None, field: str, limit: float = 2
 ) -> list[str]:
     if original is None:
         return [] if candidate is None else [f"{field}: null must stay null"]
@@ -88,8 +92,8 @@ def field_failures(
         reasons.append(
             f"{field}: missing backtick spans: {', '.join(sorted(tokens - new_tokens))}"
         )
-    if len(re.sub(r"\s", "", candidate)) > 2 * len(re.sub(r"\s", "", original)):
-        reasons.append(f"{field}: exceeds twofold growth limit")
+    if len(re.sub(r"\s", "", candidate)) > limit * len(re.sub(r"\s", "", original)):
+        reasons.append(f"{field}: exceeds the {limit:g}x growth limit")
     return reasons
 
 
@@ -100,7 +104,15 @@ def rewrite_failures(original: dict, candidate: dict, verdicts: list) -> list[st
     if not prefix or not rewritten_prefix or prefix[0] != rewritten_prefix[0]:
         reasons.append("description: severity prefix changed")
     for field in FIELDS:
-        reasons.extend(field_failures(original.get(field), candidate[field], field))
+        limit = (
+            CONCISE_GROWTH_LIMIT
+            if field == "description"
+            and original.get("comment_style", "concise") == "concise"
+            else 2
+        )
+        reasons.extend(
+            field_failures(original.get(field), candidate[field], field, limit)
+        )
     if len(verdicts) != 1:
         reasons.append("missing or duplicate preservation verdict")
     else:

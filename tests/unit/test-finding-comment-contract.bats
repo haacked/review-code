@@ -333,6 +333,92 @@ write_verdict() {
     [ "$(echo "$output" | jq -r '.withheld[0].description')" = "$(jq -r '.bad_description' "$FIXTURE")" ]
 }
 
+trim_only_verdict() {
+    write_verdict REWRITE false true false
+    jq '.[0].trim_only = true | .[0].notes = "Cut the second statement of the consequence."' "$VERDICTS" > "$BATS_TEST_TMPDIR/trim.json"
+    mv "$BATS_TEST_TMPDIR/trim.json" "$VERDICTS"
+}
+
+@test "finding contract: a final trim-only rewrite of a concise body publishes and keeps the trim notes" {
+    desired=$(jq -c '.desired_description' "$FIXTURE")
+    write_finding "$desired"
+    "$CONTRACT" compose "$INPUT" > "$COMPOSED"
+    trim_only_verdict
+
+    run "$CONTRACT" gate --final "$COMPOSED" "$VERDICTS"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.findings | length')" -eq 1 ]
+    [ "$(echo "$output" | jq -r '.findings[0].publishable')" = "true" ]
+    [ "$(echo "$output" | jq -r '.findings[0].description')" = "$(jq -r '.desired_description' "$FIXTURE")" ]
+    echo "$output" | jq -e '.findings[0].reasons | any(contains("Cut the second statement of the consequence."))'
+}
+
+@test "finding contract: a trim-only rewrite before the final pass still asks for a repair" {
+    desired=$(jq -c '.desired_description' "$FIXTURE")
+    write_finding "$desired"
+    "$CONTRACT" compose "$INPUT" > "$COMPOSED"
+    trim_only_verdict
+
+    run "$CONTRACT" gate "$COMPOSED" "$VERDICTS"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.findings | length')" -eq 0 ]
+    [ "$(echo "$output" | jq '.rewrites_needed | length')" -eq 1 ]
+}
+
+@test "finding contract: trim-only cannot publish a body that misses required coverage, needs inference, or leaves a phrase unresolved" {
+    desired=$(jq -c '.desired_description' "$FIXTURE")
+    for change in '.[0].coverage.requested_change = false' '.[0].coverage.problem = false' '.[0].inference_required = true' '.[0].unresolved = [{phrase: "loops on it", stands_for: "what the worker loops on"}]'; do
+        write_finding "$desired"
+        "$CONTRACT" compose "$INPUT" > "$COMPOSED"
+        trim_only_verdict
+        jq "$change" "$VERDICTS" > "$BATS_TEST_TMPDIR/changed.json"
+
+        run "$CONTRACT" gate --final "$COMPOSED" "$BATS_TEST_TMPDIR/changed.json"
+
+        [ "$status" -eq 0 ]
+        [ "$(echo "$output" | jq '.findings | length')" -eq 0 ]
+        [ "$(echo "$output" | jq -r '.withheld[0].quality_state')" = "rewrite_failed" ]
+    done
+}
+
+@test "finding contract: trim-only does not apply to detailed bodies" {
+    desired=$(jq -c '.desired_description' "$FIXTURE")
+    write_finding "$desired"
+    jq '.[0].comment_style = "detailed"' "$INPUT" > "$BATS_TEST_TMPDIR/detailed.json"
+    "$CONTRACT" compose "$BATS_TEST_TMPDIR/detailed.json" > "$COMPOSED"
+    trim_only_verdict
+    jq '.[0].coverage.mechanism = true' "$VERDICTS" > "$BATS_TEST_TMPDIR/complete.json"
+
+    run "$CONTRACT" gate --final "$COMPOSED" "$BATS_TEST_TMPDIR/complete.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.findings | length')" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.withheld[0].quality_state')" = "rewrite_failed" ]
+}
+
+@test "finding contract: a non-boolean trim_only is malformed, and a PASS ignores it" {
+    desired=$(jq -c '.desired_description' "$FIXTURE")
+    write_finding "$desired"
+    "$CONTRACT" compose "$INPUT" > "$COMPOSED"
+    trim_only_verdict
+    jq '.[0].trim_only = "yes"' "$VERDICTS" > "$BATS_TEST_TMPDIR/malformed.json"
+    jq '.[0].verdict = "PASS" | .[0].notes = ""' "$VERDICTS" > "$BATS_TEST_TMPDIR/pass.json"
+
+    run "$CONTRACT" gate --final "$COMPOSED" "$BATS_TEST_TMPDIR/malformed.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.findings | length')" -eq 0 ]
+    [ "$(echo "$output" | jq -r '.withheld[0].quality_state')" = "gate_error" ]
+
+    run "$CONTRACT" gate --final "$COMPOSED" "$BATS_TEST_TMPDIR/pass.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.findings | length')" -eq 1 ]
+    [ "$(echo "$output" | jq -c '.findings[0].reasons')" = "[]" ]
+}
+
 @test "finding contract: detailed PASS cannot override missing causal coverage" {
     desired=$(jq -c '.desired_description' "$FIXTURE")
     write_finding "$desired"
@@ -802,48 +888,50 @@ EOF
 }
 
 @test "finding contract: accepted PR comments survive composition gate and publication unchanged" {
-    local accepted="$PROJECT_ROOT/tests/fixtures/finding-comments/pr-93773.json"
+    local accepted
     local gated="$BATS_TEST_TMPDIR/gated.json"
-    for style in concise detailed; do
-        jq --arg style "$style" '.cases | to_entries | map(
-            .value as $case | ($case.after | split("\n\n")) as $paragraphs | {
-                id: .key,
-                comment_style: $style,
-                severity: $case.severity,
-                location: $case.location,
-                file: ($case.location | split(":")[0]),
-                line: ($case.location | capture(":(?<line>[0-9]+)").line | tonumber),
-                description: $case.after,
-                proposed_fix: $case.before,
-                facts: {
-                    problem: $paragraphs[0],
-                    trigger: null,
-                    mechanism: [$case.before],
-                    result: $paragraphs[0],
-                    requested_change: $case.after,
-                    regression_case: (if $case.severity == "blocking" then $case.after else null end),
-                    regression_rationale: null
+    for accepted in "$PROJECT_ROOT"/tests/fixtures/finding-comments/pr-{93773,113272}.json; do
+        for style in concise detailed; do
+            jq --arg style "$style" '.cases | to_entries | map(
+                .value as $case | ($case.after | split("\n\n")) as $paragraphs | {
+                    id: .key,
+                    comment_style: $style,
+                    severity: $case.severity,
+                    location: $case.location,
+                    file: ($case.location | split(":")[0]),
+                    line: ($case.location | capture(":(?<line>[0-9]+)").line | tonumber),
+                    description: $case.after,
+                    proposed_fix: $case.before,
+                    facts: {
+                        problem: $paragraphs[0],
+                        trigger: null,
+                        mechanism: [$case.before],
+                        result: $paragraphs[0],
+                        requested_change: $case.after,
+                        regression_case: (if $case.severity == "blocking" then $case.after else null end),
+                        regression_rationale: null
+                    }
                 }
-            }
-        )' "$accepted" > "$INPUT"
-        "$CONTRACT" compose "$INPUT" > "$COMPOSED"
-        jq 'map({
-            id: .id,
-            coverage: {problem: true, trigger: true, mechanism: true, result: true, requested_change: true, regression_case: true},
-            inference_required: false,
-            unresolved: [],
-            verdict: "PASS",
-            notes: ""
-        })' "$INPUT" > "$VERDICTS"
-        "$CONTRACT" gate --final "$COMPOSED" "$VERDICTS" > "$gated"
+            )' "$accepted" > "$INPUT"
+            "$CONTRACT" compose "$INPUT" > "$COMPOSED"
+            jq 'map({
+                id: .id,
+                coverage: {problem: true, trigger: true, mechanism: true, result: true, requested_change: true, regression_case: true},
+                inference_required: false,
+                unresolved: [],
+                verdict: "PASS",
+                notes: ""
+            })' "$INPUT" > "$VERDICTS"
+            "$CONTRACT" gate --final "$COMPOSED" "$VERDICTS" > "$gated"
 
-        run "$CONTRACT" publish "$gated"
+            run "$CONTRACT" publish "$gated"
 
-        [ "$status" -eq 0 ]
-        [ "$(echo "$output" | jq '.comments | length')" -eq 16 ]
-        [ "$(echo "$output" | jq -c '[.comments[].body]')" = "$(jq -c '[.cases[].after]' "$accepted")" ]
-        [ "$(echo "$output" | jq -c '[.findings[].proposed_fix]')" = "$(jq -c '[.cases[].before]' "$accepted")" ]
-        [ "$(echo "$output" | jq -c '[.findings[].facts]')" = "$(jq -c '[.[].facts]' "$INPUT")" ]
+            [ "$status" -eq 0 ]
+            [ "$(echo "$output" | jq '.comments | length')" -eq "$(jq '.cases | length' "$accepted")" ]
+            [ "$(echo "$output" | jq -c '[.comments[].body]')" = "$(jq -c '[.cases[].after]' "$accepted")" ]
+            [ "$(echo "$output" | jq -c '[.findings[].proposed_fix]')" = "$(jq -c '[.cases[].before]' "$accepted")" ]
+            [ "$(echo "$output" | jq -c '[.findings[].facts]')" = "$(jq -c '[.[].facts]' "$INPUT")" ]
+        done
     done
 }
 

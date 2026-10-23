@@ -139,6 +139,17 @@ RAW_PATTERNS: dict[str, tuple[str, ...]] = {
         r"^\s*In good shape\b",
         r"^\s*The new machinery is\b",
     ),
+    # A sentence whose subject is a negation ("No test covers X", "Nothing
+    # checks Y"). Reviewers put the real subject first and negate the verb:
+    # "X isn't tested". "No" counts only when a noun and a verb follow it, so
+    # "No, that works", "No longer needed", and "No extra test needed" pass.
+    "negative_subject": (
+        r"(?:^|[.!?]\s+)\s*(?:Nothing|Nobody|No one|None of)\b",
+        r"(?:^|[.!?]\s+)\s*No\s+(?!(?:longer|matter|doubt|need|way|reason)\b)[a-z-]+(?:\s+[a-z-]+)?\s+"
+        r"(?:covers?|checks?|tests?|asserts?|calls?|reads?|writes?|uses?|handles?|"
+        r"exercises?|runs?|pass(?:es)?|reach(?:es)?|verif(?:y|ies)|catch(?:es)?|exists?|hits?|sets?|sends?)\b"
+        r"(?!\s+(?:needed|required|necessary)\b)",
+    ),
     # Pseudo-headers the voice agent strips. These read as labels where the
     # sentence should just say the thing.
     "pseudo_header": (

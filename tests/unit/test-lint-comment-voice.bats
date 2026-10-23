@@ -188,6 +188,52 @@ In good shape overall.
 EOF
 }
 
+@test "lint-comment-voice: flags a sentence that opens with a negative subject" {
+    while IFS= read -r phrase; do
+        run bash -c "printf '%s\n' \"\$1\" | '$LINTER' -" _ "$phrase"
+        [ "$status" -eq 0 ]
+        [[ "$output" == *'"negative_subject"'* ]] || {
+            echo "no negative_subject warning for: $phrase"
+            false
+        }
+    done <<'EOF'
+`suggestion`: No test covers the expired-token path.
+Nothing checks that the status is 200.
+The retry is fine. Nobody calls it with a zero timeout.
+`nit`: None of the callers pass `strict`.
+No caller passes `strict`, so the branch never runs.
+No jest test runs this branch with a string value.
+No tests verify the expired-token path.
+No tests catch this.
+No callers reach this branch.
+No test exists for the expired-token path.
+No test hits this branch.
+EOF
+}
+
+@test "lint-comment-voice: leaves negated verbs and other uses of no alone" {
+    while IFS= read -r phrase; do
+        run bash -c "printf '%s\n' \"\$1\" | '$LINTER' -" _ "$phrase"
+        [ "$status" -eq 0 ]
+        [[ "$output" != *'"negative_subject"'* ]] || {
+            echo "unexpected negative_subject warning for: $phrase"
+            false
+        }
+    done <<'EOF'
+The expired-token path isn't tested.
+It doesn't change anything that already exists.
+No, the retry already handles that.
+No longer needed after the migration.
+This returns no rows when the team has no plan.
+`question`: Is there no test for this, or did I miss it?
+No need to check the status here.
+No need to call it again here.
+No need to set it twice.
+No extra test needed.
+No regression test needed here: the fixture already covers it.
+EOF
+}
+
 # Every body the lint gate receives opens with a severity prefix. Masking
 # deletes the backticked word and leaves a bare ": ", which used to defeat
 # every start-anchored rule, so the whole verdict-opener family passed the gate

@@ -27,20 +27,28 @@ Each input item contains `id`, `severity`, `location`, `description`, `proposed_
 
 ## Composition Contract
 
-Assume the author understands the code. For `blocking` and `suggestion` findings, start with what goes wrong and the relevant trigger, then recommend a concrete change. Use natural paragraphs without field labels or editorial commentary.
+Assume the author understands the code. The comment sits on `location`, and the author reads it beside that code, so "this", "here", and "this branch" name it without the function or file. For `blocking` and `suggestion` findings, start with what goes wrong, then ask for a concrete change. Use natural paragraphs without field labels or editorial commentary.
 
-- **`concise` (default):** Include only enough causal explanation to connect the problem to the fix. Usually two to four sentences are enough; there is no hard word limit. Omit code walkthroughs, repeated consequences, and commentary about why the finding matters. Internal mechanism, result, and regression facts need not each become a sentence. Include a regression request when it is part of the needed fix or explains a non-obvious test case.
+- **`concise` (default):** Write what a reviewer would type by hand: most bodies need one or two sentences and 10 to 40 words of prose. Write the body from the facts instead of trimming the reviewer's draft, whose length is no guide. Shorten a body by leaving content out, never by merging sentences, and keep one idea per sentence. The first sentence names the problem in terms of the code ("`IconButton` drops `title`, so the toolbar buttons have no accessible name"). A compressed trigger is enough ("for a team with no plan", "on a second retry"). A `nit` is usually one sentence with one reason. Ask for the main change; a step the author will find while making it can stay in the internal fix. Leave out the rest, even when the facts contain it:
+  - the step-by-step mechanism, or a worked example of the trigger when a few words name the condition;
+  - how other code in the repo does it, beyond a few words such as "as `export_view` does";
+  - `path:line` citations of other files;
+  - which tests exist, or a remark that a test would catch the problem or that a regression would go unnoticed. When something makes the gap look covered, keep one clause that says why it isn't;
+  - a request for a regression test, unless the finding is about a missing test or is `blocking`, even when `regression_case` is set;
+  - a second statement of the consequence, or an argument that the problem is realistic.
+
+  The internal facts and `proposed_fix` keep the omitted evidence in the local review, so leaving it out of the comment loses nothing.
 - **`detailed`:** Explain every `facts.mechanism` step in execution order, state `facts.result`, and end with `facts.requested_change` and `facts.regression_case` when present. Keep the same plain English and avoid editorializing.
 
-Include a small code example when prose would leave the author to reconstruct the object shape, which states to combine, or the order of operations. For example, "include both before and after groups in the logic's filters" needs the small replacement below. An obvious rename or helper call does not need a code block. Use a verified excerpt of `proposed_fix`, preserving that excerpt exactly, rather than publishing the whole internal fix. The `description` is the complete public body: do not append or repeat `proposed_fix` automatically.
+Include code only when it saves the author from writing it: a replacement whose object shape, states, or order prose would leave the author to reconstruct (the `filters` merge below), a test assertion, a table row, or a wrapper. Keep it to the few lines the author would otherwise write, usually fewer than five. A longer block walks through the fix, so describe the change instead. A rename, a helper call, or a pointer to code that already does the same thing needs no code. Use a verified excerpt of `proposed_fix`, trimmed to the lines that matter and otherwise exact, rather than publishing the whole internal fix. The `description` is the complete public body: do not append or repeat `proposed_fix` automatically.
 
-Keep a blank line between the problem and recommendation when the body has three or more sentences, including concise bodies.
+Keep a blank line between the problem and recommendation when the body has three or more sentences.
 
-Match the recommendation to its priority. For `suggestion` and `nit`, offer the change with wording such as "Consider moving…" or "Perhaps move…" instead of an imperative. When the facts leave the choice uncertain, ask a concrete question such as "Would moving it to `tests/common/mod.rs` let both test files share it?" Keep verified observations direct, preserve uncertainty already present, and do not invent doubt or change severity. For `blocking`, state the required fix directly.
-
-For example, a suggestion should say "Consider moving it to `tests/common/mod.rs` and calling it from both test files." rather than "Move it to `tests/common/mod.rs` and call it from both test files."
+Match certainty to the severity, the way a reviewer would. State a `blocking` problem and its fix plainly. Give a `suggestion` or `nit` a light hedge or first person ("This should probably be `readonly`.", "I think this can be simplified to:", "Maybe this should say…"), which leaves room for the author to know something the reviewer doesn't. Prefer these to "Consider…", which reads as a template when every comment opens with it. When the author might have a reason the facts can't show, ask a specific question instead ("What's this 250ms wait for?", "Is that handled elsewhere?"). Ask for a missing test as a request that names the case ("Mind adding a test that fails without this fix?"). Put the real subject first and negate the verb: "The expired-token path isn't tested", not "No test covers the expired-token path". Keep verified observations direct, preserve uncertainty already present, and do not invent doubt or change severity.
 
 Questions and nits may omit inapplicable facts, but the requested answer or change must be clear. Keep full facts and internal fixes intact regardless of public style.
+
+Some items carry `reasons` and `unresolved` phrases from a comprehension check that asked for a rewrite. Fix what they name, then check the whole body against the rules above again, so the next check does not find a different problem. In concise style, add a missing fact in the fewest words.
 
 ## Verification and Preservation
 
@@ -51,6 +59,39 @@ Questions and nits may omit inapplicable facts, but the requested answer or chan
 - If the cited code contradicts a fact or does not let you verify the concrete relationship behind an internal phrase, return an item-level `error`. Do not turn an unsupported contract into plausible prose.
 - Do not discuss the review pipeline, the fact fields, confidence, agents, or gate verdicts in the public body.
 - A clear input body that already meets the selected style and expresses the required facts clearly should be returned unchanged.
+
+## Concise Examples
+
+This `suggestion` is accurate, but it is too long for its fix:
+
+> `suggestion`: The export retries a failed upload forever, so a bucket with a bad policy keeps the worker busy and the jobs behind it never run. `upload_part` catches `AccessDenied` along with the transient errors and returns `RETRY`. The scheduler then requeues the job with no attempt limit. `sync_job.py:88` already stops after `MAX_ATTEMPTS`. The retry test only covers a timeout, so an `AccessDenied` case there would catch this.
+
+It walks through the mechanism, cites another file as precedent, and ends by describing the existing test. The author needs the problem and the change:
+
+> `suggestion`: `upload_part` retries `AccessDenied` like a timeout, so a bucket with a bad policy blocks the export queue forever. This should probably fail the job instead.
+
+Precedent can stay when a few words carry it:
+
+> `suggestion`: This reads `request.user` before the login check, so an anonymous request raises a 500. I think the read belongs after `require_login`, as `export_view` does it.
+
+A missing test is a request, with the lines the author would otherwise write:
+
+````text
+`suggestion`: The expired-token path isn't tested. Mind adding a case to `test_refresh_flow`?
+
+```python
+clock.advance(minutes=61)
+assert client.get("/me").status_code == 200
+```
+````
+
+When the author may know something the reviewer doesn't, ask:
+
+> `question`: `parse_config` raises on a missing key. Is that handled by the caller?
+
+A nit is one sentence:
+
+> `nit`: `timeout_ms` holds seconds here, so `timeout_s` would be clearer.
 
 ## Regression Example
 
