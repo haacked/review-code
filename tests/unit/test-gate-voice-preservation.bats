@@ -526,3 +526,25 @@ PY
             == ["missing or duplicate response"]
     ' "$RESULT"
 }
+
+@test "voice preservation repair: a malformed restore_ids keeps the accepted voice bodies and reports the error" {
+    local accepted="$BATS_TEST_TMPDIR/accepted.json"
+    local lint_result="$BATS_TEST_TMPDIR/lint-result.json"
+    local repair_responses="$BATS_TEST_TMPDIR/repair-responses.json"
+    local repair_preservation="$BATS_TEST_TMPDIR/repair-preservation.json"
+
+    run_gate
+    cp "$RESULT" "$accepted"
+    printf '%s\n' '{"warned_ids": [1], "restore_ids": "1", "error": null}' > "$lint_result"
+    jq '[.[] | select(.id == 1) | .description |= sub("does not"; "cannot")]' "$RESPONSES" > "$repair_responses"
+    printf '%s\n' '[{"id": 1, "preserved": true, "notes": "Same claim."}]' > "$repair_preservation"
+
+    run "$GATE" repair "$ORIGINAL" "$accepted" "$lint_result" "$repair_responses" "$repair_preservation"
+
+    [ "$status" -eq 0 ]
+    printf '%s\n' "$output" > "$RESULT"
+    jq -e --slurpfile accepted "$accepted" '
+        .findings == $accepted[0].findings
+        and (.voice_repair.error | test("restore_ids"))
+    ' "$RESULT"
+}
