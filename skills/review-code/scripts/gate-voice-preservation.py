@@ -258,6 +258,11 @@ def run_repair(
             raise TypeError("lint result warned_ids must be an array of valid ids")
         if len(set(target_ids)) != len(target_ids):
             raise ValueError("lint result warned_ids must be unique")
+        restore_ids = lint_result.get("restore_ids", target_ids)
+        if not isinstance(restore_ids, list) or not all(
+            valid_id(identifier) for identifier in restore_ids
+        ):
+            raise TypeError("lint result restore_ids must be an array of valid ids")
         unknown_ids = [
             identifier for identifier in target_ids if identifier not in original_ids
         ]
@@ -305,7 +310,19 @@ def run_repair(
     except (OSError, TypeError, ValueError) as error:
         repaired = merge(limited, [], [], f"{type(error).__name__}: {error}")
 
-    replacements = {item["id"]: item for item in repaired["findings"]}
+    # An id outside `restore_ids` warned only for its length. A missing,
+    # unchanged, or rejected repair leaves its accepted voice body in place,
+    # because the final comprehension gate still judges its length.
+    keep_voiced = (
+        target_set
+        - set(restore_ids)
+        - set(repaired["voice_preservation"]["accepted_ids"])
+    )
+    replacements = {
+        item["id"]: item
+        for item in repaired["findings"]
+        if item["id"] not in keep_voiced
+    }
     report = {"target_ids": target_ids, **repaired["voice_preservation"]}
     result = {
         **accepted,
@@ -325,7 +342,9 @@ def main() -> int:
         parser.add_argument(
             "accepted", help="Full object accepted by the first voice pass"
         )
-        parser.add_argument("lint", help="Voice linter result with warned_ids")
+        parser.add_argument(
+            "lint", help="Voice linter result with warned_ids and restore_ids"
+        )
         parser.add_argument("responses", help="Repair response array")
         parser.add_argument("preservation", help="Repair preservation verdicts")
         args = parser.parse_args(sys.argv[2:])

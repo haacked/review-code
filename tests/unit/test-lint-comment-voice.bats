@@ -7,6 +7,41 @@ setup() {
     LINTER="$PROJECT_ROOT/skills/review-code/scripts/lint-comment-voice.py"
 }
 
+# Lints the phrases on stdin in one run, one phrase per line. Outside code
+# fences and metadata blocks, the linter checks each line on its own. A phrase
+# therefore gets the warnings it would get alone.
+lint_phrases() {
+    cat > "$BATS_TEST_TMPDIR/phrases.md"
+    run "$LINTER" - < "$BATS_TEST_TMPDIR/phrases.md"
+}
+
+# Succeeds when every line linted by lint_phrases has a warning of category $1.
+# Prints each phrase that has none.
+every_line_has_warning() {
+    local unflagged
+    unflagged=$(jq -sr --arg category "$1" --rawfile phrases "$BATS_TEST_TMPDIR/phrases.md" '
+        (flatten | map(select(.category == $category) | .line)) as $flagged
+        | $phrases | rtrimstr("\n") | split("\n") | to_entries[]
+        | select(.key + 1 | IN($flagged[]) | not) | .value' <<<"$output")
+    [ -z "$unflagged" ] || {
+        echo "no $1 warning for:"
+        echo "$unflagged"
+        return 1
+    }
+}
+
+# Succeeds when no line linted by lint_phrases has a warning of category $1.
+# Prints each phrase that has one.
+no_line_has_warning() {
+    local flagged
+    flagged=$(jq -sr --arg category "$1" 'flatten | .[] | select(.category == $category) | .text' <<<"$output")
+    [ -z "$flagged" ] || {
+        echo "unexpected $1 warning for:"
+        echo "$flagged"
+        return 1
+    }
+}
+
 # =============================================================================
 # Script structure tests
 # =============================================================================
@@ -234,6 +269,60 @@ No regression test needed here: the fixture already covers it.
 EOF
 }
 
+@test "lint-comment-voice: flags a negative subject after a comma and a conjunction" {
+    lint_phrases <<'EOF'
+The helper exists, but nothing calls it.
+The retry runs on every call, so nobody notices the duplicate write.
+The worker writes the row, and no one reads it back.
+The flag exists, yet none of the callers pass `strict`.
+`suggestion`: The status is logged, but nothing checks it.
+But nothing checks the status.
+The status is logged. But no caller checks it.
+Nothing else reads this flag.
+The flag is read once, and nothing else in the module calls the guard.
+EOF
+    [ "$status" -eq 0 ]
+    every_line_has_warning negative_subject
+}
+
+@test "lint-comment-voice: leaves a negative word that is not a clause subject alone" {
+    lint_phrases <<'EOF'
+The retry runs, but it changes nothing.
+This returns nothing when the cache is empty.
+The worker retries, and the second attempt finds no one waiting.
+The cache is cold, so the first read returns no rows.
+It returns the id and nothing more.
+The cache stores the id and nothing else.
+It is a lock, nothing more, and it works.
+EOF
+    [ "$status" -eq 0 ]
+    no_line_has_warning negative_subject
+}
+
+@test "lint-comment-voice: flags a No-subject sentence whose verb is gates, requires, or needs" {
+    lint_phrases <<'EOF'
+No check gates targeting edits.
+No caller requires the lock.
+No test needs the fixture.
+No route handler requires a token.
+`blocking`: No caller needs `strict`.
+EOF
+    [ "$status" -eq 0 ]
+    every_line_has_warning negative_subject
+}
+
+@test "lint-comment-voice: leaves No phrases built on required or needed alone" {
+    lint_phrases <<'EOF'
+No migration required for this change.
+No extra setup needed.
+No need to require the lock here.
+No longer requires the lock.
+No changes needed here.
+EOF
+    [ "$status" -eq 0 ]
+    no_line_has_warning negative_subject
+}
+
 # Every body the lint gate receives opens with a severity prefix. Masking
 # deletes the backticked word and leaves a bare ": ", which used to defeat
 # every start-anchored rule, so the whole verdict-opener family passed the gate
@@ -327,6 +416,92 @@ EOF
 EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *'"pseudo_header"'* ]]
+}
+
+# =============================================================================
+# Code nouns used as verbs
+# =============================================================================
+
+# Approval code calls its check a gate. A comment that also uses "gate" as a
+# verb makes the reader stop to work out which one each sentence means.
+@test "lint-comment-voice: flags gate used as a verb" {
+    lint_phrases <<'EOF'
+The backend never gates them.
+This holds even when `after` gates fewer writes than `now`.
+The check gates on the team id.
+Nothing gates in-flight requests.
+Compare the gated operations before and after the change.
+List the flags a rollout ungates.
+The middleware is gating every write.
+Ungate the flag after the migration finishes.
+The rollout leaves both flags ungated.
+Gated writes skip the audit log.
+`blocking`: the backend never gates them.
+EOF
+    [ "$status" -eq 0 ]
+    every_line_has_warning code_term_verb
+}
+
+@test "lint-comment-voice: leaves gate nouns, code spans, and identifiers alone" {
+    lint_phrases <<'EOF'
+The approval gate rejects it.
+The flag write gate runs before the save.
+The gates run before the save.
+These gates reject the write.
+Both gates run on every write.
+The approval gates reject it.
+The two gates disagree.
+The release gates in this file differ.
+Its gates are read once.
+The test table marks this row `UNGATED`.
+`if rollout.gates(flag): return` skips the save.
+Each row in the test table uses the UNGATED constant.
+The is_gated helper returns early.
+The isGated helper returns early.
+The ungated_flags list stays empty.
+The GATES_ENABLED setting is off in tests.
+The flag.gated attribute is read once.
+See src/gates/rules.py for the list.
+The check lives in gates.py now.
+EOF
+    [ "$status" -eq 0 ]
+    no_line_has_warning code_term_verb
+}
+
+@test "lint-comment-voice: gate verbs inside a fenced code block are ignored" {
+    run "$LINTER" - <<'EOF'
+`suggestion`: Check the rollout before the save.
+```python
+if rollout.gates(flag) and not flag.ungated:
+    return  # the rollout gates this write
+```
+EOF
+    [ "$status" -eq 0 ]
+    [[ "$output" == "[]" ]]
+}
+
+@test "lint-comment-voice: flags the gate verb and the negative subject in one approval comment" {
+    run "$LINTER" - <<'EOF'
+This says `experiment.update` gates release condition changes, but nothing gates targeting edits.
+EOF
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"code_term_verb"'* ]]
+    [[ "$output" == *'"negative_subject"'* ]]
+}
+
+# =============================================================================
+# Length
+# =============================================================================
+
+# lint-review-narrative.py runs the same rules over a whole review document,
+# and detailed comments have no length limit. Only gate-voice-lint.py applies
+# the concise limit, because only it knows a finding's comment style.
+@test "lint-comment-voice: a long body gets no length warning from the linter alone" {
+    run "$LINTER" - <<'EOF'
+`blocking`: The retry loop calls `flush()` on every attempt. A request that fails three times writes the same buffer three times. The client then receives duplicate rows. It cannot tell them apart from the real ones. Guard the second call with a flag on the writer.
+EOF
+    [ "$status" -eq 0 ]
+    [[ "$output" == "[]" ]]
 }
 
 # =============================================================================

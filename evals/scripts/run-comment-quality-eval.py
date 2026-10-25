@@ -3,7 +3,8 @@
 
 Replays handlers/review-finding-quality.md from the preflight gate through
 publication with live `claude -p` calls: preflight, composer, voice pass, voice
-lint and repair, final gate, and one composer repair with its recheck. Each call
+lint and repair, final gate, and one composer repair with its recheck, plus a
+two-sentence repair for a blocking finding the recheck still rejects. Each call
 uses an agent definition from agents/ at --ref as its system prompt, and the
 composer's briefing holds briefing/shared-instructions.md at that ref, so two
 refs can be compared on the same findings. The routing and contract scripts
@@ -232,6 +233,9 @@ def contract_input(fixture: dict[str, Any], style: str) -> list[dict[str, Any]]:
                 "line": int(line.split("-")[0]),
                 "side": "RIGHT",
                 "confidence": case["confidence"],
+                # Fixture cases record the severity the review posted, after
+                # finding validation, so a blocking case passed the validator.
+                "validator_confirmed": case["severity"] == "blocking",
                 "description": case["draft"],
                 "proposed_fix": case["proposed_fix"],
                 "facts": case["facts"],
@@ -331,7 +335,7 @@ def preservation(
 
 def lint(runner: Runner, stage: str, quality: dict[str, Any]) -> tuple[dict, Path]:
     items = [
-        {field: item.get(field) for field in ("id", *BODY_FIELDS)}
+        {field: item.get(field) for field in ("id", "comment_style", *BODY_FIELDS)}
         for item in quality["findings"]
     ]
     result = script(
@@ -381,10 +385,9 @@ def voice(runner: Runner, quality: dict[str, Any]) -> dict:
         str(runner.out / "voice-repair-reply.md"),
         str(decisions),
     )
-    # A body that still warns after its one repair goes back to its pre-voice text.
     recheck, _ = lint(runner, "voice-lint-recheck", repaired)
     originals = {item["id"]: item for item in quality["findings"]}
-    restore = set(recheck["warned_ids"])
+    restore = set(recheck["restore_ids"])
     repaired["findings"] = [
         originals[item["id"]] if item["id"] in restore else item
         for item in repaired["findings"]
@@ -422,15 +425,23 @@ def run_pipeline(
     first = gate(runner, "comprehension", {"findings": voiced["findings"]}, final=False)
     published = list(first["findings"])
     withheld.extend(first["withheld"])
-    for entry in first["rewrites_needed"]:
-        repaired = compose(runner, f"comment-repair-{entry['id']}", [entry], context)
+
+    def repair(entry: dict[str, Any], stage: str) -> list[dict[str, Any]]:
+        """Repair one finding, recheck it, and return what the recheck sends back."""
+        repaired = compose(runner, f"comment-repair-{stage}", [entry], context)
         withheld.extend(repaired["withheld"])
-        if repaired["findings"]:
-            recheck = gate(
-                runner, f"comprehension-recheck-{entry['id']}", repaired, final=True
-            )
-            published.extend(recheck["findings"])
-            withheld.extend(recheck["withheld"])
+        if not repaired["findings"]:
+            return []
+        recheck = gate(runner, f"comprehension-recheck-{stage}", repaired, final=True)
+        published.extend(recheck["findings"])
+        withheld.extend(recheck["withheld"])
+        return recheck["rewrites_needed"]
+
+    for entry in first["rewrites_needed"]:
+        # Only a confirmed blocking finding comes back, for a repair limited to
+        # two sentences. The second recheck never sends one back.
+        for blocking in repair(entry, str(entry["id"])):
+            withheld.extend(repair(blocking, f"blocking-{blocking['id']}"))
 
     final_path = write_json(
         runner.out / "finding-quality-final.json",
@@ -488,6 +499,10 @@ def score(fixture: dict[str, Any], publication: dict[str, Any], runner: Runner) 
         "fixture": fixture["source"],
         "published": sum(case["words"] is not None for case in cases),
         "withheld": sum(case["words"] is None for case in cases),
+        "published_over_gate": sum(
+            item.get("quality_state") == "published_over_gate"
+            for item in publication["findings"]
+        ),
         "words": total([case["words"] for case in cases]) or 0,
         "prose_words": total([case["prose_words"] for case in cases]) or 0,
         "before_words": total([case["before_words"] for case in cases]),

@@ -111,6 +111,14 @@ def withheld(item: Any, state: str, reasons: list[str]) -> dict[str, Any]:
     return result
 
 
+def published(item: dict[str, Any], state: str, reasons: list[str]) -> dict[str, Any]:
+    result = dict(item)
+    result["publishable"] = True
+    result["quality_state"] = state
+    result["reasons"] = reasons
+    return result
+
+
 def compose(items: Any) -> dict[str, list[dict[str, Any]]]:
     if not isinstance(items, list):
         raise ValueError("compose input must be a JSON array")
@@ -264,6 +272,12 @@ def evaluate_verdict(
     return "rewrite_required", reasons
 
 
+def confirmed_blocking(item: dict[str, Any]) -> bool:
+    return (
+        item.get("severity") == "blocking" and item.get("validator_confirmed") is True
+    )
+
+
 def gate(composed: Any, verdicts: Any, final: bool) -> dict[str, list[dict[str, Any]]]:
     if not isinstance(composed, dict) or not isinstance(composed.get("findings"), list):
         raise ValueError("gate input must be compose output")
@@ -279,18 +293,26 @@ def gate(composed: Any, verdicts: Any, final: bool) -> dict[str, list[dict[str, 
         state, reasons = evaluate_verdict(
             item, verdicts_by_id.get(item.get("id")), final
         )
-        result = dict(item)
         if state == "passed":
-            result["publishable"] = True
-            result["quality_state"] = state
-            result["reasons"] = reasons
-            publishable.append(result)
+            publishable.append(published(item, state, reasons))
         elif state == "gate_error":
-            withheld_findings.append(withheld(result, state, reasons))
+            withheld_findings.append(withheld(item, state, reasons))
+        elif final and confirmed_blocking(item):
+            # A finding that a validator reproduced is not withheld for its
+            # wording alone.
+            if item.get("two_sentence_limit") is True:
+                publishable.append(published(item, "published_over_gate", reasons))
+            else:
+                # Two sentences cannot carry a detailed body's mechanism, so
+                # the repair and its recheck use the concise rules.
+                repair = withheld(item, "blocking_repair_required", reasons)
+                repair["two_sentence_limit"] = True
+                repair["comment_style"] = "concise"
+                rewrites.append(repair)
         elif final:
-            withheld_findings.append(withheld(result, "rewrite_failed", reasons))
+            withheld_findings.append(withheld(item, "rewrite_failed", reasons))
         else:
-            rewrites.append(withheld(result, state, reasons))
+            rewrites.append(withheld(item, state, reasons))
 
     return {
         "findings": publishable,

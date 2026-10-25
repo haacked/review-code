@@ -398,6 +398,191 @@ trim_only_verdict() {
     [ "$(echo "$output" | jq -r '.withheld[0].quality_state')" = "rewrite_failed" ]
 }
 
+# A blocking finding that finding-validator confirmed must not drop out of the
+# draft because of its wording.
+FIRST_REPAIR='`blocking`: A person property named `tier` stops the organization `tier` from loading. The flag skips database preparation, so organization filters on `tier` return false. Please make `PropertyFilter::requires_db_property` distinguish person and group filters.'
+EXTRA_REPAIR='`blocking`: A person property named `tier` stops the organization `tier` from loading, so organization filters on `tier` always return false.
+
+Please make `PropertyFilter::requires_db_property` distinguish person and group filters.'
+
+# Composes the fixture finding as a confirmed blocking concise finding. The
+# optional jq filter runs on the finding after those fields are set.
+write_confirmed_blocking() {
+    local filter="${1:-.}"
+    write_finding "$(jq -c '.desired_description' "$FIXTURE")"
+    jq "map(.validator_confirmed = true | .comment_style = \"concise\" | $filter)" "$INPUT" > "$BATS_TEST_TMPDIR/confirmed.json"
+    mv "$BATS_TEST_TMPDIR/confirmed.json" "$INPUT"
+    "$CONTRACT" compose "$INPUT" > "$COMPOSED"
+}
+
+# Models the orchestrator's composer repair: it merges a new body into each
+# rewrites_needed entry and runs compose on the result.
+compose_repair() {
+    local gated="$1" body="$2" out="$3"
+    jq --arg body "$body" '.rewrites_needed | map(.description = $body)' "$gated" > "$BATS_TEST_TMPDIR/repair-input.json"
+    "$CONTRACT" compose "$BATS_TEST_TMPDIR/repair-input.json" > "$out"
+}
+
+# Runs a confirmed blocking finding through every gate round the pipeline runs:
+# the first gate, a composer repair, the final gate, the extra repair, and the
+# final gate again. The last round's verdict is the REWRITE verdict with
+# $2 applied.
+run_blocking_repair_chain() {
+    local style="$1" last_verdict="$2"
+    write_confirmed_blocking ".comment_style = \"$style\""
+    write_verdict REWRITE false true true
+    "$CONTRACT" gate "$COMPOSED" "$VERDICTS" > "$BATS_TEST_TMPDIR/first-gate.json"
+    compose_repair "$BATS_TEST_TMPDIR/first-gate.json" "$FIRST_REPAIR" "$BATS_TEST_TMPDIR/first-repair.json"
+    "$CONTRACT" gate --final "$BATS_TEST_TMPDIR/first-repair.json" "$VERDICTS" > "$BATS_TEST_TMPDIR/final-gate.json"
+    [ "$(jq '.rewrites_needed | length' "$BATS_TEST_TMPDIR/final-gate.json")" -eq 1 ]
+    jq -e '.rewrites_needed[0].comment_style == "concise"' "$BATS_TEST_TMPDIR/final-gate.json"
+    compose_repair "$BATS_TEST_TMPDIR/final-gate.json" "$EXTRA_REPAIR" "$BATS_TEST_TMPDIR/extra-repair.json"
+    jq "$last_verdict" "$VERDICTS" > "$BATS_TEST_TMPDIR/last-verdict.json"
+    run "$CONTRACT" gate --final "$BATS_TEST_TMPDIR/extra-repair.json" "$BATS_TEST_TMPDIR/last-verdict.json"
+}
+
+# Succeeds when the gate output publishes nothing, asks for no rewrite, and
+# gives the first withheld finding the state $1. Bash ignores set -e inside a
+# function called on the left of ||. A single jq call checks every condition
+# even there.
+assert_withheld_only() {
+    echo "$output" | jq -e --arg state "$1" '
+        (.findings | length) == 0
+        and (.rewrites_needed | length) == 0
+        and .withheld[0].quality_state == $state' > /dev/null
+}
+
+@test "finding contract: a confirmed blocking finding that fails the final gate gets one more repair under the two-sentence limit" {
+    local change
+    for change in \
+        '.' \
+        '.[0].coverage.requested_change = false' \
+        '.[0].inference_required = true' \
+        '.[0].unresolved = [{phrase: "loops on it", stands_for: "what the worker loops on"}]' \
+        '.[0].verdict = "PASS" | .[0].notes = "" | .[0].coverage.trigger = false'; do
+        write_confirmed_blocking
+        write_verdict REWRITE false true true
+        jq "$change" "$VERDICTS" > "$BATS_TEST_TMPDIR/changed.json"
+
+        run "$CONTRACT" gate --final "$COMPOSED" "$BATS_TEST_TMPDIR/changed.json"
+
+        [ "$status" -eq 0 ]
+        [ "$(echo "$output" | jq '.withheld | length')" -eq 0 ]
+        [ "$(echo "$output" | jq '.findings | length')" -eq 0 ]
+        [ "$(echo "$output" | jq '.rewrites_needed | length')" -eq 1 ]
+        [ "$(echo "$output" | jq -r '.rewrites_needed[0].quality_state')" = "blocking_repair_required" ]
+        echo "$output" | jq -e '.rewrites_needed[0].two_sentence_limit == true'
+    done
+}
+
+@test "finding contract: a confirmed blocking finding that fails its extra repair reaches the draft with the repaired body and the gate notes" {
+    local notes="Still states the consequence twice." style
+    for style in concise detailed; do
+        run_blocking_repair_chain "$style" ".[0].notes = \"$notes\""
+
+        [ "$status" -eq 0 ]
+        [ "$(echo "$output" | jq '.withheld | length')" -eq 0 ]
+        [ "$(echo "$output" | jq '.rewrites_needed | length')" -eq 0 ]
+        [ "$(echo "$output" | jq '.findings | length')" -eq 1 ]
+        [ "$(echo "$output" | jq -r '.findings[0].publishable')" = "true" ]
+        [ "$(echo "$output" | jq -r '.findings[0].quality_state')" = "published_over_gate" ]
+        [ "$(echo "$output" | jq -r '.findings[0].description')" = "$EXTRA_REPAIR" ]
+        echo "$output" | jq -e --arg notes "$notes" '.findings[0].reasons | any(contains($notes))'
+        echo "$output" > "$BATS_TEST_TMPDIR/quality.json"
+
+        run "$CONTRACT" publish "$BATS_TEST_TMPDIR/quality.json"
+
+        # The final report finds these comments by their quality state in the
+        # publication output.
+        [ "$status" -eq 0 ]
+        [ "$(echo "$output" | jq '.comments | length')" -eq 1 ]
+        [ "$(echo "$output" | jq -r '.comments[0].body')" = "$EXTRA_REPAIR" ]
+        [ "$(echo "$output" | jq -r '.findings[0].quality_state')" = "published_over_gate" ]
+        [ "$(echo "$output" | jq '.withheld | length')" -eq 0 ]
+    done
+}
+
+@test "finding contract: a confirmed blocking finding that passes its extra repair publishes as passed" {
+    run_blocking_repair_chain concise '.[0].verdict = "PASS" | .[0].notes = ""'
+
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq '.findings | length')" -eq 1 ]
+    [ "$(echo "$output" | jq -r '.findings[0].quality_state')" = "passed" ]
+    [ "$(echo "$output" | jq -r '.findings[0].description')" = "$EXTRA_REPAIR" ]
+}
+
+@test "finding contract: gate errors on a confirmed blocking finding stay withheld" {
+    write_confirmed_blocking
+    echo '[]' > "$VERDICTS"
+
+    run "$CONTRACT" gate --final "$COMPOSED" "$VERDICTS"
+
+    [ "$status" -eq 0 ]
+    assert_withheld_only gate_error
+
+    run_blocking_repair_chain concise '.[0].coverage = {}'
+
+    [ "$status" -eq 0 ]
+    assert_withheld_only gate_error
+}
+
+@test "finding contract: earlier failures of a confirmed blocking finding stay withheld through the final gate" {
+    local state
+    for state in invalid_contract composition_failed gate_error; do
+        jq -n --arg state "$state" --slurpfile fixture "$FIXTURE" '{
+            findings: [],
+            rewrites_needed: [],
+            withheld: [{
+                id: 90970,
+                severity: "blocking",
+                comment_style: "concise",
+                validator_confirmed: true,
+                location: "rust/feature-flags/src/flags/flag_matching.rs:262",
+                file: "rust/feature-flags/src/flags/flag_matching.rs",
+                line: 262,
+                description: $fixture[0].desired_description,
+                facts: $fixture[0].facts,
+                publishable: false,
+                quality_state: $state,
+                reasons: ["an earlier stage failed"]
+            }]
+        }' > "$COMPOSED"
+        echo '[]' > "$VERDICTS"
+
+        run "$CONTRACT" gate --final "$COMPOSED" "$VERDICTS"
+
+        [ "$status" -eq 0 ]
+        assert_withheld_only "$state"
+        [ "$(echo "$output" | jq '.withheld | length')" -eq 1 ]
+    done
+}
+
+# The severity filters strip the fixture's `blocking` prefix, because compose
+# withholds a body whose prefix contradicts its severity.
+@test "finding contract: an unconfirmed or non-blocking finding is still withheld for wording" {
+    local filter
+    for filter in \
+        'del(.validator_confirmed)' \
+        '.validator_confirmed = false' \
+        '.validator_confirmed = null' \
+        '.validator_confirmed = "true"' \
+        '.validator_confirmed = 1' \
+        '.severity = "suggestion" | .description |= sub("^`blocking`: "; "")' \
+        '.severity = "question" | .description |= sub("^`blocking`: "; "")' \
+        '.severity = "nit" | .description |= sub("^`blocking`: "; "")'; do
+        write_confirmed_blocking "$filter"
+        write_verdict REWRITE false true true
+
+        run "$CONTRACT" gate --final "$COMPOSED" "$VERDICTS"
+
+        [ "$status" -eq 0 ]
+        assert_withheld_only rewrite_failed || {
+            echo "not withheld for finding filter: $filter"
+            false
+        }
+    done
+}
+
 @test "finding contract: a non-boolean trim_only is malformed, and a PASS ignores it" {
     desired=$(jq -c '.desired_description' "$FIXTURE")
     write_finding "$desired"
