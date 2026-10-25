@@ -59,7 +59,7 @@ Analyze like a senior engineer. Assume the author is smart and can read the code
 Three concise public examples:
 
 ```text
-`blocking`: On a code-only deploy, existing Enterprise orgs keep the old feature key for up to an hour, so gates using the new key turn off. Re-sync their available features during the rename migration.
+`blocking`: On a code-only deploy, existing Enterprise orgs keep the old feature key for up to an hour, so features that check the new key turn off. Re-sync their available features during the rename migration.
 ```
 
 ```text

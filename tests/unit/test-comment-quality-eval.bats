@@ -177,6 +177,14 @@ agent_body() {
     [[ "$(summary -r '.cases[8].body')" != *" edited." ]]
 }
 
+@test "comment quality eval: a body whose only lint warning is its length keeps its voice rewrite" {
+    # Finding 1's draft warns only for concise_length, so the recheck does not restore it.
+    STUB_VOICE_EDIT=1 run_eval
+
+    [ "$status" -eq 0 ]
+    [[ "$(summary -r '.cases[0].body')" == *" edited." ]]
+}
+
 @test "comment quality eval: a failed call withholds every finding instead of passing it" {
     STUB_FAIL=1 run_eval
 

@@ -453,6 +453,53 @@ PY
     ' "$RESULT"
 }
 
+@test "voice preservation repair: an unchanged repair of a length-only id keeps the accepted voice body" {
+    local accepted="$BATS_TEST_TMPDIR/accepted.json"
+    local lint_result="$BATS_TEST_TMPDIR/lint-result.json"
+    local repair_responses="$BATS_TEST_TMPDIR/repair-responses.json"
+    local repair_preservation="$BATS_TEST_TMPDIR/repair-preservation.json"
+
+    run_gate
+    cp "$RESULT" "$accepted"
+    printf '%s\n' '{"warned_ids": [1], "restore_ids": [], "error": null}' > "$lint_result"
+    jq '[.[] | select(.id == 1) | .unchanged = true]' "$RESPONSES" > "$repair_responses"
+    printf '%s\n' '[]' > "$repair_preservation"
+
+    run "$GATE" repair "$ORIGINAL" "$accepted" "$lint_result" "$repair_responses" "$repair_preservation"
+
+    [ "$status" -eq 0 ]
+    printf '%s\n' "$output" > "$RESULT"
+    jq -e --slurpfile original "$ORIGINAL" --slurpfile accepted "$accepted" '
+        (.findings[] | select(.id == 1))
+            == ($accepted[0].findings[] | select(.id == 1))
+        and (.findings[] | select(.id == 1) | .description)
+            != ($original[0].findings[] | select(.id == 1) | .description)
+        and .voice_repair.unchanged_ids == [1]
+    ' "$RESULT"
+}
+
+@test "voice preservation repair: a rejected repair restores a warned id that is also in restore_ids" {
+    local accepted="$BATS_TEST_TMPDIR/accepted.json"
+    local lint_result="$BATS_TEST_TMPDIR/lint-result.json"
+    local repair_responses="$BATS_TEST_TMPDIR/repair-responses.json"
+    local repair_preservation="$BATS_TEST_TMPDIR/repair-preservation.json"
+
+    run_gate
+    cp "$RESULT" "$accepted"
+    printf '%s\n' '{"warned_ids": [1], "restore_ids": [1], "error": null}' > "$lint_result"
+    jq '[.[] | select(.id == 1) | .description |= sub("does not"; "cannot")]' "$RESPONSES" > "$repair_responses"
+    printf '%s\n' '[{"id": 1, "preserved": false, "notes": "Dropped a claim."}]' > "$repair_preservation"
+
+    run "$GATE" repair "$ORIGINAL" "$accepted" "$lint_result" "$repair_responses" "$repair_preservation"
+
+    [ "$status" -eq 0 ]
+    printf '%s\n' "$output" > "$RESULT"
+    jq -e --slurpfile original "$ORIGINAL" '
+        (.findings[] | select(.id == 1))
+            == ($original[0].findings[] | select(.id == 1))
+    ' "$RESULT"
+}
+
 @test "voice preservation repair: missing and unexpected responses restore only warned ids" {
     local accepted="$BATS_TEST_TMPDIR/accepted.json"
     local lint_result="$BATS_TEST_TMPDIR/lint-result.json"

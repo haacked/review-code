@@ -305,7 +305,21 @@ def run_repair(
     except (OSError, TypeError, ValueError) as error:
         repaired = merge(limited, [], [], f"{type(error).__name__}: {error}")
 
-    replacements = {item["id"]: item for item in repaired["findings"]}
+    # An id outside `restore_ids` warned only for its length. A missing,
+    # unchanged, or rejected repair leaves its accepted voice body in place,
+    # because the final comprehension gate still judges its length.
+    restore_ids = lint_result.get("restore_ids", target_ids)
+    if not isinstance(restore_ids, list) or not all(
+        valid_id(identifier) for identifier in restore_ids
+    ):
+        restore_ids = target_ids
+    keep_voiced = target_set - set(restore_ids)
+    repaired_ids = set(repaired["voice_preservation"]["accepted_ids"])
+    replacements = {
+        item["id"]: item
+        for item in repaired["findings"]
+        if item["id"] in repaired_ids or item["id"] not in keep_voiced
+    }
     report = {"target_ids": target_ids, **repaired["voice_preservation"]}
     result = {
         **accepted,
@@ -325,7 +339,9 @@ def main() -> int:
         parser.add_argument(
             "accepted", help="Full object accepted by the first voice pass"
         )
-        parser.add_argument("lint", help="Voice linter result with warned_ids")
+        parser.add_argument(
+            "lint", help="Voice linter result with warned_ids and restore_ids"
+        )
         parser.add_argument("responses", help="Repair response array")
         parser.add_argument("preservation", help="Repair preservation verdicts")
         args = parser.parse_args(sys.argv[2:])

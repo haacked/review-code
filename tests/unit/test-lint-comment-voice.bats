@@ -278,6 +278,8 @@ The flag exists, yet none of the callers pass `strict`.
 `suggestion`: The status is logged, but nothing checks it.
 But nothing checks the status.
 The status is logged. But no caller checks it.
+Nothing else reads this flag.
+The flag is read once, and nothing else in the module calls the guard.
 EOF
     [ "$status" -eq 0 ]
     every_line_has_warning negative_subject
@@ -289,6 +291,9 @@ The retry runs, but it changes nothing.
 This returns nothing when the cache is empty.
 The worker retries, and the second attempt finds no one waiting.
 The cache is cold, so the first read returns no rows.
+It returns the id and nothing more.
+The cache stores the id and nothing else.
+It is a lock, nothing more, and it works.
 EOF
     [ "$status" -eq 0 ]
     no_line_has_warning negative_subject
@@ -423,6 +428,8 @@ EOF
     lint_phrases <<'EOF'
 The backend never gates them.
 This holds even when `after` gates fewer writes than `now`.
+The check gates on the team id.
+Nothing gates in-flight requests.
 Compare the gated operations before and after the change.
 List the flags a rollout ungates.
 The middleware is gating every write.
@@ -439,6 +446,13 @@ EOF
     lint_phrases <<'EOF'
 The approval gate rejects it.
 The flag write gate runs before the save.
+The gates run before the save.
+These gates reject the write.
+Both gates run on every write.
+The approval gates reject it.
+The two gates disagree.
+The release gates in this file differ.
+Its gates are read once.
 The test table marks this row `UNGATED`.
 `if rollout.gates(flag): return` skips the save.
 Each row in the test table uses the UNGATED constant.

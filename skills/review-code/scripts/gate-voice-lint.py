@@ -105,9 +105,9 @@ def gate(linter, items: list, limit: int) -> dict:
         if (
             item.get("comment_style", "concise") == "concise"
             and isinstance(description, str)
-            and (length := linter.concise_length(description))
+            and (length_warning := linter.concise_length_warning(description))
         ):
-            warnings.append(linter.trim_warning(length, field="description"))
+            warnings.append(linter.trim_warning(length_warning, field="description"))
 
         if not warnings:
             continue

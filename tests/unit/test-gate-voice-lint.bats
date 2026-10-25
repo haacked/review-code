@@ -158,6 +158,13 @@ EOF
     has_warning concise_length
 }
 
+@test "gate-voice-lint: an inline code span counts as one word of concise length" {
+    run lint_one concise "\`blocking\`: ${FORTY_ONE_WORDS/calls flush/calls \`flush()\`}"
+
+    [ "$status" -eq 0 ]
+    has_warning concise_length
+}
+
 @test "gate-voice-lint: a concise body of two sentences and 40 words passes the length check" {
     run lint_one concise "\`blocking\`: $FORTY_WORDS"
 

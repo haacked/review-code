@@ -435,6 +435,7 @@ run_blocking_repair_chain() {
     compose_repair "$BATS_TEST_TMPDIR/first-gate.json" "$FIRST_REPAIR" "$BATS_TEST_TMPDIR/first-repair.json"
     "$CONTRACT" gate --final "$BATS_TEST_TMPDIR/first-repair.json" "$VERDICTS" > "$BATS_TEST_TMPDIR/final-gate.json"
     [ "$(jq '.rewrites_needed | length' "$BATS_TEST_TMPDIR/final-gate.json")" -eq 1 ]
+    jq -e '.rewrites_needed[0].comment_style == "concise"' "$BATS_TEST_TMPDIR/final-gate.json"
     compose_repair "$BATS_TEST_TMPDIR/final-gate.json" "$EXTRA_REPAIR" "$BATS_TEST_TMPDIR/extra-repair.json"
     jq "$last_verdict" "$VERDICTS" > "$BATS_TEST_TMPDIR/last-verdict.json"
     run "$CONTRACT" gate --final "$BATS_TEST_TMPDIR/extra-repair.json" "$BATS_TEST_TMPDIR/last-verdict.json"

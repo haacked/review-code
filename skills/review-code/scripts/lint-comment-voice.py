@@ -148,9 +148,11 @@ RAW_PATTERNS: dict[str, tuple[str, ...]] = {
     # the verb: "X isn't tested". "No" counts only when a noun and a verb follow
     # it, so "No, that works", "No longer needed", and "No extra test needed"
     # pass. "Or" and "for" are left out of the clause starts because "all or
-    # nothing" and "not for nothing" are idioms.
+    # nothing" and "not for nothing" are idioms. A clause that ends at
+    # "nothing more" or "nothing else" has no verb after the negation, so it
+    # passes.
     "negative_subject": (
-        rf"{NEGATIVE_SUBJECT_START}(?:Nothing|Nobody|No one|None of)\b(?!\s+(?:else|more|less)\b)",
+        rf"{NEGATIVE_SUBJECT_START}(?:Nothing|Nobody|No one|None of)\b(?!\s+(?:else|more|less)\s*(?:[.,;:!?]|$))",
         rf"{NEGATIVE_SUBJECT_START}No\s+(?!(?:longer|matter|doubt|need|way|reason)\b)[a-z-]+(?:\s+[a-z-]+)?\s+"
         r"(?:covers?|checks?|tests?|asserts?|calls?|reads?|writes?|uses?|handles?|"
         r"exercises?|runs?|pass(?:es)?|reach(?:es)?|verif(?:y|ies)|catch(?:es)?|exists?|hits?|sets?|sends?|"
@@ -162,9 +164,13 @@ RAW_PATTERNS: dict[str, tuple[str, ...]] = {
     # "gates" is a noun or a verb. The match is case-sensitive so that a
     # constant such as UNGATED is not flagged. A "." or "/" joined to the word
     # on either side marks an attribute or a path such as gates.py. A preceding
-    # determiner marks the plural noun.
+    # determiner marks the plural noun. So does a following punctuation mark,
+    # plural verb, or preposition, as in "the approval gates reject it". "On"
+    # and "that" are left out because "gates on X" and "gates that path" are
+    # verb uses.
     "code_term_verb": (
-        r"(?<![./])(?<!the )(?<!these )(?<!those )(?<!both )(?<!all )(?-i:\b[Gg]ates\b)(?![./]\w)",
+        r"(?<![./])(?<!the )(?<!these )(?<!those )(?<!both )(?<!all )(?-i:\b[Gg]ates\b)(?![./]\w)"
+        r"(?!\s*[,;:)]|\s*\.(?:\s|$)|\s+(?:are|were|do|don't|did|run|reject|fail|pass|disagree|differ|in|of|from)\b(?!-))",
         r"(?<![./])(?-i:\b(?:[Gg]at(?:ed|ing)|[Uu]ngat(?:e|es|ed))\b)(?![./]\w)",
     ),
     # Pseudo-headers the voice agent strips. These read as labels where the
@@ -370,12 +376,12 @@ def lint(text: str) -> list[LintWarning]:
             )
 
     # lint() also reads whole review documents, so it has no length rule.
-    # concise_length() checks the length of one concise comment body.
+    # concise_length_warning() checks the length of one concise comment body.
 
     return warnings
 
 
-def concise_length(text: str) -> LintWarning | None:
+def concise_length_warning(text: str) -> LintWarning | None:
     """Warn when a concise body has more than two sentences or 40 words of prose."""
     paragraphs: list[list[str]] = [[]]
     originals: list[str] = []
