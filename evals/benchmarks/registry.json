@@ -115,6 +115,26 @@
       "languages": ["typescript"],
       "areas": ["maintainability"],
       "difficulty": "hard"
+    },
+    {
+      "id": "hogql-group-prefilter-joined-where",
+      "category": "posthog",
+      "name": "Test Account Filters on flag_evaluations",
+      "description": "HogQL query rewrite that copies the outer WHERE into a group-key subquery whose FROM lacks the outer query's explicit JOINs",
+      "source": "posthog/posthog#116693",
+      "languages": ["python"],
+      "areas": ["correctness"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "flag-deletion-materialized-parity",
+      "category": "posthog",
+      "name": "Predicate Match for flag_evaluations Rows Without an Events Copy",
+      "description": "Deletion path compiles an approved HogQL predicate against a second table whose raw JSON reads disagree with the events table's materialized columns",
+      "source": "posthog/posthog#117395",
+      "languages": ["python"],
+      "areas": ["correctness"],
+      "difficulty": "hard"
     }
   ]
 }

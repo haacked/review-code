@@ -1,0 +1,15 @@
+{
+  "id": "flag-deletion-materialized-parity",
+  "name": "Predicate Match for flag_evaluations Rows Without an Events Copy",
+  "description": "Deletion path compiles an approved HogQL predicate against a second table whose raw JSON reads disagree with the events table's materialized columns",
+  "source": "posthog/posthog#117395",
+  "source_url": "https://github.com/PostHog/posthog/pull/117395",
+  "source_sha": "5eb9f55704e148155a857ed782f7dc3b232ab1ea",
+  "languages": ["python"],
+  "frameworks": ["django"],
+  "areas": ["correctness"],
+  "difficulty": "hard",
+  "expected_finding_count": 1,
+  "false_positive_trap_count": 0,
+  "frozen_diff": true
+}

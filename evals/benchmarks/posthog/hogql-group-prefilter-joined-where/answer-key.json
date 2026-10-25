@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "expected_findings": [
+    {
+      "id": "prefilter-copies-joined-table-predicates",
+      "description": "_outer_prefilter copies the outer query's entire WHERE into `SELECT $group_N FROM <outer FROM table> WHERE <copy>`. Its docstring says JOINed tables on the outer query must skip the prefilter, but the code checks only the FROM table, its alias and the lazy join's source alias; it never checks select_from.next_join. A query such as `SELECT flag_evaluations.group_0.properties.industry FROM posthog.flag_evaluations AS flag_evaluations JOIN events AS e ON e.distinct_id = flag_evaluations.distinct_id WHERE flag_evaluations.timestamp >= now() - INTERVAL 1 DAY AND e.event = '$pageview'` passes every check, and compilation fails with `QueryError: Unable to resolve field: e` because the subquery's FROM has no `e`. The fix skips the prefilter for an explicit join, or runs it only when every field in the WHERE resolves on the outer FROM table. Found by an outside reviewer who compiled that query against the PR's code.",
+      "area": "correctness",
+      "severity": "blocking",
+      "weight": 10,
+      "file": "posthog/hogql/database/schema/groups.py",
+      "line_start": 150,
+      "line_end": 290,
+      "keywords": ["next_join", "explicit join", "explicitly joined", "joined table", "join on the outer", "outer join", "Unable to resolve", "cannot resolve", "can't resolve", "does not resolve", "doesn't resolve", "e.event", "JOIN events AS", "other table in the WHERE", "names a joined", "references a joined", "fields from another table"]
+    }
+  ],
+  "false_positive_traps": [],
+  "clean_areas": []
+}

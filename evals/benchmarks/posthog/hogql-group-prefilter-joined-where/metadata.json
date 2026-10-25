@@ -1,0 +1,15 @@
+{
+  "id": "hogql-group-prefilter-joined-where",
+  "name": "Test Account Filters on flag_evaluations",
+  "description": "HogQL query rewrite that copies the outer WHERE into a group-key subquery whose FROM lacks the outer query's explicit JOINs",
+  "source": "posthog/posthog#116693",
+  "source_url": "https://github.com/PostHog/posthog/pull/116693",
+  "source_sha": "40ea971c4e590a22559735a31dd01bd71a2cd02f",
+  "languages": ["python"],
+  "frameworks": ["django"],
+  "areas": ["correctness"],
+  "difficulty": "hard",
+  "expected_finding_count": 1,
+  "false_positive_trap_count": 0,
+  "frozen_diff": true
+}
