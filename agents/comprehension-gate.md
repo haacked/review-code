@@ -40,7 +40,7 @@ Each finding item has a `location`. The comment is posted on that line, and the 
 
 For `concise`, read the body as the PR author would: the author knows the code, its identifiers, and the behavior the diff shows, but not a label the review coined. Require coverage of `problem`, `trigger` when present, and `requested_change`. Report `mechanism`, `result`, and `regression_case` coverage honestly, but they may be false on `PASS`. Return `REWRITE` for an incorrect causal connection, missing required context, an ambiguous action, or editorializing. Also return `REWRITE` when a concise body carries any of these, even when every sentence is accurate:
 
-- prose that runs past two sentences or about 40 words, not counting code blocks or the severity prefix;
+- prose that runs past two sentences or past 50 words, not counting code blocks or the severity prefix. The composer aims for about 40 words, so a body of 40 to 50 words passes;
 - a step-by-step walkthrough of the mechanism, or a worked example of the trigger when a few words name the condition;
 - a code block longer than the few lines the author would otherwise write, usually fewer than five, or one that repeats a pattern the body already points to;
 - how other code in the repo does it, beyond a few words such as "as `export_view` does";

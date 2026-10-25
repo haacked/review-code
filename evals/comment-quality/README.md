@@ -2,7 +2,7 @@
 
 This eval measures how long and how reviewer-like the finding quality pipeline makes public review comments. It runs recorded findings through the preflight gate, composer, voice pass with its lint and repair, final gate, and one composer repair, using live `claude -p` calls.
 
-On the prompts at `2bf4e2c`, the pipeline withheld 1 to 3 findings per run and published the rest at an average of 71 to 133 words. On the prompts at `ec61396`, every run published every finding, at an average of 44 to 66 words, in the hedged register reviewers use. The current prompts cap a concise comment at two sentences and about 40 words of prose, and every run still publishes every finding, at an average of 34 to 46 words.
+On the prompts at `2bf4e2c`, the pipeline withheld 1 to 3 findings per run and published the rest at an average of 71 to 133 words. On the prompts at `ec61396`, every run published every finding, at an average of 44 to 66 words, in the hedged register reviewers use. The current composer aims for two sentences and about 40 words of prose, and the gate sends a body back only when it runs past two sentences or 50 words. Runs publish every finding or all but one, at an average of 33 to 48 words.
 
 ## Fixtures
 
@@ -46,12 +46,14 @@ Two runs per side, with the voice pass in place:
 | --- | --- | ---: | ---: | ---: | ---: |
 | #113272 | `2bf4e2c` | 9 and 11 of 12 | 71 and 86 | 4 and 3 | $2.43 and $1.56 |
 | #113272 | `ec61396` | 12 and 12 of 12 | 45 and 44 | 0 and 1 | $0.73 and $0.98 |
-| #113272 | Two-sentence limit | 12 and 12 of 12 | 34 and 34 | 5 and 1 | $2.18 and $1.07 |
+| #113272 | `4fb9861` | 12 and 12 of 12 | 34 and 34 | 5 and 1 | $2.18 and $1.07 |
+| #113272 | Current | 12 and 11 of 12 | 35 and 33 | 1 and 1 | $0.99 and $0.83 |
 | #121510 | `2bf4e2c` | 6 and 6 of 7 | 112 and 133 | 3 and 3 | $0.69 and $0.71 |
 | #121510 | `ec61396` | 7 and 7 of 7 | 63 and 66 | 3 and 0 | $0.65 and $0.32 |
-| #121510 | Two-sentence limit | 7 and 7 of 7 | 46 and 41 | 5 and 1 | $1.04 and $0.50 |
+| #121510 | `4fb9861` | 7 and 7 of 7 | 46 and 41 | 5 and 1 | $1.04 and $0.50 |
+| #121510 | Current | 7 and 7 of 7 | 47 and 48 | 3 and 0 | $0.62 and $0.34 |
 
-Two more runs of `ec61396`, made beside the two-sentence limit runs, averaged 46 and 47 words for #113272 and 69 and 67 for #121510, so the drop comes from the limit and not from run-to-run variation. Every composer repair in the two-sentence limit runs was a trim of a body of 41 to 51 words that the gate marked `trim_only`. The gate reads "about 40 words" as a hard limit, and each trim costs a composer call, which is why two of the four runs cost more than on `ec61396`.
+Two more runs of `ec61396`, made beside the `4fb9861` runs, averaged 46 and 47 words for #113272 and 69 and 67 for #121510, so the drop comes from the two-sentence limit and not from run-to-run variation. At `4fb9861` the gate sent back any body past about 40 words. It read that as a hard limit, so every composer repair was a trim of a body of 41 to 51 words, and two of the four runs cost about twice as much as on `ec61396`. The current gate passes a body of up to 50 words while the composer still aims for 40. That brought repairs down to 0 to 3 per run and the average cost to $0.70, against $0.75 on `ec61396`. One current run withheld a nit because the gate twice read its ask as contradicting the facts, the run-to-run variation that Limits describes.
 
 For comparison, the original #113272 review posted 86 words per comment, and the author's hand edits brought that to 26. The author's own inline review comments from before AI drafting have a median of 21 words and a 90th percentile of 62.
 
