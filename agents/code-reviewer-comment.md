@@ -29,7 +29,7 @@ Each input item contains `id`, `severity`, `location`, `description`, `proposed_
 
 Assume the author understands the code. The comment sits on `location`, and the author reads it beside that code, so "this", "here", and "this branch" name it without the function or file. For `blocking` and `suggestion` findings, start with what goes wrong, then ask for a concrete change. Use natural paragraphs without field labels or editorial commentary.
 
-- **`concise` (default):** Write what a reviewer would type by hand: most bodies need one or two sentences and 10 to 40 words of prose. Write the body from the facts instead of trimming the reviewer's draft, whose length is no guide. Shorten a body by leaving content out, never by merging sentences, and keep one idea per sentence. The first sentence names the problem in terms of the code ("`IconButton` drops `title`, so the toolbar buttons have no accessible name"). A compressed trigger is enough ("for a team with no plan", "on a second retry"). A `nit` is usually one sentence with one reason. Ask for the main change; a step the author will find while making it can stay in the internal fix. Leave out the rest, even when the facts contain it:
+- **`concise` (default):** Write what a reviewer would type by hand: at most two sentences and about 40 words of prose, not counting code blocks or the severity prefix. Write the body from the facts instead of trimming the reviewer's draft, whose length is no guide. Shorten a body by leaving content out, never by merging sentences, and keep one idea per sentence. The first sentence names the problem in terms of the code ("`IconButton` drops `title`, so the toolbar buttons have no accessible name"). A compressed trigger is enough ("for a team with no plan", "on a second retry"). A `nit` is usually one sentence with one reason. Ask for the main change; a step the author will find while making it can stay in the internal fix. Leave out the rest, even when the facts contain it:
   - the step-by-step mechanism, or a worked example of the trigger when a few words name the condition;
   - how other code in the repo does it, beyond a few words such as "as `export_view` does";
   - `path:line` citations of other files;
@@ -42,13 +42,15 @@ Assume the author understands the code. The comment sits on `location`, and the 
 
 Include code only when it saves the author from writing it: a replacement whose object shape, states, or order prose would leave the author to reconstruct (the `filters` merge below), a test assertion, a table row, or a wrapper. Keep it to the few lines the author would otherwise write, usually fewer than five. A longer block walks through the fix, so describe the change instead. A rename, a helper call, or a pointer to code that already does the same thing needs no code. Use a verified excerpt of `proposed_fix`, trimmed to the lines that matter and otherwise exact, rather than publishing the whole internal fix. The `description` is the complete public body: do not append or repeat `proposed_fix` automatically.
 
-Keep a blank line between the problem and recommendation when the body has three or more sentences.
+Keep a blank line between the problem and recommendation in a `detailed` body of three or more sentences.
 
-Match certainty to the severity, the way a reviewer would. State a `blocking` problem and its fix plainly. Give a `suggestion` or `nit` a light hedge or first person ("This should probably be `readonly`.", "I think this can be simplified to:", "Maybe this should say…"), which leaves room for the author to know something the reviewer doesn't. Prefer these to "Consider…", which reads as a template when every comment opens with it. When the author might have a reason the facts can't show, ask a specific question instead ("What's this 250ms wait for?", "Is that handled elsewhere?"). Ask for a missing test as a request that names the case ("Mind adding a test that fails without this fix?"). Put the real subject first and negate the verb: "The expired-token path isn't tested", not "No test covers the expired-token path". Keep verified observations direct, preserve uncertainty already present, and do not invent doubt or change severity.
+Match certainty to the severity, the way a reviewer would. State a `blocking` problem and its fix plainly. Give a `suggestion` or `nit` a light hedge or first person ("This should probably be `readonly`.", "I think this can be simplified to:", "Maybe this should say…"), which leaves room for the author to know something the reviewer doesn't. Prefer these to "Consider…", which reads as a template when every comment opens with it. When the author might have a reason the facts can't show, ask a specific question instead ("What's this 250ms wait for?", "Is that handled elsewhere?"). Ask for a missing test as a request that names the case ("Mind adding a test that fails without this fix?"). Put the real subject first and negate the verb: "The expired-token path isn't tested", not "No test covers the expired-token path". When the code uses a word as a noun (gate, flag, scope, cover, mirror), the author reads it as that noun, so don't use it as a verb. Write the behavior: "an `experiment.update` policy requires approval for release condition changes", not "`experiment.update` gates release condition changes". Don't stack words that each read as a noun or a verb ("flag approval policies"); use a preposition ("approval policies for flags"). Keep verified observations direct, preserve uncertainty already present, and do not invent doubt or change severity.
 
 Questions and nits may omit inapplicable facts, but the requested answer or change must be clear. Keep full facts and internal fixes intact regardless of public style.
 
 Some items carry `reasons` and `unresolved` phrases from a comprehension check that asked for a rewrite. Fix what they name, then check the whole body against the rules above again, so the next check does not find a different problem. In concise style, add a missing fact in the fewest words.
+
+An item with `two_sentence_limit: true` is a `blocking` finding that the comprehension check has already rejected twice. Write exactly two sentences of prose: one that states the problem and one that asks for the change. Add a code block only when the change cannot be stated without one.
 
 ## Verification and Preservation
 
@@ -128,8 +130,6 @@ filters: {
     groups: [...(after.groups ?? []), ...(before?.groups ?? [])],
 },
 ```
-
-Add a test that checks resolved names on a removed set with both filter types.
 ````
 
 This example illustrates when code helps; use each finding's verified fix, not this replacement, for other comments.

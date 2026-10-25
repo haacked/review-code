@@ -28,6 +28,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "helpers"))
 
 from markdown_fences import walk_fences  # noqa: E402
 
+# A negative subject opens a sentence, or opens a clause after a coordinating
+# conjunction (", but nothing checks it").
+NEGATIVE_SUBJECT_START = r"(?:^\s*|[.!?]\s+|(?:^\s*|,?\s+)(?:but|so|and|yet)\s+)"
+
 # Rules drawn from agents/code-reviewer-voice.md, limited to what a regex can
 # judge without reading the surrounding code. Each pattern is prose-only: code,
 # URLs, and severity prefixes are masked before these run.
@@ -139,16 +143,29 @@ RAW_PATTERNS: dict[str, tuple[str, ...]] = {
         r"^\s*In good shape\b",
         r"^\s*The new machinery is\b",
     ),
-    # A sentence whose subject is a negation ("No test covers X", "Nothing
-    # checks Y"). Reviewers put the real subject first and negate the verb:
-    # "X isn't tested". "No" counts only when a noun and a verb follow it, so
-    # "No, that works", "No longer needed", and "No extra test needed" pass.
+    # A sentence or clause whose subject is a negation ("No test covers X",
+    # ", but nothing checks Y"). Reviewers put the real subject first and negate
+    # the verb: "X isn't tested". "No" counts only when a noun and a verb follow
+    # it, so "No, that works", "No longer needed", and "No extra test needed"
+    # pass. "Or" and "for" are left out of the clause starts because "all or
+    # nothing" and "not for nothing" are idioms.
     "negative_subject": (
-        r"(?:^|[.!?]\s+)\s*(?:Nothing|Nobody|No one|None of)\b",
-        r"(?:^|[.!?]\s+)\s*No\s+(?!(?:longer|matter|doubt|need|way|reason)\b)[a-z-]+(?:\s+[a-z-]+)?\s+"
+        rf"{NEGATIVE_SUBJECT_START}(?:Nothing|Nobody|No one|None of)\b(?!\s+(?:else|more|less)\b)",
+        rf"{NEGATIVE_SUBJECT_START}No\s+(?!(?:longer|matter|doubt|need|way|reason)\b)[a-z-]+(?:\s+[a-z-]+)?\s+"
         r"(?:covers?|checks?|tests?|asserts?|calls?|reads?|writes?|uses?|handles?|"
-        r"exercises?|runs?|pass(?:es)?|reach(?:es)?|verif(?:y|ies)|catch(?:es)?|exists?|hits?|sets?|sends?)\b"
+        r"exercises?|runs?|pass(?:es)?|reach(?:es)?|verif(?:y|ies)|catch(?:es)?|exists?|hits?|sets?|sends?|"
+        r"gates?|requires?|needs?)\b"
         r"(?!\s+(?:needed|required|necessary)\b)",
+    ),
+    # A code noun used as a verb. Approval code calls its check a gate, so
+    # "nothing gates targeting edits" makes the reader stop to work out whether
+    # "gates" is a noun or a verb. The match is case-sensitive so that a
+    # constant such as UNGATED is not flagged. A "." or "/" joined to the word
+    # on either side marks an attribute or a path such as gates.py. A preceding
+    # determiner marks the plural noun.
+    "code_term_verb": (
+        r"(?<![./])(?<!the )(?<!these )(?<!those )(?<!both )(?<!all )(?-i:\b[Gg]ates\b)(?![./]\w)",
+        r"(?<![./])(?-i:\b(?:[Gg]at(?:ed|ing)|[Uu]ngat(?:e|es|ed))\b)(?![./]\w)",
     ),
     # Pseudo-headers the voice agent strips. These read as labels where the
     # sentence should just say the thing.
@@ -200,6 +217,18 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     for category, patterns in RAW_PATTERNS.items()
 }
 
+# The voice agent reads these messages on a repair round, and the generic
+# message would not tell it what to write instead.
+MESSAGES = {
+    "code_term_verb": "A code noun is used as a verb; write the behavior instead, "
+    'such as "requires approval for".',
+}
+
+# The concise comment style allows at most this much prose. Code blocks and the
+# severity prefix do not count.
+CONCISE_MAX_SENTENCES = 2
+CONCISE_MAX_WORDS = 40
+
 METADATA_COMMENT = re.compile(r"<!--\s*review-metadata(?:\s[^-]*)?.*?-->", re.S)
 # Structural Markdown that should never be read as prose: section headers,
 # table rows and separators, horizontal rules, and boilerplate labels that name
@@ -216,7 +245,10 @@ LABEL_LINE = re.compile(
 INLINE_CODE = re.compile(r"`[^`]*`")
 URL = re.compile(r"https?://[^\s)>]+")
 WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9'’/-]*")
-SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+SENTENCE_END = re.compile(r"[.!?]+[\"'’”)\]]*(?:\s+|$)")
+# The periods in these abbreviations do not end a sentence.
+ABBREVIATION = re.compile(r"\b(?:e\.g|i\.e|etc|vs|cf)\.", re.I)
+LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 
 SEVERITY_TOKENS = r"blocking|suggestion|question|nit"
 # Bold and backticks nest either way round in real reviews, so accept any
@@ -260,8 +292,14 @@ def trim_warning(item: LintWarning, **extra) -> dict:
     }
 
 
-def prose_lines(text: str) -> Iterable[tuple[int, str, str]]:
-    """Yield (line_number, original_line, prose) with code and metadata masked."""
+def prose_lines(
+    text: str, code_placeholder: str = ""
+) -> Iterable[tuple[int, str, str]]:
+    """Yield (line_number, original_line, prose) with code and metadata masked.
+
+    Each inline code span becomes `code_placeholder`, so a caller that counts
+    words can still count the span as one word.
+    """
     # Blank whole-document review-metadata blocks before line iteration. A
     # block comment that spans lines would otherwise survive per-line masking.
     # Newlines are preserved so reported line numbers still point at the file.
@@ -279,7 +317,9 @@ def prose_lines(text: str) -> Iterable[tuple[int, str, str]]:
         ):
             continue
 
-        prose = URL.sub("", INLINE_CODE.sub("", strip_severity_prefix(line)))
+        prose = URL.sub(
+            "", INLINE_CODE.sub(code_placeholder, strip_severity_prefix(line))
+        )
         yield index + 1, line, prose
 
 
@@ -311,7 +351,10 @@ def lint(text: str) -> list[LintWarning]:
                     warning(
                         line_number,
                         category,
-                        f"Possible {category.replace('_', ' ')}; use concrete, direct wording.",
+                        MESSAGES.get(
+                            category,
+                            f"Possible {category.replace('_', ' ')}; use concrete, direct wording.",
+                        ),
                         original,
                     )
                 )
@@ -326,11 +369,49 @@ def lint(text: str) -> list[LintWarning]:
                 )
             )
 
-    # A long-sentence check belongs to strict technical writing, not review
-    # comments. The voice agent's own length guidance is shaped by finding
-    # severity, not by a fixed word count, so the linter stays silent here.
+    # lint() also reads whole review documents, so it has no length rule.
+    # concise_length() checks the length of one concise comment body.
 
     return warnings
+
+
+def concise_length(text: str) -> LintWarning | None:
+    """Warn when a concise body has more than two sentences or 40 words of prose."""
+    paragraphs: list[list[str]] = [[]]
+    originals: list[str] = []
+    first_line = previous_line = 0
+    for line_number, original, prose in prose_lines(text, code_placeholder="code"):
+        stripped = prose.strip()
+        # A blank line, a list item, or a skipped line such as a code fence
+        # ends the paragraph, so its last sentence needs no closing period.
+        if not stripped or LIST_ITEM.match(prose) or line_number != previous_line + 1:
+            paragraphs.append([])
+        if stripped:
+            paragraphs[-1].append(stripped)
+            originals.append(original.strip())
+            first_line = first_line or line_number
+        previous_line = line_number
+
+    sentences = words = 0
+    for paragraph in paragraphs:
+        joined = ABBREVIATION.sub("", " ".join(paragraph))
+        sentences += sum(
+            1 for sentence in SENTENCE_END.split(joined) if WORD.search(sentence)
+        )
+        words += len(WORD.findall(joined))
+
+    if sentences <= CONCISE_MAX_SENTENCES and words <= CONCISE_MAX_WORDS:
+        return None
+    return warning(
+        first_line,
+        "concise_length",
+        f"A concise comment has {sentences} sentence{'' if sentences == 1 else 's'} "
+        f"and {words} words of prose. "
+        f"Keep it to at most {CONCISE_MAX_SENTENCES} sentences and "
+        f"{CONCISE_MAX_WORDS} words: cut redundant phrasing or a second "
+        "statement of the consequence, and do not merge sentences.",
+        " ".join(originals),
+    )
 
 
 def render_jsonl(warnings: list[LintWarning]) -> str:

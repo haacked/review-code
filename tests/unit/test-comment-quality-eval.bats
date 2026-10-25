@@ -53,7 +53,8 @@ elif stage in ("voice", "voice-repair"):
     result = [
         {
             "id": item["id"],
-            "description": item["description"] + (" Edited." if str(item["id"]) == edit else ""),
+            # The marker stays inside the last sentence, so the edit adds no sentence.
+            "description": item["description"].removesuffix(".") + " edited." if str(item["id"]) == edit else item["description"],
             "proposed_fix": item["proposed_fix"],
             "unchanged": str(item["id"]) != edit,
         }
@@ -149,20 +150,31 @@ agent_body() {
     [ "$(summary -r '.cases[1].body')" = '`suggestion`: Composed body 2.' ]
 }
 
-@test "comment quality eval: the voice pass keeps a rewrite the judge preserves and restores one it rejects" {
-    # Finding 1's draft has no lint warnings, so no voice repair or restore touches it.
-    STUB_VOICE_EDIT=1 run_eval
+@test "comment quality eval: a blocking finding the recheck rejects gets a two-sentence repair and publishes" {
+    STUB_REWRITE="comprehension:1,comprehension-recheck:1" run_eval \
+        --fixture "$PROJECT_ROOT/tests/fixtures/finding-comments/pr-121510.json"
 
     [ "$status" -eq 0 ]
-    [[ "$(summary -r '.cases[0].body')" == *" Edited." ]]
-    [ "$(jq -r '.[0].rewrite.description' "$OUT/voice-preservation-input.json")" = "$(summary -r '.cases[0].body')" ]
+    [ "$(summary .published)" -eq 7 ]
+    [ "$(summary .published_over_gate)" -eq 1 ]
+    [ "$(jq -r '.[0].two_sentence_limit' "$OUT/comment-repair-blocking-1-input.json")" = "true" ]
+    stages | jq -e 'index("comprehension-recheck-blocking-1") > index("comment-repair-blocking-1")'
+}
+
+@test "comment quality eval: the voice pass keeps a rewrite the judge preserves and restores one it rejects" {
+    # Finding 9's draft has no lint warnings, so no voice repair or restore touches it.
+    STUB_VOICE_EDIT=9 run_eval
+
+    [ "$status" -eq 0 ]
+    [[ "$(summary -r '.cases[8].body')" == *" edited." ]]
+    [ "$(jq -r '.[0].rewrite.description' "$OUT/voice-preservation-input.json")" = "$(summary -r '.cases[8].body')" ]
 
     rm -rf "$OUT"
-    STUB_VOICE_EDIT=1 STUB_JUDGE=reject run_eval
+    STUB_VOICE_EDIT=9 STUB_JUDGE=reject run_eval
 
     [ "$status" -eq 0 ]
     [ "$(summary .published)" -eq 12 ]
-    [[ "$(summary -r '.cases[0].body')" != *" Edited." ]]
+    [[ "$(summary -r '.cases[8].body')" != *" edited." ]]
 }
 
 @test "comment quality eval: a failed call withholds every finding instead of passing it" {

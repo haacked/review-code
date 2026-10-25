@@ -373,8 +373,8 @@ PY
 @test "handler contracts: documented voice lint command projects the findings array" {
     jq -n '{
         findings: [
-            {id: 1, severity: "blocking", description: "`blocking`: The cache stays stale for 300 seconds.", proposed_fix: null},
-            {id: 2, severity: "nit", description: "`nit`: This pins the behavior.", proposed_fix: null}
+            {id: 1, severity: "blocking", comment_style: "concise", description: "`blocking`: The cache stays stale for 300 seconds.", proposed_fix: null},
+            {id: 2, severity: "nit", comment_style: "concise", description: "`nit`: This pins the behavior.", proposed_fix: null}
         ],
         rewrites_needed: [],
         withheld: [{id: 3, description: "`nit`: This pins the behavior."}]
@@ -384,7 +384,7 @@ PY
     run bash -e "$ARTIFACTS/voice.sh"
 
     [ "$status" -eq 0 ]
-    jq -e 'type == "array" and length == 2 and all(.[]; keys == ["description", "id", "proposed_fix"])' "$ARTIFACTS/voice-lint-input.json"
+    jq -e 'type == "array" and length == 2 and all(.[]; keys == ["comment_style", "description", "id", "proposed_fix"])' "$ARTIFACTS/voice-lint-input.json"
     jq -e '.error == null and .checked == 2 and .clean == 1 and .warned_ids == [2]' "$ARTIFACTS/voice-lint-result.json"
 }
 

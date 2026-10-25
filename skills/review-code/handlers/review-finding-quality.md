@@ -45,6 +45,7 @@ Enumerate the surviving findings in stable review order. Assign every finding a 
   "line": 42,
   "side": "RIGHT",
   "confidence": 90,
+  "validator_confirmed": true,
   "description": "the reviewer's current body",
   "proposed_fix": "fix text or null",
   "facts": {
@@ -58,6 +59,8 @@ Enumerate the surviving findings in stable review order. Assign every finding a 
   }
 }
 ```
+
+Set `validator_confirmed` to `true` only on a `blocking` finding that `finding-validator` returned as CONFIRMED, and to `false` otherwise, including when the validator was unreachable. The final gate uses it to keep a confirmed blocking finding in the draft.
 
 `location` is the display value. `file`, `line`, and `side` are the routing values used by diff mapping and draft comments; keep them as separate fields through every later merge. Preserve the side from finding validation: `LEFT` uses old-file line numbers, and `RIGHT` uses new-file line numbers. For `--fix`, inspect the current code before applying a change at a `LEFT` location. A finding without a specific source location cannot cross the publication boundary and remains in the local review's withheld section.
 
@@ -123,10 +126,10 @@ The helper accepts bare JSON or a single four-backtick JSON fence. It checks the
 
 Read the helper's output as `$finding_quality`. Its `voice_preservation` records accepted, unchanged, and reverted ids with reasons, plus anomalies and errors. Fallback is per finding regardless of the number of failures or the response array length; valid neighboring rewrites survive even when 10 of 12 findings revert. This merge does not grant publication approval; every result still passes through the final comprehension gate.
 
-The linter takes a bare array of `{id, description, proposed_fix}` objects; `proposed_fix` may be null. Extract that array and run:
+The linter takes a bare array of `{id, comment_style, description, proposed_fix}` objects; `proposed_fix` may be null. A `concise` description also gets a `concise_length` warning when its prose has more than two sentences or 40 words. Extract that array and run:
 
 ```bash
-jq '[.findings[] | {id, description, proposed_fix}]' \
+jq '[.findings[] | {id, comment_style, description, proposed_fix}]' \
   "<artifacts_dir>/finding-quality-voiced.json" \
   > "<artifacts_dir>/voice-lint-input.json"
 ~/.agents/skills/review-code/scripts/gate-voice-lint.py \
@@ -134,7 +137,7 @@ jq '[.findings[] | {id, description, proposed_fix}]' \
   > "<artifacts_dir>/voice-lint-result.json"
 ```
 
-Read `warned_ids` and `error` from the result; the linter exits zero even on errors. For warned ids, save their current voice input fields and lint notes to `<artifacts_dir>/voice-repair-input.json`. Dispatch a fresh `code-reviewer-voice` call with `$quality_stage = voice-repair` through "Deliver Finding Inputs" under both harnesses. Compare every repair with the immutable pre-voice snapshot, never with the first rewrite. Recheck preservation, regenerate the array from the repaired bodies, and lint once. A remaining warning restores the pre-voice body. A missing linter or non-null `error` leaves the accepted voice bodies unchanged.
+Read `warned_ids` and `error` from the result; the linter exits zero even on errors. For warned ids, save their current voice input fields and lint notes to `<artifacts_dir>/voice-repair-input.json`. Dispatch a fresh `code-reviewer-voice` call with `$quality_stage = voice-repair` through "Deliver Finding Inputs" under both harnesses. Compare every repair with the immutable pre-voice snapshot, never with the first rewrite, and write the comparison decisions to `<artifacts_dir>/voice-repair-preservation.json`.
 
 Run the executable repair merge:
 
@@ -148,7 +151,7 @@ Run the executable repair merge:
   > "<artifacts_dir>/finding-quality-repaired.json"
 ```
 
-Use its full output as `$finding_quality`. The command derives the target ids from `warned_ids`, validates those candidates against the immutable snapshot, and replaces only those ids in the accepted voiced object. Missing or rejected repairs restore their pre-voice finding; unexpected ids are ignored and recorded as anomalies. Regenerate the linter array and lint once. A remaining warning restores the pre-voice body. A missing linter or non-null `error` leaves the accepted voice bodies unchanged.
+Use its full output as `$finding_quality`. The command derives the target ids from `warned_ids`, validates those candidates against the immutable snapshot, and replaces only those ids in the accepted voiced object. Missing or rejected repairs restore their pre-voice finding; unexpected ids are ignored and recorded as anomalies. Regenerate the linter array from that output and lint once. Restore the pre-voice body of each id in that result's `restore_ids`. A body whose only warning is `concise_length` keeps its repaired text, because the final comprehension gate judges length. A missing linter or non-null `error` leaves the accepted voice bodies unchanged.
 
 Record voice usage, preservation failures, and `{total_tokens: 0, checked, clean, warned, bounced, reverted}` under the existing `$token_usage` keys. In debug mode, save the original snapshot, raw response, comparison decisions, merge diagnostics, and `11c-voice-rewrite` and `11c2-voice-lint` artifacts.
 
@@ -171,9 +174,11 @@ The script accepts `PASS` only when the selected style's required facts have cov
 
 For each `rewrites_needed` entry, save a one-item array with the structured finding, current body, `reasons`, and the gate's unresolved phrases to `<artifacts_dir>/comment-repair-<id>-input.json`. Dispatch a fresh `code-reviewer-comment` invocation through "Deliver Finding Inputs" with `$quality_stage = comment-repair-<id>` under both harnesses. Never resume the original reviewer.
 
-Apply the composer preservation and error checks, run `compose` on successful repairs, then save each repaired input array to `<artifacts_dir>/comprehension-recheck-<id>-input.json`. Cold-read it once more through "Deliver Finding Inputs" with `comprehension-gate` and `$quality_stage = comprehension-recheck-<id>`, then apply `gate --final`. A second `REWRITE`, malformed verdict, composer error, or preservation failure is withheld. The exception is a concise `REWRITE` marked `trim_only` with no unresolved phrases, which `gate --final` publishes when its required coverage passes and records the trim notes in `reasons`. Never restore a pre-gate opaque body.
+Apply the composer preservation and error checks, run `compose` on successful repairs, then save each repaired input array to `<artifacts_dir>/comprehension-recheck-<id>-input.json`. Cold-read it once more through "Deliver Finding Inputs" with `comprehension-gate` and `$quality_stage = comprehension-recheck-<id>`, then apply `gate --final`. Except for a finding with `validator_confirmed: true` (see below), a second `REWRITE`, malformed verdict, composer error, or preservation failure is withheld. The other exception is a concise `REWRITE` marked `trim_only` with no unresolved phrases, which `gate --final` publishes when its required coverage passes and records the trim notes in `reasons`. Never restore a pre-gate opaque body.
 
-Send both the preflight `PASS` findings and the composed `REWRITE` findings through the final comprehension gate. Merge first-pass findings, second-pass findings, and every withheld array into `$finding_quality`. Record `{total_tokens: 0, contracted, preflight_passed, composed, gate_passed, rewritten, withheld, gate_errors}` under `$token_usage["finding-quality"]`, plus usage for the preflight, final gate, and repair calls. In debug mode, save the stage under `11c3-comprehension-gate`.
+A finding with `validator_confirmed: true` is not withheld for its wording. On a second `REWRITE`, `gate --final` returns it in `rewrites_needed` with `quality_state: "blocking_repair_required"`, `two_sentence_limit: true`, and `comment_style: "concise"`. Repair each one exactly as above with `$quality_stage = comment-repair-blocking-<id>`, keeping those fields on the input item, recheck it with `$quality_stage = comprehension-recheck-blocking-<id>`, and apply `gate --final` again. A third `REWRITE` publishes the repaired body with `quality_state: "published_over_gate"` and the gate's reasons in `reasons`. A composer error, preservation failure, or malformed verdict is still withheld.
+
+Send both the preflight `PASS` findings and the composed `REWRITE` findings through the final comprehension gate. Merge first-pass findings, second-pass findings, and every withheld array into `$finding_quality`. Record `{total_tokens: 0, contracted, preflight_passed, composed, gate_passed, rewritten, published_over_gate, withheld, gate_errors}` under `$token_usage["finding-quality"]`, plus usage for the preflight, final gate, and repair calls. In debug mode, save the stage under `11c3-comprehension-gate`.
 
 ### Finalize Publication
 

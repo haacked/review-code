@@ -13,17 +13,26 @@ This script decides nothing about the review. It reports; the caller reverts.
 
 Input, one object per accepted rewrite:
 
-    [{"id": 1, "description": "...", "proposed_fix": "... or null"}]
+    [{"id": 1, "comment_style": "concise", "description": "...",
+      "proposed_fix": "... or null"}]
+
+A `concise` description, the default when `comment_style` is absent, also gets
+a `concise_length` warning when its prose has more than two sentences or 40
+words.
 
 Output (stdout):
 
     {"checked": 9, "clean": 7, "warned": 2, "warned_ids": [3, 7],
+     "restore_ids": [3],
      "findings": [{"id": 3, "warnings": [
         {"field": "description", "line": 1, "category": "pinning",
          "message": "...", "text": "..."}], "suppressed": 2}],
      "error": null}
 
 `suppressed` appears only when --limit dropped warnings from that finding.
+`restore_ids` lists the warned ids with a warning other than `concise_length`.
+After the voice repair, the caller restores only those ids to their pre-voice
+bodies.
 
 Fails open: any internal failure prints a zero-count result with `error` set
 and exits 0, so a bad input or a broken rule can never block a review.
@@ -56,12 +65,20 @@ LINTED_FIELDS = ("description", "proposed_fix")
 def result(*, checked: int = 0, warned_ids=(), findings=(), error=None) -> dict:
     """Build the one result shape, so the error path cannot drift from the rest."""
     ids = list(warned_ids)
+    findings = list(findings)
     return {
         "checked": checked,
         "clean": checked - len(ids),
         "warned": len(ids),
         "warned_ids": ids,
-        "findings": list(findings),
+        # A body that is only too long keeps its rewrite, because the final
+        # comprehension gate also judges length.
+        "restore_ids": [
+            finding["id"]
+            for finding in findings
+            if any(w["category"] != "concise_length" for w in finding["warnings"])
+        ],
+        "findings": findings,
         "error": error,
     }
 
@@ -82,6 +99,15 @@ def gate(linter, items: list, limit: int) -> dict:
                 warnings.extend(
                     linter.trim_warning(w, field=field) for w in linter.lint(value)
                 )
+
+        # Only `description` is posted, so only it has a length limit.
+        description = item.get("description")
+        if (
+            item.get("comment_style", "concise") == "concise"
+            and isinstance(description, str)
+            and (length := linter.concise_length(description))
+        ):
+            warnings.append(linter.trim_warning(length, field="description"))
 
         if not warnings:
             continue
