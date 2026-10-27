@@ -32,13 +32,15 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "skills/review-code/scripts"
 sys.path.insert(0, str(SCRIPTS / "helpers"))
 
+from lint_loader import load_linter  # noqa: E402
 from markdown_fences import walk_fences  # noqa: E402
 
 DEFAULT_FIXTURE = ROOT / "tests/fixtures/finding-comments/pr-113272.json"
 HANDLER = "skills/review-code/handlers/review-finding-quality.md"
 # The handler sets no fence width for gate and composer replies. Agents
-# sometimes close a four-backtick fence with three.
-FENCED_ARRAY = re.compile(r"`{3,4}json\s*\n(?P<body>.*)\n`{3,4}", re.S)
+# sometimes close a four-backtick fence with three. The preservation judge
+# sometimes writes a sentence before the fence.
+FENCED_ARRAY = re.compile(r"`{3,4}json\s*\n(?P<body>.*?)\n`{3,4}", re.S)
 JUDGE_RULES = re.compile(
     r"^For every changed finding.*?(?=^Run the executable merge)", re.S | re.M
 )
@@ -52,10 +54,18 @@ VOICE_FIELDS = (
     "proposed_fix",
 )
 BODY_FIELDS = ("description", "proposed_fix")
+LINTER = load_linter()
 
 
 def words(body: str | None) -> int | None:
     return None if body is None else len(body.split())
+
+
+def lint_categories(body: str | None) -> list[str] | None:
+    """Return the voice lint categories a published body still carries."""
+    if body is None:
+        return None
+    return sorted({warning["category"] for warning in LINTER.lint(body)})
 
 
 def prose_words(body: str) -> int:
@@ -93,13 +103,14 @@ def judge_instructions(ref: str | None) -> str:
         "fields, and the voice pass's `rewrite`. Apply these rules from the pipeline's "
         "handler:\n\n"
         + rules.group(0).strip()
-        + "\n\nReturn only the decisions array, one object per input item, in a json fence."
+        + "\n\nYou have no tool that writes files. Instead of writing the file these rules "
+        "name, return only the decisions array, one object per input item, in a json fence."
     )
 
 
 def parse_array(text: str) -> list[Any]:
     text = text.strip()
-    match = FENCED_ARRAY.fullmatch(text)
+    match = FENCED_ARRAY.search(text)
     values = json.loads(match.group("body") if match else text)
     if not isinstance(values, list):
         raise ValueError("response is not a JSON array")
@@ -491,6 +502,7 @@ def score(fixture: dict[str, Any], publication: dict[str, Any], runner: Runner) 
                 "before_words": words(case.get("before")),
                 "after_words": words(case.get("after")),
                 "withheld": withheld.get(index),
+                "lint": lint_categories(body),
                 "body": body,
             }
         )
@@ -518,8 +530,8 @@ def table(summary: dict[str, Any]) -> str:
         return "-" if value is None else str(value)
 
     rows = [
-        "| # | Location | Before | After | This run |",
-        "| ---: | --- | ---: | ---: | ---: |",
+        "| # | Location | Before | After | This run | Lint |",
+        "| ---: | --- | ---: | ---: | ---: | --- |",
     ]
     for case in summary["cases"]:
         this_run = (
@@ -527,11 +539,12 @@ def table(summary: dict[str, Any]) -> str:
             if case["withheld"] is None
             else f"withheld ({case['withheld']})"
         )
+        lint = "-" if case["lint"] is None else ", ".join(case["lint"])
         rows.append(
-            f"| {case['id']} | `{case['location']}` | {cell(case['before_words'])} | {cell(case['after_words'])} | {this_run} |"
+            f"| {case['id']} | `{case['location']}` | {cell(case['before_words'])} | {cell(case['after_words'])} | {this_run} | {lint} |"
         )
     rows.append(
-        f"| | Total | {cell(summary['before_words'])} | {cell(summary['after_words'])} | {summary['words']} |"
+        f"| | Total | {cell(summary['before_words'])} | {cell(summary['after_words'])} | {summary['words']} | |"
     )
     return "\n".join(rows)
 

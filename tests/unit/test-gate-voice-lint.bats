@@ -133,6 +133,14 @@ EOF
     has_warning code_term_verb
 }
 
+@test "gate-voice-lint: a quoted word as the subject of an action verb sends the body to voice repair" {
+    run lint_one concise "$(jq -r '.cases[0].draft' "$PROJECT_ROOT/tests/fixtures/finding-comments/pr-118814.json")"
+
+    [ "$status" -eq 0 ]
+    has_warning action_subject
+    has_warning negative_subject
+}
+
 # =============================================================================
 # Concise length
 # =============================================================================

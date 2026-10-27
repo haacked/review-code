@@ -1,0 +1,54 @@
+{
+  "source": "https://github.com/PostHog/posthog/pull/118814",
+  "base_sha": "23b2755f062a96a825e981db42bfbec52e3fa8ff",
+  "head_sha": "9d99801364b1372ea361b8e16290ffff0c4231cd",
+  "comment_style": "concise",
+  "cases": [
+    {
+      "location": "products/feature_flags/backend/flag_analytics.py:36",
+      "agent": "maintainability",
+      "severity": "suggestion",
+      "confidence": 65,
+      "draft": "`suggestion`: \"legacy\" names two different hashes here. The comment above calls `posthog:local_evaluation_requests:{team_id}` \"the legacy local evaluation counter\", but `LEGACY_LOCAL_EVALUATION_USAGE_KEY` is the new hash. At the call site, `increment_legacy_local_evaluation_usage` reads like it bumps the old counter. How about naming these after Django to match the `feature-flags-django` producer (`posthog:django_local_evaluation_usage`, `increment_django_local_evaluation_usage`, `report_django_local_evaluation_usage_task`, …)? None of it is on master yet, so the rename is free.",
+      "before": "`suggestion`: \"legacy\" names two different hashes here. The comment above calls `posthog:local_evaluation_requests:{team_id}` \"the legacy local evaluation counter\", but `LEGACY_LOCAL_EVALUATION_USAGE_KEY` is the new hash. At [the call site](https://github.com/PostHog/posthog/blob/9d99801364b1372ea361b8e16290ffff0c4231cd/products/feature_flags/backend/api/feature_flag.py#L4205), `increment_legacy_local_evaluation_usage` reads like it bumps the old counter.\n\nHow about naming these after Django to match the `feature-flags-django` producer (`posthog:django_local_evaluation_usage`, `increment_django_local_evaluation_usage`, `report_django_local_evaluation_usage_task`, …)? This code isn't on master yet, so the rename is free.",
+      "after": null,
+      "proposed_fix": "Rename only, no behavior change: `LEGACY_LOCAL_EVALUATION_USAGE_KEY` -> `DJANGO_LOCAL_EVALUATION_USAGE_KEY` with value `posthog:django_local_evaluation_usage`; `increment_legacy_local_evaluation_usage` -> `increment_django_local_evaluation_usage`; `report_legacy_local_evaluation_usage` -> `report_django_local_evaluation_usage`; `report_legacy_local_evaluation_usage_task` -> `report_django_local_evaluation_usage_task`; schedule name `report legacy local evaluation usage` -> `report django local evaluation usage`. Update the call site at `feature_flag.py:4205`, the test class name, the literal key in the API test, and `billing.md:128,132`.",
+      "facts": {
+        "problem": "The word \"legacy\" in the new names refers to a different hash than \"legacy\" in the comment two lines above and in the billing code, so readers will mix up the two hashes.",
+        "trigger": "At `feature_flag.py:4204-4205`, `increment_request_count(..., LOCAL_EVALUATION)` updates the old counter, and the next line, `increment_legacy_local_evaluation_usage`, updates the new hash that feeds usage records.",
+        "mechanism": [
+          "The comment at `flag_analytics.py:34` calls `posthog:local_evaluation_requests:{team_id}` \"the legacy local evaluation counter\".",
+          "`LEGACY_LOCAL_EVALUATION_USAGE_KEY` on line 36 names a different hash, `posthog:legacy_local_evaluation_usage`.",
+          "In `posthog/usage_counters.py`, \"legacy\" means the old billing path (`UsageCounterMode.LEGACY`, \"legacy totals authoritative\")."
+        ],
+        "result": "A reader of the call site will likely assume the \"legacy\" function updates the old counter, which is the reverse of what it does.",
+        "requested_change": "Name the key, the functions, the task, and the schedule entry after Django to match the `feature-flags-django` producer id, for example `posthog:django_local_evaluation_usage`, `increment_django_local_evaluation_usage`, and `report_django_local_evaluation_usage_task`.",
+        "regression_case": null,
+        "regression_rationale": null
+      }
+    },
+    {
+      "location": "products/feature_flags/backend/flag_analytics.py:36",
+      "agent": "maintainability",
+      "severity": "suggestion",
+      "confidence": 65,
+      "draft": "`suggestion`: \"legacy\" names two different hashes here. How about naming these after Django to match the `feature-flags-django` producer?",
+      "before": null,
+      "after": null,
+      "proposed_fix": "Rename only, no behavior change: `LEGACY_LOCAL_EVALUATION_USAGE_KEY` -> `DJANGO_LOCAL_EVALUATION_USAGE_KEY` with value `posthog:django_local_evaluation_usage`; `increment_legacy_local_evaluation_usage` -> `increment_django_local_evaluation_usage`; `report_legacy_local_evaluation_usage` -> `report_django_local_evaluation_usage`; `report_legacy_local_evaluation_usage_task` -> `report_django_local_evaluation_usage_task`; schedule name `report legacy local evaluation usage` -> `report django local evaluation usage`. Update the call site at `feature_flag.py:4205`, the test class name, the literal key in the API test, and `billing.md:128,132`.",
+      "facts": {
+        "problem": "The word \"legacy\" in the new names refers to a different hash than \"legacy\" in the comment two lines above and in the billing code, so readers will mix up the two hashes.",
+        "trigger": "At `feature_flag.py:4204-4205`, `increment_request_count(..., LOCAL_EVALUATION)` updates the old counter, and the next line, `increment_legacy_local_evaluation_usage`, updates the new hash that feeds usage records.",
+        "mechanism": [
+          "The comment at `flag_analytics.py:34` calls `posthog:local_evaluation_requests:{team_id}` \"the legacy local evaluation counter\".",
+          "`LEGACY_LOCAL_EVALUATION_USAGE_KEY` on line 36 names a different hash, `posthog:legacy_local_evaluation_usage`.",
+          "In `posthog/usage_counters.py`, \"legacy\" means the old billing path (`UsageCounterMode.LEGACY`, \"legacy totals authoritative\")."
+        ],
+        "result": "A reader of the call site will likely assume the \"legacy\" function updates the old counter, which is the reverse of what it does.",
+        "requested_change": "Name the key, the functions, the task, and the schedule entry after Django to match the `feature-flags-django` producer id, for example `posthog:django_local_evaluation_usage`, `increment_django_local_evaluation_usage`, and `report_django_local_evaluation_usage_task`.",
+        "regression_case": null,
+        "regression_rationale": null
+      }
+    }
+  ]
+}

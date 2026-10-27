@@ -490,6 +490,61 @@ EOF
 }
 
 # =============================================================================
+# Words as the subject of an action verb
+# =============================================================================
+
+# A word discussed as a word can mean, refer to, or appear in something, but it
+# can't name, decide, or want anything. "'legacy' names two different hashes"
+# left the author asking what the sentence meant.
+@test "lint-comment-voice: flags a quoted word that opens a clause as the subject of an action verb" {
+    lint_phrases <<'EOF'
+"legacy" names two different hashes here.
+`suggestion`: "legacy" names two different hashes here.
+The word "legacy" names two different hashes here.
+The comment above is clear. "legacy" names two different hashes.
+“legacy” names two different hashes here.
+'legacy' names two different hashes here.
+But "the applier" names a different component here.
+The key is renamed, and the phrase "boolean-array precedence" names a category.
+The label "auto" decides whether the pool scales.
+"strict" wants every caller to pass a token.
+The name "retry" decides whether the second call runs.
+The doc is clear, but "the stale filter" wants the old row.
+"the planned follow-up" names no concrete work.
+EOF
+    [ "$status" -eq 0 ]
+    every_line_has_warning action_subject
+}
+
+# The quoted nouns and the named test come from past reviews.
+@test "lint-comment-voice: leaves quoted words with a verb of meaning, quoted nouns, quoted titles, and named tests alone" {
+    lint_phrases <<'EOF'
+"legacy" means two different things here.
+"legacy" refers to two different hashes here.
+"Lint" checks the status before the merge.
+"Link File References" runs after the gate.
+The doc is clear, but "the stale filter" updates the wrong row.
+The flag "strict" decides whether the pool scales.
+"Legacy" names are confusing here.
+The two "notes" names appear in both files.
+Two separate "nothing found, stop" checks became one.
+Three jobs ran, and "Storybook flake verification" checks failed.
+The test "rejects expired tokens" checks the status code.
+"Lint" checks all passed.
+Three jobs ran, and "Storybook" checks all failed.
+"Lint" checks no longer run on forks.
+"Legacy" names no longer point to the old hash.
+"Deploy" updates both landed before the migration.
+"Legacy" names both point to the old hash.
+"Legacy" names all point to the old hash.
+"Lint" checks each ran twice.
+"Legacy" names each point to a different hash.
+EOF
+    [ "$status" -eq 0 ]
+    no_line_has_warning action_subject
+}
+
+# =============================================================================
 # Length
 # =============================================================================
 

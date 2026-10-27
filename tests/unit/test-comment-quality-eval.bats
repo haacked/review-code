@@ -127,6 +127,7 @@ agent_body() {
     [ "$(summary .published)" -eq 12 ]
     [ "$(summary -r '.cases[0].body')" = '`suggestion`: Composed body 1.' ]
     [ "$(summary '.cases[0].words')" -eq 4 ]
+    [ "$(summary -c '.cases[0].lint')" = '[]' ]
     stages | jq -e 'index("comment-compose") == 1 and index("voice") == 2'
 }
 
@@ -136,6 +137,7 @@ agent_body() {
     [ "$status" -eq 0 ]
     [ "$(summary .published)" -eq 11 ]
     [ "$(summary -r '.cases[1].withheld')" = "rewrite_failed" ]
+    [ "$(summary '.cases[1].lint')" = "null" ]
     [ "$(summary -r '.cases[2].body')" = '`suggestion`: Composed body 3.' ]
     jq -e '.[0].reasons | index("Cut the walkthrough.")' "$OUT/comment-repair-2-input.json"
     [ "$(jq -c '.[0].unresolved' "$OUT/comment-repair-2-input.json")" = '[{"phrase":"this","stands_for":"unclear"}]' ]
@@ -224,7 +226,19 @@ agent_body() {
     [[ "$output" == *'| 3 | `posthog/api/cohort.py:1792` | - | - |'* ]]
 }
 
-@test "comment quality eval: word counts leave out fenced code, and replies parse with mismatched fences" {
+@test "comment quality eval: the summary lists the voice lint categories each published body still carries" {
+    local fixture="$PROJECT_ROOT/tests/fixtures/finding-comments/pr-118814.json"
+    # Every stub gate passes, so each draft publishes with its "legacy" names sentence.
+    run_eval --fixture "$fixture"
+
+    [ "$status" -eq 0 ]
+    [ "$(summary .published)" -eq 2 ]
+    [ "$(summary -c '.cases[0].lint')" = '["action_subject","negative_subject"]' ]
+    [ "$(summary -c '.cases[1].lint')" = '["action_subject"]' ]
+    [[ "$output" == *'| action_subject, negative_subject |'* ]]
+}
+
+@test "comment quality eval: word counts leave out fenced code, and replies parse with mismatched fences or leading prose" {
     run python3 - "$EVAL" << 'PY'
 import importlib.util
 import sys
@@ -239,6 +253,9 @@ assert module.prose_words(body) == 8, module.prose_words(body)
 assert module.prose_words("Wrap it:\n\n  ~~~tsx\n  <div />\n  ~~~\n") == 2
 assert module.parse_array('````json\n[{"id": 1}]\n```') == [{"id": 1}]
 assert module.parse_array('[{"id": 2}]') == [{"id": 2}]
+assert module.parse_array('I could not write the file.\n\n```json\n[{"id": 3}]\n```') == [{"id": 3}]
+assert module.parse_array('```json\n[{"id": 4}]\n```\n\nRewritten:\n\n```text\nx\n```') == [{"id": 4}]
+assert module.parse_array('```json\n[{"id": 5}]\n```\n```') == [{"id": 5}]
 PY
     [ "$status" -eq 0 ]
 }
