@@ -533,9 +533,12 @@ The test "rejects expired tokens" checks the status code.
 "Lint" checks all passed.
 Three jobs ran, and "Storybook" checks all failed.
 "Lint" checks no longer run on forks.
+"Legacy" names no longer point to the old hash.
 "Deploy" updates both landed before the migration.
+"Legacy" names both point to the old hash.
 "Legacy" names all point to the old hash.
 "Lint" checks each ran twice.
+"Legacy" names each point to a different hash.
 EOF
     [ "$status" -eq 0 ]
     no_line_has_warning action_subject

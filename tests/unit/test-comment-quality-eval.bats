@@ -254,6 +254,8 @@ assert module.prose_words("Wrap it:\n\n  ~~~tsx\n  <div />\n  ~~~\n") == 2
 assert module.parse_array('````json\n[{"id": 1}]\n```') == [{"id": 1}]
 assert module.parse_array('[{"id": 2}]') == [{"id": 2}]
 assert module.parse_array('I could not write the file.\n\n```json\n[{"id": 3}]\n```') == [{"id": 3}]
+assert module.parse_array('```json\n[{"id": 4}]\n```\n\nRewritten:\n\n```text\nx\n```') == [{"id": 4}]
+assert module.parse_array('```json\n[{"id": 5}]\n```\n```') == [{"id": 5}]
 PY
     [ "$status" -eq 0 ]
 }

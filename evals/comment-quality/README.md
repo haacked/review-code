@@ -87,4 +87,4 @@ A detailed-style run of #113272 on `ec61396` published all 12 at 103 words each,
 - The orchestrator also checks that each composer body keeps the prefix, problem, trigger, and requested change, and withholds one that doesn't. The eval accepts every composer body that has a description, so it may publish a finding production would withhold.
 - The composer sees the diff but no other source files. Production gives it the PR checkout.
 - The reviewer drafts in the fixtures came from the old reviewer briefing.
-- A reply whose fence opens with a space before `json`, or that closes its fence twice, does not parse, and the eval treats it as no answer. Production's voice merge rejects the first form too. Two of the 20 runs made on 2026-10-25 had one such voice reply, and none of the 10 current runs in the second table did.
+- A reply whose fence opens with a space before `json` does not parse, and the eval treats it as no answer. Production's voice merge rejects that form too, and it also rejects a voice reply that closes its fence twice. Two of the 20 runs made on 2026-10-25 had one of those voice replies, and none of the 10 current runs in the second table did.

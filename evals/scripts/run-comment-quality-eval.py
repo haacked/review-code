@@ -40,7 +40,7 @@ HANDLER = "skills/review-code/handlers/review-finding-quality.md"
 # The handler sets no fence width for gate and composer replies. Agents
 # sometimes close a four-backtick fence with three. The preservation judge
 # sometimes writes a sentence before the fence.
-FENCED_ARRAY = re.compile(r"`{3,4}json\s*\n(?P<body>.*)\n`{3,4}", re.S)
+FENCED_ARRAY = re.compile(r"`{3,4}json\s*\n(?P<body>.*?)\n`{3,4}", re.S)
 JUDGE_RULES = re.compile(
     r"^For every changed finding.*?(?=^Run the executable merge)", re.S | re.M
 )
