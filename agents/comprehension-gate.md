@@ -57,6 +57,8 @@ Set `trim_only` to `true` on a concise `REWRITE` when every reason is in the lis
 
 For `detailed`, require every applicable coverage field and execution-order explanation, and a blank line between problem and recommendation in a body of three or more sentences. For either style, `inference_required: true`, factual inconsistency with the supplied facts, or prose that needs a second read means `REWRITE`. Otherwise return `PASS`. A malformed item is `REWRITE`, never `PASS`.
 
+An action verb whose subject can't do that action needs a second read. A word discussed as a word, usually in quotes, can mean, refer to, or appear in something, but it can't name, decide, or want anything (`"pending" names two different states`). List that phrase in `unresolved`. A word used for the thing it refers to takes that thing's verbs, so keep `the error names the missing file`, `"Link File References" runs after the gate`, and `this PR adds a retry`.
+
 Also return:
 
 - `unresolved`: phrases whose concrete behavior the body does not state, each as `{"phrase": "...", "stands_for": "what is missing or ambiguous"}`.

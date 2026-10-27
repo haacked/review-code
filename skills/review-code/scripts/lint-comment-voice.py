@@ -28,9 +28,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "helpers"))
 
 from markdown_fences import walk_fences  # noqa: E402
 
-# A negative subject opens a sentence, or opens a clause after a coordinating
+# A subject opens a sentence, or opens a clause after a coordinating
 # conjunction (", but nothing checks it").
-NEGATIVE_SUBJECT_START = r"(?:^\s*|[.!?]\s+|(?:^\s*|,?\s+)(?:but|so|and|yet)\s+)"
+CLAUSE_START = r"(?:^\s*|[.!?]\s+|(?:^\s*|,?\s+)(?:but|so|and|yet)\s+)"
 
 # Rules drawn from agents/code-reviewer-voice.md, limited to what a regex can
 # judge without reading the surrounding code. Each pattern is prose-only: code,
@@ -152,8 +152,8 @@ RAW_PATTERNS: dict[str, tuple[str, ...]] = {
     # "nothing more" or "nothing else" has no verb after the negation, so it
     # passes.
     "negative_subject": (
-        rf"{NEGATIVE_SUBJECT_START}(?:Nothing|Nobody|No one|None of)\b(?!\s+(?:else|more|less)\s*(?:[.,;:!?]|$))",
-        rf"{NEGATIVE_SUBJECT_START}No\s+(?!(?:longer|matter|doubt|need|way|reason)\b)[a-z-]+(?:\s+[a-z-]+)?\s+"
+        rf"{CLAUSE_START}(?:Nothing|Nobody|No one|None of)\b(?!\s+(?:else|more|less)\s*(?:[.,;:!?]|$))",
+        rf"{CLAUSE_START}No\s+(?!(?:longer|matter|doubt|need|way|reason)\b)[a-z-]+(?:\s+[a-z-]+)?\s+"
         r"(?:covers?|checks?|tests?|asserts?|calls?|reads?|writes?|uses?|handles?|"
         r"exercises?|runs?|pass(?:es)?|reach(?:es)?|verif(?:y|ies)|catch(?:es)?|exists?|hits?|sets?|sends?|"
         r"gates?|requires?|needs?)\b"
@@ -172,6 +172,24 @@ RAW_PATTERNS: dict[str, tuple[str, ...]] = {
         r"(?<![./])(?<!the )(?<!these )(?<!those )(?<!both )(?<!all )(?-i:\b[Gg]ates\b)(?![./]\w)"
         r"(?!\s*[,;:)]|\s*\.(?:\s|$)|\s+(?:are|were|do|don't|did|run|reject|fail|pass|disagree|differ|in|of|from)\b(?!-))",
         r"(?<![./])(?-i:\b(?:[Gg]at(?:ed|ing)|[Uu]ngat(?:e|es|ed))\b)(?![./]\w)",
+    ),
+    # A quoted word as the subject of an action verb ('"legacy" names two
+    # different hashes'). A word discussed as a word can mean, refer to, or
+    # appear in something, but it can't name, decide, or want anything. A
+    # quoted title takes the verbs of the thing it names ('"Lint" checks the
+    # status'), so the check lists only verbs that titles rarely take. The
+    # quote must open the clause, alone or after "the word" or a similar noun.
+    # A quoted name after any other noun is that noun's name, as in 'the flag
+    # "strict" decides whether the pool scales'. A flag can decide. "Names" is
+    # also a plural noun ('"Legacy" names are confusing'), so a word that
+    # starts an object must follow the verb. "All", "both", "each", and "no
+    # longer" are left out of those words because they also follow a plural
+    # noun ('"Legacy" names all point to the old hash').
+    "action_subject": (
+        rf"{CLAUSE_START}(?:the\s+(?:word|name|label|term|phrase)\s+)?"
+        r"[\"“‘'][^\"”’']{1,60}[\"”’']\s+(?:names|decides|wants)\s+"
+        r"(?=(?:the|a|an|this|these|those|its|their|every|any|some|something|"
+        r"nothing|one|two|three|several|whether|if)\b|no\b(?!\s+longer\b)|\d)",
     ),
     # Pseudo-headers the voice agent strips. These read as labels where the
     # sentence should just say the thing.
@@ -228,6 +246,8 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
 MESSAGES = {
     "code_term_verb": "A code noun is used as a verb; write the behavior instead, "
     'such as "requires approval for".',
+    "action_subject": "A quoted word can't name, decide, or want anything; say what "
+    "the word means or where it appears.",
 }
 
 # The concise comment style allows at most this much prose. Code blocks and the
