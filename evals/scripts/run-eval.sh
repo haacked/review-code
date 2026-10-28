@@ -19,10 +19,19 @@
 # session state, and PR worktrees under its own result directory, so a run never
 # reads or replaces the installed skill's reviews of the same PR.
 #
+# A skill run installs this checkout into a scratch HOME and reviews with it, so
+# the result measures this checkout's skill and agents rather than the copy that
+# bin/setup last installed. Two checkouts can therefore be compared without
+# reinstalling between them. Run them one after the other: PR benchmarks fetch
+# into the same local clone, and the two installs do not share its lock.
+#
 # Environment:
-#   EVAL_TARGET_REPO   Git checkout that crafted benchmark patches are applied in
-#                      (default: this repo). Set it to a separate clone or worktree
-#                      to keep benchmark branches out of the checkout you work in.
+#   EVAL_TARGET_REPO   Git repository that crafted benchmark patches are applied
+#                      on top of (default: this repo). Each run clones its HEAD,
+#                      so point both sides of a comparison at the same one.
+#   EVAL_WORK_DIR      Where each run keeps its scratch HOME, crafted clone, and
+#                      session directory (default: ${TMPDIR:-/tmp}/review-code-eval).
+#                      The run's manifest records the path.
 #   EVAL_BUDGET_USD    Per-benchmark budget cap, overriding each benchmark's
 #                      metadata (default: no cap). A benchmark killed mid-review
 #                      by a cap produces an unscoreable partial result, so caps
@@ -37,21 +46,154 @@ TARGET_REPO="${EVAL_TARGET_REPO:-${REPO_ROOT}}"
 REGISTRY="${EVALS_DIR}/benchmarks/registry.json"
 RESULTS_DIR="${EVALS_DIR}/results"
 BASELINE_PROMPT="${EVALS_DIR}/prompts/baseline.md"
+EVAL_WORK_ROOT="${EVAL_WORK_DIR:-${TMPDIR:-/tmp}/review-code-eval}"
 
 source "${SCRIPT_DIR}/helpers/eval-helpers.sh"
+# shellcheck source=../../skills/review-code/scripts/helpers/repos-config.sh
+source "${REPO_ROOT}/skills/review-code/scripts/helpers/repos-config.sh"
+
+# Set by prepare_eval_home for skill runs.
+EVAL_HOME=""
+EVAL_SKILL_DIR=""
+EVAL_SESSION_DIR=""
 
 # Build the claude -p prompt that runs the review-code skill.
 # `claude -p` does not register personal skills as slash commands (verified on
 # claude 2.1.219: both `/review-code` and the Skill tool report unknown), so
-# instruct the model to load the installed skill file and follow it directly.
+# instruct the model to load the skill file and follow it directly.
 # Print mode cannot answer AskUserQuestion prompts, so pin the answer the
 # skill's current-branch disambiguation would ask for: review the branch
 # against its base, never a substitute range (a range changes the review
 # file's name and the harness then can't find the output).
 # Args: $1 = the /review-code arguments (e.g. "my-branch --force")
 skill_prompt() {
-    echo "Read ${HOME}/.claude/skills/review-code/SKILL.md and follow its instructions exactly, as if the user ran: /review-code $1
+    echo "Read ${EVAL_SKILL_DIR}/SKILL.md and follow its instructions exactly, as if the user ran: /review-code $1
 This session cannot answer interactive prompts. If the skill asks what to review (uncommitted vs branch changes), review the branch changes vs the base branch, re-initializing the session with the branch argument if needed."
+}
+
+# Install this checkout into a scratch HOME, clone the crafted target, and make
+# a session directory for PR reviews. Sets EVAL_HOME, EVAL_SKILL_DIR,
+# EVAL_SESSION_DIR, and TARGET_REPO.
+# Args: $1 = work directory for this run
+prepare_eval_home() {
+    local work_dir="$1"
+    local real_home="${HOME}"
+    EVAL_HOME="${work_dir}/home"
+    EVAL_SESSION_DIR="${work_dir}/session"
+    mkdir -p "${EVAL_HOME}/.claude" "${EVAL_SESSION_DIR}" || return 1
+
+    # Setup must run before the links below exist. It installs agents into
+    # every PostHog Desktop config home under ~/Library and ~/.config, so with
+    # those linked it would write into the real ones. Without CLAUDE_CONFIG_DIR
+    # it writes Claude config under the scratch HOME only.
+    if ! env -u CLAUDE_CONFIG_DIR HOME="${EVAL_HOME}" CODEX_HOME="${EVAL_HOME}/.codex" \
+        "${REPO_ROOT}/bin/setup" > "${work_dir}/setup.log" 2>&1; then
+        echo "Error: bin/setup failed; see ${work_dir}/setup.log" >&2
+        return 1
+    fi
+
+    # The rest of the scratch HOME links to the real one. The claude login is
+    # in the keychain under ~/Library. gh, git, and the hooks in user settings
+    # read their files under HOME.
+    local entry name
+    for entry in "${real_home}"/.[!.]* "${real_home}"/*; do
+        [[ -e "${entry}" || -L "${entry}" ]] || continue
+        name="${entry##*/}"
+        [[ -e "${EVAL_HOME}/${name}" || -L "${EVAL_HOME}/${name}" ]] \
+            || ln -s "${entry}" "${EVAL_HOME}/${name}" || return 1
+    done
+
+    EVAL_SKILL_DIR=$(HOME="${EVAL_HOME}" get_skill_dir)
+
+    # repos.conf maps a PR's repository to its local clone. It is user config,
+    # and setup never writes it.
+    local repos_conf
+    if repos_conf=$(find_repos_config); then
+        cp "${repos_conf}" "${EVAL_SKILL_DIR}/" || return 1
+    fi
+
+    # The clone's main and origin/main both point at the cloned HEAD, so a
+    # branch review of a benchmark diffs against exactly the commit the patch
+    # was applied to. Its origin URL is the source's, because the skill and
+    # this script read org and repo from it.
+    local target="${work_dir}/target"
+    local origin_url
+    if ! origin_url=$(git -C "${TARGET_REPO}" remote get-url origin) \
+        || ! git clone --quiet "${TARGET_REPO}" "${target}" \
+        || ! git -C "${target}" remote set-url origin "${origin_url}" \
+        || ! git -C "${target}" checkout --quiet -B main \
+        || ! git -C "${target}" update-ref refs/remotes/origin/main HEAD \
+        || ! git -C "${target}" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main; then
+        echo "Error: could not clone ${TARGET_REPO} into ${target}" >&2
+        return 1
+    fi
+    echo "/.claude/" >> "${target}/.git/info/exclude"
+    TARGET_REPO="${target}"
+
+    link_eval_agents "${TARGET_REPO}" && link_eval_agents "${EVAL_SESSION_DIR}"
+}
+
+# A project's .claude/agents takes precedence over the user's agents, so a
+# session started in this directory dispatches the scratch install's agents
+# instead of the ones in the real Claude config. A repository that tracks its
+# own .claude/agents directory cannot take the link: ln would put it inside
+# that directory, and the session would use the installed agents.
+# Args: $1 = directory a review session starts in
+link_eval_agents() {
+    local agents_dir="$1/.claude/agents"
+    if [[ -e "${agents_dir}" && ! -L "${agents_dir}" ]]; then
+        echo "Error: ${agents_dir} is a directory, so the eval cannot replace its agents" >&2
+        return 1
+    fi
+    mkdir -p "$1/.claude" && ln -sfn "${EVAL_HOME}/.claude/agents" "${agents_dir}"
+}
+
+# Run the skill in claude -p against the scratch install and record the
+# session's cost, turns, and duration in run-stats.json.
+# Args: $1 = result dir, $2 = directory the session starts in,
+#       $3 = /review-code arguments, $4 = budget (empty for none),
+#       remaining = extra VAR=value entries for the session's environment
+run_skill_session() {
+    local result_dir="$1"
+    local session_dir="$2"
+    local review_args="$3"
+    local budget="$4"
+    shift 4
+
+    echo "  Budget: ${budget:+\$}${budget:-none}"
+    local budget_args=()
+    [[ -z "${budget}" ]] || budget_args=(--max-budget-usd "${budget}")
+
+    # The keychain stores the login under a name derived from CLAUDE_CONFIG_DIR,
+    # and setting it to the default path changes that name. So the session
+    # inherits the caller's value, set or unset. When it is unset, the config
+    # directory follows HOME to the scratch install, and --settings loads the
+    # real user settings in its place.
+    local settings_args=()
+    if [[ -z "${CLAUDE_CONFIG_DIR:-}" && -f "${HOME}/.claude/settings.json" ]]; then
+        settings_args=(--settings "${HOME}/.claude/settings.json")
+    fi
+
+    # Unset CLAUDECODE to allow running inside an existing Claude Code session.
+    local claude_exit=0
+    (
+        cd "${session_dir}" \
+            && env -u CLAUDECODE HOME="${EVAL_HOME}" "$@" \
+                claude -p "$(skill_prompt "${review_args}")" \
+                --dangerously-skip-permissions \
+                --output-format json \
+                "${settings_args[@]}" \
+                "${budget_args[@]}"
+    ) > "${result_dir}/claude-output.json" 2> "${result_dir}/claude-stderr.txt" || claude_exit=$?
+
+    if [[ ${claude_exit} -ne 0 ]]; then
+        echo "  Warning: claude exited with code ${claude_exit}" >&2
+    fi
+
+    jq -r '.result // ""' "${result_dir}/claude-output.json" > "${result_dir}/claude-output.txt" 2> /dev/null || true
+    jq '{cost_usd: .total_cost_usd, duration_ms, num_turns, is_error}' \
+        "${result_dir}/claude-output.json" > "${result_dir}/run-stats.json" 2> /dev/null \
+        || echo "  Warning: no session stats in ${result_dir}/claude-output.json" >&2
 }
 
 # Generate a unique run ID from timestamp + short git SHA
@@ -246,20 +388,8 @@ run_pr_benchmark() {
         echo "  Using frozen PR description from ${bench_dir}/pr-body.md"
     fi
 
-    # Run the review via claude -p using the PR URL.
-    # Unset CLAUDECODE to allow running inside an existing Claude Code session.
-    echo "  Budget: ${budget:+\$}${budget:-none}"
-    local budget_args=()
-    [[ -z "${budget}" ]] || budget_args=(--max-budget-usd "${budget}")
-    local claude_exit=0
-    env -u CLAUDECODE "${frozen_env[@]}" claude -p "$(skill_prompt "${pr_url} --force")" \
-        --dangerously-skip-permissions \
-        "${budget_args[@]}" \
-        > "${result_dir}/claude-output.txt" 2>&1 || claude_exit=$?
-
-    if [[ ${claude_exit} -ne 0 ]]; then
-        echo "  Warning: claude exited with code ${claude_exit}" >&2
-    fi
+    run_skill_session "${result_dir}" "${EVAL_SESSION_DIR}" "${pr_url} --force" "${budget}" \
+        "${frozen_env[@]}"
 
     # The skill removes its PR worktree when the review finishes. A run that
     # dies first leaves the checkout behind and registered in the local clone,
@@ -304,41 +434,25 @@ run_crafted_benchmark() {
         return 1
     fi
 
-    # Fail fast if working tree is dirty — patching on a dirty tree risks losing work
-    if [[ -n "$(git -C "${TARGET_REPO}" status --porcelain 2> /dev/null)" ]]; then
-        echo "Error: working tree is dirty; commit or stash changes before running crafted benchmarks" >&2
-        return 1
-    fi
-
     # The reviewing agent is handed the branch name (skill_prompt puts it in the
     # prompt) and reads the commit messages, so neither may carry the benchmark
     # id: names like shadow-diff-duplication or unsafe-api tell it what to look
     # for before it sees any code. Hash the id instead, which keeps the branch
-    # unique per benchmark for cleanup and for concurrent runs.
+    # unique per benchmark within a run.
     local bench_tag
     bench_tag=$(printf '%s' "${id}" | git -C "${TARGET_REPO}" hash-object --stdin | cut -c1-12)
     local tmp_branch="eval-tmp-${bench_tag}"
-    local original_ref
-    original_ref=$(git -C "${TARGET_REPO}" branch --show-current 2> /dev/null)
-    # Detached HEAD: restore by commit SHA instead of branch name
-    [[ -n "${original_ref}" ]] || original_ref=$(git -C "${TARGET_REPO}" rev-parse HEAD)
 
-    # Restore the original checkout and delete the temp branch. Called explicitly
+    # Return the clone to main for the run's next benchmark. Called explicitly
     # at every exit path; a RETURN trap is unreliable here (bash fires it after
     # the function's locals are out of scope, aborting under set -u).
     cleanup_crafted_benchmark() {
-        git -C "${TARGET_REPO}" checkout "${original_ref}" --quiet 2> /dev/null || true
+        git -C "${TARGET_REPO}" checkout main --quiet 2> /dev/null || true
         git -C "${TARGET_REPO}" branch -D "${tmp_branch}" --quiet 2> /dev/null || true
     }
 
     echo "  Applying patch for ${id} to ${tmp_branch}…"
-
-    # Create a temporary branch from HEAD, apply the patch, and commit
-    git -C "${TARGET_REPO}" checkout -b "${tmp_branch}" --quiet 2> /dev/null || {
-        # Branch may already exist from a previous failed run; clean it up
-        git -C "${TARGET_REPO}" branch -D "${tmp_branch}" --quiet 2> /dev/null || true
-        git -C "${TARGET_REPO}" checkout -b "${tmp_branch}" --quiet
-    }
+    git -C "${TARGET_REPO}" checkout -b "${tmp_branch}" --quiet
 
     # Apply base.patch first if it exists (creates files needed by diff.patch)
     local base_patch="${bench_dir}/base.patch"
@@ -373,53 +487,25 @@ run_crafted_benchmark() {
     # slicing instead of sed: BSD sed rejects the lazy quantifier a trailing
     # optional .git group would need.
     local origin_url org repo
-    origin_url=$(git -C "${TARGET_REPO}" remote get-url origin 2> /dev/null || echo "")
+    origin_url=$(git -C "${TARGET_REPO}" remote get-url origin)
     origin_url="${origin_url%.git}"
     repo="${origin_url##*/}"
     org="${origin_url%/*}"
     org="${org##*[:/]}"
-    [[ -n "${org}" ]] || org="unknown"
-    [[ -n "${repo}" ]] || repo="unknown"
 
-    # Run the review via claude -p from inside the target repo, so the skill's
-    # git commands operate on the checkout that has the benchmark branch.
-    # Unset CLAUDECODE to allow running inside an existing Claude Code session.
-    echo "  Budget: ${budget:+\$}${budget:-none}"
-    local budget_args=()
-    [[ -z "${budget}" ]] || budget_args=(--max-budget-usd "${budget}")
+    # Run the review from inside the target repo, so the skill's git commands
+    # operate on the checkout that has the benchmark branch.
     touch "${result_dir}/.start"
-    local claude_exit=0
-    (
-        cd "${TARGET_REPO}" \
-            && env -u CLAUDECODE claude -p "$(skill_prompt "${tmp_branch} --force")" \
-                --dangerously-skip-permissions \
-                "${budget_args[@]}"
-    ) > "${result_dir}/claude-output.txt" 2>&1 || claude_exit=$?
+    run_skill_session "${result_dir}" "${TARGET_REPO}" "${tmp_branch} --force" "${budget}"
 
-    if [[ ${claude_exit} -ne 0 ]]; then
-        echo "  Warning: claude exited with code ${claude_exit}" >&2
-    fi
-
-    # Locate the review file and copy it to results. Branch reviews are saved
-    # as <branch>.md; older skill versions used branch-<branch>.md. As a last
-    # resort take the newest review in the repo's directory written since this
-    # benchmark started (the skill may have reviewed an equivalent range and
-    # saved under a range-based name).
-    local review_file=""
-    local candidate
-    for candidate in \
-        "${REVIEW_CODE_REVIEW_DIR}/${org}/${repo}/${tmp_branch}.md" \
-        "${REVIEW_CODE_REVIEW_DIR}/${org}/${repo}/branch-${tmp_branch}.md"; do
-        if [[ -f "${candidate}" ]]; then
-            review_file="${candidate}"
-            break
-        fi
-    done
-    if [[ -z "${review_file}" ]]; then
-        review_file=$(find "${REVIEW_CODE_REVIEW_DIR}" -name "*${tmp_branch}*" -type f 2> /dev/null | head -1)
-    fi
-    if [[ -z "${review_file}" ]]; then
-        review_file=$(find "${REVIEW_CODE_REVIEW_DIR}/${org}/${repo}" -name '*.md' -type f \
+    # Branch reviews are saved as <branch>.md. Otherwise take a review in the
+    # repo's directory written since this benchmark started, because the skill
+    # may have reviewed an equivalent range and saved it under the range's name.
+    # -maxdepth 1 skips the .artifacts directories beside each review, which
+    # hold reviewer reports that are also .md files.
+    local review_file="${REVIEW_CODE_REVIEW_DIR}/${org}/${repo}/${tmp_branch}.md"
+    if [[ ! -f "${review_file}" ]]; then
+        review_file=$(find "${REVIEW_CODE_REVIEW_DIR}/${org}/${repo}" -maxdepth 1 -name '*.md' -type f \
             -newer "${result_dir}/.start" 2> /dev/null | head -1)
         [[ -z "${review_file}" ]] || echo "  Note: matched review by timestamp: ${review_file}" >&2
     fi
@@ -460,6 +546,7 @@ write_manifest() {
         --arg sha "${sha}" \
         --arg model "${model}" \
         --arg timestamp "${timestamp}" \
+        --arg home "${EVAL_HOME}" \
         --argjson benchmarks "${benchmark_json}" \
         '{
             run_id: $run_id,
@@ -467,6 +554,7 @@ write_manifest() {
             git_sha: $sha,
             model: $model,
             timestamp: $timestamp,
+            eval_home: (if $home == "" then null else $home end),
             benchmarks: $benchmarks
         }' > "${manifest}"
 }
@@ -488,6 +576,11 @@ run_with_approach() {
 
     echo "Starting eval run: ${run_id} (approach: ${approach})"
     echo "Benchmarks: ${benchmarks[*]}"
+
+    if [[ "${approach}" == "skill" ]]; then
+        echo "Installing ${REPO_ROOT} into ${EVAL_WORK_ROOT}/${run_id}/home…"
+        prepare_eval_home "${EVAL_WORK_ROOT}/${run_id}" || return 1
+    fi
     echo ""
 
     local failed=0
@@ -640,4 +733,6 @@ main() {
     fi
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

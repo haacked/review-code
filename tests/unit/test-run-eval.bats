@@ -30,6 +30,7 @@ EOF
     chmod +x "$TEST_TMP/bin/claude"
     export PATH="$TEST_TMP/bin:$PATH"
     export STUB_ENV_LOG="$TEST_TMP/env.log"
+    export EVAL_WORK_DIR="$TEST_TMP/eval-work"
 }
 
 teardown() {

@@ -4,6 +4,7 @@
   "description": "Python input validation for S3 exports with SSRF-adjacent URL/hostname confusion bug",
   "source": "posthog/posthog#49032",
   "source_url": "https://github.com/PostHog/posthog/pull/49032",
+  "source_sha": "fcf05adb62bf0f469d5abda424f975b4111d3643",
   "languages": ["python"],
   "frameworks": ["django"],
   "areas": ["security", "correctness", "testing"],

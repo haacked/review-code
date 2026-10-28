@@ -115,6 +115,22 @@ setup() {
     [ -z "$problems" ]
 }
 
+@test "eval benchmarks: every frozen PR diff pins the commit it was taken from" {
+    # Reviewers verify each line against the PR checkout. Without source_sha
+    # that checkout is the PR's final head, which carries the author's fixes
+    # for the very findings the answer key expects.
+    local problems=""
+    while read -r bench; do
+        local meta="$BENCHMARKS_DIR/$bench/metadata.json"
+        [[ -f "$meta" ]] || continue
+        jq -e '(.source_url // "") == "" or .frozen_diff != true or ((.source_sha // "") | test("^[0-9a-f]{40}$"))' \
+            "$meta" > /dev/null || problems+="$bench: frozen PR diff has no 40-character source_sha"$'\n'
+    done <<< "$BENCH_PATHS"
+
+    [[ -z "$problems" ]] || echo "$problems" >&2
+    [ -z "$problems" ]
+}
+
 @test "eval benchmarks: expected findings and traps carry the fields the scorer reads" {
     local problems=""
     while read -r bench; do

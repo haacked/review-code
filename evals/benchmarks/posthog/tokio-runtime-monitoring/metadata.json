@@ -4,6 +4,7 @@
   "description": "Rust observability feature with a subtle data correctness bug (stale variable reference) and structural issues",
   "source": "posthog/posthog#48629",
   "source_url": "https://github.com/PostHog/posthog/pull/48629",
+  "source_sha": "a11c46b529c15853b22343b8d0f322a392213514",
   "languages": ["rust"],
   "frameworks": [],
   "areas": ["correctness", "testing", "maintainability"],
