@@ -1037,3 +1037,54 @@ teardown() {
     [ "$status" -eq 0 ]
     [ "$(echo "$output" | jq -r '.comment_style')" = "detailed" ]
 }
+
+# =============================================================================
+# Benchmark PR overrides
+# =============================================================================
+
+benchmark_pr_data() {
+    jq -n '{body: "live body names the fix", comments: {conversation: [{body: "found it"}], reviews: [], inline: [{body: "line comment"}]}}'
+}
+
+@test "apply_benchmark_pr_overrides: leaves the PR data alone outside a benchmark" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+    unset REVIEW_CODE_FROZEN_DIFF REVIEW_CODE_FROZEN_PR_BODY
+
+    result=$(apply_benchmark_pr_overrides "$(benchmark_pr_data)")
+
+    [ "$(echo "$result" | jq -r '.body')" = "live body names the fix" ]
+    [ "$(echo "$result" | jq '.comments.conversation | length')" -eq 1 ]
+}
+
+@test "apply_benchmark_pr_overrides: a frozen diff strips comments and keeps the live body" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+    export REVIEW_CODE_FROZEN_DIFF="$BATS_TEST_TMPDIR/diff.patch"
+    unset REVIEW_CODE_FROZEN_PR_BODY
+
+    result=$(apply_benchmark_pr_overrides "$(benchmark_pr_data)")
+
+    echo "$result" | jq -e '.comments == {conversation: [], reviews: [], inline: []}'
+    [ "$(echo "$result" | jq -r '.body')" = "live body names the fix" ]
+}
+
+@test "apply_benchmark_pr_overrides: a frozen body replaces the live description verbatim" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+    unset REVIEW_CODE_FROZEN_DIFF
+    printf '## Problem\n\nThe description at the frozen commit.\n' > "$BATS_TEST_TMPDIR/pr-body.md"
+    export REVIEW_CODE_FROZEN_PR_BODY="$BATS_TEST_TMPDIR/pr-body.md"
+
+    result=$(apply_benchmark_pr_overrides "$(benchmark_pr_data)")
+
+    [ "$(echo "$result" | jq -r '.body')" = "$(cat "$BATS_TEST_TMPDIR/pr-body.md")" ]
+}
+
+@test "apply_benchmark_pr_overrides: a missing frozen body fails instead of reviewing with the live one" {
+    source "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+    unset REVIEW_CODE_FROZEN_DIFF
+    export REVIEW_CODE_FROZEN_PR_BODY="$BATS_TEST_TMPDIR/missing.md"
+
+    run apply_benchmark_pr_overrides "$(benchmark_pr_data)"
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"does not exist"* ]]
+}

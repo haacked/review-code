@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "expected_findings": [
+    {
+      "id": "materialized-column-parity-not-guarded",
+      "description": "uncopied_rows_predicate compiles the approved deletion predicate against posthog.flag_evaluations and uses it to queue flag rows that have no events copy for deletion. It refuses only predicates that events reads from a property-group map. Events also reads materialized `$` properties from `mat_` columns, which turn an empty string and the string \"null\" into NULL, while flag_evaluations reads raw JSON. With `$browser` materialized, `properties.$browser = ''` excludes a `{\"$browser\": \"\"}` row on events and matches it on flag_evaluations, so the deferred path queues a row the approved predicate excludes; `IS NULL` misses rows the other way. The PR description and the coverage doc record this gap as accepted. The fix refuses predicates whose events compile reads a materialized column, or compiles the flag read with the same normalization. Found by an outside reviewer who ran both compiles on an empty-string row and saw the row queued.",
+      "area": "correctness",
+      "severity": "blocking",
+      "weight": 10,
+      "file": "posthog/models/data_deletion_request.py",
+      "line_start": 140,
+      "line_end": 370,
+      "keywords": ["mat_", "materialized", "materialised", "empty string", "''", "\"null\"", "IS NULL", "nullable", "nullIf", "edge value"]
+    }
+  ],
+  "false_positive_traps": [],
+  "clean_areas": []
+}

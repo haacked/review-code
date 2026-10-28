@@ -1,0 +1,950 @@
+diff --git a/posthog/clickhouse/test/test_schema.py b/posthog/clickhouse/test/test_schema.py
+index 0e4f587fb07d..3c3e4619067a 100644
+--- a/posthog/clickhouse/test/test_schema.py
++++ b/posthog/clickhouse/test/test_schema.py
+@@ -310,16 +310,10 @@ def _hogql_column_names(table: Table) -> set[str]:
+ 
+ 
+ # _timestamp, _offset and _partition are Kafka metadata, deliberately not exposed to customers.
+-# The person columns stay hidden until every stored row carries the values the producer writes.
+-# Older rows hold '{}', epoch and 'full'. Read as values, those rows let internal users through
+-# test-account filters and keep lifecycle from counting anyone as new.
+ _FLAG_EVALUATIONS_COLUMNS_HIDDEN_FROM_HOGQL = {
+     "_timestamp",
+     "_offset",
+     "_partition",
+-    "person_properties",
+-    "person_created_at",
+-    "person_mode",
+     *_FLAG_EVALUATIONS_PROPERTY_GROUP_COLUMN_NAMES,
+ }
+ 
+diff --git a/posthog/hogql/autocomplete.py b/posthog/hogql/autocomplete.py
+index 1b62acb901e8..4fb6c9f438a7 100644
+--- a/posthog/hogql/autocomplete.py
++++ b/posthog/hogql/autocomplete.py
+@@ -36,6 +36,7 @@ from posthog.hogql.database.models import (
+     VirtualTable,
+ )
+ from posthog.hogql.database.schema.events import EventsGroupSubTable, EventsPersonSubTable, EventsTable
++from posthog.hogql.database.schema.flag_evaluations import FlagEvaluationsPersonSubTable
+ from posthog.hogql.database.schema.groups import GroupsTable
+ from posthog.hogql.database.schema.persons import PersonsTable
+ from posthog.hogql.filters import replace_filters
+@@ -732,7 +733,7 @@ def _suggest_unshadowed_globals(*, query_globals: dict, response: HogQLAutocompl
+ 
+ 
+ def _property_definition_type(table: Table, field: StringJSONDatabaseField) -> Optional[PropertyDefinition.Type]:
+-    if isinstance(table, EventsPersonSubTable):
++    if isinstance(table, EventsPersonSubTable | FlagEvaluationsPersonSubTable):
+         return PropertyDefinition.Type.PERSON
+     if isinstance(table, EventsGroupSubTable):
+         return PropertyDefinition.Type.GROUP
+diff --git a/posthog/hogql/catalog_traversal.py b/posthog/hogql/catalog_traversal.py
+index 7be18ecc7068..815b8389a2e1 100644
+--- a/posthog/hogql/catalog_traversal.py
++++ b/posthog/hogql/catalog_traversal.py
+@@ -23,6 +23,7 @@ from posthog.hogql.database.models import (
+ from posthog.hogql.database.s3_table import S3Table
+ from posthog.hogql.database.schema.event_sessions import EventsSessionSubTable
+ from posthog.hogql.database.schema.events import EventsGroupSubTable, EventsPersonSubTable, EventsTable
++from posthog.hogql.database.schema.flag_evaluations import FlagEvaluationsPersonSubTable
+ from posthog.hogql.database.schema.persons import PersonsTable
+ from posthog.hogql.database.schema.sessions_v1 import SessionsTableV1
+ from posthog.hogql.database.schema.sessions_v2 import SessionsTableV2
+@@ -361,7 +362,7 @@ class _TraversalCatalogBuilder:
+ 
+     def _target_property_namespace(self, target: Table) -> str | None:
+         namespace: str | None = None
+-        if isinstance(target, EventsPersonSubTable):
++        if isinstance(target, EventsPersonSubTable | FlagEvaluationsPersonSubTable):
+             namespace = "person"
+         elif isinstance(target, EventsSessionSubTable):
+             namespace = "session"
+diff --git a/posthog/hogql/database/database.py b/posthog/hogql/database/database.py
+index 3e3a86a96d88..9ba974f83e29 100644
+--- a/posthog/hogql/database/database.py
++++ b/posthog/hogql/database/database.py
+@@ -2469,6 +2469,13 @@ class Database(BaseModel):
+                 )
+                 cast(LazyJoin, raw_replay_events.fields["events"]).join_table = events_table
+ 
++            if not database._is_direct_query() and database.has_table(["posthog", "flag_evaluations"]):
++                # The events session resolvers ignore from_field and read $session_id and $session_id_uuid from the
++                # source table. Copying the events join keeps the sessions table version that the team's modifiers chose.
++                database.get_table(["posthog", "flag_evaluations"]).fields["session"] = cast(
++                    LazyJoin, database.get_table("events").fields["session"]
++                ).model_copy()
++
+         with timings.measure("virtual_fields", emit_span=True):
+             if not database._is_direct_query():
+                 _use_virtual_fields(database, modifiers, timings)
+@@ -3192,6 +3199,13 @@ def _use_virtual_fields(database: Database, modifiers: HogQLQueryModifiers, timi
+     persons_table = database.get_table("persons")
+     groups_table = database.get_table("groups")
+     poe = cast(VirtualTable, events_table.fields["poe"])
++    # A flag call stores the event and person properties blobs that these fields read. A team's test account filters
++    # can read them.
++    flag_evaluations = (
++        database.get_table(["posthog", "flag_evaluations"])
++        if database.has_table(["posthog", "flag_evaluations"])
++        else None
++    )
+ 
+     with timings.measure("initial_referring_domain_type"):
+         field_name = "$virt_initial_referring_domain_type"
+@@ -3212,6 +3226,10 @@ def _use_virtual_fields(database: Database, modifiers: HogQLQueryModifiers, timi
+             timings=timings,
+             properties_path=["poe", "properties"],
+         )
++    if flag_evaluations is not None:
++        flag_evaluations_poe = cast(VirtualTable, flag_evaluations.fields["poe"])
++        for field_name in ("$virt_initial_referring_domain_type", "$virt_initial_channel_type"):
++            flag_evaluations_poe.fields[field_name] = poe.fields[field_name].model_copy()
+ 
+     with timings.measure("traffic_type_virtual_fields"):
+         from posthog.hogql.database.schema.traffic_type import (
+@@ -3230,6 +3248,10 @@ def _use_virtual_fields(database: Database, modifiers: HogQLQueryModifiers, timi
+             ("$virt_bot_operator", create_bot_operator_field),
+         ]:
+             events_table.fields[field_name] = factory_fn(name=field_name)
++            if flag_evaluations is not None:
++                flag_evaluations.fields[field_name] = events_table.fields[field_name].model_copy(
++                    update={"hidden": True}
++                )
+ 
+     revenue_fields = ["revenue", "mrr"]
+     with timings.measure("revenue_analytics_virtual_fields"):
+diff --git a/posthog/hogql/database/schema/flag_evaluations.py b/posthog/hogql/database/schema/flag_evaluations.py
+index b17783ff09fd..36b37c31e71f 100644
+--- a/posthog/hogql/database/schema/flag_evaluations.py
++++ b/posthog/hogql/database/schema/flag_evaluations.py
+@@ -36,8 +36,9 @@ FLAG_EVALUATIONS_HOGQL_TABLE = "posthog.flag_evaluations"
+ 
+ # The expression the events table uses under the persons-on-events modes that apply overrides. This table
+ # applies it for every team instead of following the mode, because the mode decides where person properties
+-# come from and this table stores none. A team on `PERSON_ID_NO_OVERRIDE_PROPERTIES_ON_EVENTS` therefore
+-# reads a merge-aware person here, and from `events` the write-time person until the squash rewrites it.
++# come from and this table does not follow the mode for those either. A team on
++# `PERSON_ID_NO_OVERRIDE_PROPERTIES_ON_EVENTS` therefore reads a merge-aware person here, and from `events` the
++# write-time person until the squash rewrites it.
+ # The table and its `poe` subtable each take their own copy. The tests in test_flag_evaluations.py select
+ # `person_id` and `person.id` together, so the two drifting apart fails there.
+ def _person_id() -> ExpressionField:
+@@ -57,13 +58,15 @@ def _person_id() -> ExpressionField:
+ class FlagEvaluationsPersonSubTable(VirtualTable):
+     """The person the flag-evaluation row resolves to, corrected by `person_distinct_id_overrides`.
+ 
+-    Narrower than EventsPersonSubTable, which also declares `person_created_at` and `properties` --
+-    columns this table does not store, so reusing it would let `person.created_at`,
+-    `person.properties` and `SELECT person.*` compile into a column the shards lack.
++    `properties` and `created_at` read the columns stored at evaluation time, as events does under
++    persons-on-events. EventsPersonSubTable does not fit, because its `id` reads the stored person and
++    the printer treats it as part of `events`.
+     """
+ 
+     fields: dict[str, FieldOrTable] = {
+         "id": _person_id(),
++        "created_at": DateTimeDatabaseField(name="person_created_at", nullable=False),
++        "properties": StringJSONDatabaseField(name="person_properties", nullable=False),
+     }
+ 
+     def to_printed_clickhouse(self, context):
+@@ -148,18 +151,31 @@ class FlagEvaluationsTable(Table):
+         "$session_id": ExpressionField(
+             name="$session_id", expr=ast.Field(chain=["session_id"]), isolate_scope=True, hidden=True
+         ),
++        # The sessions join that database.py copies from events reads $session_id and $session_id_uuid from here.
++        "$session_id_uuid": ExpressionField(
++            name="$session_id_uuid",
++            expr=uuid_string_expr_to_uint128_expr(ast.Field(chain=["session_id"])),
++            isolate_scope=True,
++            hidden=True,
++        ),
+         "request_id": StringDatabaseField(
+             name="request_id",
+             nullable=False,
+             description="Identifier of the flag-evaluation request, shared by every flag evaluated in it.",
+         ),
++        "person_mode": StringDatabaseField(
++            name="person_mode",
++            nullable=False,
++            description="How ingestion processed the person: 'full', 'propertyless' or 'force_upgrade'. A "
++            "'propertyless' evaluation had no person profile, and its `person.properties` is '{}'.",
++        ),
+         # Should not be used directly; reached via `person`.
+         "poe": FlagEvaluationsPersonSubTable(),
+         "person": FieldTraverser(
+             chain=["poe"],
+-            description="The person the evaluation is attributed to, corrected for any later identify or merge, so "
+-            "`uniq(person.id)` counts a merged person once. Carries the id alone: the row stores no person "
+-            "properties, so join to `persons` to read them.",
++            description="The person the evaluation is attributed to. `person.id` is corrected for any later identify "
++            "or merge, so `uniq(person.id)` counts a merged person once. `person.properties` and `person.created_at` "
++            "are the values stored at evaluation time, not the person's current ones.",
+         ),
+         # Group keys only. The row carries no group properties, so there is nothing to traverse to:
+         # join to `groups` on one of these keys to read a group's current properties.
+@@ -173,6 +189,34 @@ class FlagEvaluationsTable(Table):
+         "$group_2": StringDatabaseField(name="$group_2", nullable=False, description="Key of the type-2 group."),
+         "$group_3": StringDatabaseField(name="$group_3", nullable=False, description="Key of the type-3 group."),
+         "$group_4": StringDatabaseField(name="$group_4", nullable=False, description="Key of the type-4 group."),
++        # A group property filter, such as a team's test account filter, compiles to `group_N.properties`.
++        # These joins let it resolve here as it does on events.
++        **{
++            f"group_{index}": LazyJoin(
++                from_field=[f"$group_{index}"],
++                join_table="groups",
++                resolver=GROUP_N,
++                resolver_params={"group_index": index},
++                hidden=True,
++            )
++            for index in range(GROUP_TYPES_LIMIT)
++        },
++        # The table stores no elements, and a flag call on events has none either. An element filter therefore
++        # resolves here and matches nothing, as it does on events. The empty array keeps its String element type.
++        **{
++            name: ExpressionField(name=name, expr=ast.Constant(value=""), hidden=True)
++            for name in ("elements_chain", "elements_chain_href")
++        },
++        **{
++            name: ExpressionField(
++                name=name,
++                expr=ast.Call(
++                    name="arrayResize", args=[ast.Array(exprs=[ast.Constant(value="")]), ast.Constant(value=0)]
++                ),
++                hidden=True,
++            )
++            for name in ("elements_chain_texts", "elements_chain_ids", "elements_chain_elements")
++        },
+     }
+ 
+     def avoid_asterisk_fields(self) -> list[str]:
+@@ -187,46 +231,21 @@ class FlagEvaluationsTable(Table):
+         return FLAG_EVALUATIONS_CLICKHOUSE_TABLE
+ 
+ 
+-# The fields add_events_list_fields_to_flag_evaluations adds that join another table.
++# The fields an events list reads from flag_evaluations that join another table.
+ EVENTS_LIST_JOINED_FIELDS = frozenset({"person", "session", *(f"group_{index}" for index in range(GROUP_TYPES_LIMIT))})
+ 
+ 
+ def add_events_list_fields_to_flag_evaluations(database: "Database") -> None:
+-    """Add the fields an events list reads to `posthog.flag_evaluations` in `database`, so a list query resolves there.
++    """Make `person` on `posthog.flag_evaluations` in `database` a persons join, as an events list reads it.
+ 
+-    This changes the table instance that `database` holds. Every later query compiled against `database` sees the wider
+-    table. Pass a database that only the events list runner uses, such as its `shared_database`.
++    This changes the table instance that `database` holds. Every later query compiled against `database` reads each
++    person's current properties instead of the stored ones. Pass a database that only the events list runner uses,
++    such as its `shared_database`.
+     """
+     flag_evaluations = database.get_table(["posthog", "flag_evaluations"])
+-    events_session = database.get_table("events").fields["session"]
+-    assert isinstance(events_session, LazyJoin)
+ 
+     # This joins persons on the merge-corrected person_id, the way events does under
+     # PERSON_ID_OVERRIDE_PROPERTIES_JOINED. The join is lazy. A query that reads no person field skips it.
+     flag_evaluations.fields["person"] = LazyJoin(
+         from_field=["person_id"], join_table=database.get_table("persons"), resolver=PERSONS
+     )
+-    groups = database.get_table("groups")
+-    for index in range(GROUP_TYPES_LIMIT):
+-        flag_evaluations.fields[f"group_{index}"] = LazyJoin(
+-            from_field=[f"$group_{index}"], join_table=groups, resolver=GROUP_N, resolver_params={"group_index": index}
+-        )
+-
+-    # The events session resolvers ignore from_field and read $session_id and $session_id_uuid from the source table.
+-    # Copying the events join keeps the sessions table version that the team's modifiers chose.
+-    flag_evaluations.fields["$session_id_uuid"] = ExpressionField(
+-        name="$session_id_uuid",
+-        expr=uuid_string_expr_to_uint128_expr(ast.Field(chain=["session_id"])),
+-        isolate_scope=True,
+-    )
+-    flag_evaluations.fields["session"] = events_session.model_copy()
+-
+-    # The table stores no elements and no person mode. A flag call on events has no elements either.
+-    # An element filter therefore matches nothing on both tables. The empty array keeps its String element type.
+-    for name in ("elements_chain", "elements_chain_href", "person_mode"):
+-        flag_evaluations.fields[name] = ExpressionField(name=name, expr=ast.Constant(value=""))
+-    for name in ("elements_chain_texts", "elements_chain_ids", "elements_chain_elements"):
+-        flag_evaluations.fields[name] = ExpressionField(
+-            name=name,
+-            expr=ast.Call(name="arrayResize", args=[ast.Array(exprs=[ast.Constant(value="")]), ast.Constant(value=0)]),
+-        )
+diff --git a/posthog/hogql/database/schema/groups.py b/posthog/hogql/database/schema/groups.py
+index 3519812c674f..d835244ae2c8 100644
+--- a/posthog/hogql/database/schema/groups.py
++++ b/posthog/hogql/database/schema/groups.py
+@@ -143,20 +143,21 @@ def join_with_group_n_table(
+         right=ast.Constant(value=group_index),
+     )
+ 
+-    # If the outer query has a bounded prefilter on `events` (one that references `timestamp` —
++    # If the outer query has a bounded prefilter on its source table (one that references `timestamp` —
+     # which is the strongest signal we have that the matched set is small), push an additional
+-    # `group_key IN (SELECT $group_N FROM events WHERE <outer prefilter>)` predicate into the
++    # `group_key IN (SELECT $group_N FROM <source table> WHERE <outer prefilter>)` predicate into the
+     # groups subquery. Without this filter, the LEFT JOIN materializes a hash table containing
+     # every group of this type for the team, decompressing the (very wide) `group_properties`
+     # blob row by row — on high-volume teams that's enough to OOM the whole query even when
+-    # only a handful of events are actually being selected. With the filter, the hash table is
+-    # bounded by the distinct `$group_N` values present in the matched events.
+-    events_prefilter = _outer_events_prefilter(node, context)
+-    if events_prefilter is not None:
++    # only a handful of rows are actually being selected. With the filter, the hash table is
++    # bounded by the distinct `$group_N` values present in the matched rows.
++    outer_prefilter = _outer_prefilter(node, context, join_to_add)
++    if outer_prefilter is not None:
++        prefilter_where, prefilter_source = outer_prefilter
+         key_subquery = ast.SelectQuery(
+             select=[ast.Field(chain=[f"$group_{group_index}"])],
+-            select_from=ast.JoinExpr(table=ast.Field(chain=["events"])),
+-            where=events_prefilter,
++            select_from=prefilter_source,
++            where=prefilter_where,
+         )
+         select_query.where = ast.And(
+             exprs=[
+@@ -184,11 +185,11 @@ def join_with_group_n_table(
+     return join_expr
+ 
+ 
+-# Static events-table aliases that resolve to a lazy join. Cloning a WHERE that references one
+-# into the inner `SELECT $group_N FROM events` subquery re-triggers the same lazy join during
+-# resolution and recurses, so the prefilter is skipped in that case (see `_guarded_events_aliases`,
++# Static source-table aliases that resolve to a lazy join. Cloning a WHERE that references one
++# into the inner `SELECT $group_N FROM <source table>` subquery re-triggers the same lazy join during
++# resolution and recurses, so the prefilter is skipped in that case (see `_guarded_aliases`,
+ # which also picks up the per-project group-type-name aliases dynamically).
+-EVENTS_LAZY_JOIN_ALIASES = frozenset(
++LAZY_JOIN_ALIASES = frozenset(
+     {
+         "person",
+         "person_id",
+@@ -210,43 +211,53 @@ EVENTS_LAZY_JOIN_ALIASES = frozenset(
+ )
+ 
+ 
+-def _guarded_events_aliases(context: HogQLContext) -> frozenset[str]:
+-    """Events-table aliases whose reference must skip the prefilter: the static lazy joins,
+-    plus every FieldTraverser on events (this catches the per-project group-type-name aliases
+-    like `organization`; the always-present `person`/`person_id` traversers are already in the
+-    static set, so the union just dedupes them)."""
++# The outer FROM tables whose WHERE the groups subquery can reuse. The last part of a chain is the only alias the
++# outer FROM may carry.
++_PREFILTER_SOURCE_CHAINS: frozenset[tuple[str, ...]] = frozenset({("events",), ("posthog", "flag_evaluations")})
++
++
++def _guarded_aliases(context: HogQLContext, source_chain: list[str]) -> frozenset[str]:
++    """Source-table aliases whose reference must skip the prefilter: the static lazy joins,
++    plus every FieldTraverser on the source table (this catches the per-project group-type-name
++    aliases like `organization`; the always-present `person`/`person_id` traversers are already in
++    the static set, so the union just dedupes them)."""
+     if context.database is None:
+-        return EVENTS_LAZY_JOIN_ALIASES
++        return LAZY_JOIN_ALIASES
+     try:
+-        events_table = context.database.get_table(["events"])
++        source_table = context.database.get_table(source_chain)
+     except Exception:
+-        return EVENTS_LAZY_JOIN_ALIASES
+-    traversers = frozenset(name for name, field in events_table.fields.items() if isinstance(field, FieldTraverser))
+-    return EVENTS_LAZY_JOIN_ALIASES | traversers
++        return LAZY_JOIN_ALIASES
++    traversers = frozenset(name for name, field in source_table.fields.items() if isinstance(field, FieldTraverser))
++    return LAZY_JOIN_ALIASES | traversers
+ 
+ 
+-def _outer_events_prefilter(node: SelectQuery, context: HogQLContext):
++def _outer_prefilter(
++    node: SelectQuery, context: HogQLContext, join_to_add: LazyJoinToAdd
++) -> tuple[ast.Expr, ast.JoinExpr] | None:
+     """
+     Extract a clone of the outer query's WHERE that we can safely embed inside the groups
+-    join subquery. We only return it when:
+-
+-    1. The outer's `FROM` is a plain unaliased `events` reference. Anything else (custom
+-       alias like `FROM events AS e` in funnels, JOINed tables on the outer, or a subquery)
+-       means the WHERE may reference symbols (`e.timestamp`, `p.id`, …) that don't exist
+-       in our inner `SELECT $group_N FROM events` subquery — cloning a WHERE that names
+-       them would raise `Unable to resolve field` when the resolver walks the clone.
+-    2. The WHERE references the `timestamp` field — cheap heuristic for "the matched event
++    join subquery, together with the FROM that the subquery reads. We only return it when:
++
++    1. The outer's `FROM` is a table in `_PREFILTER_SOURCE_CHAINS`, either unaliased or aliased
++       by the last part of its chain. Anything else (custom alias like `FROM events AS e` in funnels,
++       JOINed tables on the outer, or a subquery) means the WHERE may reference symbols
++       (`e.timestamp`, `p.id`, …) that don't exist in our inner `SELECT $group_N FROM <source table>`
++       subquery — cloning a WHERE that names them would raise `Unable to resolve field` when the
++       resolver walks the clone.
++    2. The WHERE references the `timestamp` field — cheap heuristic for "the matched row
+        set is bounded by a date range." Without that guard, a query whose WHERE is only
+-       `team_id = X` (or empty) would push a key subquery that scans every event for the
++       `team_id = X` (or empty) would push a key subquery that scans every row for the
+        team, which is strictly worse than no filter at all.
+-    3. The WHERE does not reference any lazy-join alias on the events table — including the
++    3. The group join hangs off the outer FROM table, not a table the query joins explicitly. The outer
++       WHERE bounds only the outer table's rows, so it says nothing about the group keys of a joined table.
++    4. The WHERE does not reference any lazy-join alias on the source table — including the
+        per-project group-type-name aliases (e.g. `organization`) that resolve to `group_N`.
+        Cloning a `group_N.X` / `organization.X` / `person.X` reference into the inner
+        subquery would re-trigger the resolver on the same lazy join during inner-subquery
+        resolution.
+     """
+     # Deferred: lazy_tables imports the resolver, which imports database schema modules — circular.
+-    from posthog.hogql.transforms.lazy_tables import find_field_chains  # noqa: PLC0415
++    from posthog.hogql.transforms.lazy_tables import find_field_chains, get_table_alias_for_lazy_join  # noqa: PLC0415
+ 
+     where = node.where
+     if where is None:
+@@ -256,25 +267,33 @@ def _outer_events_prefilter(node: SelectQuery, context: HogQLContext):
+     if select_from is None:
+         return None
+     table = select_from.table
+-    if not isinstance(table, ast.Field) or table.chain != ["events"]:
++    if not isinstance(table, ast.Field):
++        return None
++    source_chain = tuple(str(part) for part in table.chain)
++    if source_chain not in _PREFILTER_SOURCE_CHAINS:
+         return None
+-    if select_from.alias is not None and select_from.alias != "events":
++    if select_from.alias is not None and select_from.alias != source_chain[-1]:
++        return None
++    if get_table_alias_for_lazy_join(join_to_add.lazy_join_type) != source_chain[-1]:
+         return None
+ 
+     if not _references_timestamp(where):
+         return None
+-    guarded_aliases = _guarded_events_aliases(context)
+-    if any(_chain_hits_guarded_alias(chain, guarded_aliases) for chain in find_field_chains(where)):
++    guarded_aliases = _guarded_aliases(context, list(source_chain))
++    if any(_chain_hits_guarded_alias(chain, guarded_aliases, source_chain) for chain in find_field_chains(where)):
+         return None
+-    return clone_expr(where)
+-
+-
+-def _chain_hits_guarded_alias(chain: list, guarded: frozenset[str]) -> bool:
+-    # Condition #1 guarantees the outer FROM's qualifier is literally `events`, so a leading
+-    # `events` segment is transparent: `events.organization.x` names the same lazy join as
+-    # `organization.x`. Peel it before matching, or the qualified form slips past the guard.
+-    if len(chain) > 1 and chain[0] == "events":
+-        chain = chain[1:]
++    # The subquery repeats the outer FROM's alias. A WHERE that qualifies a field by that alias then still resolves.
++    return clone_expr(where), ast.JoinExpr(table=ast.Field(chain=list(table.chain)), alias=select_from.alias)
++
++
++def _chain_hits_guarded_alias(chain: list, guarded: frozenset[str], source_chain: tuple[str, ...]) -> bool:
++    # Condition #1 guarantees the outer FROM's qualifier is the source table, so a leading qualifier is
++    # transparent: `events.organization.x` names the same lazy join as `organization.x`. Peel it before matching,
++    # or the qualified form slips past the guard. The qualifier is the full chain or its last part.
++    for qualifier in (list(source_chain), [source_chain[-1]]):
++        if len(chain) > len(qualifier) and chain[: len(qualifier)] == qualifier:
++            chain = chain[len(qualifier) :]
++            break
+     return bool(chain) and isinstance(chain[0], str) and chain[0] in guarded
+ 
+ 
+diff --git a/posthog/hogql/database/schema/test/test_flag_evaluations.py b/posthog/hogql/database/schema/test/test_flag_evaluations.py
+index 4dd8ed7bd88c..a3a26f576c1d 100644
+--- a/posthog/hogql/database/schema/test/test_flag_evaluations.py
++++ b/posthog/hogql/database/schema/test/test_flag_evaluations.py
+@@ -11,6 +11,7 @@ from posthog.schema import (
+     ElementPropertyFilter,
+     EventPropertyFilter,
+     GroupPropertyFilter,
++    HogQLPropertyFilter,
+     PersonPropertyFilter,
+     PropertyOperator,
+     SessionPropertyFilter,
+@@ -20,6 +21,7 @@ from posthog.hogql import ast
+ from posthog.hogql.context import HogQLContext
+ from posthog.hogql.database.database import Database
+ from posthog.hogql.database.schema.flag_evaluations import add_events_list_fields_to_flag_evaluations
++from posthog.hogql.database.schema.util.where_clause_extractor import SESSION_BUFFER_DAYS
+ from posthog.hogql.property import property_to_expr
+ from posthog.hogql.query import execute_hogql_query
+ 
+@@ -33,6 +35,8 @@ from posthog.test.persons import create_group_type_mapping, create_person
+ 
+ from products.access_control.backend.models.property_access_control import PropertyAccessControl
+ from products.access_control.backend.property_access_control import PropertyAccessLevel
++from products.cohorts.backend.models.cohort import Cohort
++from products.cohorts.backend.models.util import insert_static_cohort
+ 
+ EVENT_PROBE = "from-event-properties"
+ 
+@@ -44,6 +48,50 @@ SESSION_ID = str(uuid7())
+ NUMERIC_PROBE = 10
+ 
+ 
++# The filter types an events list or a team's test account filters can hold, with the rows each matches.
++FILTER_CASES = [
++    ("event", EventPropertyFilter(key="probe", value=EVENT_PROBE, operator=PropertyOperator.EXACT), 1),
++    (
++        "person",
++        PersonPropertyFilter(key="email", value="probe@example.com", operator=PropertyOperator.EXACT),
++        1,
++    ),
++    # The stored person properties carry no referrer or UTM values. The channel type is then "Unknown".
++    (
++        "person_virtual_property",
++        PersonPropertyFilter(key="$virt_initial_channel_type", value="Unknown", operator=PropertyOperator.EXACT),
++        1,
++    ),
++    (
++        "group",
++        GroupPropertyFilter(key="industry", value="software", operator=PropertyOperator.EXACT, group_type_index=0),
++        1,
++    ),
++    (
++        "session",
++        SessionPropertyFilter(
++            key="$entry_current_url", value="https://example.com/pricing", operator=PropertyOperator.EXACT
++        ),
++        1,
++    ),
++    ("element_href", ElementPropertyFilter(key="href", value="/buy", operator=PropertyOperator.EXACT), 0),
++    ("element_text", ElementPropertyFilter(key="text", value="Buy", operator=PropertyOperator.EXACT), 0),
++    (
++        "element_tag_name",
++        ElementPropertyFilter(key="tag_name", value="button", operator=PropertyOperator.EXACT),
++        0,
++    ),
++    (
++        "element_selector",
++        ElementPropertyFilter(key="selector", value="button#buy", operator=PropertyOperator.EXACT),
++        0,
++    ),
++    # A HogQL test account filter can read a traffic virtual property. The row stores no user agent. A row with no
++    # user agent classifies as a bot.
++    ("hogql_virtual_property", HogQLPropertyFilter(key="properties.$virt_is_bot"), 1),
++]
++
++
+ class TestFlagEvaluationsTable(ClickhouseTestMixin, BaseTest):
+     def setUp(self):
+         super().setUp()
+@@ -55,7 +103,7 @@ class TestFlagEvaluationsTable(ClickhouseTestMixin, BaseTest):
+         sync_execute(
+             """
+             INSERT INTO writable_flag_evaluations
+-                (uuid, event, properties, timestamp, team_id, distinct_id, created_at, person_id)
++                (uuid, event, properties, timestamp, team_id, distinct_id, created_at, person_id, person_properties)
+             VALUES
+             """,
+             [
+@@ -78,11 +126,12 @@ class TestFlagEvaluationsTable(ClickhouseTestMixin, BaseTest):
+                     "probe-distinct-id",
+                     self.occurred_at,
+                     str(self.person_id),
++                    json.dumps({"email": "probe@example.com", "plan": "free", "age": NUMERIC_PROBE}),
+                 )
+             ],
+         )
+ 
+-    def _execute(self, columns: str, where: str = ""):
++    def _execute(self, columns: str, where: str = "", source: str = "posthog.flag_evaluations"):
+         # settings.DEBUG is False under the test runner, so the org gate fail-closes and prunes the
+         # table. test_database.py covers the gate itself; here it only has to be out of the way.
+         context = HogQLContext(team_id=self.team.pk, team=self.team, user=self.user, enable_select_queries=True)
+@@ -91,7 +140,7 @@ class TestFlagEvaluationsTable(ClickhouseTestMixin, BaseTest):
+             return_value=True,
+         ):
+             return execute_hogql_query(
+-                f"SELECT {columns} FROM posthog.flag_evaluations WHERE uuid = '{self.row_uuid}'{where}",
++                f"SELECT {columns} FROM {source} WHERE uuid = '{self.row_uuid}'{where}",
+                 team=self.team,
+                 context=context,
+                 pretty=False,
+@@ -126,7 +175,7 @@ class TestFlagEvaluationsTable(ClickhouseTestMixin, BaseTest):
+ 
+     def test_every_field_reads_its_own_physical_column(self):
+         results = self._select(
+-            "flag_key, response, session_id, request_id, `$group_0`, person_id, person.id, properties.probe"
++            "flag_key, response, session_id, request_id, `$group_0`, person_id, person.id, person_mode, properties.probe"
+         )
+ 
+         assert results == [
+@@ -138,6 +187,7 @@ class TestFlagEvaluationsTable(ClickhouseTestMixin, BaseTest):
+                 "acme",
+                 self.person_id,
+                 self.person_id,
++                "full",
+                 EVENT_PROBE,
+             )
+         ]
+@@ -198,11 +248,21 @@ class TestFlagEvaluationsTable(ClickhouseTestMixin, BaseTest):
+ 
+         assert self._select("person_id, person.id") == [(self.person_id, self.person_id)]
+ 
+-    def test_overrides_are_joined_only_when_person_id_is_read(self):
+-        # The join is the expensive half of the correction; a query that never names the person must
+-        # not pay for it.
+-        assert "person_distinct_id_overrides" not in self._execute("flag_key").clickhouse
+-        assert "person_distinct_id_overrides" in self._execute("person_id").clickhouse
++    @parameterized.expand(
++        [
++            ("no_person", "flag_key", False),
++            ("person_id", "person_id", True),
++            ("person_dot_id", "person.id", True),
++            ("person_properties", "person.properties.email", False),
++        ]
++    )
++    def test_query_joins_only_the_tables_its_person_fields_need(self, _name: str, columns: str, joins_overrides: bool):
++        # The overrides join is the expensive half of the correction. A persons join does not fit in memory on
++        # the largest teams. A test account filter on a person property must therefore read the stored properties.
++        clickhouse = self._execute(columns).clickhouse
++
++        assert ("person_distinct_id_overrides" in clickhouse) == joins_overrides
++        assert "FROM person " not in clickhouse
+ 
+     def test_asterisk_carries_the_corrected_person_and_no_second_person_column(self):
+         # Let the stored column into the expansion and it takes the slot `person_id` held, so the SQL
+@@ -215,18 +275,26 @@ class TestFlagEvaluationsTable(ClickhouseTestMixin, BaseTest):
+ 
+         assert "flag_evaluation_person_id" not in columns
+         assert response.results[0][columns.index("person_id")] == merged_person_id
++        # The fields copied from events exist only so that filters resolve. They must not reach the expansion.
++        assert not [column for column in columns if column.startswith(("$virt_", "elements_chain", "$session_id"))]
+ 
+-    def test_numeric_property_compares_as_a_number(self):
++    @parameterized.expand(
++        [
++            ("event", "properties", "count", PropertyDefinition.Type.EVENT),
++            ("person", "person.properties", "age", PropertyDefinition.Type.PERSON),
++        ]
++    )
++    def test_numeric_property_compares_as_a_number(self, _name: str, blob_field: str, name: str, property_type):
+         # Drop this table from any of the property-type dispatches and the read stays a String, so
+         # the comparison no longer answers the numeric question.
+         PropertyDefinition.objects.create(
+             team=self.team,
+-            name="count",
++            name=name,
+             property_type="Numeric",
+-            type=PropertyDefinition.Type.EVENT,
++            type=property_type,
+         )
+ 
+-        assert self._select("properties.count > 9") == [(True,)]
++        assert self._select(f"{blob_field}.{name} > 9") == [(True,)]
+ 
+     @parameterized.expand(
+         [
+@@ -253,55 +321,40 @@ class TestFlagEvaluationsTable(ClickhouseTestMixin, BaseTest):
+         assert self._select("uuid", where=f" AND {column} != '{stored_value}'") == [(self.row_uuid,)]
+         assert self._select("uuid", where=f" AND {column} NOT IN ('{stored_value}')") == [(self.row_uuid,)]
+ 
+-    def test_restricted_property_is_hidden_from_both_read_paths(self):
++    @parameterized.expand(
++        [
++            ("event", "properties", "probe", PropertyDefinition.Type.EVENT, "$feature_flag"),
++            ("person", "person.properties", "email", PropertyDefinition.Type.PERSON, "plan"),
++        ]
++    )
++    def test_restricted_property_is_hidden_from_both_read_paths(
++        self, _name: str, blob_field: str, restricted: str, property_type, unrestricted: str
++    ):
+         # The explicit read lowers to a NULL constant and the blob read is scrubbed by the printer.
+         # Both consult the same dispatch, so a table dropped from it leaks through both.
+-        self._restrict("probe", PropertyDefinition.Type.EVENT)
++        self._restrict(restricted, property_type)
+ 
+-        assert self._select("properties.probe") == [(None,)]
++        assert self._select(f"{blob_field}.{restricted}") == [(None,)]
+ 
+-        blob = json.loads(self._select("properties")[0][0])
++        blob = json.loads(self._select(blob_field)[0][0])
+ 
+-        assert "probe" not in blob
+-        assert blob["$feature_flag"] == "probe-flag"
++        assert restricted not in blob
++        assert unrestricted in blob
+ 
+     @parameterized.expand(
+-        [
+-            ("event", EventPropertyFilter(key="probe", value=EVENT_PROBE, operator=PropertyOperator.EXACT), 1),
+-            (
+-                "person",
+-                PersonPropertyFilter(key="email", value="probe@example.com", operator=PropertyOperator.EXACT),
+-                1,
+-            ),
+-            (
+-                "group",
+-                GroupPropertyFilter(
+-                    key="industry", value="software", operator=PropertyOperator.EXACT, group_type_index=0
+-                ),
+-                1,
+-            ),
+-            (
+-                "session",
+-                SessionPropertyFilter(
+-                    key="$entry_current_url", value="https://example.com/pricing", operator=PropertyOperator.EXACT
+-                ),
+-                1,
+-            ),
+-            ("element_href", ElementPropertyFilter(key="href", value="/buy", operator=PropertyOperator.EXACT), 0),
+-            ("element_text", ElementPropertyFilter(key="text", value="Buy", operator=PropertyOperator.EXACT), 0),
+-            (
+-                "element_tag_name",
+-                ElementPropertyFilter(key="tag_name", value="button", operator=PropertyOperator.EXACT),
+-                0,
+-            ),
+-            (
+-                "element_selector",
+-                ElementPropertyFilter(key="selector", value="button#buy", operator=PropertyOperator.EXACT),
+-                0,
+-            ),
++        [(name, prop, expected_rows, False) for name, prop, expected_rows in FILTER_CASES]
++        # The events list reads `person` through a persons join instead of the stored properties.
++        + [
++            (f"{name}_events_list", prop, expected_rows, True)
++            for name, prop, expected_rows in FILTER_CASES
++            if name == "person"
+         ]
+     )
+-    def test_events_shaped_table_reads_every_events_list_field(self, _name: str, prop, expected_rows: int):
++    def test_filter_resolves_with_and_without_the_events_list_fields(
++        self, _name: str, prop, expected_rows: int, events_list_fields: bool
++    ):
++        # Insights read the table without the events list fields. A test account filter of any type must resolve
++        # there too, or every flag calls insight that filters out test accounts fails.
+         create_person(team=self.team, uuid=str(self.person_id), properties={"email": "probe@example.com"})
+         create_group_type_mapping(
+             team=self.team, project_id=self.team.project_id, group_type="organization", group_type_index=0
+@@ -321,7 +374,8 @@ class TestFlagEvaluationsTable(ClickhouseTestMixin, BaseTest):
+             return_value=True,
+         ):
+             database = Database.create_for(team=self.team)
+-            add_events_list_fields_to_flag_evaluations(database)
++            if events_list_fields:
++                add_events_list_fields_to_flag_evaluations(database)
+             response = execute_hogql_query(
+                 f"SELECT {', '.join(SELECT_STAR_FROM_EVENTS_FIELDS)} FROM posthog.flag_evaluations AS flag_evaluations "
+                 "WHERE uuid = {row_uuid} AND {filter}",
+@@ -336,3 +390,73 @@ class TestFlagEvaluationsTable(ClickhouseTestMixin, BaseTest):
+             )
+ 
+         assert len(response.results) == expected_rows
++
++    def test_cohort_filter_resolves_against_the_person_id_expression(self):
++        # A test account filter can exclude a cohort, which compiles to `person_id NOT IN COHORT`. On this table
++        # `person_id` is the override-corrected expression, not a stored column.
++        cohort = Cohort.objects.create(team=self.team, is_static=True)
++        insert_static_cohort([self.person_id], cohort.pk, team_id=self.team.pk)
++
++        assert self._select("uuid", where=f" AND person_id IN COHORT {cohort.pk}") == [(self.row_uuid,)]
++        assert self._select("uuid", where=f" AND person_id NOT IN COHORT {cohort.pk}") == []
++
++    @parameterized.expand(
++        [
++            ("unaliased", "posthog.flag_evaluations", "", True),
++            ("events_list_alias", "posthog.flag_evaluations AS flag_evaluations", "", True),
++            # Cloned into the key subquery, a group field resolves the same groups join again and recurses.
++            (
++                "qualified_group_filter",
++                "posthog.flag_evaluations",
++                " AND posthog.flag_evaluations.group_0.properties.industry = 'software'",
++                False,
++            ),
++        ]
++    )
++    def test_group_join_reads_only_the_groups_of_the_matched_rows(
++        self, _name: str, source: str, where: str, key_bound: bool
++    ):
++        # Without the key bound, the groups subquery reads every group of the type that the team has.
++        create_group_type_mapping(
++            team=self.team, project_id=self.team.project_id, group_type="organization", group_type_index=0
++        )
++        create_group(team_id=self.team.pk, group_type_index=0, group_key="acme", properties={"industry": "software"})
++
++        response = self._execute(
++            "group_0.properties.industry", where=f"{where} AND timestamp >= now() - INTERVAL 1 DAY", source=source
++        )
++
++        assert ("in(key," in response.clickhouse) == key_bound
++        assert response.results == [("software",)]
++
++    def test_group_join_on_a_joined_table_reads_that_tables_group(self):
++        # The outer WHERE bounds the event's group keys, and the event has no group. A key bound built from that
++        # WHERE would drop the flag evaluation's group.
++        create_group_type_mapping(
++            team=self.team, project_id=self.team.project_id, group_type="organization", group_type_index=0
++        )
++        create_group(team_id=self.team.pk, group_type_index=0, group_key="acme", properties={"industry": "software"})
++        _create_event(team=self.team, event="$pageview", distinct_id="probe-distinct-id", timestamp=self.occurred_at)
++        flush_persons_and_events()
++
++        with patch(
++            "products.feature_flags.backend.facade.flags.is_flag_evaluations_table_enabled",
++            return_value=True,
++        ):
++            response = execute_hogql_query(
++                "SELECT fe.group_0.properties.industry FROM events "
++                "JOIN posthog.flag_evaluations AS fe ON fe.distinct_id = events.distinct_id "
++                "WHERE events.timestamp >= now() - INTERVAL 1 DAY",
++                team=self.team,
++                context=HogQLContext(team_id=self.team.pk, team=self.team, user=self.user, enable_select_queries=True),
++            )
++
++        assert response.results == [("software",)]
++
++    def test_session_join_reads_only_sessions_near_the_query_date_range(self):
++        # Without the date bound, the sessions subquery aggregates every session the team has.
++        clickhouse = self._execute(
++            "session.$entry_current_url", where=" AND timestamp >= now() - INTERVAL 1 DAY"
++        ).clickhouse
++
++        assert f"toIntervalDay({SESSION_BUFFER_DAYS})" in clickhouse
+diff --git a/posthog/hogql/helpers/timestamp_visitor.py b/posthog/hogql/helpers/timestamp_visitor.py
+index 6b434950a364..e9674115f504 100644
+--- a/posthog/hogql/helpers/timestamp_visitor.py
++++ b/posthog/hogql/helpers/timestamp_visitor.py
+@@ -133,6 +133,7 @@ class IsSimpleTimestampFieldExpressionVisitor(Visitor[bool]):
+ 
+     def visit_alias(self, node: ast.Alias) -> bool:
+         from posthog.hogql.database.schema.events import EventsTable
++        from posthog.hogql.database.schema.flag_evaluations import FlagEvaluationsTable
+         from posthog.hogql.database.schema.session_replay_events import RawSessionReplayEventsTable
+         from posthog.hogql.database.schema.sessions_v1 import SessionsTableV1
+         from posthog.hogql.database.schema.sessions_v2 import SessionsTableV2
+@@ -152,7 +153,7 @@ class IsSimpleTimestampFieldExpressionVisitor(Visitor[bool]):
+             return (
+                 (
+                     isinstance(table_type, ast.TableType)
+-                    and isinstance(table_type.table, EventsTable)
++                    and isinstance(table_type.table, EventsTable | FlagEvaluationsTable)
+                     and resolved_field.name == "timestamp"
+                 )
+                 or (
+diff --git a/posthog/hogql/property_planner.py b/posthog/hogql/property_planner.py
+index 568fd717a236..70405f87b3ec 100644
+--- a/posthog/hogql/property_planner.py
++++ b/posthog/hogql/property_planner.py
+@@ -7,7 +7,7 @@ from posthog.hogql import ast
+ from posthog.hogql.context import HogQLContext
+ from posthog.hogql.database.models import DatabaseField
+ from posthog.hogql.database.schema.events import EventsPersonSubTable, EventsTable
+-from posthog.hogql.database.schema.flag_evaluations import FlagEvaluationsTable
++from posthog.hogql.database.schema.flag_evaluations import FlagEvaluationsPersonSubTable, FlagEvaluationsTable
+ from posthog.hogql.database.schema.groups import GroupsTable
+ from posthog.hogql.database.schema.persons import PersonsTable, RawPersonsTable
+ from posthog.hogql.errors import (
+@@ -499,7 +499,9 @@ def _property_scope(property_type: ast.PropertyType, context: HogQLContext) -> P
+ 
+     if isinstance(resolved_table, EventsTable | FlagEvaluationsTable):
+         return PropertyScope.EVENT
+-    if isinstance(resolved_table, EventsPersonSubTable | PersonsTable | RawPersonsTable):
++    if isinstance(
++        resolved_table, EventsPersonSubTable | FlagEvaluationsPersonSubTable | PersonsTable | RawPersonsTable
++    ):
+         return PropertyScope.PERSON
+     if isinstance(resolved_table, GroupsTable):
+         return PropertyScope.GROUP
+diff --git a/posthog/hogql/restricted_properties.py b/posthog/hogql/restricted_properties.py
+index 0cadaeb5a258..a87214c6701b 100644
+--- a/posthog/hogql/restricted_properties.py
++++ b/posthog/hogql/restricted_properties.py
+@@ -8,7 +8,7 @@ from posthog.hogql.context import HogQLContext
+ from posthog.hogql.database.postgres_table import PostgresTable
+ from posthog.hogql.database.schema.ai_events import AI_PROPERTY_TO_COLUMN, AiEventsTable
+ from posthog.hogql.database.schema.events import EventsGroupSubTable, EventsPersonSubTable, EventsTable
+-from posthog.hogql.database.schema.flag_evaluations import FlagEvaluationsTable
++from posthog.hogql.database.schema.flag_evaluations import FlagEvaluationsPersonSubTable, FlagEvaluationsTable
+ from posthog.hogql.database.schema.groups import GroupsTable, RawGroupsTable
+ from posthog.hogql.database.schema.persons import PersonsTable, RawPersonsTable
+ 
+@@ -23,7 +23,7 @@ logger = structlog.get_logger(__name__)
+ RESTRICTABLE_JSON_BLOB_COLUMNS: frozenset[str] = frozenset(
+     {
+         "properties",  # events.properties, persons.properties, groups.group_properties reads via the HogQL name
+-        "person_properties",  # EventsPersonSubTable (PoE mode)
++        "person_properties",  # EventsPersonSubTable (PoE mode) and FlagEvaluationsPersonSubTable
+         # Not in the catalog. The property resolver reads it as the masked document for a restricted moved property.
+         TEMPORARY_PROPERTIES_COLUMN,
+         "group_properties",  # groups / raw_groups
+@@ -109,9 +109,8 @@ def restricted_property_keys_for_table_type(
+         return set()
+ 
+     # EventsPersonSubTable and EventsGroupSubTable are virtual tables over `events`, not EventsTable subclasses, but
+-    # they carry person/group properties — match them before the EventsTable branch either way. flag_evaluations has
+-    # no counterpart for either: it stores the event blob alone, plus a person id and group keys.
+-    if isinstance(table, EventsPersonSubTable):
++    # they carry person/group properties — match them before the EventsTable branch either way.
++    if isinstance(table, EventsPersonSubTable | FlagEvaluationsPersonSubTable):
+         prop_def_type = PropertyDefinition.Type.PERSON
+     elif isinstance(table, EventsGroupSubTable):
+         prop_def_type = PropertyDefinition.Type.GROUP
+diff --git a/posthog/hogql/test/test_restricted_properties.py b/posthog/hogql/test/test_restricted_properties.py
+index dfd206bd8bd3..cb735f2580f0 100644
+--- a/posthog/hogql/test/test_restricted_properties.py
++++ b/posthog/hogql/test/test_restricted_properties.py
+@@ -33,9 +33,8 @@ _MASKED_BLOBS: dict[str, frozenset[str]] = {
+         f"events.group{index}_properties (EventsGroupSubTable)": frozenset({_GROUP_KEYS[index]})
+         for index in range(GROUP_TYPES_LIMIT)
+     },
+-    # The one blob flag_evaluations stores. It carries event properties, so it masks the event class alone:
+-    # the table keeps no person or group blob to mask, only a person id and the group keys.
+     "flag_evaluations.properties (FlagEvaluationsTable)": frozenset({_EVENT_KEY}),
++    "flag_evaluations.person_properties (FlagEvaluationsPersonSubTable)": frozenset({_PERSON_KEY}),
+     "persons.properties (PersonsTable)": frozenset({_PERSON_KEY}),
+     "raw_persons.properties (RawPersonsTable)": frozenset({_PERSON_KEY}),
+     # The groups tables hold every group type, with the index in a column rather than in the blob's name, so
+diff --git a/posthog/hogql/transforms/property_types.py b/posthog/hogql/transforms/property_types.py
+index 4438fbcd2a78..50cd2a732e05 100644
+--- a/posthog/hogql/transforms/property_types.py
++++ b/posthog/hogql/transforms/property_types.py
+@@ -12,7 +12,7 @@ from posthog.hogql.database.schema.events import (
+     EventsPersonSubTable,
+     EventsTable,
+ )
+-from posthog.hogql.database.schema.flag_evaluations import FlagEvaluationsTable
++from posthog.hogql.database.schema.flag_evaluations import FlagEvaluationsPersonSubTable, FlagEvaluationsTable
+ from posthog.hogql.database.schema.groups import GroupsTable
+ from posthog.hogql.database.schema.persons import PersonsTable, RawPersonsTable
+ from posthog.hogql.escape_sql import escape_hogql_identifier
+@@ -113,7 +113,7 @@ class PropertyFinder(TraversingVisitor):
+                             if self.group_properties.get(global_group_id) is None:
+                                 self.group_properties[global_group_id] = set()
+                             self.group_properties[global_group_id].add(property_name)
+-                if isinstance(resolved_table, EventsPersonSubTable):
++                if isinstance(resolved_table, EventsPersonSubTable | FlagEvaluationsPersonSubTable):
+                     self.person_properties.add(property_name)
+                 elif isinstance(resolved_table, EventsGroupSubTable):
+                     pass  # group properties are handled above via GroupsTable
+@@ -716,7 +716,7 @@ class PropertySwapper(CloningVisitor):
+                                 return self._convert_string_property_to_type(
+                                     node, "group", f"{global_group_id}_{property_name}"
+                                 )
+-                if isinstance(resolved_table, EventsPersonSubTable):
++                if isinstance(resolved_table, EventsPersonSubTable | FlagEvaluationsPersonSubTable):
+                     if property_name in self.person_properties:
+                         return self._convert_string_property_to_type(node, "person", property_name)
+                 elif isinstance(resolved_table, EventsTable | FlagEvaluationsTable):
+diff --git a/posthog/hogql_queries/events_query_runner.py b/posthog/hogql_queries/events_query_runner.py
+index 44407bd05ac7..94f7957b9bbb 100644
+--- a/posthog/hogql_queries/events_query_runner.py
++++ b/posthog/hogql_queries/events_query_runner.py
+@@ -452,7 +452,7 @@ class EventsQueryRunner(AnalyticsQueryRunner[EventsQueryResponse]):
+         )
+ 
+     def _query_modifiers(self, table: EventsListTable) -> HogQLQueryModifiers:
+-        # flag_evaluations rows carry no person properties, so a person filter joins persons.
++        # add_events_list_fields_to_flag_evaluations makes `person` a persons join. A person filter therefore joins persons.
+         # The pushdown limits that join to the persons that the page's flag calls reach.
+         # An explicit personIdPushdown value on the team or the query still wins.
+         if table is FLAG_EVALUATIONS_LIST_TABLE and self.modifiers.personIdPushdown is None:
+diff --git a/posthog/hogql_queries/test/test_events_query_runner.py b/posthog/hogql_queries/test/test_events_query_runner.py
+index 942051f46036..f2b9daf0f097 100644
+--- a/posthog/hogql_queries/test/test_events_query_runner.py
++++ b/posthog/hogql_queries/test/test_events_query_runner.py
+@@ -1410,7 +1410,7 @@ class TestEventsQueryRunner(ClickhouseTestMixin, APIBaseTest):
+             FLAG_CALL_TIMESTAMP,
+             "variant-a",
+             "",
+-            "",
++            "full",
+         ]
+ 
+     @parameterized.expand(

@@ -1165,6 +1165,31 @@ determine_file_ref() {
     echo "refs/review/pr-${pr_number}"
 }
 
+# Benchmark runs replay a PR as it stood at one commit. REVIEW_CODE_FROZEN_DIFF
+# strips the PR's comments so the reviewer does not see what other reviewers
+# found. REVIEW_CODE_FROZEN_PR_BODY replaces the description, because an author
+# edits it as review fixes land and the live body can name the fix for the bug
+# the benchmark expects the reviewer to find.
+# Args: $1 = pr-context.sh JSON
+# Outputs: the JSON with the overrides applied
+apply_benchmark_pr_overrides() {
+    local pr_data="$1"
+
+    if [[ -n "${REVIEW_CODE_FROZEN_DIFF:-}" ]]; then
+        pr_data=$(echo "${pr_data}" | jq '.comments = {"conversation": [], "reviews": [], "inline": []}')
+    fi
+
+    if [[ -n "${REVIEW_CODE_FROZEN_PR_BODY:-}" ]]; then
+        if [[ ! -f "${REVIEW_CODE_FROZEN_PR_BODY}" ]]; then
+            error "REVIEW_CODE_FROZEN_PR_BODY ${REVIEW_CODE_FROZEN_PR_BODY} does not exist"
+            return 1
+        fi
+        pr_data=$(echo "${pr_data}" | jq --rawfile body "${REVIEW_CODE_FROZEN_PR_BODY}" '.body = $body')
+    fi
+
+    echo "${pr_data}"
+}
+
 # Handle PR review
 handle_pr_review() {
     local pr_identifier="$1"
@@ -1172,6 +1197,9 @@ handle_pr_review() {
     # Fetch PR data
     local pr_data
     pr_data=$("${SCRIPT_DIR}/pr-context.sh" "${pr_identifier}")
+    # Runs before worktree provisioning, because a failure after it returns
+    # with no session to tear the worktree down.
+    pr_data=$(apply_benchmark_pr_overrides "${pr_data}") || return 1
 
     local pr_number org repo head_ref
     pr_number=$(echo "${pr_data}" | jq -r '.number')
@@ -1287,12 +1315,6 @@ handle_pr_review() {
         diff_content=$(cat "${REVIEW_CODE_FROZEN_DIFF}")
     else
         diff_content=$(echo "${pr_data}" | jq -r '.diff')
-    fi
-
-    # In benchmark mode (frozen diff), strip PR comments so the reviewer
-    # evaluates the diff independently without seeing what other reviewers found.
-    if [[ -n "${REVIEW_CODE_FROZEN_DIFF:-}" ]]; then
-        pr_data=$(echo "${pr_data}" | jq '.comments = {"conversation": [], "reviews": [], "inline": []}')
     fi
 
     build_review_data "pr" "${diff_content}" "${git_context}" "pr-${pr_number}" "${pr_data}" \

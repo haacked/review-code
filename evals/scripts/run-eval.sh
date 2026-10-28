@@ -15,7 +15,9 @@
 #
 # Crafted benchmarks: applies patch to a temporary branch, reviews via `claude -p`
 # Real-world PR benchmarks: reviews via PR URL directly (no patch needed)
-# Results are saved to evals/results/.
+# Results are saved to evals/results/. Each skill run keeps its review files,
+# session state, and PR worktrees under its own result directory, so a run never
+# reads or replaces the installed skill's reviews of the same PR.
 #
 # Environment:
 #   EVAL_TARGET_REPO   Git checkout that crafted benchmark patches are applied in
@@ -37,9 +39,6 @@ RESULTS_DIR="${EVALS_DIR}/results"
 BASELINE_PROMPT="${EVALS_DIR}/prompts/baseline.md"
 
 source "${SCRIPT_DIR}/helpers/eval-helpers.sh"
-# shellcheck source=../../skills/review-code/scripts/helpers/config-helpers.sh
-source "${REPO_ROOT}/skills/review-code/scripts/helpers/config-helpers.sh"
-SKILL_REVIEWS_DIR="$(get_review_root)"
 
 # Build the claude -p prompt that runs the review-code skill.
 # `claude -p` does not register personal skills as slash commands (verified on
@@ -92,7 +91,13 @@ ${diff_content}
     # For PR benchmarks, prepend title/description for context
     local pr_title pr_description
     pr_title=$(jq -r '.name // empty' "${bench_dir}/metadata.json" 2> /dev/null)
-    pr_description=$(jq -r '.description // empty' "${bench_dir}/metadata.json" 2> /dev/null)
+    # The metadata description can name the bug the answer key expects.
+    # pr-body.md is the description the skill approach sees.
+    if [[ -f "${bench_dir}/pr-body.md" ]]; then
+        pr_description=$(cat "${bench_dir}/pr-body.md")
+    else
+        pr_description=$(jq -r '.description // empty' "${bench_dir}/metadata.json" 2> /dev/null)
+    fi
 
     if [[ -n "${pr_title}" ]] || [[ -n "${pr_description}" ]]; then
         local context=""
@@ -166,6 +171,17 @@ run_benchmark() {
         return
     fi
 
+    # With the installed skill's roots, a benchmark of a PR the user has already
+    # reviewed finds the user's pr-<N>.md. The skill then asks whether to
+    # overwrite or append to it. Overwriting deletes the user's review, and
+    # appending turns the benchmark into a re-review of that file. Separate
+    # roots per benchmark also keep concurrent runs out of each other's sessions.
+    local state_dir="${result_dir}/state"
+    mkdir -p "${state_dir}/reviews" "${state_dir}/sessions" "${state_dir}/worktrees"
+    export REVIEW_CODE_REVIEW_DIR="${state_dir}/reviews"
+    export CLAUDE_SESSION_DIR="${state_dir}/sessions"
+    export REVIEW_CODE_WORKTREE_DIR="${state_dir}/worktrees"
+
     # Check if this is a real-world PR benchmark (has source_url in metadata)
     local source_url
     source_url=$(jq -r '.source_url // empty' "${bench_dir}/metadata.json" 2> /dev/null)
@@ -223,6 +239,13 @@ run_pr_benchmark() {
         echo "  Pinning checkout to ${source_sha}"
     fi
 
+    # The live PR description can describe fixes made after source_sha.
+    # pr-body.md holds the description as it read at source_sha.
+    if [[ -f "${bench_dir}/pr-body.md" ]]; then
+        frozen_env+=(REVIEW_CODE_FROZEN_PR_BODY="${bench_dir}/pr-body.md")
+        echo "  Using frozen PR description from ${bench_dir}/pr-body.md"
+    fi
+
     # Run the review via claude -p using the PR URL.
     # Unset CLAUDECODE to allow running inside an existing Claude Code session.
     echo "  Budget: ${budget:+\$}${budget:-none}"
@@ -238,8 +261,16 @@ run_pr_benchmark() {
         echo "  Warning: claude exited with code ${claude_exit}" >&2
     fi
 
+    # The skill removes its PR worktree when the review finishes. A run that
+    # dies first leaves the checkout behind and registered in the local clone,
+    # where the installed skill's stale-worktree cleanup never looks.
+    local leftover
+    while IFS= read -r leftover; do
+        echo "  Warning: review left a worktree at ${leftover}; remove it with git worktree remove" >&2
+    done < <(find "${REVIEW_CODE_WORKTREE_DIR}" -mindepth 3 -maxdepth 3 -type d 2> /dev/null)
+
     # The review file is saved under the PR's org/repo
-    local review_file="${SKILL_REVIEWS_DIR}/${org}/${repo}/pr-${pr_number}.md"
+    local review_file="${REVIEW_CODE_REVIEW_DIR}/${org}/${repo}/pr-${pr_number}.md"
     if [[ -f "${review_file}" ]]; then
         cp "${review_file}" "${result_dir}/review.md"
         echo "  Review saved to ${result_dir}/review.md"
@@ -247,7 +278,7 @@ run_pr_benchmark() {
         echo "  Warning: review file not found at ${review_file}" >&2
         # Fallback: search for any file matching the PR number
         local found
-        found=$(find "${SKILL_REVIEWS_DIR}/${org}/${repo}" -name "*${pr_number}*" -type f 2> /dev/null | head -1)
+        found=$(find "${REVIEW_CODE_REVIEW_DIR}/${org}/${repo}" -name "*${pr_number}*" -type f 2> /dev/null | head -1)
         if [[ -n "${found}" ]]; then
             cp "${found}" "${result_dir}/review.md"
             echo "  Found review at ${found}"
@@ -350,12 +381,6 @@ run_crafted_benchmark() {
     [[ -n "${org}" ]] || org="unknown"
     [[ -n "${repo}" ]] || repo="unknown"
 
-    # A review file left over from a previous run would make the skill prompt
-    # to overwrite, which stalls a non-interactive claude -p run. Eval branch
-    # review files are eval-owned, so removing them is safe.
-    rm -f "${SKILL_REVIEWS_DIR}/${org}/${repo}/${tmp_branch}.md" \
-        "${SKILL_REVIEWS_DIR}/${org}/${repo}/branch-${tmp_branch}.md"
-
     # Run the review via claude -p from inside the target repo, so the skill's
     # git commands operate on the checkout that has the benchmark branch.
     # Unset CLAUDECODE to allow running inside an existing Claude Code session.
@@ -383,18 +408,18 @@ run_crafted_benchmark() {
     local review_file=""
     local candidate
     for candidate in \
-        "${SKILL_REVIEWS_DIR}/${org}/${repo}/${tmp_branch}.md" \
-        "${SKILL_REVIEWS_DIR}/${org}/${repo}/branch-${tmp_branch}.md"; do
+        "${REVIEW_CODE_REVIEW_DIR}/${org}/${repo}/${tmp_branch}.md" \
+        "${REVIEW_CODE_REVIEW_DIR}/${org}/${repo}/branch-${tmp_branch}.md"; do
         if [[ -f "${candidate}" ]]; then
             review_file="${candidate}"
             break
         fi
     done
     if [[ -z "${review_file}" ]]; then
-        review_file=$(find "${SKILL_REVIEWS_DIR}" -name "*${tmp_branch}*" -type f 2> /dev/null | head -1)
+        review_file=$(find "${REVIEW_CODE_REVIEW_DIR}" -name "*${tmp_branch}*" -type f 2> /dev/null | head -1)
     fi
     if [[ -z "${review_file}" ]]; then
-        review_file=$(find "${SKILL_REVIEWS_DIR}/${org}/${repo}" -name '*.md' -type f \
+        review_file=$(find "${REVIEW_CODE_REVIEW_DIR}/${org}/${repo}" -name '*.md' -type f \
             -newer "${result_dir}/.start" 2> /dev/null | head -1)
         [[ -z "${review_file}" ]] || echo "  Note: matched review by timestamp: ${review_file}" >&2
     fi
