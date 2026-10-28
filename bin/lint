@@ -23,6 +23,13 @@ if ! command_exists ruff; then
     fatal "ruff not found - install with: brew install ruff"
 fi
 
+# This version must match .github/workflows/ci.yml.
+expected_shellcheck_version="0.11.0"
+shellcheck_version="$(shellcheck --version | awk '/^version:/ {print $2}')"
+if [[ "${shellcheck_version}" != "${expected_shellcheck_version}" ]]; then
+    warning "ShellCheck ${shellcheck_version:-unknown} differs from CI's ${expected_shellcheck_version}; findings may differ. Continuing linting."
+fi
+
 collect_shell_files
 
 if [[ ${#shell_files[@]} -eq 0 ]]; then
