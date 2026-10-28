@@ -32,8 +32,7 @@ Correctness always runs. Other reviewers run unless the context explorer supplie
 **Supporting Agents:**
 - **Context Explorer**: Pre-review pass that gathers architectural context for the specialized reviewers
 - **Finding Validator**: Adversarial pass that attempts to disprove blocking findings before they ship
-- **Comment Composer**: Code-aware pass that turns structured causal facts into the public comment body
-- **Voice**: Polishes semantically complete bodies while preserving citations and code
+- **Comment Composer**: Code-aware pass that turns structured causal facts into the public comment body, in its final wording
 - **Comprehension Gate**: Compares the final body with the structured facts and withholds comments that still require inference
 
 Each review agent runs independently and in parallel, providing deep expertise in its domain rather than a superficial scan across all concerns.
@@ -90,7 +89,7 @@ This creates a virtuous cycle where reviews get better as you identify new patte
 - **Specialized Review Agents**: Each agent focuses on a specific aspect of code quality
   - **Core Agents (7)**: Security, Performance, Correctness, Maintainability, Testing, Compatibility, Architecture
   - **Domain-Specific Agents (2)**: Frontend (React/TypeScript files), Infra-Config (Helm/Terraform/K8s/CI-CD files)
-  - **Supporting Agents**: Context Explorer (pre-review), Finding Validator (adversarial pass), Comment Composer (code-aware composition), Voice (wording), Comprehension Gate (final semantic check)
+  - **Supporting Agents**: Context Explorer (pre-review), Finding Validator (adversarial pass), Comment Composer (code-aware composition and wording), Comprehension Gate (final semantic check)
 - **Hierarchical Context Loading**: Automatically loads language, framework, org, and repo-specific guidelines
 - **PR and Local Review Modes**: Review pull requests, branches, commits, ranges, or uncommitted changes
 - **Stack-Aware Branch Reviews**: Branch and current-branch reviews resolve their base in order: explicit `--parent`, the open PR's base branch (via `gh pr list`), a recorded Graphite parent (`gt parent` or `branch.<name>.parent`), then the repo default branch — so PRs stacked on other PRs review only their own commits. When the PR's base can't be used (gh offline or unauthenticated, base not fetched locally), detection falls through gracefully and flags the review summary
@@ -330,7 +329,7 @@ This eliminates confusion about what's being reviewed and lets you cancel if the
 
 ## Review Agents
 
-The system includes nine reviewers and five supporting agents for context, validation, semantic composition, comprehension, and voice. Correctness always runs. The explorer can exclude another reviewer only with concrete negative evidence; uncertainty keeps it enabled. An explicit area request runs that specialist and correctness.
+The system includes nine reviewers and four supporting agents for context, validation, semantic composition, and comprehension. Correctness always runs. The explorer can exclude another reviewer only with concrete negative evidence; uncertainty keeps it enabled. An explicit area request runs that specialist and correctness.
 
 ### Core Agents
 
@@ -450,17 +449,13 @@ Adversarial pass that takes blocking findings and attempts to disprove them, sur
 
 #### Comment Composer (`code-reviewer-comment`)
 
-Builds public comment bodies from a structured finding contract: concrete problem, trigger, ordered mechanism, observable result, requested change, and regression coverage. A fast comprehension preflight lets already-clear bodies skip this deeper pass. When composition is needed, the agent can read the briefing, diff, and cited code. It can then explain an internal helper or state without making the reader execute the code mentally.
+Builds public comment bodies from a structured finding contract: concrete problem, trigger, ordered mechanism, observable result, requested change, and regression coverage. A fast comprehension preflight lets already-clear bodies skip this deeper pass. When composition is needed, the agent can read the briefing, diff, and cited code. It can then explain an internal helper or state without making the reader execute the code mentally. The composer also owns the final wording. A lint pass checks every body before the final gate, and a body with a wording problem other than its length goes back to the composer once, with the lint warnings as the reasons.
 
 #### Comprehension Gate (`comprehension-gate`)
 
 Cold-reader pass that compares the final comment body with the structured finding facts. It checks whether the body states the problem, trigger, causal chain, result, requested change, and regression case without requiring inference. A failed body gets one fresh code-aware composition attempt. If that attempt still fails, the finding stays in the local review but is withheld from Suggested Comments and draft publication.
 
 After the final gate, an executable publication step accepts only explicitly publishable findings with non-empty bodies and separate file and line routing. Suggested Comments and automatic fixes consume that filtered result. A second executable builds the exact draft payload from indices into its safe comment array, so later prose assembly cannot restore or replace a rejected body. Delta drafts retain pending comments on files the new diff did not touch.
-
-#### Voice (`code-reviewer-voice`)
-
-Rewrites semantically complete comment bodies in a plain, conversational voice. It preserves every citation, file path, line number, identifier, number, and code block. The comprehension gate checks the result before publication.
 
 ## Context System
 

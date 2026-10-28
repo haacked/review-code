@@ -133,12 +133,12 @@ write_agent() {
     [ -f "$OUT_DIR/user.toml" ]
 }
 
-@test "render-codex-agents.py: renders all 14 real agents" {
+@test "render-codex-agents.py: renders all 13 real agents" {
     run python3 "$RENDER" "$PROJECT_ROOT/agents" "$OUT_DIR"
     [ "$status" -eq 0 ]
     local count
     count=$(find "$OUT_DIR" -name '*.toml' -type f | wc -l | tr -d ' ')
-    [ "$count" -eq 14 ]
+    [ "$count" -eq 13 ]
     [ -f "$OUT_DIR/code-reviewer-comment.toml" ]
 }
 

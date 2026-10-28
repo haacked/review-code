@@ -1,6 +1,6 @@
 # Comment quality eval
 
-This eval measures how long and how reviewer-like the finding quality pipeline makes public review comments. It runs recorded findings through the preflight gate, composer, voice pass with its lint and repair, final gate, and one composer repair, using live `claude -p` calls.
+This eval measures how long and how reviewer-like the finding quality pipeline makes public review comments. It runs recorded findings through the preflight gate, composer, wording lint with one composer repair, final gate, and one composer repair, using live `claude -p` calls.
 
 On the prompts at `2bf4e2c`, the pipeline withheld 1 to 3 findings per run and published the rest at an average of 71 to 133 words. On the prompts at `ec61396`, every run published every finding, at an average of 44 to 66 words, in the hedged register reviewers use. The current composer aims for two sentences and about 40 words of prose, and the gate sends a body back only when it runs past two sentences or 50 words. Runs publish every finding or all but one, at an average of 33 to 48 words.
 
@@ -40,7 +40,7 @@ python3 $eval --fixture tests/fixtures/finding-comments/pr-121510.json --diff /t
 wait
 ```
 
-`--ref` reads the agent definitions, the composer's briefing, and the voice comparison rules from that commit; without it, they come from the working tree. The routing, contract, and voice lint scripts always come from the working tree, so a `--ref` run gets the working tree's lint rules. `--style detailed` runs the same findings in the detailed style. Each run writes every stage's input, reply, and verdicts to `--out`, plus `summary.json` with per-finding word counts, the commit it measured, and the CLI-reported cost. For each published body, `summary.json` and the table's Lint column also list the categories `lint-comment-voice.py` still reports, such as `action_subject` and `negative_subject`.
+`--ref` reads the agent definitions and the composer's briefing from that commit; without it, they come from the working tree. The eval's own stages and the routing, contract, and lint scripts always come from the working tree, so a `--ref` run gets the working tree's pipeline and lint rules. To compare against a commit whose pipeline has different stages, run that commit's copy of the script from a checkout of it, without `--ref`. `--style detailed` runs the same findings in the detailed style. Each run writes every stage's input, reply, and verdicts to `--out`, plus `summary.json` with per-finding word counts, the commit it measured, and the CLI-reported cost. For each published body, `summary.json` and the table's Lint column also list the categories `lint-comment-voice.py` still reports, such as `action_subject` and `negative_subject`.
 
 ## Results
 
@@ -59,7 +59,7 @@ Two runs per side, with the voice pass in place:
 
 Two more runs of `ec61396`, made beside the `4fb9861` runs, averaged 46 and 47 words for #113272 and 69 and 67 for #121510, so the drop comes from the two-sentence limit and not from run-to-run variation. At `4fb9861` the gate sent back any body past about 40 words. It read that as a hard limit, so every composer repair was a trim of a body of 41 to 51 words, and two of the four runs cost about twice as much as on `ec61396`. The gate at `6721a15` passes a body of up to 50 words while the composer still aims for 40. That brought repairs down to 0 to 3 per run and the average cost to $0.70, against $0.75 on `ec61396`. One `6721a15` run withheld a nit because the gate twice read its ask as contradicting the facts, the run-to-run variation that Limits describes.
 
-The runs above read a preservation judge reply only when the reply was nothing but a JSON fence. The handler's comparison rules tell the judge to write a file, and the judge has no tool that writes one, so it often answers with a sentence before the fence. The eval then had no decision for that voice rewrite and restored the pre-voice body. In eight runs of `6721a15` on 2026-10-25, all 7 judge replies opened with such a sentence, so those runs published no voice rewrite that needed a decision. In one of them, the voice repair had rewritten case 2 of #118814, and the run still published its `"legacy" names two different hashes here.` sentence. The eval now reads the first fence in a reply and tells the judge that it has no write tool. These runs used the fixed eval:
+The runs above read a preservation judge reply only when the reply was nothing but a JSON fence. The handler's comparison rules tell the judge to write a file, and the judge has no tool that writes one, so it often answers with a sentence before the fence. The eval then had no decision for that voice rewrite and restored the pre-voice body. In eight runs of `6721a15` on 2026-10-25, all 7 judge replies opened with such a sentence, so those runs published no voice rewrite that needed a decision. In one of them, the voice repair had rewritten case 2 of #118814, and the run still published its `"legacy" names two different hashes here.` sentence. These runs used an eval that read the first fence in a reply and told the judge that it had no write tool:
 
 | Fixture | Prompts | Published | Words per comment | Composer repairs | Cost |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -80,11 +80,29 @@ On `2bf4e2c`, the composer was told to open suggestions with "Consider…", and 
 
 A detailed-style run of #113272 on `ec61396` published all 12 at 103 words each, with the mechanism and regression request in each body.
 
+### Without the voice pass
+
+The composer now writes the final wording, and no voice pass follows it. The wording lint checks every body before the final gate and sends a body with a warning other than its length back to the composer once. These runs compare that against `b653bed`, the last commit with the voice pass. The `b653bed` side ran from a checkout of that commit, because the working tree's script no longer has a voice stage.
+
+| Fixture | Prompts | Published | Words per comment | Composer repairs | Cost |
+| --- | --- | ---: | ---: | ---: | ---: |
+| #113272 | `b653bed` | 12 of 12 in each of 6 runs | 31 to 35 | 0 to 3 | $0.74 to $1.55, mean $1.20 |
+| #113272 | Current | 12, 11, 10, 12, 12, and 12 of 12 | 32 to 37 | 1 to 3 | $0.95 to $1.29, mean $1.12 |
+| #121510 | `b653bed` | 7 of 7 in each of 3 runs | 42 to 45 | 0 to 2 | $0.37 to $0.61, mean $0.49 |
+| #121510 | Current | 7 of 7 in each of 3 runs | 41 to 44 | 0 to 2 | $0.29 to $0.45, mean $0.38 |
+| #118814 | `b653bed` | 2 of 2 in each of 3 runs | 41 to 50 | 0 to 2 | $0.24 to $0.49, mean $0.34 |
+| #118814 | Current | 2 of 2 in each of 3 runs | 40 to 44 | 0 to 2 | $0.19 to $0.49, mean $0.30 |
+
+No published body on either side had a lint warning. The preflight gate sent every draft to the composer in every run, so on these fixtures the lint found only length warnings and never called the composer. Three #113272 findings (cases 2, 8, and 11) were each withheld in one of the six current runs. In each, the final gate rejected the repaired body for an accuracy problem: one stretched "every non-experiment rule value" to "every rule value", one misdescribed which variant a second Move up press moves, and one had an ambiguous ask. The `b653bed` runs withheld nothing here, although earlier `b653bed`-era runs above withheld one #113272 finding in one of two runs.
+
+The preflight gate passes most of the approved #113272 bodies, so a fixture that uses them as drafts reaches the lint repair. Build it with `jq '.cases |= map(.draft = .after)' tests/fixtures/finding-comments/pr-113272.json`. Two runs per side published all 12 findings, at 21 and 22 words per comment on `b653bed` and 23 and 24 on the current prompts. In each current run, the lint repair rewrote the "No test covers…" openers (cases 3, 4, and 6 in one run, case 6 in the other) and changed nothing else in those bodies. That call cost $0.10 and $0.12, against $0.04 for the voice pass and its preservation judge. The current runs cost $1.16 and $1.17 against $0.84 and $0.56, mostly because the final gate sent back case 6 for "the editability table", a phrase the preflight gate had passed in the same draft, and the repair added a second clause.
+
+The eval does not show what the change saves in the orchestrator. Without the voice pass, the orchestrator no longer dispatches the voice agent, compares every rewrite with its facts, or runs the preservation merge and its repair.
+
 ## Limits
 
 - The gate and composer vary between runs. The same finding came out up to 22 words longer in one run than in the next, and the gate sends back different findings for repair. Compare at least two runs per side.
-- In production, the orchestrator decides whether a voice rewrite kept every claim. The eval gives that decision to a separate judge call with the handler's comparison rules, which may judge differently.
 - The orchestrator also checks that each composer body keeps the prefix, problem, trigger, and requested change, and withholds one that doesn't. The eval accepts every composer body that has a description, so it may publish a finding production would withhold.
 - The composer sees the diff but no other source files. Production gives it the PR checkout.
 - The reviewer drafts in the fixtures came from the old reviewer briefing.
-- A reply whose fence opens with a space before `json` does not parse, and the eval treats it as no answer. Production's voice merge rejects that form too, and it also rejects a voice reply that closes its fence twice. Two of the 20 runs made on 2026-10-25 had one of those voice replies, and none of the 10 current runs in the second table did.
+- A reply whose fence opens with a space before `json` does not parse, and the eval treats it as no answer. Two of the 20 runs made on 2026-10-25 had such a reply from the voice agent, which the pipeline has since dropped.

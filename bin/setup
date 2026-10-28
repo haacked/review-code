@@ -371,7 +371,6 @@ install_agents() {
         "code-reviewer-frontend"
         "code-reviewer-infra-config"
         "code-reviewer-comment"
-        "code-reviewer-voice"
         "comprehension-gate"
         "finding-validator"
     )
@@ -379,7 +378,7 @@ install_agents() {
     # Claude agents: installed as .md files at the Claude location.
     if [[ -d "${CLAUDE_DIR:-}" ]]; then
         install_agents_to "${CLAUDE_DIR}/agents" "${agents[@]}"
-        info "Installed ${#agents[@]} agents (9 reviewers + 1 context explorer + 1 comment composer + 1 voice rewriter + 1 comprehension gate + 1 finding validator)"
+        info "Installed ${#agents[@]} agents (9 reviewers + 1 context explorer + 1 comment composer + 1 comprehension gate + 1 finding validator)"
     fi
 
     # PostHog Desktop points CLAUDE_CONFIG_DIR at its own data directory, so
@@ -429,6 +428,10 @@ install_agents_to() {
     shift
 
     mkdir -p "${target_dir}"
+
+    # A retired agent's copy from an older install would still register in
+    # every session.
+    rm -f "${target_dir}/code-reviewer-voice.md"
 
     local agent
     for agent in "$@"; do

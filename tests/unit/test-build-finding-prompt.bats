@@ -55,19 +55,6 @@ PY
     [[ "$output" =~ [Pp]ag(e|es|ed|ing) ]]
 }
 
-@test "build-finding-prompt: voice reads a JSON batch by reference" {
-    prompt code-reviewer-voice
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"$INPUT"* ]]
-    [[ "$output" != *PAYLOAD_SENTINEL* ]]
-    [[ "$output" != *"$DIFF"* ]]
-    [[ "$output" != *"$BRIEFING"* ]]
-    [[ "$output" != *"$FILE_ACCESS"* ]]
-    [[ "$output" == *INPUT_UNAVAILABLE* ]]
-    assert_count 1 '(?:items|findings)'
-    assert_bounded_prompt
-}
-
 @test "build-finding-prompt: composer receives all source context as file references" {
     prompt code-reviewer-comment --diff "$DIFF" --briefing "$BRIEFING" --file-access "$FILE_ACCESS"
     [ "$status" -eq 0 ]
@@ -108,16 +95,13 @@ PY
     done
 }
 
-@test "build-finding-prompt: gate and voice reject every source context argument" {
-    local agent
-    for agent in comprehension-gate code-reviewer-voice; do
-        prompt "$agent" --diff "$DIFF"
-        [ "$status" -ne 0 ]
-        prompt "$agent" --briefing "$BRIEFING"
-        [ "$status" -ne 0 ]
-        prompt "$agent" --file-access "$FILE_ACCESS"
-        [ "$status" -ne 0 ]
-    done
+@test "build-finding-prompt: the gate rejects every source context argument" {
+    prompt comprehension-gate --diff "$DIFF"
+    [ "$status" -ne 0 ]
+    prompt comprehension-gate --briefing "$BRIEFING"
+    [ "$status" -ne 0 ]
+    prompt comprehension-gate --file-access "$FILE_ACCESS"
+    [ "$status" -ne 0 ]
 }
 
 @test "build-finding-prompt: accepts an empty batch" {
@@ -148,6 +132,8 @@ PY
 
 @test "build-finding-prompt: unsupported agents fail" {
     prompt finding-validator
+    [ "$status" -ne 0 ]
+    prompt code-reviewer-voice
     [ "$status" -ne 0 ]
 }
 

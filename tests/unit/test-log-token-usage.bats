@@ -212,7 +212,7 @@ teardown() {
 # voice-lint is a script, not an agent: it reports counts and zero tokens.
 # Counting it would report one more agent step than actually ran.
 @test "log-token-usage: agents_run skips steps that consumed no tokens" {
-    local usage='{"code-reviewer-security": 45000, "voice-lint": {"total_tokens": 0, "reverted": 1}}'
+    local usage='{"code-reviewer-security": 45000, "voice-lint": {"total_tokens": 0, "repaired": 1}}'
     local log_file="$REVIEWS_DIR/token-usage.jsonl"
 
     "$SCRIPT" --review-file "$REVIEW_FILE" --usage "$usage" --org "org" --repo "repo"
@@ -225,12 +225,12 @@ teardown() {
 # A revert count is only useful compared across runs, so it has to reach the
 # log; the normalization to {total_tokens, tool_uses} used to drop it.
 @test "log-token-usage: keeps per-step counters the normalization would drop" {
-    local usage='{"voice-lint": {"total_tokens": 0, "checked": 9, "reverted": 2}, "comprehension-gate": {"total_tokens": 5000, "validation_failures": 1}}'
+    local usage='{"voice-lint": {"total_tokens": 0, "checked": 9, "repaired": 2}, "comprehension-gate": {"total_tokens": 5000, "validation_failures": 1}}'
     local log_file="$REVIEWS_DIR/token-usage.jsonl"
 
     "$SCRIPT" --review-file "$REVIEW_FILE" --usage "$usage" --org "org" --repo "repo"
 
-    run bash -c "cat '$log_file' | jq -r '.counters[\"voice-lint\"].reverted'"
+    run bash -c "cat '$log_file' | jq -r '.counters[\"voice-lint\"].repaired'"
     [ "$output" -eq 2 ]
     run bash -c "cat '$log_file' | jq -r '.counters[\"comprehension-gate\"].validation_failures'"
     [ "$output" -eq 1 ]

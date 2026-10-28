@@ -1194,7 +1194,7 @@ filters: [...before.groups, ...after.groups]
     done
 }
 
-@test "finding contract: publication restores prefixes removed by voice editing" {
+@test "finding contract: publication restores prefixes a rewrite removed" {
     for severity in blocking suggestion question nit; do
         jq -n --arg severity "$severity" '{findings: [{
             id: 1, severity: $severity, publishable: true, quality_state: "passed",

@@ -186,9 +186,9 @@ EOF
     [[ "$output" == "[]" ]]
 }
 
-# The voice agent and the agent briefing name this family phrase by phrase. If a
+# The composer and the agent briefing name this family phrase by phrase. If a
 # phrase they ban stops firing here, the lint gate silently stops enforcing it.
-@test "lint-comment-voice: flags every pin phrase the voice rules ban" {
+@test "lint-comment-voice: flags every pin phrase the wording rules ban" {
     while IFS= read -r phrase; do
         run bash -c "printf '%s\n' \"\$1\" | '$LINTER' -" _ "$phrase"
         [ "$status" -eq 0 ]

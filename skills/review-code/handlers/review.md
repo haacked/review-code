@@ -194,7 +194,7 @@ No safe local checkout is available for reading PR files. This can happen becaus
 
 ### Subagent Availability
 
-The steps below spawn named subagent types: `code-review-context-explorer`, the domain `code-reviewer-*` reviewers, `finding-validator`, `code-reviewer-comment`, `comprehension-gate`, and `code-reviewer-voice`. How they spawn depends on the harness.
+The steps below spawn named subagent types: `code-review-context-explorer`, the domain `code-reviewer-*` reviewers, `finding-validator`, `code-reviewer-comment`, and `comprehension-gate`. How they spawn depends on the harness.
 
 **Completion applies to every stage, including chunk analysis and retries.** Never issue no-op Bash turns (`true`, `:`, `sleep`, or `echo waiting`) to keep the conversation alive or poll for agents. Do useful independent work while agents run, then use the completion mechanism below. Generate consumed timestamps inside the script that writes them, rather than fetching `date` in a separate tool call.
 

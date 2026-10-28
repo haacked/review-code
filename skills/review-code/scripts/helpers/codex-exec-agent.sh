@@ -8,8 +8,7 @@
 # persistent "Task" tool, no agent resume, and no way for the subagent to
 # stream structured events back into this shell. We tolerate that: the cost
 # is that per-agent "bounce" rounds (coverage review, finding-validation
-# resume, voice rewrite callbacks) become fresh invocations rather than
-# thread-continuations.
+# resume) become fresh invocations rather than thread-continuations.
 #
 # `codex exec` also has no flag for selecting a custom agent: the TOMLs under
 # ~/.codex/agents are configuration layers Codex applies to sessions it spawns
