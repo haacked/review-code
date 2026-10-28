@@ -88,7 +88,7 @@ For code that looks surprising or non-obvious during your investigation:
 
 ### Reviewer routing evidence
 
-Append exactly one `review-routing` fenced JSON block after every summary used for reviewer routing, including a delta or chunk analysis. Assess security, performance, maintainability, testing, compatibility, architecture, infra-config, and frontend against the complete patch supplied in the prompt. Correctness always runs.
+Append exactly one `review-routing` fenced JSON block after every summary used for reviewer routing, including a delta or chunk analysis. Assess security, performance, maintainability, testing, compatibility, infra-config, and frontend against the complete patch supplied in the prompt. Correctness always runs.
 
 Use `applies` when the changes touch the area, `uncertain` when you cannot establish whether they do, and `not_applicable` only when concrete negative evidence rules out the area across the full diff. Include each negative check and its result as separate strings in `evidence`. Cite the files read or the search command and its scope. A small diff, a file extension, no findings, or a search you did not run is not negative evidence. A missing caller search cannot rule out performance or compatibility; test and config changes can affect security, performance, and public contracts. Do not spend extra time proving an area irrelevant: use `uncertain` when exploration is incomplete.
 

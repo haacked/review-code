@@ -87,11 +87,6 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
-@test "setup: installs architecture agent" {
-    run bash -c "grep -A50 'install_agents()' '$PROJECT_ROOT/bin/setup' | grep -q 'code-reviewer-architecture'"
-    [ "$status" -eq 0 ]
-}
-
 @test "setup: installs context explorer agent" {
     run bash -c "grep -A50 'install_agents()' '$PROJECT_ROOT/bin/setup' | grep -q 'code-review-context-explorer'"
     [ "$status" -eq 0 ]

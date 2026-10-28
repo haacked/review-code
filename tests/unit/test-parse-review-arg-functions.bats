@@ -79,7 +79,7 @@ reset_globals() {
 }
 
 @test "detect_area_keyword: identifies all supported keywords" {
-    for keyword in security performance maintainability testing compatibility architecture correctness frontend infra-config; do
+    for keyword in security performance maintainability testing compatibility correctness frontend infra-config; do
         arg="$keyword"
         file_pattern=""
         run detect_area_keyword

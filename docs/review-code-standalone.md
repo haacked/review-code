@@ -1,6 +1,6 @@
 # Review-Code for Claude Code
 
-A comprehensive code review system for Claude Code that uses specialized AI agents to review your code for security, performance, maintainability, testing, compatibility, and architecture concerns.
+A comprehensive code review system for Claude Code that uses specialized AI agents to review your code for security, performance, design and maintainability, testing, and compatibility concerns.
 
 ## Features
 
@@ -83,7 +83,6 @@ Reviews all uncommitted changes (staged and unstaged) with all 6 agents.
 /review-code maintainability # Maintainability review only
 /review-code testing         # Testing review only
 /review-code compatibility   # Compatibility review only
-/review-code architecture    # Architecture review only
 ```
 
 ## Review Agents
@@ -114,12 +113,14 @@ Focuses on:
 
 Focuses on:
 
+- Necessity and proportionality (YAGNI, over-engineering)
+- Established patterns and idioms
+- Code reuse and duplication
 - Code clarity and readability
 - Function/class complexity
 - Naming conventions
-- Code duplication
+- Change scope
 - Technical debt
-- Simplicity (YAGNI, KISS)
 
 ### Testing (`code-reviewer-testing`)
 
@@ -141,17 +142,6 @@ Focuses on:
 - Backward compatibility
 - Versioning concerns
 - Deprecation handling
-
-### Architecture (`code-reviewer-architecture`)
-
-Focuses on:
-
-- System design appropriateness
-- Component boundaries
-- Coupling and cohesion
-- Abstraction levels
-- Pattern misuse
-- Over-engineering
 
 ## Context System
 

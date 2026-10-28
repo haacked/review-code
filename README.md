@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/haacked/review-code/actions/workflows/ci.yml/badge.svg)](https://github.com/haacked/review-code/actions/workflows/ci.yml)
 
-A comprehensive code review system for Claude Code and OpenAI Codex that uses specialized AI agents to review your code for security, performance, correctness, maintainability, testing, compatibility, and architecture concerns.
+A comprehensive code review system for Claude Code and OpenAI Codex that uses specialized AI agents to review your code for security, performance, correctness, design and maintainability, testing, and compatibility concerns.
 
 > **⚠️ macOS Users:** This tool requires **bash 4.0+**. macOS ships with bash 3.2 by default. Install bash 4.0+ with `brew install bash` before proceeding.
 
@@ -20,10 +20,9 @@ Correctness always runs. Other reviewers run unless the context explorer supplie
 - **Security**: Vulnerabilities, OWASP Top 10, secret management
 - **Performance**: Database optimization, N+1 queries, algorithmic complexity
 - **Correctness**: Intent verification, integration boundaries, functional correctness
-- **Maintainability**: Code clarity, simplicity, technical debt
+- **Maintainability**: Necessity, design patterns, code reuse, clarity, technical debt
 - **Testing**: Coverage, quality, edge cases
 - **Compatibility**: Breaking changes, backward compatibility
-- **Architecture**: System design, patterns, necessity
 
 **Domain-Specific Agents:**
 - **Frontend**: React, Kea state management, accessibility, hooks
@@ -87,7 +86,7 @@ This creates a virtuous cycle where reviews get better as you identify new patte
 ## Features
 
 - **Specialized Review Agents**: Each agent focuses on a specific aspect of code quality
-  - **Core Agents (7)**: Security, Performance, Correctness, Maintainability, Testing, Compatibility, Architecture
+  - **Core Agents (6)**: Security, Performance, Correctness, Maintainability, Testing, Compatibility
   - **Domain-Specific Agents (2)**: Frontend (React/TypeScript files), Infra-Config (Helm/Terraform/K8s/CI-CD files)
   - **Supporting Agents**: Context Explorer (pre-review), Finding Validator (adversarial pass), Comment Composer (code-aware composition and wording), Comprehension Gate (final semantic check)
 - **Hierarchical Context Loading**: Automatically loads language, framework, org, and repo-specific guidelines
@@ -240,7 +239,6 @@ Without a mapping for the PR's repo, the review falls back to diff-only (with a 
 /review-code maintainability # Maintainability review only
 /review-code testing         # Testing review only
 /review-code compatibility   # Compatibility review only
-/review-code architecture    # Architecture review only
 /review-code frontend        # Frontend review only (React/TypeScript)
 /review-code infra-config    # Infrastructure config review only (Helm/Terraform/K8s/CI-CD)
 ```
@@ -329,7 +327,7 @@ This eliminates confusion about what's being reviewed and lets you cancel if the
 
 ## Review Agents
 
-The system includes nine reviewers and four supporting agents for context, validation, semantic composition, and comprehension. Correctness always runs. The explorer can exclude another reviewer only with concrete negative evidence; uncertainty keeps it enabled. An explicit area request runs that specialist and correctness.
+The system includes eight reviewers and four supporting agents for context, validation, semantic composition, and comprehension. Correctness always runs. The explorer can exclude another reviewer only with concrete negative evidence; uncertainty keeps it enabled. An explicit area request runs that specialist and correctness.
 
 ### Core Agents
 
@@ -368,12 +366,14 @@ Focuses on:
 
 Focuses on:
 
+- Necessity and proportionality (YAGNI, over-engineering)
+- Established patterns and idioms
+- Code reuse and duplication
 - Code clarity and readability
 - Function/class complexity
 - Naming conventions
-- Code duplication
+- Change scope
 - Technical debt
-- Simplicity (YAGNI, KISS)
 
 #### Testing (`code-reviewer-testing`)
 
@@ -395,19 +395,6 @@ Focuses on:
 - Backward compatibility
 - Versioning concerns
 - Deprecation handling
-
-#### Architecture (`code-reviewer-architecture`)
-
-Focuses on:
-
-- System design appropriateness
-- Component boundaries
-- Coupling and cohesion
-- Abstraction levels
-- Pattern misuse
-- Over-engineering
-- Necessity (YAGNI)
-- Code reuse opportunities
 
 ### Domain-Specific Agents
 

@@ -7,11 +7,11 @@ setup() {
     printf '%s\n' '{}' > "$FIELDS"
 }
 
-@test "unchunked review maps all nine areas in order and removes duplicates" {
+@test "unchunked review maps all eight areas in order and removes duplicates" {
     printf '%s\n' '{"chunk_metadata":{"chunked":false}}' > "$FIELDS"
-    run python3 "$SCRIPT" --fields "$FIELDS" --agents 'security correctness performance architecture maintainability compatibility testing frontend infra-config security'
+    run python3 "$SCRIPT" --fields "$FIELDS" --agents 'security correctness performance maintainability compatibility testing frontend infra-config security'
     [ "$status" -eq 0 ]
-    expected='{"handler":null,"agents":[{"area":"security","subagent_type":"code-reviewer-security"},{"area":"correctness","subagent_type":"code-reviewer-correctness"},{"area":"performance","subagent_type":"code-reviewer-performance"},{"area":"architecture","subagent_type":"code-reviewer-architecture"},{"area":"maintainability","subagent_type":"code-reviewer-maintainability"},{"area":"compatibility","subagent_type":"code-reviewer-compatibility"},{"area":"testing","subagent_type":"code-reviewer-testing"},{"area":"frontend","subagent_type":"code-reviewer-frontend"},{"area":"infra-config","subagent_type":"code-reviewer-infra-config"}]}'
+    expected='{"handler":null,"agents":[{"area":"security","subagent_type":"code-reviewer-security"},{"area":"correctness","subagent_type":"code-reviewer-correctness"},{"area":"performance","subagent_type":"code-reviewer-performance"},{"area":"maintainability","subagent_type":"code-reviewer-maintainability"},{"area":"compatibility","subagent_type":"code-reviewer-compatibility"},{"area":"testing","subagent_type":"code-reviewer-testing"},{"area":"frontend","subagent_type":"code-reviewer-frontend"},{"area":"infra-config","subagent_type":"code-reviewer-infra-config"}]}'
     [ "$(printf '%s' "$output" | jq -cS .)" = "$(printf '%s' "$expected" | jq -cS .)" ]
 }
 
@@ -186,7 +186,7 @@ PY
     [ "$status" -eq 0 ]
     printf '%s' "$output" | jq -e '
         .handler == null and
-        ([.agents[].area] | sort) == (["security","performance","correctness","maintainability","testing","compatibility","architecture","frontend","infra-config"] | sort)
+        ([.agents[].area] | sort) == (["security","performance","correctness","maintainability","testing","compatibility","frontend","infra-config"] | sort)
     '
 }
 
@@ -205,7 +205,7 @@ MARKDOWN
     [ "$status" -eq 0 ]
     printf '%s' "$output" | jq -e '
         .handler == null and
-        ([.agents[].area] | sort) == (["security","correctness","maintainability","testing","compatibility","architecture","frontend","infra-config"] | sort) and
+        ([.agents[].area] | sort) == (["security","correctness","maintainability","testing","compatibility","frontend","infra-config"] | sort) and
         all(.agents[]; .subagent_type == ("code-reviewer-" + .area))
     '
 }

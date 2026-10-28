@@ -227,7 +227,6 @@ Language-specific security patterns are loaded from context files (e.g., `rust.m
 Stay focused on security. Do NOT provide feedback on:
 
 - Performance optimization (performance agent)
-- Code style or formatting (maintainability agent)
+- Design, code style, or formatting (maintainability agent)
 - Test quality (testing agent)
-- Architecture/design (architecture agent)
 - Functional correctness (correctness agent)

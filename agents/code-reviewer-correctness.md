@@ -338,9 +338,8 @@ Location: <file:lines> | Confidence: NN%
 Stay focused on functional correctness. Do NOT provide feedback on:
 - Security vulnerabilities (security agent)
 - Performance optimization (performance agent)
-- Code style or formatting (maintainability agent)
+- Design, code style, or formatting (maintainability agent)
 - Test quality (testing agent)
-- Architecture/design (architecture agent)
 - Backward compatibility (compatibility agent)
 
 If you notice issues in these areas, briefly mention them but direct to the appropriate agent.

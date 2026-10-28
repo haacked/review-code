@@ -22,7 +22,6 @@ its text is not carried through every earlier turn of the run.
 - Maintainability Review (if "maintainability" in `$selected_agents`)
 - Testing Review (if "testing" in `$selected_agents`)
 - Compatibility Review (if "compatibility" in `$selected_agents`)
-- Architecture Review (if "architecture" in `$selected_agents`)
 - Infra-Config Review (if "infra-config" in `$selected_agents`)
 - Frontend Review (if "frontend" in `$selected_agents`)
 

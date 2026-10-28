@@ -39,10 +39,9 @@ Area arguments, each on local changes only; correctness also runs. To choose rev
 - `security` - Deep security vulnerability analysis
 - `performance` - Performance bottlenecks and optimization
 - `correctness` - Functional correctness, intent verification, and integration boundaries
-- `maintainability` - Code clarity, simplicity, and maintainability
+- `maintainability` - Design, necessity, patterns, reuse, and code clarity
 - `testing` - Test coverage, quality, and patterns
 - `compatibility` - Backwards compatibility with shipped code
-- `architecture` - High-level design, patterns, and necessity
 - `infra-config` - Infrastructure config review: Helm, Terraform, K8s, ArgoCD, CI/CD
 - `frontend` - React components, state management, hooks, accessibility, and TypeScript types
 
