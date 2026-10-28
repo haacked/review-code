@@ -3,9 +3,9 @@
 
 Reads text (one or more comment bodies, or a whole review document) and emits
 one JSON line per warning, or the literal "[]" when the input is clean. The
-rules come from the review-code voice agent (agents/code-reviewer-voice.md):
-the checks a regex can perform deterministically so a cheap script can gate
-what three LLM passes let through.
+rules come from the composer's Wording rules (agents/code-reviewer-comment.md):
+the checks a regex can perform deterministically so a cheap script can catch
+what the reviewer and composer let through.
 
 Code blocks, inline code, URLs, review-metadata comment blocks, and severity
 prefixes are masked before any rule runs: they are structure, not prose.
@@ -32,7 +32,7 @@ from markdown_fences import walk_fences  # noqa: E402
 # conjunction (", but nothing checks it").
 CLAUSE_START = r"(?:^\s*|[.!?]\s+|(?:^\s*|,?\s+)(?:but|so|and|yet)\s+)"
 
-# Rules drawn from agents/code-reviewer-voice.md, limited to what a regex can
+# Rules drawn from agents/code-reviewer-comment.md, limited to what a regex can
 # judge without reading the surrounding code. Each pattern is prose-only: code,
 # URLs, and severity prefixes are masked before these run.
 RAW_PATTERNS: dict[str, tuple[str, ...]] = {
@@ -60,8 +60,8 @@ RAW_PATTERNS: dict[str, tuple[str, ...]] = {
         r"\bpredicates?\s+(?:holds?|is satisfied|are satisfied)\b",
     ),
     # "Pin" as a verb for what a test covers. The regex must not fire on literal
-    # version or SHA pinning, which is allowed by the voice agent ("Version and
-    # SHA pinning are literal and stay as written").
+    # version or SHA pinning, which the composer's rules allow ("Version and
+    # SHA pinning stay as written").
     "pinning": (
         r"\bpinned by\b",
         r"\bpin down\b",
@@ -73,8 +73,8 @@ RAW_PATTERNS: dict[str, tuple[str, ...]] = {
         r"\bpinned (?:elsewhere|here|now|already|in)\b",
         r"\bpinned to the (?:behaviour|behavior)\b",
     ),
-    # Applying a named shortcut where the behavior belongs. The voice agent
-    # bans coined labels ("the withholding boundary"), test-theory categories
+    # Applying a named shortcut where the behavior belongs. The composer's rules
+    # ban coined labels ("the withholding boundary"), test-theory categories
     # ("weak positive assertion"), and metaphor-jargon ("load-bearing").
     "labeling": (
         r"\bload-bearing\b",
@@ -109,7 +109,7 @@ RAW_PATTERNS: dict[str, tuple[str, ...]] = {
         r"\bcritical\b",
         r"\bmeaningful state change\b",
     ),
-    # AI vocabulary clichés. The voice agent lists these with the same words.
+    # AI vocabulary clichés. The composer's rules name most of these words.
     "ai_vocabulary": (
         r"\bleverag(?:e|es|ed|ing)\b",
         r"\butiliz(?:e|es|ed|ing|ation)\b",
@@ -118,20 +118,19 @@ RAW_PATTERNS: dict[str, tuple[str, ...]] = {
         r"\bensure\b",
         r"\bdelve\b",
     ),
-    # Named shorthand for a category where the behavior belongs, per the voice
-    # agent's "no coined labels" rule. Anchored to a small set of nouns that the
-    # voice agent itself calls out; broader noun lists drown in false positives.
+    # Named shorthand for a category where the behavior belongs, per the
+    # composer's rule against coined labels. Anchored to a small set of nouns
+    # from that rule's examples; broader noun lists drown in false positives.
     "coined_label": (
         r"\bthe \w+ (?:window|boundary|hazard) is\b",
         r"\bthe (?:window|boundary|hazard) collapses\b",
     ),
-    # Pipeline provenance that leaked into the body. The voice agent strips
-    # these when rewriting; flagging them upstream lets the drafting pass drop
-    # them before the voice agent ever sees them. Author-attribution labels that
-    # the review itself writes for the reader ("Raised by: … (corroborated)")
-    # are structure, not leaks, and stay exempt.
+    # Pipeline provenance that leaked into the body. The composer's rules leave
+    # it out. A body that still carries it goes back to the composer once.
+    # Author-attribution labels that the review itself writes for the reader
+    # ("Raised by: … (corroborated)") are structure, not leaks, and stay exempt.
     "provenance_leak": (r"\*\s*\((?:corroborat\w+|flagged|disputed)[^*]*\)\*",),
-    # Verdict-first openers. The voice agent bans opening with a label or
+    # Verdict-first openers. The composer's rules ban opening with a verdict or
     # adjective stack ("This is a real upgrade-window risk", "Sound and
     # proportionate"); these patterns catch the common shapes.
     "verdict_opener": (
@@ -191,7 +190,7 @@ RAW_PATTERNS: dict[str, tuple[str, ...]] = {
         r"(?=(?:the|a|an|this|these|those|its|their|every|any|some|something|"
         r"nothing|one|two|three|several|whether|if)\b|no\b(?!\s+longer\b)|\d)",
     ),
-    # Pseudo-headers the voice agent strips. These read as labels where the
+    # Pseudo-headers the composer's rules ban. These read as labels where the
     # sentence should just say the thing.
     "pseudo_header": (
         r"\*\*Issue\*\*:",
@@ -241,8 +240,8 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     for category, patterns in RAW_PATTERNS.items()
 }
 
-# The voice agent reads these messages on a repair round, and the generic
-# message would not tell it what to write instead.
+# The composer reads these messages in a lint repair, and the generic message
+# would not tell it what to write instead.
 MESSAGES = {
     "code_term_verb": "A code noun is used as a verb; write the behavior instead, "
     'such as "requires approval for".',
@@ -295,7 +294,7 @@ CAPPED_CATEGORIES = {"dash"}
 
 
 # How much of the offending line to quote back. Both pipeline consumers show
-# this excerpt: the gate hands it to the voice agent on a bounce, the narrative
+# this excerpt: the gate hands it to the composer in a lint repair, the narrative
 # linter writes it into the review, and they should agree.
 TEXT_EXCERPT_CHARS = 160
 

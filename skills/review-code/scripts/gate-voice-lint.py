@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-"""Lint the bodies the voice pass produced and report which ones still read wrong.
+"""Lint finding bodies before the final gate and report which ones read wrong.
 
-Reads a JSON array of accepted voice-pass rewrites from a file, or from stdin
-when the path is '-', and runs lint-comment-voice.py over each `description`
-and `proposed_fix`. The pipeline passes a path: finding bodies quote the diff,
-so inlining them into a command is a delimiter hazard. Prints one
-JSON object naming the findings that still carry warnings, so the caller can
-bounce them back to the voice agent once and revert the ones that come back
-dirty.
+Reads findings from a file, or from stdin when the path is '-', and runs
+lint-comment-voice.py over each `description` and `proposed_fix`. The input is
+a JSON array of findings or an object whose `findings` holds one, such as the
+finding-quality state. The pipeline passes a path: finding bodies quote the
+diff, so inlining them into a command is a delimiter hazard. Prints one JSON
+object naming the findings that carry warnings. With --repair-input, it also
+writes the findings the caller sends to the composer once, with the warnings as
+repair reasons.
 
-This script decides nothing about the review. It reports; the caller reverts.
+This script decides nothing about the review. It reports; the caller repairs.
 
-Input, one object per accepted rewrite:
+Input, one object per finding. The lint ignores any other fields, and the
+repair input keeps them:
 
     [{"id": 1, "comment_style": "concise", "description": "...",
       "proposed_fix": "... or null"}]
@@ -22,17 +24,19 @@ words.
 
 Output (stdout):
 
-    {"checked": 9, "clean": 7, "warned": 2, "warned_ids": [3, 7],
-     "restore_ids": [3],
+    {"checked": 9, "clean": 7, "warned": 2, "repair_ids": [3],
      "findings": [{"id": 3, "warnings": [
         {"field": "description", "line": 1, "category": "pinning",
-         "message": "...", "text": "..."}], "suppressed": 2}],
+         "message": "...", "text": "..."}], "reasons": ["..."],
+        "suppressed": 2}],
      "error": null}
 
 `suppressed` appears only when --limit dropped warnings from that finding.
-`restore_ids` lists the warned ids with a warning other than `concise_length`.
-After the voice repair, the caller restores only those ids to their pre-voice
-bodies.
+`reasons` holds one sentence per kept warning, in the form the composer reads.
+`repair_ids` lists the warned ids with a warning other than `concise_length`.
+--repair-input writes those findings as they came in, with `reasons` set to
+their lint reasons and without the preflight's `unresolved` phrases, which
+composition already addressed.
 
 Fails open: any internal failure prints a zero-count result with `error` set
 and exits 0, so a bad input or a broken rule can never block a review.
@@ -53,27 +57,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "helpers"))
 
 from lint_loader import load_linter  # noqa: E402
 
-# Every warning on a finding is echoed back to the voice agent in the bounce
-# prompt, so this caps the whole list per finding rather than per category: what
+# Every warning on a finding is echoed back to the composer in the repair
+# input, so this caps the whole list per finding rather than per category: what
 # needs bounding is the total payload, which a per-category cap would not bound.
 DEFAULT_PER_FINDING_LIMIT = 6
 
-# The fields a rewrite can carry. `proposed_fix` is often null.
+# The body fields of a finding. `proposed_fix` is often null.
 LINTED_FIELDS = ("description", "proposed_fix")
 
 
-def result(*, checked: int = 0, warned_ids=(), findings=(), error=None) -> dict:
+def result(*, checked: int = 0, findings=(), error=None) -> dict:
     """Build the one result shape, so the error path cannot drift from the rest."""
-    ids = list(warned_ids)
     findings = list(findings)
     return {
         "checked": checked,
-        "clean": checked - len(ids),
-        "warned": len(ids),
-        "warned_ids": ids,
-        # A body that is only too long keeps its rewrite, because the final
-        # comprehension gate also judges length.
-        "restore_ids": [
+        "clean": checked - len(findings),
+        "warned": len(findings),
+        # A body that is only too long skips the repair, because the final
+        # comprehension gate also judges length and asks for a trim itself.
+        "repair_ids": [
             finding["id"]
             for finding in findings
             if any(w["category"] != "concise_length" for w in finding["warnings"])
@@ -85,7 +87,6 @@ def result(*, checked: int = 0, warned_ids=(), findings=(), error=None) -> dict:
 
 def gate(linter, items: list, limit: int) -> dict:
     checked = 0
-    warned_ids: list = []
     findings: list[dict] = []
 
     for item in items:
@@ -112,18 +113,31 @@ def gate(linter, items: list, limit: int) -> dict:
         if not warnings:
             continue
 
-        # Indexing, not .get: an entry with no id would put null into
-        # warned_ids and send the caller bouncing an id no finding has.
-        # Raising here lands on the documented fail-open result instead.
-        identifier = item["id"]
-        warned_ids.append(identifier)
-        finding = {"id": identifier, "warnings": warnings}
+        # Indexing, not .get: a warned entry with no id would put null into
+        # repair_ids. No finding has that id. Raising here lands on the
+        # documented fail-open result instead.
+        finding = {"id": item["id"], "warnings": warnings}
         if limit > 0 and len(warnings) > limit:
             finding["warnings"] = warnings[:limit]
             finding["suppressed"] = len(warnings) - limit
+        finding["reasons"] = [
+            f"{w['message']} In {w['field']}: {w['text']}" for w in finding["warnings"]
+        ]
         findings.append(finding)
 
-    return result(checked=checked, warned_ids=warned_ids, findings=findings)
+    return result(checked=checked, findings=findings)
+
+
+def repair_input(items: list, gated: dict) -> list[dict]:
+    reasons = {finding["id"]: finding["reasons"] for finding in gated["findings"]}
+    return [
+        {
+            **{key: value for key, value in item.items() if key != "unresolved"},
+            "reasons": reasons[item["id"]],
+        }
+        for item in items
+        if isinstance(item, dict) and item.get("id") in gated["repair_ids"]
+    ]
 
 
 def parse_args() -> argparse.Namespace:
@@ -132,7 +146,14 @@ def parse_args() -> argparse.Namespace:
         "file",
         nargs="?",
         default="-",
-        help="JSON file of accepted rewrites; reads stdin when omitted or '-'",
+        help="JSON file of findings; reads stdin when omitted or '-'",
+    )
+    parser.add_argument(
+        "--repair-input",
+        type=Path,
+        metavar="<path>",
+        help="Also write the findings in repair_ids to this file, each with its "
+        "lint reasons",
     )
     parser.add_argument(
         "--limit",
@@ -154,10 +175,17 @@ def main() -> int:
             if args.file == "-"
             else Path(args.file).read_text(encoding="utf-8")
         )
-        items = json.loads(raw)
+        data = json.loads(raw)
+        items = data.get("findings") if isinstance(data, dict) else data
         if not isinstance(items, list):
-            raise ValueError("input must be a JSON array of rewrites")
+            raise ValueError(
+                "input must be a JSON array of findings or an object with one"
+            )
         gated = gate(load_linter(), items, args.limit)
+        if args.repair_input:
+            args.repair_input.write_text(
+                json.dumps(repair_input(items, gated)), encoding="utf-8"
+            )
     except Exception as error:  # noqa: BLE001 - fail open on anything
         print(json.dumps(result(error=f"{type(error).__name__}: {error}")))
         return 0

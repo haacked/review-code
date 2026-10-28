@@ -16,8 +16,8 @@ setup() {
 
 STUB_REWRITE names gate stages and ids to reject, as "stage:id,stage:id".
 STUB_TRIM marks those rejections trim-only, in the same form.
-STUB_VOICE_EDIT is an id whose body the voice pass changes.
-STUB_JUDGE=reject makes the preservation judge reject every rewrite.
+STUB_COMPOSE_ERROR names composer stages and ids to fail with an item error, in the same form.
+STUB_DIRTY names composer stages and ids whose body gets a negative-subject sentence, in the same form.
 STUB_FAIL makes every call exit 1.
 """
 import json
@@ -45,26 +45,15 @@ def pairs(name):
 
 
 family = "comprehension-recheck" if stage.startswith("comprehension-recheck") else stage
-if stage.endswith("-preservation"):
-    preserved = os.environ.get("STUB_JUDGE") != "reject"
-    result = [{"id": item["id"], "preserved": preserved, "notes": "" if preserved else "Dropped a claim."} for item in items]
-elif stage in ("voice", "voice-repair"):
-    edit = os.environ.get("STUB_VOICE_EDIT")
+if stage.startswith(("comment-compose", "comment-repair", "lint-repair")):
+    errors = pairs("STUB_COMPOSE_ERROR")
     result = [
-        {
+        {"id": item["id"], "description": None, "proposed_fix": item["proposed_fix"], "unchanged": False, "error": "Stub error."}
+        if (stage, str(item["id"])) in errors
+        else {
             "id": item["id"],
-            # The marker stays inside the last sentence, so the edit adds no sentence.
-            "description": item["description"].removesuffix(".") + " edited." if str(item["id"]) == edit else item["description"],
-            "proposed_fix": item["proposed_fix"],
-            "unchanged": str(item["id"]) != edit,
-        }
-        for item in items
-    ]
-elif stage.startswith(("comment-compose", "comment-repair")):
-    result = [
-        {
-            "id": item["id"],
-            "description": f"`{item['severity']}`: Composed body {item['id']}.",
+            "description": f"`{item['severity']}`: Composed body {item['id']}."
+            + (" No test covers it." if (stage, str(item["id"])) in pairs("STUB_DIRTY") else ""),
             "proposed_fix": item["proposed_fix"],
             "unchanged": False,
             "error": None,
@@ -105,19 +94,26 @@ stages() {
     jq -sc 'map(.stage)' "$STUB_LOG"
 }
 
+draft() {
+    jq -r ".cases[$1].draft" "$PROJECT_ROOT/tests/fixtures/finding-comments/pr-113272.json"
+}
+
 agent_body() {
     awk 'n == 2 {print} /^---$/ {n++}' | sed '/./,$!d'
 }
 
-@test "comment quality eval: preflight passes publish the reviewer drafts through the voice pass without a composer call" {
+@test "comment quality eval: preflight passes publish the reviewer drafts, and only bodies with a non-length lint warning get a composer repair" {
     run_eval
 
     [ "$status" -eq 0 ]
     [ "$(summary .published)" -eq 12 ]
-    [ "$(summary .words)" -eq 1172 ]
     [ "$(summary .before_words)" -eq 1034 ]
     [ "$(summary .after_words)" -eq 311 ]
-    stages | jq -e 'index("finding-preflight") == 0 and index("voice") == 1 and index("comprehension") > 1 and all(.[]; startswith("comment-") | not)'
+    [ "$(jq -c '[.[].id]' "$OUT/lint-repair-input.json")" = '[3,4,5,6,10,12]' ]
+    jq -e '.[0].reasons | length > 0 and all(.[]; type == "string")' "$OUT/lint-repair-input.json"
+    [ "$(summary -r '.cases[2].body')" = '`suggestion`: Composed body 3.' ]
+    [ "$(summary -r '.cases[0].body')" = "$(draft 0)" ]
+    stages | jq -e 'index("finding-preflight") == 0 and index("lint-repair") == 1 and index("comprehension") == 2 and all(.[]; startswith("comment-") | not)'
 }
 
 @test "comment quality eval: a preflight rewrite publishes the composer's body" {
@@ -128,7 +124,7 @@ agent_body() {
     [ "$(summary -r '.cases[0].body')" = '`suggestion`: Composed body 1.' ]
     [ "$(summary '.cases[0].words')" -eq 4 ]
     [ "$(summary -c '.cases[0].lint')" = '[]' ]
-    stages | jq -e 'index("comment-compose") == 1 and index("voice") == 2'
+    stages | jq -e 'index("comment-compose") == 1 and index("comprehension") > 1'
 }
 
 @test "comment quality eval: a final-gate rewrite gets one repair from the contract's reasons, and a second rewrite withholds it" {
@@ -163,28 +159,22 @@ agent_body() {
     stages | jq -e 'index("comprehension-recheck-blocking-1") > index("comment-repair-blocking-1")'
 }
 
-@test "comment quality eval: the voice pass keeps a rewrite the judge preserves and restores one it rejects" {
-    # Finding 9's draft has no lint warnings, so no voice repair or restore touches it.
-    STUB_VOICE_EDIT=9 run_eval
-
-    [ "$status" -eq 0 ]
-    [[ "$(summary -r '.cases[8].body')" == *" edited." ]]
-    [ "$(jq -r '.[0].rewrite.description' "$OUT/voice-preservation-input.json")" = "$(summary -r '.cases[8].body')" ]
-
-    rm -rf "$OUT"
-    STUB_VOICE_EDIT=9 STUB_JUDGE=reject run_eval
+@test "comment quality eval: a failed lint repair keeps the body it replaced" {
+    STUB_COMPOSE_ERROR="lint-repair:3" run_eval
 
     [ "$status" -eq 0 ]
     [ "$(summary .published)" -eq 12 ]
-    [[ "$(summary -r '.cases[8].body')" != *" edited." ]]
+    [ "$(summary -r '.cases[2].body')" = "$(draft 2)" ]
+    [ "$(summary -r '.cases[3].body')" = '`suggestion`: Composed body 4.' ]
 }
 
-@test "comment quality eval: a body whose only lint warning is its length keeps its voice rewrite" {
-    # Finding 1's draft warns only for concise_length, so the recheck does not restore it.
-    STUB_VOICE_EDIT=1 run_eval
+@test "comment quality eval: a composed body with a lint warning goes to the lint repair, and a clean one does not" {
+    STUB_REWRITE="finding-preflight:1,finding-preflight:2" STUB_DIRTY="comment-compose:2" run_eval
 
     [ "$status" -eq 0 ]
-    [[ "$(summary -r '.cases[0].body')" == *" edited." ]]
+    [ "$(jq -c 'map(.id) | (index(1) == null) and (index(2) != null)' "$OUT/lint-repair-input.json")" = "true" ]
+    [ "$(summary -r '.cases[0].body')" = '`suggestion`: Composed body 1.' ]
+    [ "$(summary -r '.cases[1].body')" = '`suggestion`: Composed body 2.' ]
 }
 
 @test "comment quality eval: a failed call withholds every finding instead of passing it" {
@@ -228,8 +218,8 @@ agent_body() {
 
 @test "comment quality eval: the summary lists the voice lint categories each published body still carries" {
     local fixture="$PROJECT_ROOT/tests/fixtures/finding-comments/pr-118814.json"
-    # Every stub gate passes, so each draft publishes with its "legacy" names sentence.
-    run_eval --fixture "$fixture"
+    # Every stub gate passes and the lint repair fails, so each draft publishes with its "legacy" names sentence.
+    STUB_COMPOSE_ERROR="lint-repair:1,lint-repair:2" run_eval --fixture "$fixture"
 
     [ "$status" -eq 0 ]
     [ "$(summary .published)" -eq 2 ]

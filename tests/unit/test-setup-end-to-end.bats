@@ -92,6 +92,17 @@ teardown() {
     [ -f "$TEST_HOME/.claude/agents/code-review-context-explorer.md" ]
 }
 
+@test "setup: install_agents_to removes the retired voice agent" {
+    mkdir -p "$TEST_HOME/.claude/agents"
+    echo "retired" > "$TEST_HOME/.claude/agents/code-reviewer-voice.md"
+
+    run bin/setup
+
+    [ "$status" -eq 0 ]
+    [ ! -e "$TEST_HOME/.claude/agents/code-reviewer-voice.md" ]
+    [ -f "$TEST_HOME/.claude/agents/code-reviewer-comment.md" ]
+}
+
 # =============================================================================
 # Codex-only install (no ~/.claude)
 # =============================================================================

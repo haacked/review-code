@@ -111,7 +111,7 @@ After editing source files:
 2. Test the skill with `/review-code` in a Claude Code session
 3. Run `bin/test` to run the test suite
 
-A change to the composer, comprehension gate, voice agent, or the reviewers' comment rules changes how long posted comments are. Measure it with `evals/comment-quality/` against `main` before and after; its README has the commands and the current numbers. The composer's concise leave-out list in `agents/code-reviewer-comment.md` and the gate's concise `REWRITE` list in `agents/comprehension-gate.md` state one rule from two sides. Keep them in sync: when they disagree, the gate sends back bodies the composer was told to write, and each one costs a repair.
+A change to the composer, comprehension gate, wording lint, or the reviewers' comment rules changes how long posted comments are. Measure it with `evals/comment-quality/` against `main` before and after; its README has the commands and the current numbers. The composer's concise leave-out list in `agents/code-reviewer-comment.md` and the gate's concise `REWRITE` list in `agents/comprehension-gate.md` state one rule from two sides. Keep them in sync: when they disagree, the gate sends back bodies the composer was told to write, and each one costs a repair.
 
 ## Formatting
 

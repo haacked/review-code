@@ -370,22 +370,27 @@ PY
     [[ "$output" == *"correctness.json"* ]]
 }
 
-@test "handler contracts: documented voice lint command projects the findings array" {
+@test "handler contracts: documented wording lint writes the repair input for repair ids only" {
     jq -n '{
         findings: [
-            {id: 1, severity: "blocking", comment_style: "concise", description: "`blocking`: The cache stays stale for 300 seconds.", proposed_fix: null},
-            {id: 2, severity: "nit", comment_style: "concise", description: "`nit`: This pins the behavior.", proposed_fix: null}
+            {id: 1, severity: "blocking", comment_style: "concise", description: "`blocking`: The cache stays stale for 300 seconds.", proposed_fix: null, facts: {}},
+            {id: 2, severity: "nit", comment_style: "concise", description: "`nit`: This pins the behavior.", proposed_fix: null, facts: {}, reasons: ["Stale preflight reason."], unresolved: [{phrase: "this", stands_for: "x"}]}
         ],
         rewrites_needed: [],
         withheld: [{id: 3, description: "`nit`: This pins the behavior."}]
-    }' > "$ARTIFACTS/finding-quality-voiced.json"
-    extract_documented_block "$SKILL/handlers/review-finding-quality.md" bash voice-lint-input.json > "$ARTIFACTS/voice.sh"
+    }' > "$ARTIFACTS/finding-quality-composed.json"
+    extract_documented_block "$SKILL/handlers/review-finding-quality.md" bash voice-lint-result.json > "$ARTIFACTS/lint.sh"
 
-    run bash -e "$ARTIFACTS/voice.sh"
+    run bash -e "$ARTIFACTS/lint.sh"
 
     [ "$status" -eq 0 ]
-    jq -e 'type == "array" and length == 2 and all(.[]; keys == ["comment_style", "description", "id", "proposed_fix"])' "$ARTIFACTS/voice-lint-input.json"
-    jq -e '.error == null and .checked == 2 and .clean == 1 and .warned_ids == [2]' "$ARTIFACTS/voice-lint-result.json"
+    jq -e '.error == null and .checked == 2 and .clean == 1 and .repair_ids == [2]' <<<"$output"
+    jq -e '.error == null and .findings[0].id == 2' "$ARTIFACTS/voice-lint-result.json"
+    jq -e '
+        length == 1 and .[0].id == 2 and .[0].facts == {}
+        and (.[0].reasons | length > 0 and all(.[]; contains("Stale") | not))
+        and (.[0] | has("unresolved") | not)
+    ' "$ARTIFACTS/lint-repair-input.json"
 }
 
 @test "handler contracts: finding stages dispatch input and source context through file references" {
@@ -396,7 +401,7 @@ PY
     printf '%s\n' 'FILE_ACCESS_PAYLOAD_SENTINEL' > "$ARTIFACTS/file-access.md"
     extract_documented_block "$SKILL/handlers/review-finding-quality.md" bash build-finding-prompt.py > "$ARTIFACTS/quality.sh"
 
-    for agent in comprehension-gate code-reviewer-voice code-reviewer-comment; do
+    for agent in comprehension-gate code-reviewer-comment; do
         stage="test-$agent"
         prompt_file="$ARTIFACTS/$stage-prompt.md"
         jq -n '[{id: 1, description: "FINDING_PAYLOAD_SENTINEL"}]' > "$ARTIFACTS/$stage-input.json"
@@ -494,41 +499,4 @@ PY
     [ "$(echo "$output" | jq -r '.findings[0].quality_state')" = "passed" ]
     [ "$(echo "$output" | jq -r '.findings[0].publishable')" = "true" ]
     [ "$(echo "$output" | jq '.withheld | length')" -eq 0 ]
-}
-
-@test "handler contracts: documented preservation merge restores lost claims" {
-    jq '{findings: [.cases[] | {id, severity: "blocking", description, proposed_fix: null}], withheld: []}' "$PROJECT_ROOT/tests/fixtures/finding-comments/voice-preservation-regressions.json" > "$ARTIFACTS/finding-quality-prevoice.json"
-    jq '[.cases[] | {id, description: .rewrite, proposed_fix: null, unchanged: false}]' "$PROJECT_ROOT/tests/fixtures/finding-comments/voice-preservation-regressions.json" > "$ARTIFACTS/voice-output.md"
-    jq '[.cases[] | {id, preserved: false, notes}]' "$PROJECT_ROOT/tests/fixtures/finding-comments/voice-preservation-regressions.json" > "$ARTIFACTS/voice-preservation.json"
-    extract_documented_block "$SKILL/handlers/review-finding-quality.md" bash '"<artifacts_dir>/voice-output.md"' > "$ARTIFACTS/preserve.sh"
-
-    run bash -e "$ARTIFACTS/preserve.sh"
-
-    [ "$status" -eq 0 ]
-    jq -e '.voice_preservation.error == null and (.voice_preservation.reverted | length) == 2' "$ARTIFACTS/finding-quality-voiced.json"
-    jq -e --slurpfile original "$ARTIFACTS/finding-quality-prevoice.json" '.findings == $original[0].findings and .withheld == $original[0].withheld' "$ARTIFACTS/finding-quality-voiced.json"
-}
-
-@test "handler contracts: documented voice repair keeps accepted neighboring rewrites" {
-    jq -n '{findings: [
-        {id: 1, severity: "suggestion", description: "`suggestion`: Original one.", proposed_fix: null},
-        {id: 2, severity: "suggestion", description: "`suggestion`: Original two.", proposed_fix: null}
-    ], withheld: []}' > "$ARTIFACTS/finding-quality-prevoice.json"
-    jq -n '{findings: [
-        {id: 1, severity: "suggestion", description: "`suggestion`: First rewrite.", proposed_fix: null},
-        {id: 2, severity: "suggestion", description: "`suggestion`: Accepted neighbor.", proposed_fix: null}
-    ], withheld: []}' > "$ARTIFACTS/finding-quality-voiced.json"
-    printf '%s\n' '{"warned_ids": [1], "error": null}' > "$ARTIFACTS/voice-lint-result.json"
-    printf '%s\n' '[{"id": 1, "description": "`suggestion`: Repaired one.", "proposed_fix": null, "unchanged": false}]' > "$ARTIFACTS/voice-repair-output.md"
-    printf '%s\n' '[{"id": 1, "preserved": true, "notes": "Same claim."}]' > "$ARTIFACTS/voice-repair-preservation.json"
-    extract_documented_block "$SKILL/handlers/review-finding-quality.md" bash voice-repair-output.md > "$ARTIFACTS/repair.sh"
-
-    run bash -e "$ARTIFACTS/repair.sh"
-
-    [ "$status" -eq 0 ]
-    jq -e '
-        (.findings[] | select(.id == 1) | .description) == "`suggestion`: Repaired one."
-        and (.findings[] | select(.id == 2) | .description) == "`suggestion`: Accepted neighbor."
-        and .voice_repair.target_ids == [1]
-    ' "$ARTIFACTS/finding-quality-repaired.json"
 }

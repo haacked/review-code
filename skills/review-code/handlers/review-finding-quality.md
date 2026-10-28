@@ -1,12 +1,12 @@
 ## Finding Quality Pipeline
 
-Load this handler after finding validation and the optional adversary meta-review. It owns the internal finding contract, fast comprehension preflight, semantic composition, voice polish, final comprehension gate, and executable publication boundary. Its outputs are `$finding_quality = {findings, rewrites_needed, withheld}` and `$finding_publication = {findings, comments, unmapped_comments, withheld, all_withheld, clean}`.
+Load this handler after finding validation and the optional adversary meta-review. It owns the internal finding contract, fast comprehension preflight, semantic composition, wording lint, final comprehension gate, and executable publication boundary. Its outputs are `$finding_quality = {findings, rewrites_needed, withheld}` and `$finding_publication = {findings, comments, unmapped_comments, withheld, all_withheld, clean}`.
 
 When `$selected_agents` or the surviving finding pool is empty, set `$finding_quality` to `{"findings": [], "rewrites_needed": [], "withheld": []}` and skip to "Finalize Publication". A clean review still needs an explicit value because document composition, `--fix`, and PR output consume it.
 
 ### Deliver Finding Inputs
 
-For every model call in this handler, including repairs, save the stage's input array to `<artifacts_dir>/$quality_stage-input.json`. Preserve exactly the fields required below. Set `$quality_agent` to the named agent and use a distinct `$quality_stage` for each invocation, such as `finding-preflight`, `comment-compose`, `voice`, `voice-repair`, `comprehension`, `comment-repair-1`, or `comprehension-recheck-1`. Extract arrays from existing JSON artifacts with `jq` when possible; never paste them into dispatch prompts.
+For every model call in this handler, including repairs, save the stage's input array to `<artifacts_dir>/$quality_stage-input.json`. Preserve exactly the fields required below. Set `$quality_agent` to the named agent and use a distinct `$quality_stage` for each invocation, such as `finding-preflight`, `comment-compose`, `lint-repair`, `comprehension`, `comment-repair-1`, or `comprehension-recheck-1`. Extract arrays from existing JSON artifacts with `jq` when possible; never paste them into dispatch prompts.
 
 Before the first composer call, save the prepared `$file_access_instructions` once to `<artifacts_dir>/file-access.md` using Write, with content separate from the path. Generate each prompt with:
 
@@ -28,7 +28,7 @@ Require success before dispatch. The helper validates the input, supplies counts
 - **Claude:** Read only the generated prompt and pass it unchanged to Task with `subagent_type: $quality_agent`. Apply the named-agent fallback from `review.md` if needed.
 - **Codex:** Run `~/.agents/skills/review-code/scripts/helpers/agent-dispatch.sh run "$quality_agent" "$quality_prompt" "$quality_output"` and read its output file for response parsing.
 
-Do not append finding bodies, facts, fixes, or lint notes to either prompt. Repair inputs belong in a fresh file too. If generation fails or an agent returns `INPUT_UNAVAILABLE`, handle it as that stage's existing error case: withhold composer and gate inputs, or retain the current bodies on a voice failure. Never interpret unavailable input as an empty or passing result. The reviewer-only `BRIEFING_UNAVAILABLE` inline fallback does not apply here.
+Do not append finding bodies, facts, fixes, or lint notes to either prompt. Repair inputs belong in a fresh file too. If generation fails or an agent returns `INPUT_UNAVAILABLE`, handle it as that stage's existing error case: withhold composer and gate inputs, or keep the current bodies on a lint repair failure. Never interpret unavailable input as an empty or passing result. The reviewer-only `BRIEFING_UNAVAILABLE` inline fallback does not apply here.
 
 ### Build and Validate the Contract
 
@@ -64,7 +64,7 @@ Set `validator_confirmed` to `true` only on a `blocking` finding that `finding-v
 
 `location` is the display value. `file`, `line`, and `side` are the routing values used by diff mapping and draft comments; keep them as separate fields through every later merge. Preserve the side from finding validation: `LEFT` uses old-file line numbers, and `RIGHT` uses new-file line numbers. For `--fix`, inspect the current code before applying a change at a `LEFT` location. A finding without a specific source location cannot cross the publication boundary and remains in the local review's withheld section.
 
-Set `comment_style` from the session (`concise` by default, or `detailed`) on every finding and preserve it through preflight, composition, voice, repair, and the final gate. Style changes public wording only; it never reduces the internal analysis.
+Set `comment_style` from the session (`concise` by default, or `detailed`) on every finding and preserve it through preflight, composition, lint repair, gate repair, and the final gate. Style changes public wording only; it never reduces the internal analysis.
 
 The facts are the source of truth. Replace internal labels such as "collector misses it" or "the group remains pending" with what happens to the request, property, value, or caller. Order `mechanism` by execution. Blocking and suggestion findings require `problem`, at least one mechanism step, `result`, and `requested_change`. Blocking findings also require `regression_case`, or `regression_rationale` when coverage does not apply. Questions and nits may leave inapplicable facts null, but `requested_change` must contain the question or small change.
 
@@ -84,7 +84,7 @@ Keep every `withheld` entry for the local review and remove it from later model 
 
 Extract the validated `findings` array into `<artifacts_dir>/finding-preflight-input.json` and dispatch `comprehension-gate` with `$quality_stage = finding-preflight` before semantic composition. Give the gate only that input file, with no diff, briefing, or source-code path. Use the same response parsing and fail-closed coverage rules as the final gate, then run `finding-comment-contract.py gate` without `--final` to produce `<artifacts_dir>/finding-preflight.json`.
 
-`PASS` findings bypass `code-reviewer-comment`. Reset their `publishable` value to false and set `quality_state` to `preflight_passed`; the final gate still decides whether they are safe to publish after the voice pass. Apply the same style-aware meaning and included-token preservation checks required after composition. Concise preflight must reject a body that carries more than the problem, the change, and code the author would otherwise write, even when all facts have coverage.
+`PASS` findings bypass `code-reviewer-comment`. Reset their `publishable` value to false and set `quality_state` to `preflight_passed`; the wording lint can still send them to the composer, and the final gate decides whether they are safe to publish. Apply the same style-aware meaning and included-token preservation checks required after composition. Concise preflight must reject a body that carries more than the problem, the change, and code the author would otherwise write, even when all facts have coverage.
 
 `REWRITE` findings go through `code-reviewer-comment` in one batch. A missing, duplicate, malformed, or error preflight verdict is a `gate_error` and stays withheld. Do not send it to the composer and do not restore the reviewer body.
 
@@ -102,62 +102,27 @@ Run `finding-comment-contract.py compose` again on successfully merged rewrite e
 
 Record composer usage under `$token_usage["code-reviewer-comment"]`. In debug mode, save the contract, prompt, raw output, merged entries, and withheld decisions under `11b2-semantic-composition`.
 
-### Voice Pass
+### Wording Lint
 
-Save the full `$finding_quality` as `<artifacts_dir>/finding-quality-prevoice.json`. This immutable snapshot is the fallback for both the first voice pass and its lint repair. Save each finding's `id`, `severity`, `location`, `comment_style`, `description`, and `proposed_fix` to `<artifacts_dir>/voice-input.json`, then dispatch `code-reviewer-voice` with `$quality_stage = voice` through "Deliver Finding Inputs". Keep the facts and routing fields outside the voice payload.
-
-For every changed finding, compare both returned fields with their pre-voice originals using the retained `facts`. Check every claim already expressed, including each mechanism step, result, requested change, regression case, qualifier, comparison with existing behavior, and scope of failure. Identify where each claim survives in the rewrite. Do this even for facts the selected comment style permits omitting during initial composition. Do not require facts that were absent from the pre-voice body, and do not use token presence or shorter length as proof of meaning preservation. A dropped or weakened claim, invented claim, uncertain equivalence, or a missing sentence whose meaning is not carried elsewhere rejects that finding's rewrite. Removing pipeline provenance and redundant phrasing is allowed only when every substantive claim survives.
-
-For example, deleting "on master those sibling cohorts were stamped and got their backfill" removes evidence of a regression even if all backtick tokens survive. Changing a run failure into a cohort failure changes which other cohorts stop. Both restore the pre-voice finding before the final comprehension gate, without invoking semantic repair.
-
-Write the orchestrator's comparison decisions as a bare array to `<artifacts_dir>/voice-preservation.json`: `[{"id": 1, "preserved": false, "notes": "Dropped the comparison with master that establishes the regression."}]`. Set `preserved: true` only after every claim has an equivalent in the rewrite; on rejection, name the lost or altered meaning in `notes`. The voice agent must not grade its own preservation. An unchanged response needs no comparison verdict.
-
-Run the executable merge with the original snapshot, response file, and decisions:
+Lint every body before the final gate: the preflight `PASS` bodies and the composed bodies. Write `$finding_quality` to `<artifacts_dir>/finding-quality-composed.json`, then run:
 
 ```bash
-~/.agents/skills/review-code/scripts/gate-voice-preservation.py \
-  "<artifacts_dir>/finding-quality-prevoice.json" \
-  "<artifacts_dir>/voice-output.md" \
-  "<artifacts_dir>/voice-preservation.json" \
-  > "<artifacts_dir>/finding-quality-voiced.json"
-```
-
-The helper accepts bare JSON or a single four-backtick JSON fence. It checks the response schema, exact severity prefix, every original backtick span (including full directory prefixes and line ranges), code blocks, and the growth limit in each field: 1.25x for a concise `description` and 2x otherwise. Moving a citation to metadata or `proposed_fix` does not preserve it in `description`. Only `description` and `proposed_fix` may change. Missing, duplicate, malformed, or rejected candidates or comparison verdicts restore that finding. Unknown ids are anomalies. An unreadable response or non-array payload restores all originals with an error. Never infer a JSON result from a prose summary or dispatch another voice call just to repair the schema.
-
-Read the helper's output as `$finding_quality`. Its `voice_preservation` records accepted, unchanged, and reverted ids with reasons, plus anomalies and errors. Fallback is per finding regardless of the number of failures or the response array length; valid neighboring rewrites survive even when 10 of 12 findings revert. This merge does not grant publication approval; every result still passes through the final comprehension gate.
-
-The linter takes a bare array of `{id, comment_style, description, proposed_fix}` objects; `proposed_fix` may be null. A `concise` description also gets a `concise_length` warning when its prose has more than two sentences or 40 words. Extract that array and run:
-
-```bash
-jq '[.findings[] | {id, comment_style, description, proposed_fix}]' \
-  "<artifacts_dir>/finding-quality-voiced.json" \
-  > "<artifacts_dir>/voice-lint-input.json"
 ~/.agents/skills/review-code/scripts/gate-voice-lint.py \
-  "<artifacts_dir>/voice-lint-input.json" \
+  --repair-input "<artifacts_dir>/lint-repair-input.json" \
+  "<artifacts_dir>/finding-quality-composed.json" \
   > "<artifacts_dir>/voice-lint-result.json"
+jq '{checked, clean, warned, repair_ids, error}' "<artifacts_dir>/voice-lint-result.json"
 ```
 
-Read `warned_ids` and `error` from the result; the linter exits zero even on errors. For warned ids, save their current voice input fields and lint notes to `<artifacts_dir>/voice-repair-input.json`. Dispatch a fresh `code-reviewer-voice` call with `$quality_stage = voice-repair` through "Deliver Finding Inputs" under both harnesses. Compare every repair with the immutable pre-voice snapshot, never with the first rewrite, and write the comparison decisions to `<artifacts_dir>/voice-repair-preservation.json`.
+The linter exits zero even on errors. `repair_ids` lists the bodies with a warning other than `concise_length`. A body that is only too long goes to the final gate as it is, because the gate judges length and sends a long body back for a trim. When `repair_ids` is empty or `error` is non-null, continue to the final gate with the bodies unchanged. Otherwise `lint-repair-input.json` holds those findings, each with its lint warnings as `reasons` and without the preflight's `unresolved` phrases, which composition already addressed.
 
-Run the executable repair merge:
+Dispatch `code-reviewer-comment` with `$quality_stage = lint-repair` through "Deliver Finding Inputs". Merge and check its bodies as "Compose Rewrite Bodies" does, then run `finding-comment-contract.py compose` on the accepted repairs and replace those ids in `$finding_quality.findings`. A repair that is missing, duplicated, malformed, carries a non-null `error`, fails the preservation checks, or is withheld by `compose` keeps the body it replaced, because that body already passed preflight or composition. Do not lint or repair again; the final gate judges the result.
 
-```bash
-~/.agents/skills/review-code/scripts/gate-voice-preservation.py repair \
-  "<artifacts_dir>/finding-quality-prevoice.json" \
-  "<artifacts_dir>/finding-quality-voiced.json" \
-  "<artifacts_dir>/voice-lint-result.json" \
-  "<artifacts_dir>/voice-repair-output.md" \
-  "<artifacts_dir>/voice-repair-preservation.json" \
-  > "<artifacts_dir>/finding-quality-repaired.json"
-```
-
-Use its full output as `$finding_quality`. The command derives the target ids from `warned_ids`, validates those candidates against the immutable snapshot, and replaces only those ids in the accepted voiced object. A missing, unchanged, or rejected repair restores the pre-voice finding, except for an id outside `restore_ids`: that finding warned only for its length, so it keeps its voice body for the final comprehension gate to judge. Unexpected ids are ignored and recorded as anomalies. Regenerate the linter array from that output, lint once, and restore the pre-voice body of each id in that result's `restore_ids`. A missing linter or non-null `error` leaves the accepted voice bodies unchanged.
-
-Record voice usage, preservation failures, and `{total_tokens: 0, checked, clean, warned, bounced, reverted}` under the existing `$token_usage` keys. In debug mode, save the original snapshot, raw response, comparison decisions, merge diagnostics, and `11c-voice-rewrite` and `11c2-voice-lint` artifacts.
+Record composer usage under `$token_usage["lint-repair"]` and `{total_tokens: 0, checked, clean, warned, repaired}` under `$token_usage["voice-lint"]`. In debug mode, save the lint result, the repair input, raw output, and merge decisions under `11c-wording-lint`.
 
 ### Final Comprehension Gate
 
-Merge accepted voice bodies into `$finding_quality.findings`. Write the full object to `<artifacts_dir>/finding-contract-voiced.json` and its `findings` array to `<artifacts_dir>/comprehension-input.json` with `kind: "finding"`.
+Write `$finding_quality`, with any accepted lint repairs, to `<artifacts_dir>/finding-contract-linted.json` and its `findings` array to `<artifacts_dir>/comprehension-input.json` with `kind: "finding"`.
 
 Dispatch `comprehension-gate` with `$quality_stage = comprehension` through "Deliver Finding Inputs". The gate may read that input file, but receives no diff or source-code path.
 
@@ -165,7 +130,7 @@ Require the `comprehension-gate` agent's Output schema for both preflight and fi
 
 ```bash
 ~/.agents/skills/review-code/scripts/finding-comment-contract.py gate \
-  "<artifacts_dir>/finding-contract-voiced.json" \
+  "<artifacts_dir>/finding-contract-linted.json" \
   "<artifacts_dir>/comprehension-verdicts.json" \
   > "<artifacts_dir>/finding-gate-first.json"
 ```
@@ -178,7 +143,7 @@ Apply the composer preservation and error checks, run `compose` on successful re
 
 A finding with `validator_confirmed: true` is not withheld for its wording. On a second `REWRITE`, `gate --final` returns it in `rewrites_needed` with `quality_state: "blocking_repair_required"`, `two_sentence_limit: true`, and `comment_style: "concise"`. Repair each one exactly as above with `$quality_stage = comment-repair-blocking-<id>`, keeping those fields on the input item, recheck it with `$quality_stage = comprehension-recheck-blocking-<id>`, and apply `gate --final` again. A third `REWRITE` publishes the repaired body with `quality_state: "published_over_gate"` and the gate's reasons in `reasons`. A composer error, preservation failure, or malformed verdict is still withheld.
 
-Send both the preflight `PASS` findings and the composed `REWRITE` findings through the final comprehension gate. Merge first-pass findings, second-pass findings, blocking-repair findings, and every withheld array into `$finding_quality`. A `rewrites_needed` entry that went through the blocking repair is replaced by its recheck result, not merged. Record `{total_tokens: 0, contracted, preflight_passed, composed, gate_passed, rewritten, published_over_gate, withheld, gate_errors}` under `$token_usage["finding-quality"]`, plus usage for the preflight, final gate, and repair calls. In debug mode, save the stage under `11c3-comprehension-gate`.
+Send both the preflight `PASS` findings and the composed `REWRITE` findings through the final comprehension gate. Merge first-pass findings, second-pass findings, blocking-repair findings, and every withheld array into `$finding_quality`. A `rewrites_needed` entry that went through the blocking repair is replaced by its recheck result, not merged. Record `{total_tokens: 0, contracted, preflight_passed, composed, gate_passed, rewritten, published_over_gate, withheld, gate_errors}` under `$token_usage["finding-quality"]`, plus usage for the preflight, final gate, and repair calls. In debug mode, save the stage under `11c2-comprehension-gate`.
 
 ### Finalize Publication
 

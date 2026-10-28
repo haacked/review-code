@@ -18,7 +18,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--agent",
-        choices=("comprehension-gate", "code-reviewer-comment", "code-reviewer-voice"),
+        choices=("comprehension-gate", "code-reviewer-comment"),
         required=True,
     )
     parser.add_argument("--input", required=True)

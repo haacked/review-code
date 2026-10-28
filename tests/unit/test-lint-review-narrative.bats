@@ -100,8 +100,8 @@ EOF
     [[ "$(echo "$output" | field "['count']")" == "0" ]]
 }
 
-# Fix Summary is the fix pass's own prose, not finding bodies the voice pass
-# gated, and across saved reviews it is the largest single source of narrative
+# Fix Summary is the fix pass's own prose, not finding bodies the wording lint
+# checked, and across saved reviews it is the largest single source of narrative
 # warnings. Excluding it was the bug.
 @test "lint-review-narrative: lints Fix Summary prose" {
     write_review <<'EOF'
@@ -242,7 +242,7 @@ EOF
 
 # Reviews separate the severity token with an em dash as often as with a colon.
 # A colon-only opener left those bodies read as narrative, and their own em dash
-# came back as a warning against prose the voice pass had already gated.
+# came back as a warning against prose the wording lint had already checked.
 @test "lint-review-narrative: skips a finding whose severity is set off by a dash" {
     write_review <<'EOF'
 ## Testing Review

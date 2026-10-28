@@ -43,7 +43,7 @@ lint_batch() {
 has_warning() {
     jq -e --arg category "$1" --argjson ids "${2:-[1]}" '
         .error == null
-        and .warned_ids == $ids
+        and [.findings[].id] == $ids
         and all(.findings[]; .warnings | any(.category == $category and .field == "description"))' \
         <<<"$output" >/dev/null
 }
@@ -93,7 +93,7 @@ EOF
 [{"id": 7, "description": "`blocking`: the read is not pinned by any test.", "proposed_fix": null}]
 EOF
     [ "$status" -eq 0 ]
-    [[ "$(echo "$output" | field "['warned_ids']")" == "[7]" ]]
+    [[ "$(echo "$output" | field "['findings'][0]['id']")" == "7" ]]
     [[ "$(echo "$output" | field "['findings'][0]['warnings'][0]['category']")" == "pinning" ]]
 }
 
@@ -102,7 +102,7 @@ EOF
 [{"id": 2, "description": "`suggestion`: `users.py:67` runs 101 queries.", "proposed_fix": "Leverage the existing helper."}]
 EOF
     [ "$status" -eq 0 ]
-    [[ "$(echo "$output" | field "['warned_ids']")" == "[2]" ]]
+    [[ "$(echo "$output" | field "['findings'][0]['id']")" == "2" ]]
     [[ "$(echo "$output" | field "['findings'][0]['warnings'][0]['field']")" == "proposed_fix" ]]
 }
 
@@ -115,7 +115,7 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$(echo "$output" | field "['checked']")" == "3" ]]
     [[ "$(echo "$output" | field "['clean']")" == "2" ]]
-    [[ "$(echo "$output" | field "['warned_ids']")" == "[2]" ]]
+    [[ "$(echo "$output" | field "['findings'][0]['id']")" == "2" ]]
 }
 
 @test "gate-voice-lint: code blocks in a body do not trip prose rules" {
@@ -126,14 +126,14 @@ EOF
     [[ "$(echo "$output" | field "['warned']")" == "0" ]]
 }
 
-@test "gate-voice-lint: gate used as a verb sends the body to voice repair" {
+@test "gate-voice-lint: gate used as a verb sends the body to lint repair" {
     run lint_one concise '`blocking`: This says `experiment.update` checks release conditions, but the backend never gates them.'
 
     [ "$status" -eq 0 ]
     has_warning code_term_verb
 }
 
-@test "gate-voice-lint: a quoted word as the subject of an action verb sends the body to voice repair" {
+@test "gate-voice-lint: a quoted word as the subject of an action verb sends the body to lint repair" {
     run lint_one concise "$(jq -r '.cases[0].draft' "$PROJECT_ROOT/tests/fixtures/finding-comments/pr-118814.json")"
 
     [ "$status" -eq 0 ]
@@ -190,7 +190,7 @@ EOF
 
     [ "$status" -eq 0 ]
     has_no_warning 6 || {
-        echo "prefix counted toward the length: $(jq -c '{error, warned_ids}' <<<"$output")"
+        echo "prefix counted toward the length: $(jq -c '{error, warned}' <<<"$output")"
         false
     }
 }
@@ -207,7 +207,7 @@ if not self._flushed:
 
     [ "$status" -eq 0 ]
     has_no_warning 3 || {
-        echo "code block counted toward the length: $(jq -c '{error, warned_ids}' <<<"$output")"
+        echo "code block counted toward the length: $(jq -c '{error, warned}' <<<"$output")"
         false
     }
 }
@@ -220,7 +220,7 @@ if not self._flushed:
 
     [ "$status" -eq 0 ]
     has_no_warning 3 || {
-        echo "unexpected length warning: $(jq -c '{error, warned_ids}' <<<"$output")"
+        echo "unexpected length warning: $(jq -c '{error, warned}' <<<"$output")"
         false
     }
 }
@@ -259,12 +259,12 @@ if not self._flushed:
     run "$GATE" "$BATS_TEST_TMPDIR/batch.json"
 
     [ "$status" -eq 0 ]
-    jq -e '.error == null and .checked == 3 and .warned_ids == [1]' <<<"$output"
+    jq -e '.error == null and .checked == 3 and [.findings[].id] == [1]' <<<"$output"
 }
 
-# A body that is only too long keeps its voice rewrite, because the final
+# A body that is only too long skips the lint repair, because the final
 # comprehension gate also judges length.
-@test "gate-voice-lint: restore_ids lists the warned ids with a warning other than concise_length" {
+@test "gate-voice-lint: repair_ids lists the warned ids with a warning other than concise_length" {
     run lint_batch \
         "$THREE_SENTENCES" \
         '`blocking`: The status is logged, but nothing checks it.' \
@@ -272,7 +272,7 @@ if not self._flushed:
         '`nit`: Rename `x` to `count`.'
 
     [ "$status" -eq 0 ]
-    jq -e '.error == null and .warned_ids == [1, 2, 3] and .restore_ids == [2, 3]' <<<"$output"
+    jq -e '.error == null and [.findings[].id] == [1, 2, 3] and .repair_ids == [2, 3]' <<<"$output"
     jq -e '[.findings[] | {id, categories: ([.warnings[].category] | unique)}] == [
         {id: 1, categories: ["concise_length"]},
         {id: 2, categories: ["negative_subject"]},
@@ -282,7 +282,44 @@ if not self._flushed:
     run "$GATE" - <<<'not json at all'
 
     [ "$status" -eq 0 ]
-    jq -e '.error != null and .restore_ids == []' <<<"$output"
+    jq -e '.error != null and .repair_ids == []' <<<"$output"
+}
+
+@test "gate-voice-lint: each warned finding carries one reason per warning, quoting the line" {
+    run lint_batch '`blocking`: The status is logged, but nothing checks it.'
+
+    [ "$status" -eq 0 ]
+    jq -e '.findings[0] | (.reasons | length) == (.warnings | length)' <<<"$output"
+    jq -e '.findings[0].reasons[0] | type == "string" and contains("nothing checks it")' <<<"$output"
+}
+
+@test "gate-voice-lint: --repair-input writes the repair ids with their reasons, from a findings object" {
+    jq -n --arg long "$THREE_SENTENCES" '{findings: [
+        {id: 1, comment_style: "concise", description: $long, proposed_fix: null},
+        {id: 2, comment_style: "concise", description: "`nit`: This pins the behavior.", proposed_fix: null,
+         facts: {}, reasons: ["Stale preflight reason."], unresolved: [{phrase: "this", stands_for: "x"}]},
+        {id: 3, comment_style: "concise", description: "`nit`: Rename `x` to `count`.", proposed_fix: null}
+    ], withheld: []}' > "$BATS_TEST_TMPDIR/quality.json"
+
+    run "$GATE" --repair-input "$BATS_TEST_TMPDIR/repair.json" "$BATS_TEST_TMPDIR/quality.json"
+
+    [ "$status" -eq 0 ]
+    jq -e '.error == null and .checked == 3 and .repair_ids == [2]' <<<"$output"
+    jq -e --argjson result "$output" '
+        length == 1 and .[0].id == 2 and .[0].facts == {}
+        and .[0].reasons == $result.findings[1].reasons
+        and (.[0].reasons[0] | contains("This pins the behavior"))
+        and (.[0] | has("unresolved") | not)
+    ' "$BATS_TEST_TMPDIR/repair.json"
+}
+
+@test "gate-voice-lint: --repair-input writes an empty array when nothing needs a repair" {
+    jq -n '[{id: 1, description: "`nit`: Rename `x` to `count`.", proposed_fix: null}]' > "$BATS_TEST_TMPDIR/rewrites.json"
+
+    run "$GATE" --repair-input "$BATS_TEST_TMPDIR/repair.json" "$BATS_TEST_TMPDIR/rewrites.json"
+
+    [ "$status" -eq 0 ]
+    [ "$(jq -c . "$BATS_TEST_TMPDIR/repair.json")" = "[]" ]
 }
 
 # =============================================================================
@@ -315,7 +352,7 @@ EOF
     run bash -c "printf 'not json at all' | '$GATE' -"
     [ "$status" -eq 0 ]
     [[ "$(echo "$output" | field "['checked']")" == "0" ]]
-    [[ "$(echo "$output" | field "['warned_ids']")" == "[]" ]]
+    [[ "$(echo "$output" | field "['findings']")" == "[]" ]]
     run bash -c "printf 'not json at all' | '$GATE' - | python3 -c \"import json,sys; print(json.load(sys.stdin)['error'] is not None)\""
     [[ "$output" == "True" ]]
 }
@@ -326,7 +363,7 @@ EOF
     [[ "$(echo "$output" | field "['error']")" == *"must be a JSON array"* ]]
 }
 
-@test "gate-voice-lint: an empty array reports nothing to revert" {
+@test "gate-voice-lint: an empty array reports nothing to repair" {
     run bash -c "printf '[]' | '$GATE' -"
     [ "$status" -eq 0 ]
     [[ "$(echo "$output" | field "['checked']")" == "0" ]]

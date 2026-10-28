@@ -48,9 +48,23 @@ Match certainty to the severity, the way a reviewer would. State a `blocking` pr
 
 Questions and nits may omit inapplicable facts, but the requested answer or change must be clear. Keep full facts and internal fixes intact regardless of public style.
 
-Some items carry `reasons` and `unresolved` phrases from a comprehension check that asked for a rewrite. Fix what they name, then check the whole body against the rules above again, so the next check does not find a different problem. In concise style, add a missing fact in the fewest words.
+Some items carry `reasons`, and sometimes `unresolved` phrases, from a comprehension check or the wording lint that asked for a rewrite. A lint reason quotes the line it flagged. Fix what they name, then check the whole body against the rules above and under "Wording" again, so the next check does not find a different problem. In concise style, add a missing fact in the fewest words.
 
 An item with `two_sentence_limit: true` is a `blocking` finding that the comprehension check has already rejected twice. Write exactly two sentences of prose: one that states the problem and one that asks for the change. Add a code block only when the change cannot be stated without one.
+
+## Wording
+
+Your body is the comment the author reads, and no later pass rewrites it. Apply these rules to prose only, never to code blocks, inline code, or quoted strings.
+
+- Open with what the code does or breaks, not a verdict or a grade: "This rename leaves the cache stale for up to an hour after deploy", not "This is a real upgrade-window risk" or "Sound and proportionate."
+- Use plain English: "stays at 22", not "remains at its prior value"; "doesn't catch", not "fails to handle".
+- Name the behavior instead of a label for it. Leave out metaphors ("load-bearing", "code smell", "foot-gun", "happy path"), a name the review coined ("the staleness window", "the withholding boundary"), formal-logic words ("conjunct", "predicate", "vacuously true", "the invariant holds", "this condition is satisfied"), test-theory words ("weak positive assertion", "tautological test"), and review vocabulary ("sibling", "anchor", "corroborated"). Keep a word that is an identifier in the code or the repo's own vocabulary.
+- Don't use "pin" for what a test covers: write "the 404 case isn't tested" or "`test_timeout` fails if the timeout changes". Version and SHA pinning stay as written.
+- Never use an em dash or an en dash. Use a comma, colon, semicolon, parenthesis, or a second sentence.
+- Never use field labels such as `**Issue**:`, `**Impact**:`, or `**Fix**:`.
+- Write about the code, not the author: "This exception propagates as a 500", not "You should catch this exception".
+- Leave out filler: openers such as "Great work", closers such as "Hope this helps", empty hedges such as "Just a thought, but" (the light hedges above stay), significance words such as "critical", "real risk", or "important to note", and stock words such as "leverage", "robust", "comprehensive", "ensure", "facilitate", and "utilize".
+- Leave out review provenance such as "(corroborated by Copilot)", "Downgraded from blocking", or a confidence score.
 
 ## Verification and Preservation
 

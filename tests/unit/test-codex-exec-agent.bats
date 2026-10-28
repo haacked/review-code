@@ -138,9 +138,9 @@ MOCKEOF
 }
 
 @test "codex-exec-agent: omits model flags for an inherit-model agent" {
-    write_agent_toml code-reviewer-voice
+    write_agent_toml comprehension-gate
     create_mock_codex
-    run "$SCRIPT" code-reviewer-voice "$PROMPT_FILE" "$OUTPUT_FILE"
+    run "$SCRIPT" comprehension-gate "$PROMPT_FILE" "$OUTPUT_FILE"
     [ "$status" -eq 0 ]
     run grep -Fxq -- "--model" "$CODEX_ARGS_LOG"
     [ "$status" -ne 0 ]

@@ -33,7 +33,7 @@ teardown() {
     [ "$status" -eq 0 ]
     local count
     count=$(find "$FAKE_HOME/.codex/.review-code-agents" -name '*.toml' -type f | wc -l | tr -d ' ')
-    [ "$count" -eq 14 ]
+    [ "$count" -eq 13 ]
     [ -f "$FAKE_HOME/.codex/.review-code-agents/code-reviewer-comment.toml" ]
 }
 
@@ -42,7 +42,7 @@ teardown() {
     [ "$status" -eq 0 ]
     local count
     count=$(find "$FAKE_HOME/.codex/agents" -name '*.toml' -type l | wc -l | tr -d ' ')
-    [ "$count" -eq 14 ]
+    [ "$count" -eq 13 ]
     [ -L "$FAKE_HOME/.codex/agents/code-reviewer-comment.toml" ]
     [ -L "$FAKE_HOME/.codex/agents/code-reviewer-security.toml" ]
     [[ "$(readlink "$FAKE_HOME/.codex/agents/code-reviewer-security.toml")" == "$FAKE_HOME/.codex/.review-code-agents/"* ]]

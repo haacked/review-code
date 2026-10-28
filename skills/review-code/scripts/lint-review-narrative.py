@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Lint the narrative prose in a composed review and record what it finds.
 
-The voice agent rewrites finding bodies and never sees the Overview or the
+The wording lint checks finding bodies and never sees the Overview or the
 per-agent summaries, so that prose is the one place in a review nothing checks.
 This script lints exactly that prose and, with --annotate, writes the warnings
 into the review as a "Lint notes" section.
@@ -12,7 +12,7 @@ inside them. A finding block starts at a paragraph or heading opening with a
 severity token (`blocking`, `suggestion`, `question`, `nit`, separated by a
 colon or an em dash) and runs to the next thematic break or heading. Suggested
 Comments, tables, and the metadata header are skipped: the first re-quotes
-finding bodies the voice pass already gated, and a whitelist keeps a newly added
+finding bodies the wording lint already checked, and a whitelist keeps a newly added
 section out until someone decides it belongs. Fix Summary is the fix pass's own
 prose, so it is linted.
 
@@ -58,7 +58,7 @@ TOP_HEADING = re.compile(r"^ {0,3}#{1,2}\s")
 # non-narrative H2, and an H2-only whitelist would report those as clean.
 # "Overview" and "<Something> Review" are the composer's per-agent sections;
 # "Fix Summary" is written by the fix pass and, unlike Suggested Comments, is
-# the composer's own prose rather than finding bodies the voice pass gated.
+# the composer's own prose rather than finding bodies the wording lint checked.
 NARRATIVE_SECTION = re.compile(
     r"^ {0,3}#{2,3}\s+(?:Overview|Fix Summary|.+\sReview)\s*$"
 )
@@ -67,8 +67,8 @@ NOTES_SECTION = re.compile(r"^ {0,3}##\s+Lint notes\s*$")
 
 PREAMBLE = (
     "Voice-lint warnings on this review's narrative prose (the Overview and the "
-    "per-agent summaries). Finding bodies are checked separately during the voice "
-    "pass. Nothing below was changed automatically."
+    "per-agent summaries). Finding bodies are checked separately before the final "
+    "comprehension gate. Nothing below was changed automatically."
 )
 
 

@@ -9,7 +9,7 @@ Loaded when `mode` is `"pr"`. These steps produce the PR-specific outputs. They 
 
 Run this only when `owner`, `repo`, and `pr.head_sha` are all present in session data. Local, branch, commit, range, and area reviews have no GitHub blob URL to build, so they skip this step and leave references as plain `path:line` text.
 
-Run it as the final body-formatting step, after the final Comprehension Gate. The semantic and voice preservation checks expect `path:line` tokens in plain form, so linkify only once those checks have run. Apply the rewrite in place only to `$finding_quality.findings` entries with `publishable: true` (and to publishable unmapped-comment text). Never linkify or promote an entry from `$finding_quality.withheld`. The same linkified bodies feed both the review file's Suggested Comments and the `--draft` comments, so doing it once here covers both.
+Run it as the final body-formatting step, after the final Comprehension Gate. The composer preservation checks and the comprehension gate expect `path:line` tokens in plain form, so linkify only once those checks have run. Apply the rewrite in place only to `$finding_quality.findings` entries with `publishable: true` (and to publishable unmapped-comment text). Never linkify or promote an entry from `$finding_quality.withheld`. The same linkified bodies feed both the review file's Suggested Comments and the `--draft` comments, so doing it once here covers both.
 
 When a comment body cites a file and line **other than the comment's own anchor location**, render the citation as a GitHub permalink. GitHub renders markdown in review comment bodies and in the review summary, so a permalink lets the reader jump straight to the cited line.
 
