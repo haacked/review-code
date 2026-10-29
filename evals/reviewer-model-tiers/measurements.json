@@ -6,26 +6,6 @@
   "approach": "run-eval.sh baseline with direct domain agent and model override",
   "cost_basis": "Claude Code reported API-equivalent amounts, not subscription charges",
   "score_method": "Manual causal-fact matching against source; automatic scores invalid for direct output format",
-  "summary": {
-    "opus": {
-      "completed_calls": 5,
-      "reported_total_cost_usd": 15.3327756,
-      "requested_model_cost_usd": 5.9061456,
-      "other_model_cost_usd": 9.42663,
-      "duration_ms": 868725,
-      "keyed_blocking_facts_covered": 7,
-      "keyed_blocking_facts_total": 7
-    },
-    "sonnet": {
-      "completed_calls": 5,
-      "reported_total_cost_usd": 2.274248,
-      "requested_model_cost_usd": 2.274248,
-      "other_model_cost_usd": 0,
-      "duration_ms": 99216,
-      "keyed_blocking_facts_covered": 7,
-      "keyed_blocking_facts_total": 7
-    }
-  },
   "calls": [
     {
       "domain": "compatibility",
@@ -232,13 +212,13 @@
     {
       "case": "breaking-changes",
       "opus": {
-        "keyed_blockers_covered": [
+        "findings_caught": [
           "renamed-export",
           "removed-response-fields",
           "added-required-parameter"
         ],
         "independent_blocking_findings": 2,
-        "additive_delete_trap": false,
+        "traps_triggered": [],
         "unsupported_nonblocking_findings": [
           "authentication change with no concrete caller",
           "default page size with hypothetical client"
@@ -248,13 +228,13 @@
         ]
       },
       "sonnet": {
-        "keyed_blockers_covered": [
+        "findings_caught": [
           "renamed-export",
           "removed-response-fields",
           "added-required-parameter"
         ],
         "independent_blocking_findings": 2,
-        "additive_delete_trap": false,
+        "traps_triggered": [],
         "unsupported_nonblocking_findings": [
           "authentication change with no concrete caller",
           "default page size with hypothetical client",
@@ -281,11 +261,10 @@
     {
       "case": "analytics-emitter-batching",
       "opus": {
-        "keyed_domain_findings_covered": [
+        "findings_caught": [
           "track-event-string-literal-copies"
         ],
-        "keyed_domain_blockers": [],
-        "retry_policy_trap": false,
+        "traps_triggered": [],
         "quality_notes": [
           "Correct source anchors and explicit acceptance of separate endpoint configurations.",
           "Incorrectly treats equal current values as contradicting independent tuning.",
@@ -294,11 +273,12 @@
         ]
       },
       "sonnet": {
-        "keyed_domain_findings_covered": [
+        "findings_caught": [
           "track-event-string-literal-copies"
         ],
-        "keyed_domain_blockers": [],
-        "retry_policy_trap": true,
+        "traps_triggered": [
+          "share-retry-policy-constants"
+        ],
         "quality_notes": [
           "Advises splitting retry policies only when values differ, contradicting their documented independent tuning.",
           "Falsely concludes requests do not retry despite the unavailable transport implementation.",
@@ -306,7 +286,7 @@
           "Reports both keyed correctness defects as blockers; these do not increase maintainability-domain recall."
         ]
       },
-      "shared_caveats": [
+      "shared_notes": [
         "Both say flushAll returns before sends begin; the actual defect is failure to await completion or propagate rejection."
       ],
       "independent_blind_check": {
@@ -320,11 +300,10 @@
       "excluded_original_key": "missing-nonzero-base-test",
       "exclusion_reason": "Existing two-delta test detects every numeric += to = mutation; independently confirmed before assessing these reports.",
       "opus": {
-        "keyed_domain_findings_covered": [
+        "findings_caught": [
           "panic-safety-untested"
         ],
-        "keyed_domain_blockers": [],
-        "nonzero_base_trap": false,
+        "traps_triggered": [],
         "quality_notes": [
           "Correct source anchors; reports panic cleanup as a nit rather than the key's suggestion severity.",
           "Finds missing parallel-log integration assertions and a possible one-worker barrier deadlock.",
@@ -333,11 +312,10 @@
         ]
       },
       "sonnet": {
-        "keyed_domain_findings_covered": [
+        "findings_caught": [
           "panic-safety-untested"
         ],
-        "keyed_domain_blockers": [],
-        "nonzero_base_trap": false,
+        "traps_triggered": [],
         "quality_notes": [
           "Finds the same missing integration assertion and one-worker barrier deadlock.",
           "Wrong anchors for thread isolation (341-368 vs 976-1004), guard cleanup (126-130 vs 49-68), and replacement test (301-309 vs 936-945).",
@@ -350,26 +328,28 @@
         "b": "opus",
         "verdict": "B is stronger; keyed fact coverage equal."
       },
-      "shared_input_limit": "The baseline prompt renderer replaced 22 ampersands with {diff_content} placeholders. Both models inspected the correct pinned source checkout."
+      "shared_notes": [
+        "The baseline prompt renderer replaced 22 ampersands with {diff_content} placeholders. Both models inspected the correct pinned source checkout."
+      ]
     },
     {
       "case": "portal-deployment",
       "opus": {
-        "keyed_blockers_covered": [
+        "findings_caught": [
           "runtime-config-namespace",
           "ingress-service-port"
         ],
-        "named_target_port_trap": false,
+        "traps_triggered": [],
         "quality_notes": [
           "Correct source anchors and fixes for both blockers; extra speculative suggestions are not counted as true positives."
         ]
       },
       "sonnet": {
-        "keyed_blockers_covered": [
+        "findings_caught": [
           "runtime-config-namespace",
           "ingress-service-port"
         ],
-        "named_target_port_trap": false,
+        "traps_triggered": [],
         "quality_notes": [
           "Correct mechanisms and fixes for both blockers, but anchors are 11 lines too high: ConfigMap 22-28 vs 11-17, Ingress 96-97 vs 85-86. The file contains only 86 lines."
         ]
@@ -377,23 +357,25 @@
     },
     {
       "case": "workspace-directory",
-      "shared_input_limit": "The baseline prompt renderer replaced && in the diff with repeated {diff_content} placeholders. Both reports explicitly detected this and reviewed the correct checkout instead.",
+      "shared_notes": [
+        "The baseline prompt renderer replaced && in the diff with repeated {diff_content} placeholders. Both reports explicitly detected this and reviewed the correct checkout instead."
+      ],
       "opus": {
-        "keyed_blockers_covered": [
+        "findings_caught": [
           "selection-survives-workspace-change",
           "radio-keyboard-activation"
         ],
-        "guarded_request_trap": false,
+        "traps_triggered": [],
         "quality_notes": [
           "Correct source anchors and primary fixes; explicitly distinguishes keyboard-only users from screen reader activation. Optional live-region behavior was not exercised."
         ]
       },
       "sonnet": {
-        "keyed_blockers_covered": [
+        "findings_caught": [
           "selection-survives-workspace-change",
           "radio-keyboard-activation"
         ],
-        "guarded_request_trap": false,
+        "traps_triggered": [],
         "quality_notes": [
           "Correct blocker mechanisms and primary fixes, but keyboard anchor is line 69 in an 11-line file and selection anchors miss the referenced code. Optional live-region behavior was not exercised."
         ]
