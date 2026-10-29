@@ -34,7 +34,7 @@ Run specialized code review agent(s) with comprehensive context on local changes
 - `<range>` - Review specific git range (e.g., `abc123..HEAD`, `v1.0.0..v2.0.0`)
 - (no argument) - Review local changes with correctness and every specialist whose area the explorer has not ruled out with concrete negative evidence (default)
 
-Area arguments, each on local changes only; correctness also runs:
+Area arguments, each on local changes only; correctness also runs. To choose reviewers for any other review, including a PR, use `--reviewers`:
 
 - `security` - Deep security vulnerability analysis
 - `performance` - Performance bottlenecks and optimization
@@ -44,6 +44,7 @@ Area arguments, each on local changes only; correctness also runs:
 - `compatibility` - Backwards compatibility with shipped code
 - `architecture` - High-level design, patterns, and necessity
 - `infra-config` - Infrastructure config review: Helm, Terraform, K8s, ArgoCD, CI/CD
+- `frontend` - React components, state management, hooks, accessibility, and TypeScript types
 
 **Optional Flags:**
 
@@ -54,7 +55,9 @@ Area arguments, each on local changes only; correctness also runs:
 - `--append` - Append to existing review file without prompting. In PR mode, also resolves review threads from your previous review whose findings the author has since addressed (the code changed and the new review no longer flags them). When the previous review recorded the commit it ran at, the re-review covers only what changed since then; findings on files the delta doesn't touch carry forward. Anything uncertain (force-push, rebase, a moved base, a delta covering most of the PR) falls back to a full review and says so.
 - `--comment-style concise|detailed` - Use concise public comments by default: one or two sentences that name the problem and ask for the change, with code only when it saves the author from writing it. `detailed` includes the full causal explanation. Both styles retain the same internal analysis and review depth.
 - `--full` - Force a complete re-review even when an incremental one is possible.
-- `--fix` - After the review, apply fixes for findings the agent can resolve cleanly. Edits the working tree directly. Items not fixed (and the choice made on any judgment-call fixes) are listed in a Fix Summary section in the review. Not compatible with `learn` or `find`.
+- `--fix` - After the review, apply fixes for findings the agent can resolve cleanly. Edits the working tree directly. Items not fixed (and the choice made on any judgment-call fixes) are listed in a Fix Summary section in the review. Not compatible with `learn` or `find`. Without `--draft`, a `--fix` run posts nothing, so it skips the comment wording gates automatically: every finding that passes the structural checks is fixed or listed, and the saved review shows each reviewer's own wording. No finding is withheld for failing the clarity check. Add `--draft` to keep the gates.
+- `--reviewers <area,...>` - Run only these reviewers, plus correctness, which always runs (e.g. `--reviewers correctness,testing`). Uses the areas listed above and works in every review mode, including PR URLs and `--append` re-reviews. The review's scope section names every area the list excluded as not reviewed, and the review file records the list. A later `--append` re-review whose list adds an excluded area, or that has no list, reviews the full diff. Cannot be combined with an area argument.
+- `--max-fraction <n>` - Requires `--append`. On the re-review, fall back to a full review only when the changes since the last review touch more than this fraction of the PR's files (default 0.5, range above 0 up to 1).
 - `--parent <ref>` - Override the base branch used for branch / current-branch reviews. By default the base is detected in order: the branch's open PR base (via `gh pr list`, time-bounded and skipped gracefully when gh is unavailable or offline), a recorded stack parent (Graphite or `branch.<name>.parent` in git config), then the default branch. Use `--parent` to force a different base, e.g. `--parent main`.
 - `--adversary:copilot` - After synthesis, run a second-opinion pass through the GitHub Copilot CLI (`copilot`) that validates Claude's findings and scans for anything obvious that was missed. Requires the `copilot` CLI installed; if it isn't, the review proceeds without it and says so. Not compatible with `learn` or `find`.
 - `--adversary:codex` - Same second-opinion pass, using the OpenAI Codex CLI (`codex`) instead. Mutually exclusive with `--adversary:copilot`.
@@ -64,11 +67,12 @@ Area arguments, each on local changes only; correctness also runs:
 Add a file pattern as a second argument to filter changes by file:
 - `<arg> <pattern>` - Review only files matching the pattern (e.g., `356ded2..HEAD "*.sh"`)
 
+PR reviews take no file pattern or area as a second argument and fail with an error instead of ignoring it. Use `--reviewers` to narrow a PR review.
+
 Examples:
 - `/review-code 356ded2..HEAD "*.sh"` - Review only shell script changes in range
 - `/review-code "lib/*.sh"` - Review only shell scripts in lib/ (local changes)
 - `/review-code feature-branch "*.py"` - Review only Python files in branch
-- `/review-code 123 "src/**/*.ts"` - Review only TypeScript files in PR #123
 
 **Usage examples:**
 
@@ -83,6 +87,9 @@ Examples:
 - `/review-code 123 --draft -f` - Review PR, create draft review, skip confirmation
 - `/review-code 123 --comment-style detailed` - Include the full causal explanation in public comments
 - `/review-code 123 --adversary:copilot` - Review PR #123, then have Copilot double-check the findings
+- `/review-code https://github.com/org/repo/pull/123 --append --fix --reviewers correctness,testing -f` - Re-review the changes since the last review with correctness and testing only, and fix the findings
+
+**Checking support from a caller:** `parse-review-arg.sh` needs no git repository or network for a PR URL, so a caller can run the installed copy to see what it supports. `~/.agents/skills/review-code/scripts/parse-review-arg.sh https://github.com/o/r/pull/1 --append --fix --reviewers correctness --max-fraction 0.8` prints JSON with `"comment_gates": "skip"` when `--fix` skips the wording gates, `"reviewers": "correctness"` when `--reviewers` is supported, and `"max_fraction": "0.8"` when `--max-fraction` is. An older install omits those fields.
 
 ---
 
@@ -105,7 +112,7 @@ Run the parse script to determine the review mode and parameters:
 ~/.agents/skills/review-code/scripts/parse-review-arg.sh $ARGUMENTS 2>&1
 ```
 
-Save the JSON output as `PARSE_RESULT`. Reference this throughout; do not run the parse script again. When a prompt below requires reinitializing with a chosen target or scope, retain `--comment-style <PARSE_RESULT.comment_style>` so the choice survives disambiguation.
+Save the JSON output as `PARSE_RESULT`. Reference this throughout; do not run the parse script again. When a prompt below requires reinitializing with a chosen target or scope, retain `--comment-style <PARSE_RESULT.comment_style>`, and `--reviewers <PARSE_RESULT.reviewers>` and `--max-fraction <PARSE_RESULT.max_fraction>` when present, so the choices survive disambiguation.
 
 **Handler File Selection:**
 

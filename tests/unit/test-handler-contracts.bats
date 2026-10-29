@@ -204,13 +204,15 @@ review_commit: old-head
 reviewed_at: 2026-01-01T00:00:00Z
 review_mode: delta
 delta_from: older-head
+reviewers: correctness,testing
 custom: keep
 -->
 # Earlier findings
 
 # Appended full review
 EOF
-    extract_documented_block "$SKILL/handlers/review-compose.md" bash metadata_args > "$ARTIFACTS/metadata.sh"
+    extract_documented_block "$SKILL/handlers/review-compose.md" bash metadata_args \
+        | sed 's/<REVIEW_FIELDS.reviewers joined with commas, or empty>//' > "$ARTIFACTS/metadata.sh"
 
     run env review_file="$review_file" review_commit=new-head bash -e "$ARTIFACTS/metadata.sh"
 
@@ -222,6 +224,19 @@ EOF
     grep -Fxq '# Earlier findings' "$review_file"
     grep -Fxq '# Appended full review' "$review_file"
     ! grep -q '^delta_from:' "$review_file"
+    ! grep -q '^reviewers:' "$review_file"
+}
+
+@test "handler contracts: a full review records the caller's reviewer list in its metadata" {
+    review_file="$ARTIFACTS/review.md"
+    printf '# Review\n' > "$review_file"
+    extract_documented_block "$SKILL/handlers/review-compose.md" bash metadata_args \
+        | sed 's/<REVIEW_FIELDS.reviewers joined with commas, or empty>/correctness,testing/' > "$ARTIFACTS/metadata.sh"
+
+    run env review_file="$review_file" review_commit=new-head bash -e "$ARTIFACTS/metadata.sh"
+
+    [ "$status" -eq 0 ]
+    grep -Fxq 'reviewers: correctness,testing' "$review_file"
 }
 
 @test "handler contracts: compose delegates timestamp generation to the metadata writer" {
@@ -499,4 +514,53 @@ PY
     [ "$(echo "$output" | jq -r '.findings[0].quality_state')" = "passed" ]
     [ "$(echo "$output" | jq -r '.findings[0].publishable')" = "true" ]
     [ "$(echo "$output" | jq '.withheld | length')" -eq 0 ]
+}
+
+@test "handler contracts: documented routing applies the session's caller reviewer list" {
+    SESSION_FILE="$ARTIFACTS/session.json"
+    architectural_context_path="$ARTIFACTS/explorer.md"
+    printf '%s\n' '{"diff_tokens":3000,"reviewers":["correctness","testing"]}' > "$SESSION_FILE"
+    cat > "$architectural_context_path" <<'CONTEXT'
+```review-routing
+{"scope":"full","areas":{"testing":{"status":"not_applicable","evidence":[{"check":"Read every changed file","result":"No test changed."}]},"security":{"status":"applies"}}}
+```
+CONTEXT
+    extract_documented_block "$SKILL/handlers/review-routing.md" bash classify-review-scope.sh > "$ARTIFACTS/route.sh"
+
+    run env SESSION_FILE="$SESSION_FILE" review_diff_path="$REVIEW_DIFF" architectural_context_path="$architectural_context_path" bash -e "$ARTIFACTS/route.sh"
+
+    [ "$status" -eq 0 ]
+    jq -e '
+        .agents == ["correctness", "testing"] and
+        .agent_decisions.security.decision == "skip" and
+        (.agent_decisions.security.reason | contains("Excluded by the caller")) and
+        .agent_decisions.security.evidence == []
+    ' "$ARTIFACTS/review-routing.json"
+}
+
+@test "handler contracts: documented contract command publishes reviewer bodies when the gates are skipped" {
+    jq '[{
+        id: 1, agent: "correctness", severity: "suggestion", comment_style: "concise",
+        location: "backend/api.py:1", file: "backend/api.py", line: 1, side: "RIGHT",
+        confidence: 85, validator_confirmed: false,
+        description: "`suggestion`: the reviewer body", proposed_fix: null,
+        facts: {problem: "p", trigger: null, mechanism: ["m"], result: "r",
+                requested_change: "c", regression_case: null, regression_rationale: null}
+    }]' -n > "$ARTIFACTS/finding-contract-input.json"
+    extract_documented_block "$SKILL/handlers/review-finding-quality.md" bash finding-contract-validated.json > "$ARTIFACTS/contract.template"
+
+    sed 's/<REVIEW_FIELDS.comment_gates>/skip/' "$ARTIFACTS/contract.template" > "$ARTIFACTS/contract.sh"
+    run bash -e "$ARTIFACTS/contract.sh"
+    [ "$status" -eq 0 ]
+    jq -e '.findings[0].publishable == true and .findings[0].quality_state == "gates_skipped" and .findings[0].description == "`suggestion`: the reviewer body"' "$ARTIFACTS/finding-contract-validated.json"
+
+    sed 's/<REVIEW_FIELDS.comment_gates>/run/' "$ARTIFACTS/contract.template" > "$ARTIFACTS/contract.sh"
+    run bash -e "$ARTIFACTS/contract.sh"
+    [ "$status" -eq 0 ]
+    jq -e '.findings[0].publishable == false and .findings[0].quality_state == "ungated"' "$ARTIFACTS/finding-contract-validated.json"
+}
+
+@test "handler contracts: SKILL.md documents no PR file pattern example" {
+    run grep -nE '/review-code [0-9]+ "' "$SKILL/SKILL.md"
+    [ "$status" -eq 1 ]
 }

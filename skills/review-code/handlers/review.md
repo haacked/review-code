@@ -60,6 +60,9 @@ On "Cancel" in any of the prompts above: clean up the session, then stop. A work
 From `REVIEW_FIELDS`, extract these fields for building agent context:
 - `mode`: review mode (pr, branch, commit, range, local)
 - `comment_style`: public comment style (`concise` by default, or `detailed`); retain it through the finding quality pipeline.
+- `comment_gates`: `run`, or `skip` for a `--fix` run without `--draft`, which posts nothing. Retain it for the finding quality pipeline and the Overview gate.
+- `reviewers`: (optional) the caller's `--reviewers` list, correctness first. The scope classifier reads it from the session file; the scope section reports the areas it excluded.
+- `max_fraction`: (optional) the caller's `--max-fraction`, passed to the delta check below.
 - `diff_path`: filesystem path to the diff. The bytes stay on disk; agents read them.
 - `artifacts_dir`: directory holding the diff and the agent briefing
 - `file_metadata`: metadata about changed files
@@ -109,6 +112,8 @@ A re-review normally pays full freight: every agent reads the whole diff again e
   --out "<artifacts_dir>/delta.patch"
 ```
 
+Add `--max-fraction <max_fraction>` when `REVIEW_FIELDS` has `max_fraction`, and `--reviewers <REVIEW_FIELDS.reviewers joined with commas>` when it has `reviewers`. The script compares that list with the one the last review recorded and falls back to a full review when this run adds an area.
+
 `--base` is required and the script errors without it. Deriving it would mean guessing the repository default, which is not the base of a stacked PR; the moved-base guard would then force a full review on exactly the PRs that get re-reviewed most, with a reason that reads plausible.
 
 Read `mode` from the JSON it prints:
@@ -140,6 +145,7 @@ Parse the JSON output and store:
 
 **Override rules:**
 - If the user specified an `area`, set `$exploration_depth` to "standard". Apply the requested scope after exploration as described below.
+- If `REVIEW_FIELDS` has `reviewers`, the classifier applies that list on every call, including this one. Keep the depth it returns.
 - If the classifier errors, keep all nine reviewers and use "thorough" exploration. Correctness always runs.
 
 ### Debug Mode Setup
@@ -436,7 +442,7 @@ If you loaded `review-adversary.md` (`--adversary:*` flag), run its meta-review 
 
 If `mode` is `"pr"`, Read `~/.agents/skills/review-code/handlers/review-pr-output.md` now so its linkification procedure is available before the publication boundary.
 
-Read `~/.agents/skills/review-code/handlers/review-finding-quality.md` and follow it now. It builds `$finding_quality`, runs PR linkification when applicable, then creates `$finding_publication` through the executable publication boundary. Continue only with `$finding_publication.findings`; carry every `$finding_publication.withheld` entry into the local review.
+Read `~/.agents/skills/review-code/handlers/review-finding-quality.md` and follow it now. It builds `$finding_quality`, runs PR linkification when applicable, then creates `$finding_publication` through the executable publication boundary. When `REVIEW_FIELDS.comment_gates` is `skip`, it runs none of the comment wording gates. Continue only with `$finding_publication.findings`; carry every `$finding_publication.withheld` entry into the local review.
 
 ### Apply Fixes (--fix flag)
 

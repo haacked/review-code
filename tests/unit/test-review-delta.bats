@@ -298,3 +298,52 @@ mode_of() { echo "$1" | jq -r '.mode'; }
     run "$SCRIPT" --head-sha "$HEAD_SHA" --review-file "$BATS_TEST_TMPDIR/absent.md" --repo-dir "$REPO" --base main
     [ "$(mode_of "$output")" = "full" ]
 }
+
+# =============================================================================
+# A caller's reviewer list recorded by the last review
+# =============================================================================
+
+narrowed_review_file() {
+    local rf="$BATS_TEST_TMPDIR/narrowed.md"
+    printf '<!-- review-metadata\nreview_commit: %s\nreviewers: %s\n-->\n' "$1" "$2" > "$rf"
+    echo "$rf"
+}
+
+@test "review-delta: a run without a list after a narrowed review falls back to full" {
+    local rf; rf=$(narrowed_review_file "$REVIEWED_SHA" correctness,testing)
+    run "$SCRIPT" --head-sha "$HEAD_SHA" --review-file "$rf" --repo-dir "$REPO" --base main
+    [ "$(mode_of "$output")" = "full" ]
+    echo "$output" | jq -r '.reason' | grep -q "correctness,testing"
+}
+
+@test "review-delta: an unchanged head still gets a full review when the last one was narrowed" {
+    local rf; rf=$(narrowed_review_file "$HEAD_SHA" correctness)
+    run "$SCRIPT" --head-sha "$HEAD_SHA" --review-file "$rf" --repo-dir "$REPO" --base main
+    [ "$(mode_of "$output")" = "full" ]
+}
+
+@test "review-delta: a list that adds an area the last review excluded falls back to full and names it" {
+    local rf; rf=$(narrowed_review_file "$REVIEWED_SHA" correctness,testing)
+    run "$SCRIPT" --head-sha "$HEAD_SHA" --review-file "$rf" --repo-dir "$REPO" --base main --reviewers correctness,security
+    [ "$(mode_of "$output")" = "full" ]
+    echo "$output" | jq -r '.reason' | grep -q "so security never reviewed"
+}
+
+@test "review-delta: a list within the recorded list keeps the delta" {
+    local rf; rf=$(narrowed_review_file "$REVIEWED_SHA" correctness,testing)
+    run "$SCRIPT" --head-sha "$HEAD_SHA" --review-file "$rf" --repo-dir "$REPO" --base main --reviewers correctness
+    [ "$(mode_of "$output")" = "delta" ]
+}
+
+@test "review-delta: a narrowed run after a review with every reviewer keeps the delta" {
+    local rf="$BATS_TEST_TMPDIR/full.md"
+    printf '<!-- review-metadata\nreview_commit: %s\n-->\n' "$REVIEWED_SHA" > "$rf"
+    run "$SCRIPT" --head-sha "$HEAD_SHA" --review-file "$rf" --repo-dir "$REPO" --base main --reviewers correctness,testing
+    [ "$(mode_of "$output")" = "delta" ]
+}
+
+@test "review-delta: a recorded list that is a prefix of an area does not cover that area" {
+    local rf; rf=$(narrowed_review_file "$REVIEWED_SHA" correctness,infra)
+    run "$SCRIPT" --head-sha "$HEAD_SHA" --review-file "$rf" --repo-dir "$REPO" --base main --reviewers correctness,infra-config
+    [ "$(mode_of "$output")" = "full" ]
+}

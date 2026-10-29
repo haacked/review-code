@@ -141,28 +141,64 @@ def session_for_patch(session, patch_path):
     return scoped
 
 
-def apply_area_override(result, requested_area):
-    if requested_area is None:
-        return result
+def caller_reviewers(session):
+    reviewers = session.get("reviewers")
+    if reviewers is None:
+        return None
+    if (
+        not isinstance(reviewers, list)
+        or not reviewers
+        or any(area not in AREAS for area in reviewers)
+    ):
+        raise ValueError("session reviewers must be a non-empty list of known areas")
+    return reviewers
 
-    selected = list(dict.fromkeys(("correctness", requested_area)))
-    reason = f"Explicit user scope override: requested area '{requested_area}'"
+
+def apply_scope_override(result, selected, run_reason, skip_reason, reasoning):
+    selected = list(dict.fromkeys(("correctness", *selected)))
     decisions = {
         area: {
             "decision": "run" if area in selected else "skip",
-            "reason": "Correctness always runs" if area == "correctness" else reason,
+            "reason": "Correctness always runs"
+            if area == "correctness"
+            else run_reason
+            if area in selected
+            else skip_reason,
             "evidence": [],
         }
         for area in AREAS
     }
     return {
         **result,
-        "exploration_depth": "standard",
         "agents": selected,
         "skipped_agents": [area for area in AREAS if area not in selected],
-        "reasoning": f"Correctness always runs. {reason}",
+        "reasoning": f"Correctness always runs. {reasoning}",
         "agent_decisions": decisions,
     }
+
+
+def apply_area_override(result, requested_area):
+    if requested_area is None:
+        return result
+    reason = f"Explicit user scope override: requested area '{requested_area}'"
+    return {
+        **apply_scope_override(result, [requested_area], reason, reason, reason),
+        "exploration_depth": "standard",
+    }
+
+
+def apply_reviewers_override(result, reviewers):
+    if reviewers is None:
+        return result
+    listed = ",".join(dict.fromkeys(("correctness", *reviewers)))
+    return apply_scope_override(
+        result,
+        reviewers,
+        f"Requested by the caller's --reviewers list ({listed})",
+        f"Excluded by the caller's --reviewers list ({listed}); this area was not reviewed",
+        f"The caller's --reviewers list ({listed}) excluded every other reviewer, "
+        "so their areas were not reviewed.",
+    )
 
 
 def main():
@@ -177,8 +213,13 @@ def main():
             session = json.load(source)
         session = session_for_patch(session, args.diff_file)
         assessments, fallback_reason = read_routing(args.explorer_context)
-        result = apply_area_override(
-            classify(session, assessments, fallback_reason), args.area
+        if args.area is not None and session.get("reviewers") is not None:
+            raise ValueError("an area argument and --reviewers cannot both apply")
+        result = apply_reviewers_override(
+            apply_area_override(
+                classify(session, assessments, fallback_reason), args.area
+            ),
+            caller_reviewers(session),
         )
     except (
         OSError,

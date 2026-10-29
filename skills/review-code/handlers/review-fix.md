@@ -1,6 +1,6 @@
 ## Apply Fixes
 
-Loaded when the session JSON has `fix: true`. This pass runs after semantic composition, the wording lint, the final Comprehension Gate, and any file-reference links. It runs immediately before "Compose the Review Document" and applies fixes only for publishable findings.
+Loaded when the session JSON has `fix: true`. This pass runs after the finding quality pipeline (which skips its wording gates when `comment_gates` is `skip`) and any file-reference links. It runs immediately before "Compose the Review Document" and applies fixes only for publishable findings.
 
 The goal: act like a principal engineer doing a careful local cleanup pass. Fix what's clearly right; explain what you skipped or where you had to make a judgment call. The fix step never posts to GitHub: it edits the working tree only.
 

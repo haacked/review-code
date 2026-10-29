@@ -21,6 +21,9 @@ set -euo pipefail
 #   --head-sha <sha>      New review_commit for the metadata header
 #   --delta-from <sha>    Recorded as delta_from in the metadata header
 #   --reviewed-agents     Space-separated areas to replace on touched files; omitted means all
+#   --caller-reviewers    This run's --reviewers list, comma-separated, recorded
+#                         in the header for the next delta check; omitted or
+#                         empty removes the recorded list
 #   --dry-run             Report what would happen; change nothing
 #
 # Output: a JSON object on stdout. Counts and flags only, plus the list of files
@@ -49,6 +52,7 @@ HEAD_SHA=""
 DELTA_FROM=""
 DRY_RUN=false
 REVIEWED_AGENTS_JSON=null
+CALLER_REVIEWERS=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -78,6 +82,10 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             REVIEWED_AGENTS_JSON=$(jq -nc --arg agents "$2" '$agents | [scan("[^\\s]+") ]')
+            shift 2
+            ;;
+        --caller-reviewers)
+            CALLER_REVIEWERS="${2:-}"
             shift 2
             ;;
         --dry-run)
@@ -247,6 +255,11 @@ if [[ -n "${HEAD_SHA}" ]]; then
 fi
 if [[ -n "${DELTA_FROM}" ]]; then
     metadata_args+=(--set "delta_from=${DELTA_FROM}")
+fi
+if [[ -n "${CALLER_REVIEWERS}" ]]; then
+    metadata_args+=(--set "reviewers=${CALLER_REVIEWERS}")
+else
+    metadata_args+=(--unset reviewers)
 fi
 "${SCRIPT_DIR}/update-review-metadata.sh" "${metadata_args[@]}"
 

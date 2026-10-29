@@ -537,3 +537,24 @@ inline_comments_of() {
     run inline_comments_of "review-code-0-0"
     [ "$status" -ne 0 ]
 }
+
+@test "get-review-fields: returns the caller's scaling fields" {
+    local id; id=$(make_session)
+    local session_file="$BATS_TEST_TMPDIR/sessions/review-code/$id.json"
+    jq '.comment_gates = "skip" | .reviewers = ["correctness", "testing"] | .max_fraction = 0.8' "$session_file" > "$session_file.tmp"
+    mv "$session_file.tmp" "$session_file"
+
+    run fields_of "$id"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.comment_gates == "skip" and .reviewers == ["correctness", "testing"] and .max_fraction == 0.8'
+}
+
+@test "get-review-fields: defaults comment_gates to run and omits absent scaling fields" {
+    local id; id=$(make_session)
+
+    run fields_of "$id"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.comment_gates == "run" and (has("reviewers") | not) and (has("max_fraction") | not)'
+}

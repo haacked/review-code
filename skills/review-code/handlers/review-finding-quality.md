@@ -4,6 +4,8 @@ Load this handler after finding validation and the optional adversary meta-revie
 
 When `$selected_agents` or the surviving finding pool is empty, set `$finding_quality` to `{"findings": [], "rewrites_needed": [], "withheld": []}` and skip to "Finalize Publication". A clean review still needs an explicit value because document composition, `--fix`, and PR output consume it.
 
+When `REVIEW_FIELDS.comment_gates` is `skip`, the run posts nothing: `parse-review-arg.sh` sets it for `--fix` without `--draft`. Build the contract as below, but run `compose --skip-gates`. That command applies the same structural checks and marks every finding that passes them publishable with `quality_state: "gates_skipped"`, keeping the reviewer's own body. Set `$finding_quality` to its output and go straight to "Finalize Publication". Do not dispatch the preflight gate, the composer, the wording lint or its repair, or the final gate. Record `{total_tokens: 0, contracted, gates_skipped: true, withheld}` under `$token_usage["finding-quality"]`.
+
 ### Deliver Finding Inputs
 
 For every model call in this handler, including repairs, save the stage's input array to `<artifacts_dir>/$quality_stage-input.json`. Preserve exactly the fields required below. Set `$quality_agent` to the named agent and use a distinct `$quality_stage` for each invocation, such as `finding-preflight`, `comment-compose`, `lint-repair`, `comprehension`, `comment-repair-1`, or `comprehension-recheck-1`. Extract arrays from existing JSON artifacts with `jq` when possible; never paste them into dispatch prompts.
@@ -73,7 +75,11 @@ The facts are the source of truth. Replace internal labels such as "collector mi
 Write the array to `<artifacts_dir>/finding-contract-input.json`, then run:
 
 ```bash
-~/.agents/skills/review-code/scripts/finding-comment-contract.py compose \
+compose_args=(compose)
+if [[ "<REVIEW_FIELDS.comment_gates>" == skip ]]; then
+  compose_args+=(--skip-gates)
+fi
+~/.agents/skills/review-code/scripts/finding-comment-contract.py "${compose_args[@]}" \
   "<artifacts_dir>/finding-contract-input.json" \
   > "<artifacts_dir>/finding-contract-validated.json"
 ```

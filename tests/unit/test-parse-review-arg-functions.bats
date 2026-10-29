@@ -192,12 +192,12 @@ reset_globals() {
     [[ "$output" == *'"pr_url":'* ]]
 }
 
-@test "detect_pr: includes file_pattern when provided" {
+@test "detect_pr: rejects a file pattern that PR mode would ignore" {
     arg="123"
     file_pattern="**/*.js"
     run detect_pr
-    [ "$status" -eq 0 ]
-    [[ "$output" == *'"file_pattern":"**/*.js"'* ]]
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"do not take a file pattern"* ]]
 }
 
 @test "detect_pr: returns 1 for non-PR" {

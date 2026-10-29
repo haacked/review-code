@@ -667,3 +667,21 @@ EOF
     ! grep -q "The fallback branch lacks a regression test" "$TEST_DIR/suggested-review.md"
     ! grep -q "Add a regression test that exercises the fallback branch" "$TEST_DIR/suggested-review.md"
 }
+
+@test "carry-forward-findings.sh: records this run's caller reviewer list in the header" {
+    run "$SCRIPT" --review-file "$TEST_DIR/review.md" --delta-diff "$TEST_DIR/delta.patch" \
+        --head-sha bbbbbbb --delta-from aaaaaaa --caller-reviewers correctness,testing
+    [ "$status" -eq 0 ]
+    grep -qx "reviewers: correctness,testing" "$TEST_DIR/review.md"
+}
+
+@test "carry-forward-findings.sh: a run without a caller list removes the recorded one" {
+    awk '{ print } /^review_commit: aaaaaaa$/ { print "reviewers: correctness" }' "$TEST_DIR/review.md" > "$TEST_DIR/narrowed.md"
+    mv "$TEST_DIR/narrowed.md" "$TEST_DIR/review.md"
+    grep -qx "reviewers: correctness" "$TEST_DIR/review.md"
+
+    run "$SCRIPT" --review-file "$TEST_DIR/review.md" --delta-diff "$TEST_DIR/delta.patch" \
+        --head-sha bbbbbbb --delta-from aaaaaaa --caller-reviewers ""
+    [ "$status" -eq 0 ]
+    ! grep -q "^reviewers:" "$TEST_DIR/review.md"
+}

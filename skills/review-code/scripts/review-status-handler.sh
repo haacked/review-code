@@ -213,7 +213,8 @@ case "${ACTION}" in
             chunks: (if .chunks then [.chunks[] | {id, label, files, size_kb, diff_path}] else null end),
             commit_messages_present: (has("commit_messages")),
             adversary: (.adversary // null),
-            comment_style: (.comment_style // "concise")
+            comment_style: (.comment_style // "concise"),
+            comment_gates: (.comment_gates // "run")
         }
         + ({force, draft, self, overwrite, append, full, fix} | with_entries(select(.value)))
         + (if .debug_session_dir then {debug_session_dir} else {} end)
@@ -224,7 +225,9 @@ case "${ACTION}" in
         + (if .base_lookup_degraded then {base_lookup_degraded} else {} end)
         + (if .commit then {commit} else {} end)
         + (if .range then {range} else {} end)
-        + (if .area then {area} else {} end)'
+        + (if .area then {area} else {} end)
+        + (if .reviewers then {reviewers} else {} end)
+        + (if .max_fraction then {max_fraction} else {} end)'
         ;;
 
     "get-pr-inline-comments")

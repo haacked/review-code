@@ -65,6 +65,12 @@ main() {
     comment_style=$(echo "${parse_result}" | jq -r '.comment_style // "concise"')
     local adversary_mode
     adversary_mode=$(echo "${parse_result}" | jq -r '.adversary_mode // empty')
+    local comment_gates
+    comment_gates=$(echo "${parse_result}" | jq -r '.comment_gates // "run"')
+    local reviewers
+    reviewers=$(echo "${parse_result}" | jq -r '.reviewers // empty')
+    local max_fraction
+    max_fraction=$(echo "${parse_result}" | jq -r '.max_fraction // empty')
 
     # Extract org/repo early for git-based modes
     # Cache git org/repo to avoid redundant operations
@@ -559,6 +565,9 @@ build_review_data() {
     jq_args+=(--arg full_mode "${full_mode}")
     jq_args+=(--arg fix_mode "${fix_mode}")
     jq_args+=(--arg comment_style "${comment_style}")
+    jq_args+=(--arg comment_gates "${comment_gates}")
+    jq_args+=(--arg reviewers "${reviewers}")
+    jq_args+=(--arg max_fraction "${max_fraction}")
     jq_args+=(--arg debug_session_dir "${DEBUG_SESSION_DIR:-}")
     jq_args+=(--argjson diff_tokens "${diff_tokens}")
     jq_args+=(--arg commit_messages "${commit_messages}")
@@ -581,6 +590,7 @@ build_review_data() {
             status: "ready",
             mode: $mode,
             comment_style: $comment_style,
+            comment_gates: $comment_gates,
             git: $git,
             diff_path: $diff_path,
             artifacts_dir: $artifacts_dir,
@@ -600,6 +610,8 @@ build_review_data() {
         + (if $append_mode == "true" then {append: true} else {} end)
         + (if $full_mode == "true" then {full: true} else {} end)
         + (if $fix_mode == "true" then {fix: true} else {} end)
+        + (if $reviewers != "" then {reviewers: ($reviewers | split(","))} else {} end)
+        + (if $max_fraction != "" then {max_fraction: ($max_fraction | tonumber)} else {} end)
         + (if $pr[0] != null then {pr: $pr[0], reviewer_username: $reviewer_username, is_own_pr: ($is_own_pr == "true")} else {} end)
         + (if $chunks[0] != null then {chunks: $chunks[0], chunk_metadata: $chunk_metadata} else {} end)
         + (if $debug_session_dir != "" then {debug_session_dir: $debug_session_dir} else {} end)

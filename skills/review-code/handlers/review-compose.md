@@ -26,7 +26,7 @@ its text is not carried through every earlier turn of the run.
 - Infra-Config Review (if "infra-config" in `$selected_agents`)
 - Frontend Review (if "frontend" in `$selected_agents`)
 
-**For area-specific reviews**, include correctness and the requested area's findings.
+**For area-specific reviews** and reviews with a `reviewers` list, include correctness and the requested areas' findings.
 
 Before linking evidence, retain every expected reviewer report beside the review so session cleanup cannot remove it. A missing manifest or report means a reviewer did not produce evidence, so stop the review:
 
@@ -55,7 +55,7 @@ Retain the routing decisions with this run's coverage artifacts:
 cp "<artifacts_dir>/review-routing.json" "${review_file}.artifacts/<SESSION_ID>/review-routing.json"
 ```
 
-Require the copy to succeed. Include a scope section listing the reviewers run and skipped, each skip's reason and negative evidence (or explicit user scope override), and a link to the retained JSON. A skipped reviewer did not review the code; do not report its area as clean. Preserve this section on both full and delta append reviews.
+Require the copy to succeed. Include a scope section listing the reviewers run and skipped, each skip's reason and negative evidence (or explicit user scope override), and a link to the retained JSON. When the session has `reviewers`, the section names every area the caller's list excluded and says that those areas were not reviewed. A skipped reviewer did not review the code; do not report its area as clean. Preserve this section on both full and delta append reviews.
 
 For a chunked review, also copy every `$chunk.routing_path` into `${review_file}.artifacts/<SESSION_ID>/` and require every copy to succeed. Link each retained chunk routing file from the chunk scope table. The top-level routing artifact describes the whole patch; each chunk artifact is the decision record for the patch that chunk's reviewers received.
 
@@ -116,7 +116,7 @@ An Overview paragraph in the right register reads like:
 
 > Adds a soft-hide for stale suggestion names. The new boolean ships in an additive migration, the GET returns hidden names separately, and hide/restore is admin-gated. The hidden row and any flags using it are preserved, so hiding is reversible.
 
-**Gate the Overview.** The comment stages never see narrative prose, so after drafting the Overview paragraph, send it through the comprehension gate as a one-item batch: invoke the Task tool with subagent_type `comprehension-gate` and the array `[{"id": 1, "severity": "overview", "location": null, "description": "<overview text>", "proposed_fix": null, "kind": "prose"}]` in a four-backtick `json` fence. On `REWRITE`, you wrote this paragraph, so apply the notes and any `unresolved` entries yourself: replace each unresolved phrase with the concrete behavior it stands for, drop any invented prefix ahead of the first sentence, lead with what the change does, one idea per sentence. Re-check the rewritten paragraph at most once, then proceed with your best version regardless of the second verdict. On any error or malformed response, keep the drafted Overview (fail open). Record usage in `$token_usage["comprehension-gate-overview"]`. In debug mode, save the stage `11e-overview-gate` artifacts (see `review-debug.md`).
+**Gate the Overview.** Skip this step when `comment_gates` is `skip`; keep the drafted Overview. Otherwise: the comment stages never see narrative prose, so after drafting the Overview paragraph, send it through the comprehension gate as a one-item batch: invoke the Task tool with subagent_type `comprehension-gate` and the array `[{"id": 1, "severity": "overview", "location": null, "description": "<overview text>", "proposed_fix": null, "kind": "prose"}]` in a four-backtick `json` fence. On `REWRITE`, you wrote this paragraph, so apply the notes and any `unresolved` entries yourself: replace each unresolved phrase with the concrete behavior it stands for, drop any invented prefix ahead of the first sentence, lead with what the change does, one idea per sentence. Re-check the rewritten paragraph at most once, then proceed with your best version regardless of the second verdict. On any error or malformed response, keep the drafted Overview (fail open). Record usage in `$token_usage["comprehension-gate-overview"]`. In debug mode, save the stage `11e-overview-gate` artifacts (see `review-debug.md`).
 
 **On the `delta` path** (`$review_mode` is `delta`), everything above still governs what you compose, but not where it goes: Read `~/.agents/skills/review-code/handlers/review-carry-forward.md` and follow it instead of saving over `$review_file`. Do not Read the existing review.
 
@@ -126,6 +126,12 @@ Save the complete review to `$review_file`, or append the new sections for a ful
 metadata_args=(--file "$review_file" --set review_mode=full)
 if [[ -n "$review_commit" ]]; then
     metadata_args+=(--set "review_commit=$review_commit")
+fi
+caller_reviewers="<REVIEW_FIELDS.reviewers joined with commas, or empty>"
+if [[ -n "$caller_reviewers" ]]; then
+    metadata_args+=(--set "reviewers=$caller_reviewers")
+else
+    metadata_args+=(--unset reviewers)
 fi
 ~/.agents/skills/review-code/scripts/update-review-metadata.sh "${metadata_args[@]}"
 ```

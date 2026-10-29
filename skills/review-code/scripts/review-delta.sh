@@ -27,6 +27,11 @@ set -euo pipefail
 #                       pass their artifacts dir, which is swept with the session.
 #   --max-fraction <n>  Fall back to full when the delta touches more than this
 #                       fraction of the PR's files (default: 0.5)
+#   --reviewers <list>  This run's --reviewers list, comma-separated. Omitted
+#                       means every reviewer. The review file records the list
+#                       of the run that wrote it, and an area outside that list
+#                       never reviewed the earlier changes, so this run reviews
+#                       the full diff.
 #
 # Output: a JSON object on stdout.
 #   {"mode": "no-change"|"delta"|"full", "reason": "...", "diff_path": "...",
@@ -39,6 +44,7 @@ REPO_DIR="."
 BASE_REF=""
 OUT_PATH=""
 MAX_FRACTION="0.5"
+CURRENT_REVIEWERS=""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 while [[ $# -gt 0 ]]; do
@@ -69,6 +75,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --max-fraction)
             MAX_FRACTION="${2:-0.5}"
+            shift 2
+            ;;
+        --reviewers)
+            CURRENT_REVIEWERS="${2:-}"
             shift 2
             ;;
         *)
@@ -116,6 +126,33 @@ fi
 if [[ -z "${REVIEW_COMMIT}" ]]; then
     emit full "No review_commit recorded from a previous review; reviewing the full diff."
     exit 0
+fi
+
+# Runs before the no-change check: an unchanged head still needs the areas the
+# last review excluded.
+if [[ -f "${REVIEW_FILE}" ]]; then
+    if ! RECORDED_REVIEWERS=$("${SCRIPT_DIR}/update-review-metadata.sh" --file "${REVIEW_FILE}" --get reviewers); then
+        emit full "Invalid review metadata; reviewing the full diff."
+        exit 0
+    fi
+    if [[ -n "${RECORDED_REVIEWERS}" ]]; then
+        if [[ -z "${CURRENT_REVIEWERS}" ]]; then
+            emit full "The last review ran only the caller's reviewers (${RECORDED_REVIEWERS}), so the other areas never reviewed the earlier changes; reviewing the full diff."
+            exit 0
+        fi
+        added=()
+        IFS=',' read -r -a current_list <<< "${CURRENT_REVIEWERS}"
+        for area in "${current_list[@]}"; do
+            [[ ",${RECORDED_REVIEWERS}," == *",${area},"* ]] || added+=("${area}")
+        done
+        if [[ ${#added[@]} -gt 0 ]]; then
+            emit full "The last review ran only the caller's reviewers (${RECORDED_REVIEWERS}), so $(
+                IFS=','
+                echo "${added[*]}"
+            ) never reviewed the earlier changes; reviewing the full diff."
+            exit 0
+        fi
+    fi
 fi
 
 if [[ ! -d "${REPO_DIR}" ]]; then

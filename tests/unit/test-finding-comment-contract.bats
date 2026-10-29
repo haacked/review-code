@@ -1418,3 +1418,55 @@ EOF_DIFF
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.comments == [{path: "src/blank.py", line: 11, side: "LEFT", body: "Keep this separator.", line_content: ""}]'
 }
+
+@test "finding contract: --skip-gates publishes a valid finding with the reviewer's own body" {
+    write_finding '"`blocking`: the reviewer wrote this body"'
+
+    run "$CONTRACT" compose --skip-gates "$INPUT"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '
+        (.findings | length) == 1 and
+        .findings[0].publishable == true and
+        .findings[0].quality_state == "gates_skipped" and
+        .findings[0].description == "`blocking`: the reviewer wrote this body" and
+        .withheld == []
+    '
+
+    echo "$output" > "$COMPOSED"
+    run "$CONTRACT" publish "$COMPOSED"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '
+        (.findings | length) == 1 and
+        .findings[0].file == "rust/feature-flags/src/flags/flag_matching.rs" and
+        .findings[0].line == 262 and
+        (.comments | length) == 1 and
+        .withheld == [] and
+        .clean == false
+    '
+}
+
+@test "finding contract: --skip-gates still withholds a finding that fails the structural checks" {
+    write_finding '"`blocking`: a body with no routable line"'
+    jq '.[0].line = 0 | .[0].facts.requested_change = null' "$INPUT" > "$INPUT.tmp" && mv "$INPUT.tmp" "$INPUT"
+
+    run "$CONTRACT" compose --skip-gates "$INPUT"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '
+        .findings == [] and
+        (.withheld | length) == 1 and
+        .withheld[0].publishable == false and
+        .withheld[0].quality_state == "invalid_contract"
+    '
+}
+
+@test "finding contract: compose without --skip-gates leaves findings unpublishable until a gate passes them" {
+    write_finding '"`blocking`: the reviewer wrote this body"'
+
+    run "$CONTRACT" compose "$INPUT"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.findings[0].publishable == false and .findings[0].quality_state == "ungated"'
+}
