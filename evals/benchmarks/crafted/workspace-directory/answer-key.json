@@ -30,8 +30,8 @@
       "description": "Each effect invocation has its own active flag. Cleanup clears that flag when the workspace changes or the component unmounts, and both success and error handlers check it before updating state. A slower prior request cannot overwrite the new workspace result. AbortController may save work but is not required to prevent stale results or state updates after unmount here.",
       "area": "frontend",
       "file": "src/useMembers.ts",
-      "line_start": 23,
-      "line_end": 38,
+      "line_start": 10,
+      "line_end": 39,
       "trap_keywords": ["race", "abortcontroller", "cancel", "unmount", "out of order", "stale response", "overwrite"]
     }
   ],

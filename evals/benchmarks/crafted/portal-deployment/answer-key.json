@@ -32,7 +32,7 @@
       "file": "deploy/portal.yaml",
       "line_start": 64,
       "line_end": 67,
-      "trap_keywords": ["targetport", "target port", "port name", "named port", "mismatch"]
+      "trap_keywords": ["targetport", "target port", "named port"]
     }
   ],
   "clean_areas": []
