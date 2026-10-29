@@ -27,6 +27,13 @@ if [[ -n "${STUB_EDIT_TREE:-}" ]]; then
 fi
 reviews="${REVIEW_CODE_REVIEW_DIR:-${HOME}/.agents/skills/review-code/.reviews}"
 mkdir -p "${reviews}/posthog/posthog"
+if [[ -n "${STUB_RANGE_REVIEW:-}" ]]; then
+    artifacts="${reviews}/posthog/posthog/range-main-to-HEAD.md.artifacts/review-code-1/investigations"
+    mkdir -p "${artifacts}"
+    echo "investigation notes" > "${artifacts}/code-reviewer-correctness.md"
+    echo "range review" > "${reviews}/posthog/posthog/range-main-to-HEAD.md"
+    exit 0
+fi
 echo "stub review" > "${reviews}/posthog/posthog/pr-116693.md"
 if [[ -n "${STUB_LEAVE_WORKTREE:-}" ]]; then
     mkdir -p "${REVIEW_CODE_WORKTREE_DIR:-${HOME}/.agents/skills/review-code/.worktrees}/posthog/posthog/pr-116693"
@@ -98,7 +105,7 @@ run_pr_benchmark_eval() {
     jq -e '.review_args == ""' "$PROJECT_ROOT/evals/results/$RUN_ID/manifest.json"
 }
 
-@test "run-eval: a crafted benchmark whose review edits the tree leaves the target checkout clean" {
+make_crafted_target() {
     local target="$TEST_TMP/target"
     git init -q -b main "$target"
     git -C "$target" config user.email test@example.com
@@ -107,7 +114,24 @@ run_pr_benchmark_eval() {
     echo base > "$target/README.md"
     git -C "$target" add README.md
     git -C "$target" commit -qm base --no-gpg-sign
-    export EVAL_TARGET_REPO="$target" STUB_EDIT_TREE=1
+    export EVAL_TARGET_REPO="$target"
+}
+
+@test "run-eval: a crafted benchmark saved under a range name copies the review, not its artifacts" {
+    make_crafted_target
+    export STUB_RANGE_REVIEW=1
+
+    run "$PROJECT_ROOT/evals/scripts/run-eval.sh" --benchmark shell-script-issues --approach skill
+    RUN_ID=$(sed -n 's/^Starting eval run: \([^ ]*\).*/\1/p' <<< "$output")
+    [ "$status" -eq 0 ]
+
+    [ "$(cat "$PROJECT_ROOT/evals/results/$RUN_ID/shell-script-issues/review.md")" = "range review" ]
+}
+
+@test "run-eval: a crafted benchmark whose review edits the tree leaves the target checkout clean" {
+    make_crafted_target
+    local target="$EVAL_TARGET_REPO"
+    export STUB_EDIT_TREE=1
 
     run "$PROJECT_ROOT/evals/scripts/run-eval.sh" --benchmark shell-script-issues --approach skill --review-args "--fix"
     RUN_ID=$(sed -n 's/^Starting eval run: \([^ ]*\).*/\1/p' <<< "$output")

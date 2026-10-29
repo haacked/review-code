@@ -427,7 +427,8 @@ run_crafted_benchmark() {
     # as <branch>.md; older skill versions used branch-<branch>.md. As a last
     # resort take the newest review in the repo's directory written since this
     # benchmark started (the skill may have reviewed an equivalent range and
-    # saved under a range-based name).
+    # saved under a range-based name). Only the top level holds reviews: each
+    # review's <name>.md.artifacts directory below it holds agent notes.
     local review_file=""
     local candidate
     for candidate in \
@@ -442,7 +443,7 @@ run_crafted_benchmark() {
         review_file=$(find "${REVIEW_CODE_REVIEW_DIR}" -name "*${tmp_branch}*" -type f 2> /dev/null | head -1)
     fi
     if [[ -z "${review_file}" ]]; then
-        review_file=$(find "${REVIEW_CODE_REVIEW_DIR}/${org}/${repo}" -name '*.md' -type f \
+        review_file=$(find "${REVIEW_CODE_REVIEW_DIR}/${org}/${repo}" -maxdepth 1 -name '*.md' -type f \
             -newer "${result_dir}/.start" 2> /dev/null | head -1)
         [[ -z "${review_file}" ]] || echo "  Note: matched review by timestamp: ${review_file}" >&2
     fi
