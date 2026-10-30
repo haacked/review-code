@@ -1,0 +1,114 @@
+diff --git a/src/Directory.tsx b/src/Directory.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/Directory.tsx
+@@ -0,0 +1,46 @@
++import { useState } from "react";
++import { MemberOption } from "./MemberOption";
++import { useMembers } from "./useMembers";
++
++type Assignment = { workspaceId: string; memberId: string };
++
++export function Directory({ onAssign }: { onAssign: (assignment: Assignment) => void }) {
++    const [workspaceId, setWorkspaceId] = useState("north");
++    const [selectedId, setSelectedId] = useState<string | null>(null);
++    const { members, loading, error } = useMembers(workspaceId);
++
++    return (
++        <section aria-label="Assign a member">
++            <label>
++                Workspace
++                <select value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}>
++                    <option value="north">North</option>
++                    <option value="south">South</option>
++                </select>
++            </label>
++            {loading && <p role="status">Loading members…</p>}
++            {error && <p role="alert">{error}</p>}
++            <div role="radiogroup" aria-label="Member">
++                {members.map((member) => (
++                    <MemberOption
++                        key={member.id}
++                        member={member}
++                        selected={selectedId === member.id}
++                        onSelect={() => setSelectedId(member.id)}
++                    />
++                ))}
++            </div>
++            <button
++                type="button"
++                disabled={loading || error !== null || selectedId === null}
++                onClick={() => {
++                    if (selectedId !== null) {
++                        onAssign({ workspaceId, memberId: selectedId });
++                    }
++                }}
++            >
++                Assign
++            </button>
++        </section>
++    );
++}
+diff --git a/src/MemberOption.tsx b/src/MemberOption.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/MemberOption.tsx
+@@ -0,0 +1,11 @@
++import type { Member } from "./useMembers";
++
++type Props = { member: Member; selected: boolean; onSelect: () => void };
++
++export function MemberOption({ member, selected, onSelect }: Props) {
++    return (
++        <div role="radio" aria-checked={selected} tabIndex={0} onClick={onSelect}>
++            {member.name}
++        </div>
++    );
++}
+diff --git a/src/useMembers.ts b/src/useMembers.ts
+new file mode 100644
+--- /dev/null
++++ b/src/useMembers.ts
+@@ -0,0 +1,42 @@
++import { useEffect, useState } from "react";
++
++export type Member = { id: string; name: string };
++
++export function useMembers(workspaceId: string) {
++    const [members, setMembers] = useState<Member[]>([]);
++    const [loading, setLoading] = useState(true);
++    const [error, setError] = useState<string | null>(null);
++
++    useEffect(() => {
++        let active = true;
++        setLoading(true);
++        setMembers([]);
++        setError(null);
++
++        fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/members`)
++            .then((response) => {
++                if (!response.ok) {
++                    throw new Error("Unable to load members");
++                }
++                return response.json() as Promise<Member[]>;
++            })
++            .then((result) => {
++                if (active) {
++                    setMembers(result);
++                    setLoading(false);
++                }
++            })
++            .catch(() => {
++                if (active) {
++                    setError("Unable to load members");
++                    setLoading(false);
++                }
++            });
++
++        return () => {
++            active = false;
++        };
++    }, [workspaceId]);
++
++    return { members, loading, error };
++}

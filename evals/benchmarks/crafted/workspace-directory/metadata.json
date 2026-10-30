@@ -1,0 +1,11 @@
+{
+  "id": "workspace-directory",
+  "name": "Workspace Directory",
+  "description": "Add a member assignment view with a workspace selector and asynchronous member loading. The API returns the members belonging to the requested workspace, and onAssign receives the workspace and member chosen in the view.",
+  "languages": ["typescript"],
+  "frameworks": ["react"],
+  "areas": ["frontend"],
+  "difficulty": "medium",
+  "expected_finding_count": 2,
+  "false_positive_trap_count": 1
+}
