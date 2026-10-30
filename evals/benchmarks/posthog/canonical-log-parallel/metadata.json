@@ -4,6 +4,7 @@
   "description": "Rust concurrency fix: canonical log counters silently lost on rayon thread pool",
   "source": "posthog/posthog#49114",
   "source_url": "https://github.com/PostHog/posthog/pull/49114",
+  "source_sha": "40f667424a3abc5691e5addeb874c4c0c33e93bf",
   "languages": ["rust"],
   "frameworks": [],
   "areas": ["correctness", "testing", "maintainability"],

@@ -4,6 +4,7 @@
   "description": "Rust concurrency architecture change: dedicated rayon pool with tokio bridge, config change, test updates",
   "source": "posthog/posthog#46712",
   "source_url": "https://github.com/PostHog/posthog/pull/46712",
+  "source_sha": "6e620e37f9d753598ff2b4e34647011ebac137e3",
   "languages": ["rust"],
   "frameworks": [],
   "areas": ["correctness", "performance", "architecture"],
