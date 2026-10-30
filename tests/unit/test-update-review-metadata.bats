@@ -385,3 +385,28 @@ PY
     [ "$status" -eq 0 ]
     [ "$output" = bbbbbbb ]
 }
+
+@test "update-review-metadata: records and then removes a caller's reviewer list" {
+    local review="$BATS_TEST_TMPDIR/reviewers.md"
+    printf '# Review\n' > "$review"
+
+    run "$SCRIPT" --file "$review" --set review_mode=full --set reviewers=correctness,testing
+    [ "$status" -eq 0 ]
+    [ "$("$SCRIPT" --file "$review" --get reviewers)" = "correctness,testing" ]
+
+    run "$SCRIPT" --file "$review" --set review_mode=full --unset reviewers
+    [ "$status" -eq 0 ]
+    [ -z "$("$SCRIPT" --file "$review" --get reviewers)" ]
+    ! grep -q '^reviewers:' "$review"
+}
+
+@test "update-review-metadata: rejects a malformed reviewer list and a set-and-unset of the same field" {
+    local review="$BATS_TEST_TMPDIR/reviewers.md"
+    printf '# Review\n' > "$review"
+
+    run "$SCRIPT" --file "$review" --set review_mode=full --set "reviewers=correctness testing"
+    [ "$status" -eq 1 ]
+    run "$SCRIPT" --file "$review" --set review_mode=full --set reviewers=correctness --unset reviewers
+    [ "$status" -eq 1 ]
+    [ "$(cat "$review")" = "# Review" ]
+}

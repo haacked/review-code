@@ -119,7 +119,7 @@ def published(item: dict[str, Any], state: str, reasons: list[str]) -> dict[str,
     return result
 
 
-def compose(items: Any) -> dict[str, list[dict[str, Any]]]:
+def compose(items: Any, skip_gates: bool = False) -> dict[str, list[dict[str, Any]]]:
     if not isinstance(items, list):
         raise ValueError("compose input must be a JSON array")
 
@@ -154,8 +154,14 @@ def compose(items: Any) -> dict[str, list[dict[str, Any]]]:
         finding = dict(raw)
         finding["description"] = body
         finding.setdefault("comment_style", "concise")
-        finding["publishable"] = False
-        finding["quality_state"] = "ungated"
+        if skip_gates:
+            # Nothing is posted, so the reviewer's own body stands. The
+            # structural checks above still withhold a finding that --fix
+            # could not route.
+            finding = published(finding, "gates_skipped", [])
+        else:
+            finding["publishable"] = False
+            finding["quality_state"] = "ungated"
         findings.append(finding)
     return {
         "findings": findings,
@@ -732,6 +738,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
     compose_parser = subparsers.add_parser("compose")
+    compose_parser.add_argument("--skip-gates", action="store_true")
     compose_parser.add_argument("input")
     gate_parser = subparsers.add_parser("gate")
     gate_parser.add_argument("--final", action="store_true")
@@ -747,7 +754,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     if args.command == "compose":
-        result = compose(read_json(args.input))
+        result = compose(read_json(args.input), skip_gates=args.skip_gates)
     elif args.command == "gate":
         result = gate(
             read_json(args.composed), read_json(args.verdicts), final=args.final

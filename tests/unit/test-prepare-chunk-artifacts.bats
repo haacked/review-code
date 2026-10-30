@@ -306,3 +306,19 @@ PY
     [ "$status" -eq 0 ]
     jq -e '(.agents | sort) == (["compatibility", "correctness"] | sort) and all(.chunks[]; (.classification.agents | sort) == (["compatibility", "correctness"] | sort))' <<< "$output"
 }
+
+@test "caller reviewers from the session apply in every chunk" {
+    create_scoped_chunks
+    change_session '.reviewers = ["correctness", "testing"]'
+    run python3 "$SCRIPT" "$SESSION"
+    [ "$status" -eq 0 ]
+    printf 'analysis without a routing block\n' > "$ARTIFACTS/chunk-0-analysis.md"
+    for index in 1 2 3; do
+        printf '```review-routing\n{"scope":"full","areas":{}}\n```\n' > "$ARTIFACTS/chunk-$index-analysis.md"
+    done
+
+    run python3 "$SCRIPT" "$SESSION" --classify
+
+    [ "$status" -eq 0 ]
+    jq -e '.agents == ["correctness", "testing"] and all(.chunks[]; .classification.agents == ["correctness", "testing"])' <<< "$output"
+}

@@ -27,6 +27,11 @@ PARENT_OVERRIDE=""
 PARENT_FLAG_SEEN="false"
 COMMENT_STYLE="concise"
 COMMENT_STYLE_VALUES=()
+REVIEWERS_VALUE=""
+REVIEWERS_FLAG_SEEN="false"
+REVIEWERS=""
+MAX_FRACTION=""
+MAX_FRACTION_FLAG_SEEN="false"
 remaining_args=()
 expect_value=""
 
@@ -35,6 +40,8 @@ for arg_item in "$@"; do
         case "${expect_value}" in
             parent) PARENT_OVERRIDE="${arg_item}" ;;
             comment-style) COMMENT_STYLE_VALUES+=("${arg_item}") ;;
+            reviewers) REVIEWERS_VALUE="${arg_item}" ;;
+            max-fraction) MAX_FRACTION="${arg_item}" ;;
             *)
                 echo "Error: no handler for value-taking flag '${expect_value}'." >&2
                 exit 1
@@ -77,6 +84,18 @@ for arg_item in "$@"; do
     elif [[ "${arg_item}" == --parent=* ]]; then
         PARENT_FLAG_SEEN="true"
         PARENT_OVERRIDE="${arg_item#--parent=}"
+    elif [[ "${arg_item}" == "--reviewers" ]]; then
+        REVIEWERS_FLAG_SEEN="true"
+        expect_value="reviewers"
+    elif [[ "${arg_item}" == --reviewers=* ]]; then
+        REVIEWERS_FLAG_SEEN="true"
+        REVIEWERS_VALUE="${arg_item#--reviewers=}"
+    elif [[ "${arg_item}" == "--max-fraction" ]]; then
+        MAX_FRACTION_FLAG_SEEN="true"
+        expect_value="max-fraction"
+    elif [[ "${arg_item}" == --max-fraction=* ]]; then
+        MAX_FRACTION_FLAG_SEEN="true"
+        MAX_FRACTION="${arg_item#--max-fraction=}"
     else
         remaining_args+=("${arg_item}")
     fi
@@ -409,7 +428,7 @@ build_json_output() {
     # Validate draft mode compatibility before building output
     validate_draft_mode "${mode}"
 
-    local -a jq_args=("--arg" "mode" "${mode}" "--arg" "comment_style" "${COMMENT_STYLE}")
+    local -a jq_args=("--arg" "mode" "${mode}" "--arg" "comment_style" "${COMMENT_STYLE}" "--arg" "comment_gates" "$(comment_gates)")
     # shellcheck disable=SC2016  # $ARGS is a jq variable, not a shell variable
     local jq_filter='$ARGS.named'
 
@@ -481,7 +500,26 @@ build_json_output() {
         jq_args+=("--arg" "adversary_mode" "${ADVERSARY_MODE}")
     fi
 
+    if [[ -n "${REVIEWERS}" ]]; then
+        jq_args+=("--arg" "reviewers" "${REVIEWERS}")
+    fi
+
+    if [[ -n "${MAX_FRACTION}" ]]; then
+        jq_args+=("--arg" "max_fraction" "${MAX_FRACTION}")
+    fi
+
     jq -nc "${jq_args[@]}" "${jq_filter}"
+}
+
+# Helper: Echo whether the review runs its comment wording gates. They polish
+# bodies that a person reads on GitHub. A --fix run without --draft posts
+# nothing, and the fix step works from the structured fields, so it skips them.
+comment_gates() {
+    if [[ "${FIX_MODE}" == "true" ]] && [[ "${DRAFT_MODE}" != "true" ]]; then
+        echo "skip"
+    else
+        echo "run"
+    fi
 }
 
 # Helper: Build error JSON output
@@ -577,10 +615,68 @@ validate_comment_style() {
     done
 }
 
+# Helper: Validate --reviewers and normalize it to a comma-separated list that
+# starts with correctness and has no duplicates.
+validate_reviewers() {
+    if [[ "${expect_value}" == "reviewers" ]]; then
+        build_json_error "--reviewers requires a comma-separated list of areas (e.g. --reviewers correctness,testing)"
+        exit 1
+    fi
+    [[ "${REVIEWERS_FLAG_SEEN}" != "true" ]] && return 0
+    validate_not_compatible_with_learn_or_find "--reviewers"
+
+    local -a requested=()
+    IFS=',' read -r -a requested <<< "${REVIEWERS_VALUE}"
+    local -a selected=("correctness")
+    local area
+    for area in "${requested[@]}"; do
+        area="${area//[[:space:]]/}"
+        [[ -z "${area}" ]] && continue
+        if [[ "$(contains "${area}" "${AREA_KEYWORDS[@]}")" -eq 0 ]]; then
+            build_json_error "Unknown area in --reviewers: '${area}'. Valid areas: ${AREA_KEYWORDS[*]}"
+            exit 1
+        fi
+        if [[ "$(contains "${area}" "${selected[@]}")" -eq 0 ]]; then
+            selected+=("${area}")
+        fi
+    done
+    if [[ ${#selected[@]} -eq 1 ]] && [[ "$(contains "correctness" "${requested[@]}")" -eq 0 ]]; then
+        build_json_error "--reviewers requires a comma-separated list of areas (e.g. --reviewers correctness,testing)"
+        exit 1
+    fi
+    if [[ "$(contains "${arg}" "${AREA_KEYWORDS[@]}")" -eq 1 ]]; then
+        build_json_error "Use either an area argument or --reviewers, not both. Add '${arg}' to the --reviewers list."
+        exit 1
+    fi
+    REVIEWERS=$(
+        IFS=','
+        echo "${selected[*]}"
+    )
+}
+
+# Helper: Validate --max-fraction is a number greater than 0 and at most 1.
+validate_max_fraction() {
+    if [[ "${expect_value}" == "max-fraction" ]]; then
+        build_json_error "--max-fraction requires a number greater than 0 and at most 1 (e.g. --max-fraction 0.8)"
+        exit 1
+    fi
+    [[ "${MAX_FRACTION_FLAG_SEEN}" != "true" ]] && return 0
+    validate_not_compatible_with_learn_or_find "--max-fraction"
+    if [[ "${APPEND_MODE}" != "true" ]]; then
+        build_json_error "--max-fraction only applies to an --append re-review"
+        exit 1
+    fi
+    if [[ ! "${MAX_FRACTION}" =~ ^([0-9]+(\.[0-9]+)?|\.[0-9]+)$ ]] \
+        || ! awk -v f="${MAX_FRACTION}" 'BEGIN { exit !(f > 0 && f <= 1) }'; then
+        build_json_error "--max-fraction requires a number greater than 0 and at most 1 (got '${MAX_FRACTION}')"
+        exit 1
+    fi
+}
+
 # Helper: Validate --parent received a real value, not a missing arg, empty
 # string, or another flag.
 validate_parent_override() {
-    if [[ -n "${expect_value}" ]]; then
+    if [[ "${expect_value}" == "parent" ]]; then
         build_json_error "--parent requires a value (e.g. --parent main)"
         exit 1
     fi
@@ -632,8 +728,32 @@ detect_area_keyword() {
     [[ -z "${arg}" ]] && return 1
     [[ "$(contains "${arg}" "${AREA_KEYWORDS[@]}")" -eq 0 ]] && return 1
 
+    # An area argument reviews local changes, so a PR after it would become a
+    # file pattern that matches nothing.
+    if [[ "${file_pattern}" =~ ^[0-9]+$ ]] || [[ "${file_pattern}" =~ ^https://github.com/[^/]+/[^/]+/pull/[0-9]+ ]]; then
+        build_json_error "An area argument reviews local changes only. To review PR ${file_pattern} with selected reviewers, run: /review-code ${file_pattern} --reviewers ${arg}"
+        exit 1
+    fi
+
     build_json_output "area" "area" "${arg}"
     return 0
+}
+
+# Helper: Reject a second positional argument on a PR review. PR mode reviews
+# the PR's whole diff, so a file pattern or area there would be ignored and a
+# full review would run.
+reject_pr_file_pattern() {
+    local pr_ref="$1"
+    [[ -z "${file_pattern}" ]] && return 0
+    [[ "${FIND_MODE}" == "true" ]] && return 0
+    if [[ "$(contains "${file_pattern}" "${AREA_KEYWORDS[@]}")" -eq 1 ]] && [[ "${REVIEWERS_FLAG_SEEN}" == "true" ]]; then
+        build_json_error "PR reviews do not take an area argument. Add '${file_pattern}' to the --reviewers list, separated by a comma."
+    elif [[ "$(contains "${file_pattern}" "${AREA_KEYWORDS[@]}")" -eq 1 ]]; then
+        build_json_error "PR reviews do not take an area argument. To limit the reviewers, run: /review-code ${pr_ref} --reviewers ${file_pattern}"
+    else
+        build_json_error "PR reviews do not take a file pattern: '${file_pattern}' would be ignored. Review the whole PR, or limit the reviewers with --reviewers <area,...>."
+    fi
+    exit 1
 }
 
 # Detector: Check for PR number or URL
@@ -643,6 +763,7 @@ detect_pr() {
 
     # Pure digits = PR number
     if [[ "${arg}" =~ ^[0-9]+$ ]]; then
+        reject_pr_file_pattern "${arg}"
         build_json_output "pr" "pr_number" "${arg}"
         return 0
     fi
@@ -658,6 +779,7 @@ detect_pr() {
             return 1
         fi
 
+        reject_pr_file_pattern "${arg}"
         build_json_output "pr" "pr_number" "${pr_number}" "pr_url" "${arg}"
         return 0
     fi
@@ -889,6 +1011,10 @@ if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]]; then
 
     # Validate --adversary:<engine> is not used with incompatible subcommands
     validate_adversary_mode
+
+    validate_reviewers
+
+    validate_max_fraction
 
     # 0. Learn Mode (Highest Priority - before review modes)
     if detect_learn_mode; then

@@ -373,3 +373,65 @@ EOF
         .agent_decisions.frontend.evidence[0].result == "The delta changes one backend test and has no UI consumer."
     '
 }
+
+@test "caller reviewers run despite negative evidence and every other area is recorded as caller-excluded" {
+    create_session 3000
+    jq '.reviewers = ["correctness", "testing"]' "$SESSION" > "$SESSION.tmp" && mv "$SESSION.tmp" "$SESSION"
+    routing=$(jq -nc --argjson areas "$ALL_AREAS" '{scope:"full",areas:($areas | map({key:.,value:{status:"not_applicable",evidence:[{check:"Read every changed file",result:"Only documentation text changed."}]}}) | from_entries)}')
+    write_routing "$routing"
+
+    run "$SCRIPT" "$SESSION" --explorer-context "$CONTEXT"
+
+    [ "$status" -eq 0 ]
+    assert_complete_decisions
+    printf '%s' "$output" | jq -e '
+        .agents == ["correctness", "testing"] and
+        (.skipped_agents | length) == 7 and
+        .exploration_depth == "thorough" and
+        (.agent_decisions.testing.reason | contains("Requested by the caller")) and
+        ([.skipped_agents[] as $area |
+            (.agent_decisions[$area].reason | contains("Excluded by the caller")) and
+            (.agent_decisions[$area].reason | contains("not reviewed")) and
+            .agent_decisions[$area].evidence == []] | all)
+    '
+}
+
+@test "caller reviewers also apply when explorer evidence is missing" {
+    create_session
+    jq '.reviewers = ["correctness", "security"]' "$SESSION" > "$SESSION.tmp" && mv "$SESSION.tmp" "$SESSION"
+
+    run "$SCRIPT" "$SESSION"
+
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" | jq -e '.agents == ["correctness", "security"] and (.skipped_agents | length) == 7'
+}
+
+@test "caller reviewers without correctness still run correctness" {
+    create_session
+    jq '.reviewers = ["testing"]' "$SESSION" > "$SESSION.tmp" && mv "$SESSION.tmp" "$SESSION"
+
+    run "$SCRIPT" "$SESSION"
+
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" | jq -e '.agents == ["correctness", "testing"]'
+}
+
+@test "invalid caller reviewers fail instead of running a full review" {
+    create_session
+    for reviewers in '[]' '["bogus"]' '"testing"' '[1]'; do
+        jq --argjson reviewers "$reviewers" '.reviewers = $reviewers' "$SESSION" > "$SESSION.tmp" && mv "$SESSION.tmp" "$SESSION"
+        run "$SCRIPT" "$SESSION"
+        [ "$status" -eq 1 ]
+        [[ "$output" == *"session reviewers must be a non-empty list of known areas"* ]]
+    done
+}
+
+@test "an area argument and caller reviewers together fail" {
+    create_session
+    jq '.reviewers = ["correctness", "testing"]' "$SESSION" > "$SESSION.tmp" && mv "$SESSION.tmp" "$SESSION"
+
+    run "$SCRIPT" "$SESSION" --area security
+
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"cannot both apply"* ]]
+}

@@ -15,6 +15,8 @@ Read the resulting JSON and replace `$selected_agents`, `$skipped_agents`, and `
 
 For a user-requested `area`, the classifier selects the requested reviewer and correctness without duplicates. It records every other reviewer as excluded by the explicit user scope override. The requested reviewer runs even if the explorer marked it not applicable. These user exclusions carry no negative evidence.
 
+When the session has `reviewers`, the classifier reads that list from the session file and applies it on every call, including the chunk handler's calls and the retry without explorer evidence. It selects correctness and the listed reviewers, even ones the explorer marked not applicable, and records every other reviewer as excluded by the caller, with no negative evidence. The caller chose that scope; review-code does not derive one.
+
 Use this selection for an unchunked review, including a delta dispatch. Its explorer evidence must describe `$review_diff_path`, the same patch the reviewers receive. Do not derive another selection from diff size, file types, or missing scoped diffs.
 
 For a chunked review, this selection describes the whole patch and controls only the shared exploration. Each chunk analysis produces its own routing evidence, and the chunk handler runs this classifier again against that chunk's patch and analysis. A chunk may skip a specialist only when its own explorer supplied concrete negative evidence. Correctness always runs in every chunk.

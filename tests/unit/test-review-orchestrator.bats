@@ -1088,3 +1088,22 @@ benchmark_pr_data() {
     [ "$status" -ne 0 ]
     [[ "$output" == *"does not exist"* ]]
 }
+
+@test "review-orchestrator.sh: carries the caller's scaling flags into the session" {
+    echo "change" > file.txt
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh" --fix --append --reviewers testing --max-fraction 0.75
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '
+        .comment_gates == "skip" and
+        .fix == true and
+        .reviewers == ["correctness", "testing"] and
+        .max_fraction == 0.75
+    '
+}
+
+@test "review-orchestrator.sh: a review without the scaling flags runs the gates and records no list" {
+    echo "change" > file.txt
+    run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.comment_gates == "run" and (has("reviewers") | not) and (has("max_fraction") | not)'
+}

@@ -10,7 +10,9 @@ from pathlib import Path
 
 from markdown_fences import walk_fences
 
-FIELDS = {"review_commit", "reviewed_at", "review_mode", "delta_from"}
+FIELDS = {"review_commit", "reviewed_at", "review_mode", "delta_from", "reviewers"}
+# Only a caller's reviewer list can be absent after a review that had one.
+UNSETTABLE = ("reviewers",)
 
 
 def metadata_span(document):
@@ -49,7 +51,7 @@ def read_field(document, key):
     return values[0] if values else ""
 
 
-def update_document(document, values):
+def update_document(document, values, unset=()):
     lines, span = metadata_span(document)
     if span is None:
         header = "<!-- review-metadata\n"
@@ -64,6 +66,8 @@ def update_document(document, values):
         field = re.match(r"^([a-z_]+):", line)
         key = field.group(1) if field else None
         if key == "delta_from" and values["review_mode"] == "full":
+            continue
+        if key in unset:
             continue
         if key in values:
             if key not in seen:
@@ -81,13 +85,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--file", required=True, type=Path)
     parser.add_argument("--set", action="append", default=[], dest="assignments")
+    parser.add_argument("--unset", action="append", default=[], choices=UNSETTABLE)
     parser.add_argument("--get", choices=sorted(FIELDS), dest="read_key")
     args = parser.parse_args()
     temporary = None
     try:
         if args.read_key:
-            if args.assignments:
-                raise ValueError("--get and --set cannot be combined")
+            if args.assignments or args.unset:
+                raise ValueError("--get cannot be combined with --set or --unset")
             print(read_field(args.file.read_text(), args.read_key))
             return
         values = {}
@@ -103,6 +108,10 @@ def main():
                 raise ValueError(f"{key} must have a nonempty single-line value")
             if key in values:
                 raise ValueError(f"duplicate assignment: {key}")
+            if key == "reviewers" and not re.fullmatch(r"[a-z-]+(,[a-z-]+)*", value):
+                raise ValueError("reviewers must be a comma-separated list of areas")
+            if key in args.unset:
+                raise ValueError(f"{key} cannot be both set and unset")
             values[key] = value
         if values.get("review_mode") not in {
             "full",
@@ -116,7 +125,7 @@ def main():
             values.pop("delta_from", None)
         target = args.file.resolve(strict=True)
         original = target.read_bytes()
-        updated = update_document(original.decode(), values).encode()
+        updated = update_document(original.decode(), values, args.unset).encode()
         with tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as output:
             temporary = Path(output.name)
             output.write(updated)

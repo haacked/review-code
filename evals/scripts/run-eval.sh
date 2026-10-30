@@ -12,6 +12,13 @@
 #                                    skill = full /review-code skill
 #                                    baseline = bare Claude prompt with diff
 #                                    When omitted with --sample, runs both
+#   --review-args "<args>"           Extra /review-code arguments for skill runs,
+#                                    split on whitespace and added after
+#                                    `<target> --force` (e.g. "--fix" or
+#                                    "--reviewers correctness,testing").
+#                                    A crafted run with --fix requires
+#                                    EVAL_TARGET_REPO, because cleanup discards
+#                                    every working-tree change in that checkout.
 #
 # Crafted benchmarks: applies patch to a temporary branch, reviews via `claude -p`
 # Real-world PR benchmarks: reviews via PR URL directly (no patch needed)
@@ -40,6 +47,7 @@ REPO_ROOT="$(cd "${EVALS_DIR}/.." && pwd)"
 TARGET_REPO="${EVAL_TARGET_REPO:-${REPO_ROOT}}"
 REGISTRY="${EVALS_DIR}/benchmarks/registry.json"
 RESULTS_DIR="${EVALS_DIR}/results"
+REVIEW_ARGS=""
 BASELINE_PROMPT="${EVALS_DIR}/prompts/baseline.md"
 
 source "${SCRIPT_DIR}/helpers/eval-helpers.sh"
@@ -256,7 +264,7 @@ run_pr_benchmark() {
     local budget_args=()
     [[ -z "${budget}" ]] || budget_args=(--max-budget-usd "${budget}")
     local claude_exit=0
-    env -u CLAUDECODE "${frozen_env[@]}" claude -p "$(skill_prompt "${pr_url} --force")" \
+    env -u CLAUDECODE "${frozen_env[@]}" claude -p "$(skill_prompt "${pr_url} --force${REVIEW_ARGS:+ ${REVIEW_ARGS}}")" \
         --dangerously-skip-permissions \
         "${budget_args[@]}" \
         > "${result_dir}/claude-output.txt" 2>&1 || claude_exit=$?
@@ -308,6 +316,13 @@ run_crafted_benchmark() {
         return 1
     fi
 
+    local fixes="false"
+    [[ " ${REVIEW_ARGS} " == *" --fix "* ]] && fixes="true"
+    if [[ "${fixes}" == "true" && "${TARGET_REPO}" == "${REPO_ROOT}" ]]; then
+        echo "Error: a crafted --fix run discards working-tree changes in its target checkout; set EVAL_TARGET_REPO to a separate clone" >&2
+        return 1
+    fi
+
     # Fail fast if working tree is dirty — patching on a dirty tree risks losing work
     if [[ -n "$(git -C "${TARGET_REPO}" status --porcelain 2> /dev/null)" ]]; then
         echo "Error: working tree is dirty; commit or stash changes before running crafted benchmarks" >&2
@@ -331,6 +346,14 @@ run_crafted_benchmark() {
     # at every exit path; a RETURN trap is unreliable here (bash fires it after
     # the function's locals are out of scope, aborting under set -u).
     cleanup_crafted_benchmark() {
+        # A --fix review edits the benchmark branch's working tree, and a dirty
+        # tree would block the checkout below. EVAL_TARGET_REPO is a separate
+        # clone on a --fix run, so its changes belong to this run.
+        if [[ "${fixes}" == "true" ]] \
+            && [[ "$(git -C "${TARGET_REPO}" branch --show-current 2> /dev/null)" == "${tmp_branch}" ]]; then
+            git -C "${TARGET_REPO}" reset --hard --quiet 2> /dev/null || true
+            git -C "${TARGET_REPO}" clean -fd --quiet 2> /dev/null || true
+        fi
         git -C "${TARGET_REPO}" checkout "${original_ref}" --quiet 2> /dev/null || true
         git -C "${TARGET_REPO}" branch -D "${tmp_branch}" --quiet 2> /dev/null || true
     }
@@ -395,7 +418,7 @@ run_crafted_benchmark() {
     local claude_exit=0
     (
         cd "${TARGET_REPO}" \
-            && env -u CLAUDECODE claude -p "$(skill_prompt "${tmp_branch} --force")" \
+            && env -u CLAUDECODE claude -p "$(skill_prompt "${tmp_branch} --force${REVIEW_ARGS:+ ${REVIEW_ARGS}}")" \
                 --dangerously-skip-permissions \
                 "${budget_args[@]}"
     ) > "${result_dir}/claude-output.txt" 2>&1 || claude_exit=$?
@@ -408,7 +431,8 @@ run_crafted_benchmark() {
     # as <branch>.md; older skill versions used branch-<branch>.md. As a last
     # resort take the newest review in the repo's directory written since this
     # benchmark started (the skill may have reviewed an equivalent range and
-    # saved under a range-based name).
+    # saved under a range-based name). Only the top level holds reviews: each
+    # review's <name>.md.artifacts directory below it holds agent notes.
     local review_file=""
     local candidate
     for candidate in \
@@ -423,7 +447,7 @@ run_crafted_benchmark() {
         review_file=$(find "${REVIEW_CODE_REVIEW_DIR}" -name "*${tmp_branch}*" -type f 2> /dev/null | head -1)
     fi
     if [[ -z "${review_file}" ]]; then
-        review_file=$(find "${REVIEW_CODE_REVIEW_DIR}/${org}/${repo}" -name '*.md' -type f \
+        review_file=$(find "${REVIEW_CODE_REVIEW_DIR}/${org}/${repo}" -maxdepth 1 -name '*.md' -type f \
             -newer "${result_dir}/.start" 2> /dev/null | head -1)
         [[ -z "${review_file}" ]] || echo "  Note: matched review by timestamp: ${review_file}" >&2
     fi
@@ -464,10 +488,12 @@ write_manifest() {
         --arg sha "${sha}" \
         --arg model "${model}" \
         --arg timestamp "${timestamp}" \
+        --arg review_args "${REVIEW_ARGS}" \
         --argjson benchmarks "${benchmark_json}" \
         '{
             run_id: $run_id,
             approach: $approach,
+            review_args: $review_args,
             git_sha: $sha,
             model: $model,
             timestamp: $timestamp,
@@ -490,7 +516,7 @@ run_with_approach() {
         run_id="${run_id}-${approach}"
     fi
 
-    echo "Starting eval run: ${run_id} (approach: ${approach})"
+    echo "Starting eval run: ${run_id} (approach: ${approach}${REVIEW_ARGS:+, review args: ${REVIEW_ARGS}})"
     echo "Benchmarks: ${benchmarks[*]}"
     echo ""
 
@@ -546,9 +572,13 @@ main() {
                 fi
                 shift 2
                 ;;
+            --review-args)
+                REVIEW_ARGS="${2?--review-args requires a value}"
+                shift 2
+                ;;
             -h | --help)
                 echo "Usage: run-eval.sh --benchmark <id> | --all | --category <cat> | --sample"
-                echo "       [--approach <skill|baseline>]"
+                echo "       [--approach <skill|baseline>] [--review-args \"<args>\"]"
                 exit 0
                 ;;
             *)
@@ -560,7 +590,7 @@ main() {
 
     if [[ -z "${mode}" ]]; then
         echo "Usage: run-eval.sh --benchmark <id> | --all | --category <cat> | --sample" >&2
-        echo "       [--approach <skill|baseline>]" >&2
+        echo "       [--approach <skill|baseline>] [--review-args \"<args>\"]" >&2
         exit 1
     fi
 
