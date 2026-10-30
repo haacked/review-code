@@ -38,6 +38,10 @@
 #                      are opt-in.
 
 set -euo pipefail
+# Bash 5.2+ expands each & in a ${var//pattern/replacement} replacement to the
+# matched text. That turns && in a benchmark diff into {diff_content}{diff_content}.
+# Older bash has no such option. The || true discards the shopt error there.
+shopt -u patsub_replacement 2> /dev/null || true
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EVALS_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
