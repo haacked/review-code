@@ -234,11 +234,12 @@ fi
 cat "${SHARED}" >> "${BRIEFING}"
 
 # ------------------------------------------------------------ local test runs
-# The correctness reviewer runs a destructive path against seeded data only when
-# this line permits it. The line follows the shared instructions because the
-# briefing marks everything before them as text from the PR's author and
-# commenters. A run needs a checkout of the reviewed code. A fork's tests would
-# run code from outside the repository's collaborators on this machine.
+# The correctness reviewer runs a destructive path against seeded data, or a
+# query against the real database, only when this line permits it. The line
+# follows the shared instructions because the briefing marks everything before
+# them as text from the PR's author and commenters. A run needs a checkout of
+# the reviewed code. A fork's tests would run code from outside the
+# repository's collaborators on this machine.
 LOCAL_TEST_RUNS=$(jq -r '
     if (.git.working_dir // "") == "" then
         "not permitted: no local checkout of the reviewed code"

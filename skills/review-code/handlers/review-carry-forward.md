@@ -21,6 +21,11 @@ Write the file at the compose step rather than holding the composed document
 across the intervening turns, and append that section to it when you reach it.
 Run the merge below once the file is complete.
 
+Before the merge, run `review-compose.md`'s "Record coverage gaps" step with
+`--review-file "<artifacts_dir>/review-append.md"`. Keep `--coverage-dir` on
+`$review_file`'s retained artifacts. The section then sits in this run's part of
+the merged review, and the sections earlier runs left stay with their runs.
+
 ## Merge it in
 
 ```bash

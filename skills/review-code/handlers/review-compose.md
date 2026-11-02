@@ -46,7 +46,7 @@ while IFS= read -r report_path; do
 done < "$manifest"
 ```
 
-Require every copy to succeed. Link each agent's retained investigation and coverage artifacts from its section, using the returned paths. Include every unresolved coverage gap. Do not read or copy the investigation text into the conversation to write the review.
+Require every copy to succeed. Link each agent's retained investigation and coverage artifacts from its section, using the returned paths. Leave coverage gaps out of the prose; the "Record coverage gaps" step below lists every one. Do not read or copy the investigation text into the conversation to write the review.
 
 Retain the routing decisions with this run's coverage artifacts:
 
@@ -136,6 +136,16 @@ fi
 ```
 
 Set `$review_commit` to the reviewed PR head SHA in PR mode, or to an empty string otherwise. Require the command to succeed before continuing to linting or PR output. The writer generates `reviewed_at` in UTC and removes stale `delta_from` metadata on a full review. Do not fetch a timestamp in a separate tool call.
+
+**Record coverage gaps.** Copy every reviewer's coverage gap into the review as an open item. The script writes a `## Not verified` section that quotes each gap from the retained coverage files, so a gap cannot drop out of a review whose layout differs from the one above:
+
+```bash
+python3 ~/.agents/skills/review-code/scripts/record-coverage-gaps.py \
+  --review-file "$review_file" \
+  --coverage-dir "${review_file}.artifacts/<SESSION_ID>/coverage"
+```
+
+Require it to succeed. Re-running replaces this session's section and leaves sections from earlier sessions in place. On the `delta` path, `review-carry-forward.md` runs this step against the append file instead.
 
 **Lint the narrative.** With the file on disk, run the linter over its narrative prose. It reads the Overview and the per-agent summaries and skips finding bodies, which the wording lint already checked. It records what it finds as a `## Lint notes` section at the end of the file and never edits the prose:
 

@@ -287,6 +287,21 @@ PY
     [ "$(jq -c '.' "${review_file}.artifacts/session-123/open-from-others/security.json")" = '[]' ]
 }
 
+@test "handler contracts: documented compose step records every retained coverage gap in the review" {
+    review_file="$BATS_TEST_TMPDIR/saved review.md"
+    mkdir -p "${review_file}.artifacts/session-123/coverage"
+    jq -n '{files_read: ["a.py"], gaps: ["Did not run _fold at a.py:3 against ClickHouse: no services"]}' \
+        > "${review_file}.artifacts/session-123/coverage/code-reviewer-correctness.json"
+    printf '# Range Review: a..b\n\n## Open, for the author\n\n- Nothing else.\n' > "$review_file"
+    extract_documented_block "$SKILL/handlers/review-compose.md" bash record-coverage-gaps.py \
+        | sed 's/<SESSION_ID>/session-123/g' > "$ARTIFACTS/gaps.sh"
+
+    run env review_file="$review_file" bash -e "$ARTIFACTS/gaps.sh"
+
+    [ "$status" -eq 0 ]
+    grep -Fxq -- '- `code-reviewer-correctness`: Did not run _fold at a.py:3 against ClickHouse: no services' "$review_file"
+}
+
 @test "handler contracts: documented synthesis merge groups open problems by link, location, and commenter" {
     local thread="https://github.com/org/repo/pull/1#discussion_r1"
     local pr="https://github.com/org/repo/pull/1"

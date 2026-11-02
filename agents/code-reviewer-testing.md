@@ -98,6 +98,12 @@ When code includes optimizations or fast paths, verify tests exist for:
 - The exact boundary condition (the threshold value itself)
 - Invariant preservation (optimization doesn't change observable results)
 
+### 8. Database Semantics Re-implemented in Application Code
+
+When the diff folds constants in a query, copies or pushes a predicate into another query, generates names, coerces types, or handles NULL itself, its tests must compare what the database returns with and without the transform. A test that asserts only on the generated SQL or syntax tree still passes when the transform and the database disagree.
+
+Build the inputs where the host language and the database can disagree: comparisons across types (`1 IN ('1', '2')` is false in Python and true in ClickHouse), NULL in comparisons and in `IN` lists, empty strings, case, and separators inside identifiers (two names that generate the same alias). Check each one against the existing database-backed tests. When no test runs an input through the database, name that input in the finding. Users and callers write the queries, so don't drop an input because no caller builds it today. The correctness reviewer runs these inputs against the database, so don't run the test harness yourself.
+
 ## Critical Anti-Patterns
 
 Flag these immediately [90-100% confidence]:

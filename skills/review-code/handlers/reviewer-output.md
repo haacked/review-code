@@ -26,6 +26,6 @@ python3 ~/.agents/skills/review-code/scripts/reviewer-report.py \
 
 Require success before accepting the result. A missing, malformed, or unavailable report is a failed review, never a clean review. For `BRIEFING_UNAVAILABLE`, follow the existing briefing-repair procedure and retry using this same output contract.
 
-Read only the returned `findings_path` for synthesis. Retain the returned coverage counts and every named gap; disclose unresolved gaps in the review. An empty findings file is valid only after the splitter succeeds. Keep `investigation_path` and `coverage_path` for the local review and debugging. Read a specific investigation only when needed to resolve an identified finding or coverage question.
+Read only the returned `findings_path` for synthesis. Retain the returned coverage counts. The compose step copies every named gap into the review from the retained coverage files. An empty findings file is valid only after the splitter succeeds. Keep `investigation_path` and `coverage_path` for the local review and debugging. Read a specific investigation only when needed to resolve an identified finding or coverage question.
 
 The saved investigation is a complete record. The compose step retains a copy beside the review and links it from the agent's section before session cleanup. Coverage retries use distinct report names so their evidence survives alongside the first pass.
