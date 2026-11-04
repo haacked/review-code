@@ -703,3 +703,30 @@ EOF
     [ "$status" -eq 0 ]
     ! grep -q "^reviewers:" "$TEST_DIR/review.md"
 }
+
+@test "carry-forward-findings.sh: writes this run's coverage gaps into the appended part" {
+    coverage="$TEST_DIR/review.md.artifacts/session-2/coverage"
+    mkdir -p "$coverage"
+    jq -n '{files_read: [], gaps: ["Did not run _fold at a.py:3 against ClickHouse"]}' \
+        > "$coverage/code-reviewer-correctness.json"
+    cp "$TEST_DIR/append.md" "$TEST_DIR/append.before"
+
+    run "$SCRIPT" --review-file "$TEST_DIR/review.md" --delta-diff "$TEST_DIR/delta.patch" \
+        --append-file "$TEST_DIR/append.md" --coverage-dir "$coverage"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.coverage_gaps == 1' > /dev/null
+    cmp "$TEST_DIR/append.before" "$TEST_DIR/append.md"
+    gap_line=$(grep -n 'Did not run _fold at a.py:3 against ClickHouse' "$TEST_DIR/review.md" | cut -d: -f1)
+    [ "$gap_line" -gt "$(grep -n '^# Re-review at deadbee' "$TEST_DIR/review.md" | cut -d: -f1)" ]
+}
+
+@test "carry-forward-findings.sh: a missing coverage directory leaves the review unchanged" {
+    cp "$TEST_DIR/review.md" "$TEST_DIR/review.before"
+
+    run "$SCRIPT" --review-file "$TEST_DIR/review.md" --delta-diff "$TEST_DIR/delta.patch" \
+        --append-file "$TEST_DIR/append.md" --coverage-dir "$TEST_DIR/missing"
+
+    [ "$status" -ne 0 ]
+    cmp "$TEST_DIR/review.before" "$TEST_DIR/review.md"
+}

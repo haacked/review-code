@@ -21,11 +21,6 @@ Write the file at the compose step rather than holding the composed document
 across the intervening turns, and append that section to it when you reach it.
 Run the merge below once the file is complete.
 
-Before the merge, run `review-compose.md`'s "Record coverage gaps" step with
-`--review-file "<artifacts_dir>/review-append.md"`. Keep `--coverage-dir` on
-`$review_file`'s retained artifacts. The section then sits in this run's part of
-the merged review, and the sections earlier runs left stay with their runs.
-
 ## Merge it in
 
 ```bash
@@ -33,13 +28,14 @@ the merged review, and the sections earlier runs left stay with their runs.
   --review-file "<file_info.file_path>" \
   --delta-diff "<diff_path from review-delta.sh>" \
   --append-file "<artifacts_dir>/review-append.md" \
+  --coverage-dir "<file_info.file_path>.artifacts/<SESSION_ID>/coverage" \
   --head-sha "<pr.head_sha>" \
   --delta-from "$delta_from" \
   --reviewed-agents "<space-separated $selected_agents>" \
   --caller-reviewers "<REVIEW_FIELDS.reviewers joined with commas, or empty>"
 ```
 
-The script cuts previous findings only when the delta touched their files and their reviewer ran again. It keeps findings from skipped or unknown areas, keeps findings on untouched files, appends the new review, and advances the header. It prints counts and flags only, never finding bodies.
+The script cuts previous findings only when the delta touched their files and their reviewer ran again. It keeps findings from skipped or unknown areas, keeps findings on untouched files, appends the new review with this run's coverage gaps in a `## Not verified` section, and advances the header. It prints counts and flags only, never finding bodies.
 
 ## Lint the narrative, after the merge
 

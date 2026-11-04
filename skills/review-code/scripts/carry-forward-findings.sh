@@ -18,6 +18,9 @@ set -euo pipefail
 #
 # Options:
 #   --append-file <path>  Markdown to append after the carried-forward content
+#   --coverage-dir <path> This run's retained coverage directory; its gaps are
+#                         written into the appended part as a Not verified
+#                         section (requires --append-file)
 #   --head-sha <sha>      New review_commit for the metadata header
 #   --delta-from <sha>    Recorded as delta_from in the metadata header
 #   --reviewed-agents     Space-separated areas to replace on touched files; omitted means all
@@ -32,7 +35,7 @@ set -euo pipefail
 # stays there for the rest of the run.
 #   {"review_file": "...", "carried": 7, "dropped": 3, "kept_unattributed": 1,
 #    "kept_undeletable": 0, "delta_files": 2, "pruned": true, "appended": true,
-#    "header_updated": true, "dropped_files": ["a.py"]}
+#    "header_updated": true, "dropped_files": ["a.py"], "coverage_gaps": 1}
 #
 # Safety: after cutting, the pruned document is re-parsed and its findings must
 # match the set that was meant to survive. On any mismatch the cut is abandoned
@@ -48,6 +51,7 @@ source "${SCRIPT_DIR}/helpers/error-helpers.sh"
 REVIEW_FILE=""
 DELTA_DIFF=""
 APPEND_FILE=""
+COVERAGE_DIR=""
 HEAD_SHA=""
 DELTA_FROM=""
 DRY_RUN=false
@@ -66,6 +70,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --append-file)
             APPEND_FILE="${2:-}"
+            shift 2
+            ;;
+        --coverage-dir)
+            COVERAGE_DIR="${2:-}"
             shift 2
             ;;
         --head-sha)
@@ -117,6 +125,10 @@ if [[ ! -f "${DELTA_DIFF}" ]]; then
 fi
 if [[ -n "${APPEND_FILE}" && ! -f "${APPEND_FILE}" ]]; then
     error "Append file not found: ${APPEND_FILE}"
+    exit 1
+fi
+if [[ -n "${COVERAGE_DIR}" && -z "${APPEND_FILE}" ]]; then
+    error "--coverage-dir requires --append-file"
     exit 1
 fi
 
@@ -246,9 +258,17 @@ OUT_FILE="${WORK_DIR}/out.md"
 cp "${PRUNED_FILE}" "${OUT_FILE}"
 
 APPENDED=false
+COVERAGE_GAPS=0
 if [[ -n "${APPEND_FILE}" ]]; then
+    APPEND_COPY="${WORK_DIR}/append.md"
+    cp "${APPEND_FILE}" "${APPEND_COPY}"
+    # The gaps go into this run's part, so earlier runs' sections stay with their runs.
+    if [[ -n "${COVERAGE_DIR}" ]]; then
+        COVERAGE_GAPS=$(python3 "${SCRIPT_DIR}/record-coverage-gaps.py" \
+            --review-file "${APPEND_COPY}" --coverage-dir "${COVERAGE_DIR}" | jq '.count')
+    fi
     printf '\n---\n\n' >> "${OUT_FILE}"
-    cat "${APPEND_FILE}" >> "${OUT_FILE}"
+    cat "${APPEND_COPY}" >> "${OUT_FILE}"
     APPENDED=true
 fi
 
@@ -281,6 +301,7 @@ jq -nc \
     --argjson delta_files_list "${DELTA_FILES_JSON}" \
     --argjson pruned "${PRUNED}" \
     --argjson appended "${APPENDED}" \
+    --argjson coverage_gaps "${COVERAGE_GAPS}" \
     --argjson dry_run "${DRY_RUN}" \
     '{
         review_file: $review_file,
@@ -293,6 +314,7 @@ jq -nc \
         appended: $appended,
         header_updated: true,
         dry_run: $dry_run,
-        dropped_files: ($classified.dropped | map(.file) | unique)
+        dropped_files: ($classified.dropped | map(.file) | unique),
+        coverage_gaps: $coverage_gaps
     }
     + (if $prune_reason != "" then {prune_reason: $prune_reason} else {} end)'

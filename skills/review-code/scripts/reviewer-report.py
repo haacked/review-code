@@ -95,7 +95,7 @@ def main():
                 {
                     **{key: str(path) for key, path in paths.items()},
                     "files_read_count": len(coverage["files_read"]),
-                    "gaps": coverage["gaps"],
+                    "gaps_count": len(coverage["gaps"]),
                     "finding_bytes": len(findings.encode()),
                     "open_from_others_count": len(open_from_others),
                 }

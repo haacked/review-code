@@ -126,7 +126,7 @@ For each place, check that the delete or rewrite reaches the data the request ta
 **Reproduce it with seeded data, but only when all of these hold:**
 - The briefing's last line, **Local test runs**, says the run is permitted and names the checkout to run in.
 - Every data store the run touches resolves to localhost or a local container. Read the harness's settings and environment (such as `DATABASE_URL` or `CLICKHOUSE_HOST`) before you run anything. Never run anything against a shared, staging, or production store.
-- No other reviewer runs the same harness at the same time. In a chunked review, only the lowest-numbered chunk whose diff has a destructive path or a transform from Database Semantics Re-implemented in Application Code runs the harness. Its reviewer runs every such check, reading the other chunks' diffs through the cross-chunk manifest. Reviewers in other chunks leave those runs to it.
+- No other reviewer runs the harness at the same time. Chunk reviewers run in parallel, so claim it first with `mkdir harness.lock` in the briefing's directory. If `mkdir` fails, another reviewer holds it: don't run, and add the coverage gap below. Remove the directory when your run ends, even when it fails.
 
 Then use the project's own test harness in that checkout. Don't start services or run migrations to make the test possible.
 1. Write a throwaway test beside the existing tests for this path. Seed rows that the request targets and rows that it excludes, in every place listed above. This test file is the only write the Local test runs line permits.
@@ -148,13 +148,13 @@ Location: `deletion.py:88` | Confidence: 90%
 
 **When application code decides what a query would return, compare it with the real database.**
 
-This applies when the diff folds constants in a query, copies or pushes a predicate into another query, generates aliases or mangles names, coerces types, or handles NULL itself. It applies to any other code that computes a result the database also defines. Reading that code checks it against the host language's rules only. The database applies its own rules, and the bugs sit where the two disagree. Parsing or printing the generated SQL checks its shape, not its result.
+This applies when the diff folds constants in a query, copies or pushes a predicate into another query, generates aliases or mangles names, coerces types, handles NULL itself, or otherwise computes a result the database also defines. Reading that code checks only the host language's rules, and the bugs sit where the database's rules differ. Parsing or printing the generated SQL checks its shape, not its result.
 
 1. Build inputs where the host language and the database can disagree: comparisons across types (`1 IN ('1', '2')` is false in Python and true in ClickHouse), NULL in comparisons and in `IN` lists, empty strings, case and collation, and separators or quote characters inside identifiers. Users and callers write the queries, so an input is reachable when the query language accepts it, even if no caller builds it today.
 2. For names the code generates, look for two distinct inputs that produce the same name, such as `a.b` and `a___b` when the code joins name parts with `___`. A collision is a finding, and finding it needs no database.
-3. For everything else, run the query with and without the transform against the real database, on rows that each input matches, and compare the results. The run conditions, the rule against starting services or running migrations, the throwaway test, and its cleanup are the same as in Destructive Data Paths. Use the repository's existing database-backed test harness. A difference in the results is a finding. Cite the input and both results.
+3. For everything else, run the query with and without the transform against the real database, on rows that each input matches, and compare the results. The run conditions, the rule against starting services or running migrations, the throwaway test, and its cleanup are the same as in Destructive Data Paths. A difference in the results is a finding. Cite the input and both results.
 
-When you cannot run it, add a coverage gap that names what stays unverified: `Did not run <function at path:line> against <database>: <reason>. Unverified inputs: <inputs>`. The review lists every coverage gap as an open item. When the database's documentation or source shows that one of those inputs gives a different result, report a finding too, and say in it that you did not reproduce it.
+When you cannot run it, add a coverage gap that names what stays unverified: `Did not run <function at path:line> against <database>: <reason>. Unverified inputs: <inputs>`. When the database's documentation or source shows that one of those inputs gives a different result, report a finding too, and say in it that you did not reproduce it.
 
 **Example finding:**
 

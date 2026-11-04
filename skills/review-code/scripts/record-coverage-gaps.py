@@ -2,9 +2,8 @@
 """Write every reviewer coverage gap into a review as a "Not verified" section.
 
 A gap is work a reviewer could not finish, such as a run against the real
-database. The compose step used to restate gaps in prose, and a gap it left out
-disappeared from the review. This script copies each gap verbatim from the
-retained coverage files instead.
+database. Each gap is copied verbatim from the retained coverage files, so no
+gap depends on the orchestrator restating it.
 
 The section carries a marker naming the session whose coverage it lists.
 Re-running for the same session replaces that section. Sections from other
@@ -12,7 +11,7 @@ sessions, which a full --append review or a delta merge leaves above, stay.
 
 Output (stdout):
 
-    {"count": 2, "written": true}
+    {"count": 2}
 """
 
 from __future__ import annotations
@@ -35,11 +34,6 @@ PREAMBLE = (
     "checked, so treat each item as open until someone runs it."
 )
 TOP_HEADING = re.compile(r"^ {0,3}#{1,2}\s")
-LINT_NOTES = re.compile(r"^ {0,3}##\s+Lint notes\s*$")
-
-
-def marker_for(session: str) -> str:
-    return f"<!-- coverage-gaps: {session} -->"
 
 
 def load_gaps(coverage_dir: Path) -> list[tuple[str, str]]:
@@ -73,22 +67,6 @@ def strip_section(lines: list[str], marker: str) -> tuple[list[str], int | None]
     return lines[:start] + lines[end:], start
 
 
-def insertion_point(lines: list[str]) -> int:
-    """Place a new section before a trailing Lint notes section.
-
-    A Lint notes section with another section after it belongs to an earlier
-    run of a full --append review, so the new section goes at the end.
-    """
-    headings = [
-        index
-        for index, line, kind in walk_fences(lines)
-        if kind == "prose" and TOP_HEADING.match(line)
-    ]
-    if headings and LINT_NOTES.match(lines[headings[-1]]):
-        return headings[-1]
-    return len(lines)
-
-
 def render(gaps: list[tuple[str, str]], marker: str) -> list[str]:
     lines = [HEADING, marker, "", PREAMBLE, ""]
     lines.extend(f"- `{reviewer}`: {gap}" for reviewer, gap in gaps)
@@ -109,11 +87,12 @@ def main() -> int:
         if not args.coverage_dir.is_dir():
             raise ValueError(f"coverage directory not found: {args.coverage_dir}")
         gaps = load_gaps(args.coverage_dir)
-        marker = marker_for(args.coverage_dir.resolve().parent.name)
+        marker = f"<!-- coverage-gaps: {args.coverage_dir.resolve().parent.name} -->"
         lines = args.review_file.read_text(encoding="utf-8").splitlines()
         lines, start = strip_section(lines, marker)
         if gaps:
-            at = insertion_point(lines) if start is None else start
+            # The narrative lint runs later and moves Lint notes back to the end.
+            at = len(lines) if start is None else start
             if at > 0 and lines[at - 1].strip():
                 lines.insert(at, "")
                 at += 1
@@ -127,7 +106,7 @@ def main() -> int:
                 os.replace(tmp, args.review_file)
             finally:
                 tmp.unlink(missing_ok=True)
-        print(json.dumps({"count": len(gaps), "written": bool(gaps)}))
+        print(json.dumps({"count": len(gaps)}))
     except (OSError, ValueError) as error:
         parser.exit(1, f"record coverage gaps: {error}\n")
     return 0

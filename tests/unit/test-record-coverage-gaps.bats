@@ -38,7 +38,7 @@ record() {
     record
 
     [ "$status" -eq 0 ]
-    [ "$(jq -c . <<< "$output")" = '{"count":2,"written":true}' ]
+    [ "$(jq -c . <<< "$output")" = '{"count":2}' ]
     grep -Fxq '## Not verified' "$REVIEW"
     grep -Fxq '<!-- coverage-gaps: session-1 -->' "$REVIEW"
     grep -Fxq -- "- \`code-reviewer-correctness\`: Did not run _fold at flag_calls_union.py:320 against ClickHouse: no services. Unverified inputs: NULL IN (1, 2)" "$REVIEW"
@@ -51,7 +51,7 @@ record() {
     record
 
     [ "$status" -eq 0 ]
-    [ "$(jq -c . <<< "$output")" = '{"count":0,"written":false}' ]
+    [ "$(jq -c . <<< "$output")" = '{"count":0}' ]
     cmp "$BATS_TEST_TMPDIR/before.md" "$REVIEW"
 }
 
@@ -79,28 +79,6 @@ record() {
     [ "$(grep -c '^## Not verified$' "$REVIEW")" -eq 1 ]
     [ "$(grep -c 'Second gap' "$REVIEW")" -eq 0 ]
     grep -Fq 'Earlier gap' "$REVIEW"
-}
-
-@test "record-coverage-gaps: places the section before Lint notes" {
-    printf '\n## Lint notes\n\n> line 3, hype: robust\n' >> "$REVIEW"
-    write_coverage code-reviewer-correctness '["A gap"]'
-
-    record
-
-    [ "$status" -eq 0 ]
-    gaps_line=$(grep -n '^## Not verified$' "$REVIEW" | cut -d: -f1)
-    lint_line=$(grep -n '^## Lint notes$' "$REVIEW" | cut -d: -f1)
-    [ "$gaps_line" -lt "$lint_line" ]
-}
-
-@test "record-coverage-gaps: appends after an earlier run's Lint notes in a full --append review" {
-    printf '\n## Lint notes\n\n> line 3, hype: robust\n\n## Security Review\n\nNo findings.\n' >> "$REVIEW"
-    write_coverage code-reviewer-correctness '["A gap"]'
-
-    record
-
-    [ "$status" -eq 0 ]
-    [ "$(tail -n 1 "$REVIEW")" = '- `code-reviewer-correctness`: A gap' ]
 }
 
 @test "record-coverage-gaps: ignores a section quoted inside a fenced block" {
