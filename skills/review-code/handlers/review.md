@@ -130,7 +130,7 @@ Read `mode` from the JSON it prints:
 
 ### Classify Review Scope
 
-Run the scope classifier to determine exploration depth from the patch this run will review. Before exploration, all nine reviewers remain selected. Reviewer selection happens after the explorer records evidence:
+Run the scope classifier to determine exploration depth from the patch this run will review. Before exploration, all eight reviewers remain selected. Reviewer selection happens after the explorer records evidence:
 
 ```bash
 ~/.agents/skills/review-code/scripts/classify-review-scope.sh "$SESSION_FILE" \
@@ -146,7 +146,7 @@ Parse the JSON output and store:
 **Override rules:**
 - If the user specified an `area`, set `$exploration_depth` to "standard". Apply the requested scope after exploration as described below.
 - If `REVIEW_FIELDS` has `reviewers`, the classifier applies that list on every call, including this one. Keep the depth it returns.
-- If the classifier errors, keep all nine reviewers and use "thorough" exploration. Correctness always runs.
+- If the classifier errors, keep all eight reviewers and use "thorough" exploration. Correctness always runs.
 
 ### Debug Mode Setup
 
