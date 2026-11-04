@@ -386,7 +386,7 @@ EOF
     assert_complete_decisions
     printf '%s' "$output" | jq -e '
         .agents == ["correctness", "testing"] and
-        (.skipped_agents | length) == 7 and
+        (.skipped_agents | length) == 6 and
         .exploration_depth == "thorough" and
         (.agent_decisions.testing.reason | contains("Requested by the caller")) and
         ([.skipped_agents[] as $area |
@@ -403,7 +403,7 @@ EOF
     run "$SCRIPT" "$SESSION"
 
     [ "$status" -eq 0 ]
-    printf '%s' "$output" | jq -e '.agents == ["correctness", "security"] and (.skipped_agents | length) == 7'
+    printf '%s' "$output" | jq -e '.agents == ["correctness", "security"] and (.skipped_agents | length) == 6'
 }
 
 @test "caller reviewers without correctness still run correctness" {
