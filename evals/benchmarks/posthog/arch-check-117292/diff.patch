@@ -1,0 +1,830 @@
+diff --git a/products/feature_flags/backend/cleanup_blockers.py b/products/feature_flags/backend/cleanup_blockers.py
+new file mode 100644
+index 0000000000000..57572b567190f
+--- /dev/null
++++ b/products/feature_flags/backend/cleanup_blockers.py
+@@ -0,0 +1,96 @@
++from collections.abc import Collection
++
++from posthog.models.team import Team
++
++from products.early_access_features.backend.models import EarlyAccessFeature
++from products.experiments.backend.models.experiment import Experiment
++from products.feature_flags.backend.flag_version_sync import direct_flag_dependency_ids, flags_with_flag_dependencies
++from products.feature_flags.backend.models.feature_flag import FeatureFlag
++from products.feature_flags.backend.session_recording_links import replay_gated_flags_for_projects
++from products.product_tours.backend.models import ProductTour
++from products.surveys.backend.models import Survey
++
++
++def excluded_flag_ids(candidates: list[FeatureFlag]) -> set[int]:
++    """Flag ids that known blockers reference, not limited to the candidate ids.
++
++    Every lookup is scoped by team or project rather than by candidate flag id, so each
++    one binds a handful of parameters per batch and can return ids for flags outside it.
++
++    Every lookup is one set-wise query over the batch; the count stays fixed as the
++    candidate volume grows. These exclusions remove known blockers only. They do not prove
++    the remaining flags are free of repository references or product intent.
++
++    The bulk-delete guard in ``products/feature_flags/backend/api/feature_flag.py`` blocks
++    the same references and must stay in step with this list. Where the two differ it is on
++    purpose, and this list is the stricter one: the guard blocks only running experiments
++    where this excludes every non-deleted one, the guard's ``find_dependent_flags_batch``
++    counts only active dependent flags where this also lets disabled dependents block, and
++    the guard matches a replay gate only within the flag's own project where this matches a
++    stored id across every project scanned.
++
++    A survey's user-created ``linked_flag`` is deliberately not excluded, unlike the
++    survey flags PostHog generates itself. It is user-managed, bulk delete permits it, and
++    the remediation tells the investigator to check surveys. A reported flag is evidence
++    to investigate, not a verdict that removal is safe.
++    """
++    team_ids = {flag.team_id for flag in candidates}
++    # Product tours, replay links, and flag dependencies are scoped by project, not by team:
++    # another team in the same project can reference a flag this batch's teams own. A product
++    # tour stays on the environment that created it, while a flag moves to the project root.
++    # Surveys stay on team scope: Survey and FeatureFlag both inherit RootTeamMixin, so both
++    # rows always sit on the project root team and their team ids line up.
++    team_projects = dict(Team.objects.filter(id__in=team_ids).values_list("id", "project_id"))
++    project_ids = set(team_projects.values())
++
++    excluded: set[int] = set()
++    excluded |= Survey.get_internal_flag_ids(team_ids=team_ids)
++    excluded |= set(
++        # nosemgrep: environment-model-scoped-by-project -- feature flags live on the project root team and a tour on any environment of the project can own an internal targeting flag
++        ProductTour.all_objects.filter(
++            team__project_id__in=project_ids, internal_targeting_flag__isnull=False
++        ).values_list("internal_targeting_flag_id", flat=True)
++    )
++    excluded |= set(
++        Experiment.objects.filter(team_id__in=team_ids, deleted=False).values_list("feature_flag_id", flat=True)
++    )
++    excluded |= set(
++        EarlyAccessFeature.objects.filter(team_id__in=team_ids, feature_flag_id__isnull=False).values_list(
++            "feature_flag_id", flat=True
++        )
++    )
++    excluded |= _depended_on_flag_ids(project_ids)
++    # A trigger group counts here as much as the linked-flag column: both gate recording, so a
++    # flag either one names must not be reported as a cleanup candidate.
++    replay_gates = replay_gated_flags_for_projects(project_ids)
++    # A stored id is matched against every project scanned, because flag ids are globally unique.
++    # Only the stored key reaches an SDK, so a team holding another project's flag id gates no
++    # recording on that flag. The candidate is withheld anyway, because a hard delete leaves that
++    # reference unrepairable. `repair_replay_linked_flag_keys` reports such a row as
++    # `FLAG_IN_OTHER_PROJECT` and has no key it can safely adopt.
++    excluded |= {flag_id for gates in replay_gates.values() for flag_id in gates.flag_ids}
++    # A stored key is matched only within its own project, because a key names one flag only
++    # there, and pooling keys would let a key stored in one project protect a same-keyed flag in
++    # another.
++    excluded |= {
++        flag.id
++        for flag in candidates
++        if (project_id := team_projects.get(flag.team_id)) is not None
++        and (gates := replay_gates.get(project_id)) is not None
++        and flag.key in gates.flag_keys
++    }
++    return excluded
++
++
++def _depended_on_flag_ids(project_ids: Collection[int]) -> set[int]:
++    """Ids of flags that at least one non-deleted flag has a flag-type condition on.
++
++    Matches local-evaluation payload semantics (all non-deleted flags, active or not):
++    a disabled dependent still ships in the payload and can be re-enabled, so it must
++    keep protecting its dependency from cleanup.
++    """
++    dependents = flags_with_flag_dependencies(project_ids)
++    depended_on: set[int] = set()
++    for dependent in dependents:
++        depended_on |= direct_flag_dependency_ids(dependent)
++    return depended_on
+diff --git a/products/feature_flags/backend/facade/usage.py b/products/feature_flags/backend/facade/usage.py
+new file mode 100644
+index 0000000000000..c10eb9485f144
+--- /dev/null
++++ b/products/feature_flags/backend/facade/usage.py
+@@ -0,0 +1,135 @@
++from collections.abc import Mapping
++from datetime import datetime
++
++from django.db.models import Q
++from django.utils import timezone
++
++from posthog.hogql.constants import HogQLGlobalSettings
++from posthog.hogql.query import execute_hogql_query
++
++from posthog.dataclasses import frozen
++from posthog.models.team import Team
++from posthog.models.user import User
++
++from products.feature_flags.backend.cleanup_blockers import excluded_flag_ids
++from products.feature_flags.backend.facade.enums import FlagEvaluationsMode
++from products.feature_flags.backend.facade.flags import get_flag_evaluations_read_mode
++from products.feature_flags.backend.models.feature_flag import FeatureFlag
++from products.feature_flags.backend.models.scheduled_change import ScheduledChange
++
++FLAG_CALL_DAYS = 14
++FLAG_CALL_LIMIT = 10000
++QUERY_TIMEOUT_SECONDS = 10
++WINDOW = f"timestamp >= toStartOfDay(now()) - INTERVAL {FLAG_CALL_DAYS} DAY AND timestamp < toStartOfDay(now())"
++THIS_WEEK = "timestamp >= toStartOfDay(now()) - INTERVAL 7 DAY"
++COLUMNS = f"""
++       uniqIf(person_id, {THIS_WEEK}) AS people_this_week,
++       uniqIf(person_id, NOT ({THIS_WEEK})) AS people_last_week,
++       countIf({THIS_WEEK}) AS calls_this_week,
++       count() AS calls,
++       uniqIf(toString({{response}}), {THIS_WEEK}) AS values_this_week,
++       anyIf(toString({{response}}), {THIS_WEEK}) AS value_this_week"""
++CALLS_FROM_EVENTS = f"""
++SELECT properties.$feature_flag AS flag_key, {COLUMNS.format(response="properties.$feature_flag_response")}
++FROM events
++WHERE event = '$feature_flag_called' AND {WINDOW}
++GROUP BY flag_key
++LIMIT {FLAG_CALL_LIMIT}
++"""
++CALLS_FROM_EVALUATIONS = f"""
++SELECT flag_key, {COLUMNS.format(response="response")}
++FROM posthog.flag_evaluations
++WHERE {WINDOW}
++GROUP BY flag_key
++LIMIT {FLAG_CALL_LIMIT}
++"""
++
++
++@frozen
++class CreatedFlag:
++    id: int
++    key: str
++    created_at: datetime
++    removal_blocked: bool
++    remote_configuration: bool
++
++
++@frozen
++class FlagCalls:
++    people_this_week: int
++    people_last_week: int
++    calls_this_week: int
++    calls: int
++    values_this_week: int
++    value_this_week: str | None
++
++
++@frozen
++class FlagCallSummary:
++    by_key: Mapping[str, FlagCalls]
++    complete: bool
++    covers_all_environments: bool
++
++
++def list_flags_created_by(team_id: int, user_id: int, *, limit: int) -> list[CreatedFlag]:
++    flags = list(
++        FeatureFlag.objects.filter(team_id=team_id, created_by_id=user_id, deleted=False, archived=False)
++        .only("id", "team_id", "key", "created_at", "is_remote_configuration")
++        .order_by("created_at")[:limit]
++    )
++    if not flags:
++        return []
++    blocked = excluded_flag_ids(flags) | _scheduled_flag_ids(team_id, flags)
++    return [
++        CreatedFlag(
++            id=flag.id,
++            key=flag.key,
++            created_at=flag.created_at,
++            removal_blocked=flag.id in blocked,
++            remote_configuration=flag.is_remote_configuration,
++        )
++        for flag in flags
++    ]
++
++
++def summarize_flag_calls(team: Team, user: User) -> FlagCallSummary:
++    from_events = get_flag_evaluations_read_mode(team.organization_id) == FlagEvaluationsMode.EVENTS
++    result = execute_hogql_query(
++        CALLS_FROM_EVENTS if from_events else CALLS_FROM_EVALUATIONS,
++        team,
++        query_type="feature_flags_call_summary",
++        user=user,
++        settings=HogQLGlobalSettings(max_execution_time=QUERY_TIMEOUT_SECONDS, timeout_overflow_mode="throw"),
++    )
++    columns = result.columns or []
++    rows = result.results or []
++    return FlagCallSummary(
++        by_key={row[0]: FlagCalls(**dict(zip(columns[1:], row[1:]))) for row in rows if row[0]},
++        complete=len(rows) < FLAG_CALL_LIMIT and all(row[0] for row in rows),
++        covers_all_environments=not Team.objects.filter(project_id=team.project_id).exclude(id=team.id).exists(),
++    )
++
++
++__all__ = [
++    "FLAG_CALL_DAYS",
++    "CreatedFlag",
++    "FlagCallSummary",
++    "FlagCalls",
++    "list_flags_created_by",
++    "summarize_flag_calls",
++]
++
++
++def _scheduled_flag_ids(team_id: int, flags: list[FeatureFlag]) -> set[int]:
++    recurring = Q(is_recurring=True) & (Q(end_date__isnull=True) | Q(end_date__gt=timezone.now()))
++    active = Q(executed_at__isnull=True) | recurring
++    return {
++        int(record_id)
++        for record_id in ScheduledChange.objects.filter(
++            team_id=team_id,
++            model_name=ScheduledChange.AllowedModels.FEATURE_FLAG,
++            record_id__in=[str(flag.id) for flag in flags],
++        )
++        .filter(active)
++        .values_list("record_id", flat=True)
++    }
+diff --git a/products/feature_flags/backend/temporal/health_checks/stale_flags.py b/products/feature_flags/backend/temporal/health_checks/stale_flags.py
+index 39cdf347a0308..67d42e51c5d1b 100644
+--- a/products/feature_flags/backend/temporal/health_checks/stale_flags.py
++++ b/products/feature_flags/backend/temporal/health_checks/stale_flags.py
+@@ -1,4 +1,4 @@
+-from collections.abc import Collection, Iterable
++from collections.abc import Iterable
+ from datetime import datetime
+ 
+ from django.db.models import Q
+@@ -10,15 +10,13 @@ import posthoganalytics
+ from posthog.clickhouse.query_tagging import Product
+ from posthog.job_owners import JobOwners
+ from posthog.models.health_issue import HealthIssue
+-from posthog.models.team import Team
+ from posthog.ph_client import get_feature_flag_or_none
+ from posthog.temporal.health_checks.detectors import HealthExecutionPolicy
+ from posthog.temporal.health_checks.framework import AlertContent, HealthCheck, Remediation
+ from posthog.temporal.health_checks.models import HealthCheckResult
+ from posthog.utils import get_instance_region
+ 
+-from products.early_access_features.backend.models import EarlyAccessFeature
+-from products.experiments.backend.models.experiment import Experiment
++from products.feature_flags.backend.cleanup_blockers import excluded_flag_ids
+ from products.feature_flags.backend.facade.config import is_v1_config
+ from products.feature_flags.backend.facade.filters import EVALUATED_BEFORE_RELEASE_CONDITIONS
+ from products.feature_flags.backend.flag_status import (
+@@ -30,11 +28,7 @@ from products.feature_flags.backend.flag_status import (
+     filter_stale_flags,
+     stale_flag_threshold,
+ )
+-from products.feature_flags.backend.flag_version_sync import direct_flag_dependency_ids, flags_with_flag_dependencies
+ from products.feature_flags.backend.models.feature_flag import FeatureFlag
+-from products.feature_flags.backend.session_recording_links import replay_gated_flags_for_projects
+-from products.product_tours.backend.models import ProductTour
+-from products.surveys.backend.models import Survey
+ 
+ logger = structlog.get_logger(__name__)
+ 
+@@ -225,7 +219,7 @@ class StaleFeatureFlagsCheck(HealthCheck):
+         if not candidates:
+             return {}
+ 
+-        excluded_ids = _excluded_flag_ids(candidates)
++        excluded_ids = excluded_flag_ids(candidates)
+         full_rollout_ids = {flag.id for flag in full_rollout_candidates}
+ 
+         now = timezone.now()
+@@ -320,91 +314,6 @@ def _serves_more_than_one_result(flag: FeatureFlag) -> bool:
+     return any(group.get("aggregation_group_type_index") is not None for group in groups)
+ 
+ 
+-def _excluded_flag_ids(candidates: list[FeatureFlag]) -> set[int]:
+-    """Flag ids that known blockers reference, not limited to the candidate ids.
+-
+-    Every lookup is scoped by team or project rather than by candidate flag id, so each
+-    one binds a handful of parameters per batch and can return ids for flags outside it.
+-
+-    Every lookup is one set-wise query over the batch; the count stays fixed as the
+-    candidate volume grows. These exclusions remove known blockers only. They do not prove
+-    the remaining flags are free of repository references or product intent.
+-
+-    The bulk-delete guard in ``products/feature_flags/backend/api/feature_flag.py`` blocks
+-    the same references and must stay in step with this list. Where the two differ it is on
+-    purpose, and this list is the stricter one: the guard blocks only running experiments
+-    where this excludes every non-deleted one, the guard's ``find_dependent_flags_batch``
+-    counts only active dependent flags where this also lets disabled dependents block, and
+-    the guard matches a replay gate only within the flag's own project where this matches a
+-    stored id across every project scanned.
+-
+-    A survey's user-created ``linked_flag`` is deliberately not excluded, unlike the
+-    survey flags PostHog generates itself. It is user-managed, bulk delete permits it, and
+-    the remediation tells the investigator to check surveys. A reported flag is evidence
+-    to investigate, not a verdict that removal is safe.
+-    """
+-    team_ids = {flag.team_id for flag in candidates}
+-    # Product tours, replay links, and flag dependencies are scoped by project, not by team:
+-    # another team in the same project can reference a flag this batch's teams own. A product
+-    # tour stays on the environment that created it, while a flag moves to the project root.
+-    # Surveys stay on team scope: Survey and FeatureFlag both inherit RootTeamMixin, so both
+-    # rows always sit on the project root team and their team ids line up.
+-    team_projects = dict(Team.objects.filter(id__in=team_ids).values_list("id", "project_id"))
+-    project_ids = set(team_projects.values())
+-
+-    excluded: set[int] = set()
+-    excluded |= Survey.get_internal_flag_ids(team_ids=team_ids)
+-    excluded |= set(
+-        # nosemgrep: environment-model-scoped-by-project -- feature flags live on the project root team and a tour on any environment of the project can own an internal targeting flag
+-        ProductTour.all_objects.filter(
+-            team__project_id__in=project_ids, internal_targeting_flag__isnull=False
+-        ).values_list("internal_targeting_flag_id", flat=True)
+-    )
+-    excluded |= set(
+-        Experiment.objects.filter(team_id__in=team_ids, deleted=False).values_list("feature_flag_id", flat=True)
+-    )
+-    excluded |= set(
+-        EarlyAccessFeature.objects.filter(team_id__in=team_ids, feature_flag_id__isnull=False).values_list(
+-            "feature_flag_id", flat=True
+-        )
+-    )
+-    excluded |= _depended_on_flag_ids(project_ids)
+-    # A trigger group counts here as much as the linked-flag column: both gate recording, so a
+-    # flag either one names must not be reported as a cleanup candidate.
+-    replay_gates = replay_gated_flags_for_projects(project_ids)
+-    # A stored id is matched against every project scanned, because flag ids are globally unique.
+-    # Only the stored key reaches an SDK, so a team holding another project's flag id gates no
+-    # recording on that flag. The candidate is withheld anyway, because a hard delete leaves that
+-    # reference unrepairable. `repair_replay_linked_flag_keys` reports such a row as
+-    # `FLAG_IN_OTHER_PROJECT` and has no key it can safely adopt.
+-    excluded |= {flag_id for gates in replay_gates.values() for flag_id in gates.flag_ids}
+-    # A stored key is matched only within its own project, because a key names one flag only
+-    # there, and pooling keys would let a key stored in one project protect a same-keyed flag in
+-    # another.
+-    excluded |= {
+-        flag.id
+-        for flag in candidates
+-        if (project_id := team_projects.get(flag.team_id)) is not None
+-        and (gates := replay_gates.get(project_id)) is not None
+-        and flag.key in gates.flag_keys
+-    }
+-    return excluded
+-
+-
+-def _depended_on_flag_ids(project_ids: Collection[int]) -> set[int]:
+-    """Ids of flags that at least one non-deleted flag has a flag-type condition on.
+-
+-    Matches local-evaluation payload semantics (all non-deleted flags, active or not):
+-    a disabled dependent still ships in the payload and can be re-enabled, so it must
+-    keep protecting its dependency from cleanup.
+-    """
+-    dependents = flags_with_flag_dependencies(project_ids)
+-    depended_on: set[int] = set()
+-    for dependent in dependents:
+-        depended_on |= direct_flag_dependency_ids(dependent)
+-    return depended_on
+-
+-
+ def _build_result(flag: FeatureFlag, now: datetime, stale_threshold: datetime) -> HealthCheckResult:
+     checker = FeatureFlagStatusChecker(feature_flag=flag)
+     summary = checker.get_rollout_summary(flag)
+diff --git a/products/feature_flags/backend/test/test_facade_usage.py b/products/feature_flags/backend/test/test_facade_usage.py
+new file mode 100644
+index 0000000000000..dced54f020231
+--- /dev/null
++++ b/products/feature_flags/backend/test/test_facade_usage.py
+@@ -0,0 +1,150 @@
++from datetime import datetime, timedelta
++from typing import Any
++
++from posthog.test.base import (
++    BaseTest,
++    ClickhouseTestMixin,
++    _create_event,
++    _create_flag_evaluations,
++    _create_person,
++    flush_persons_and_events,
++)
++
++from django.utils import timezone
++
++from parameterized import parameterized
++
++from posthog.models.team import Team
++
++from products.experiments.backend.models.experiment import Experiment
++from products.feature_flags.backend.facade.enums import FlagEvaluationsMode
++from products.feature_flags.backend.facade.usage import FlagCalls, list_flags_created_by, summarize_flag_calls
++from products.feature_flags.backend.models.feature_flag import FeatureFlag
++from products.feature_flags.backend.models.organization_feature_flags_config import OrganizationFeatureFlagsConfig
++from products.feature_flags.backend.models.scheduled_change import ScheduledChange
++
++
++class TestListFlagsCreatedBy(BaseTest):
++    def test_lists_only_the_live_flags_the_person_created_in_this_project(self) -> None:
++        mine = FeatureFlag.objects.create(team=self.team, key="checkout", created_by=self.user)
++        in_experiment = FeatureFlag.objects.create(team=self.team, key="pricing-test", created_by=self.user)
++        Experiment.objects.create(team=self.team, name="Pricing", feature_flag=in_experiment)
++        remote = FeatureFlag.objects.create(
++            team=self.team, key="app-settings", created_by=self.user, is_remote_configuration=True
++        )
++        now = timezone.now()
++        schedules: dict[str, dict[str, Any]] = {
++            "pending-change": {"scheduled_at": now + timedelta(days=1)},
++            "recurring-change": {"scheduled_at": now - timedelta(days=1), "executed_at": now, "is_recurring": True},
++            "done-change": {"scheduled_at": now - timedelta(days=2), "executed_at": now - timedelta(days=1)},
++            "ended-recurring-change": {
++                "scheduled_at": now - timedelta(days=9),
++                "executed_at": now - timedelta(days=8),
++                "is_recurring": True,
++                "end_date": now - timedelta(days=1),
++            },
++        }
++        scheduled = {}
++        for key, fields in schedules.items():
++            scheduled[key] = FeatureFlag.objects.create(team=self.team, key=key, created_by=self.user)
++            ScheduledChange.objects.create(
++                team=self.team,
++                record_id=str(scheduled[key].id),
++                model_name=ScheduledChange.AllowedModels.FEATURE_FLAG,
++                **fields,
++            )
++        FeatureFlag.objects.create(team=self.team, key="deleted", created_by=self.user, deleted=True)
++        FeatureFlag.objects.create(team=self.team, key="archived", created_by=self.user, archived=True, active=False)
++        FeatureFlag.objects.create(team=self.team, key="theirs", created_by=self._create_user("other@example.com"))
++        FeatureFlag.objects.create(
++            team=Team.objects.create(organization=self.organization), key="elsewhere", created_by=self.user
++        )
++
++        flags = list_flags_created_by(self.team.id, self.user.id, limit=10)
++
++        self.assertEqual(
++            [(f.id, f.removal_blocked, f.remote_configuration) for f in flags],
++            [
++                (mine.id, False, False),
++                (in_experiment.id, True, False),
++                (remote.id, False, True),
++                (scheduled["pending-change"].id, True, False),
++                (scheduled["recurring-change"].id, True, False),
++                (scheduled["done-change"].id, False, False),
++                (scheduled["ended-recurring-change"].id, False, False),
++            ],
++        )
++
++
++class TestSummarizeFlagCalls(ClickhouseTestMixin, BaseTest):
++    def _ago(self, days: int) -> datetime:
++        return timezone.now() - timedelta(days=days)
++
++    @parameterized.expand(
++        [
++            ("events in events mode", FlagEvaluationsMode.EVENTS, "events", True),
++            (
++                "flag evaluations in flag evaluations mode",
++                FlagEvaluationsMode.FLAG_EVALUATIONS_ONLY,
++                "flag_evaluations",
++                True,
++            ),
++            ("events in flag evaluations mode", FlagEvaluationsMode.FLAG_EVALUATIONS_ONLY, "events", False),
++        ]
++    )
++    def test_counts_calls_where_the_organization_reads_them(
++        self, _name: str, mode: FlagEvaluationsMode, written_to: str, counted: bool
++    ) -> None:
++        OrganizationFeatureFlagsConfig.objects.update_or_create(
++            organization=self.organization, defaults={"flag_evaluations_mode": mode}
++        )
++        for distinct_id, days in [("user-1", 2), ("user-2", 3), ("user-3", 10)]:
++            person = _create_person(team=self.team, distinct_ids=[distinct_id])
++            if written_to == "events":
++                _create_event(
++                    team=self.team,
++                    event="$feature_flag_called",
++                    distinct_id=distinct_id,
++                    properties={"$feature_flag": "checkout", "$feature_flag_response": True},
++                    timestamp=self._ago(days),
++                )
++            else:
++                _create_flag_evaluations(
++                    self.team.id, "checkout", timestamp=self._ago(days), distinct_id=distinct_id, person_id=person.uuid
++                )
++        flush_persons_and_events()
++
++        summary = summarize_flag_calls(self.team, self.user)
++
++        expected = FlagCalls(
++            people_this_week=2,
++            people_last_week=1,
++            calls_this_week=2,
++            calls=3,
++            values_this_week=1,
++            value_this_week="true",
++        )
++        self.assertEqual(
++            (dict(summary.by_key), summary.complete, summary.covers_all_environments),
++            ({"checkout": expected} if counted else {}, True, True),
++        )
++
++    def test_a_call_without_a_readable_flag_key_marks_the_summary_incomplete(self) -> None:
++        _create_person(team=self.team, distinct_ids=["user-1"])
++        _create_event(
++            team=self.team,
++            event="$feature_flag_called",
++            distinct_id="user-1",
++            properties={"$feature_flag_response": True},
++            timestamp=self._ago(2),
++        )
++        flush_persons_and_events()
++
++        summary = summarize_flag_calls(self.team, self.user)
++
++        self.assertEqual((dict(summary.by_key), summary.complete), ({}, False))
++
++    def test_a_project_with_another_environment_is_not_fully_covered(self) -> None:
++        Team.objects.create(organization=self.organization, project=self.project, parent_team=self.team, name="Staging")
++
++        self.assertFalse(summarize_flag_calls(self.team, self.user).covers_all_environments)
+diff --git a/products/today/backend/logic/highlight_sources/flags.py b/products/today/backend/logic/highlight_sources/flags.py
+new file mode 100644
+index 0000000000000..6b269b42c9a29
+--- /dev/null
++++ b/products/today/backend/logic/highlight_sources/flags.py
+@@ -0,0 +1,119 @@
++import re
++
++from django.utils import timezone
++
++from posthog.constants import PRODUCT_TOUR_TARGETING_FLAG_PREFIX, SURVEY_TARGETING_FLAG_PREFIX
++
++from products.feature_flags.backend.facade.usage import (
++    FLAG_CALL_DAYS,
++    CreatedFlag,
++    FlagCalls,
++    list_flags_created_by,
++    summarize_flag_calls,
++)
++
++from ...facade.enums import HighlightLabel
++from ..highlight_rules import exact, human
++from ..highlight_types import Candidate, Context, Found, Source
++
++REACH_DROP = "Flag ‘{flag}’ reached {pct}% fewer users in the last 7 days"
++REACH_DROP_DETAIL = "{before} → {now} · Check the code that calls it"
++UNUSED_ONE = "Flag ‘{flag}’ had no evaluations in the last 14 days"
++UNUSED_ONE_DETAIL = "Delete it if no code uses it"
++SAME_ONE = "Flag ‘{flag}’ is {value} for everyone"
++SAME_ONE_DETAIL = "Remove it from the code, then delete it"
++CLEANUP_MANY = "{n} of your flags are unused or the same for everyone"
++CLEANUP_COST = "{n} of your flags were called {cost} times in the last 7 days"
++CLEANUP_COST_DETAIL = "Same value for everyone: {names}"
++AND_MORE = "{names} and {n} more"
++
++INTERNAL_FLAG_PREFIXES = (SURVEY_TARGETING_FLAG_PREFIX, PRODUCT_TOUR_TARGETING_FLAG_PREFIX)
++RISKY_FLAGS = re.compile(r"(?i)(kill|override|switch|disable|maintenance|remote-config)|-[0-9a-f]{8,}$")
++MIN_REACH = 20
++SAME_VALUE_MIN_AGE_DAYS = 30
++CLEANUP_COST_MIN = 100_000
++NO_CALLS = FlagCalls(
++    people_this_week=0, people_last_week=0, calls_this_week=0, calls=0, values_this_week=0, value_this_week=None
++)
++
++
++def find(context: Context) -> Found:
++    flags = [
++        flag
++        for flag in list_flags_created_by(context.team.id, context.user.id, limit=500)
++        if not flag.remote_configuration and not flag.key.startswith(INTERNAL_FLAG_PREFIXES)
++    ]
++    if not flags:
++        return Found()
++    summary = context.daily("flag_calls", lambda: summarize_flag_calls(context.team, context.user))
++    items: list[Candidate] = []
++    removable: list[CreatedFlag] = []
++    same: list[tuple[CreatedFlag, FlagCalls]] = []
++    for flag in flags:
++        calls = summary.by_key.get(flag.key, NO_CALLS)
++        if calls.people_last_week >= MIN_REACH and calls.people_this_week <= calls.people_last_week / 2:
++            items.append(_reach_drop(flag, calls))
++        if flag.removal_blocked or RISKY_FLAGS.search(flag.key) or not summary.covers_all_environments:
++            continue
++        age = (context.today - timezone.localtime(flag.created_at, context.team.timezone_info).date()).days
++        if age >= SAME_VALUE_MIN_AGE_DAYS and calls.people_this_week >= MIN_REACH and calls.values_this_week == 1:
++            removable.append(flag)
++            same.append((flag, calls))
++        elif age >= FLAG_CALL_DAYS and calls.calls == 0 and summary.complete:
++            removable.append(flag)
++    if cleanup := _cleanup(context, removable, same):
++        items.append(cleanup)
++    return Found(items=tuple(items))
++
++
++def _reach_drop(flag: CreatedFlag, calls: FlagCalls) -> Candidate:
++    return Candidate(
++        key=f"flag_reach_drop:{flag.id}",
++        label=HighlightLabel.RISK,
++        family="flags",
++        importance=0.6,
++        relevance=1.0,
++        title=REACH_DROP.format(
++            flag=flag.key, pct=f"{(1 - calls.people_this_week / calls.people_last_week) * 100:.0f}"
++        ),
++        detail=REACH_DROP_DETAIL.format(now=exact(calls.people_this_week), before=exact(calls.people_last_week)),
++        url=f"/feature_flags/{flag.id}",
++    )
++
++
++def _listing(keys: list[str]) -> str:
++    names = ", ".join(keys[:3])
++    return AND_MORE.format(names=names, n=len(keys) - 3) if len(keys) > 3 else names
++
++
++def _cleanup(
++    context: Context, removable: list[CreatedFlag], same: list[tuple[CreatedFlag, FlagCalls]]
++) -> Candidate | None:
++    if context.today.weekday() == 0 and removable:
++        keys = [flag.key for flag in sorted(removable, key=lambda flag: flag.created_at)]
++        if len(keys) > 1:
++            title, detail = CLEANUP_MANY.format(n=len(keys)), _listing(keys)
++        elif same:
++            title = SAME_ONE.format(flag=keys[0], value=same[0][1].value_this_week or "false")
++            detail = SAME_ONE_DETAIL
++        else:
++            title, detail = UNUSED_ONE.format(flag=keys[0]), UNUSED_ONE_DETAIL
++    else:
++        cost = sum(calls.calls_this_week for _, calls in same)
++        if cost < CLEANUP_COST_MIN:
++            return None
++        title = CLEANUP_COST.format(n=len(same), cost=human(cost))
++        detail = CLEANUP_COST_DETAIL.format(names=_listing([flag.key for flag, _ in same]))
++    return Candidate(
++        key="flag_cleanup",
++        label=HighlightLabel.OPPORTUNITY,
++        family="flag_cleanup",
++        importance=0.3,
++        relevance=1.0,
++        title=title,
++        detail=detail,
++        url="/feature_flags",
++    )
++
++
++SOURCE = Source(name="flags", find=find, scopes=("feature_flag:read",))
+diff --git a/products/today/backend/tests/test_highlight_flags.py b/products/today/backend/tests/test_highlight_flags.py
+new file mode 100644
+index 0000000000000..b466d2476900f
+--- /dev/null
++++ b/products/today/backend/tests/test_highlight_flags.py
+@@ -0,0 +1,148 @@
++from datetime import UTC, date, datetime, timedelta
++from types import SimpleNamespace
++from typing import cast
++from zoneinfo import ZoneInfo
++
++from unittest.mock import patch
++
++from django.test import SimpleTestCase
++
++from parameterized import parameterized
++
++from products.feature_flags.backend.facade.usage import CreatedFlag, FlagCalls, FlagCallSummary
++from products.today.backend.logic.highlight_registry import load_sources
++from products.today.backend.logic.highlight_sources import flags
++from products.today.backend.logic.highlight_types import Context
++
++MONDAY = date(2026, 10, 12)
++TUESDAY = date(2026, 10, 13)
++
++
++def created(
++    key: str, days_old: int, *, flag_id: int = 1, blocked: bool = False, remote_configuration: bool = False
++) -> CreatedFlag:
++    return CreatedFlag(
++        id=flag_id,
++        key=key,
++        created_at=datetime(2026, 10, 12, 9, tzinfo=UTC) - timedelta(days=days_old),
++        removal_blocked=blocked,
++        remote_configuration=remote_configuration,
++    )
++
++
++def calls(people: int = 0, people_before: int = 0, calls_this_week: int = 0, values: int = 0) -> FlagCalls:
++    return FlagCalls(
++        people_this_week=people,
++        people_last_week=people_before,
++        calls_this_week=calls_this_week,
++        calls=calls_this_week + people_before,
++        values_this_week=values,
++        value_this_week="true" if values else None,
++    )
++
++
++SAME = calls(people=50, calls_this_week=200_000, values=1)
++
++
++class TestFlags(SimpleTestCase):
++    def _find(
++        self,
++        today: date,
++        created_flags: list[CreatedFlag],
++        by_key: dict[str, FlagCalls],
++        *,
++        complete: bool = True,
++        covers_all_environments: bool = True,
++    ) -> list[tuple[str, str, str | None]]:
++        context = cast(
++            Context,
++            SimpleNamespace(
++                team=SimpleNamespace(id=1, timezone_info=ZoneInfo("UTC")),
++                user=SimpleNamespace(id=2),
++                today=today,
++                daily=lambda _name, compute: compute(),
++            ),
++        )
++        registered = next(s for s in load_sources() if s.name == "flags")
++        summary = FlagCallSummary(by_key=by_key, complete=complete, covers_all_environments=covers_all_environments)
++        with (
++            patch.object(flags, "list_flags_created_by", return_value=created_flags),
++            patch.object(flags, "summarize_flag_calls", return_value=summary),
++        ):
++            return [(c.title, c.detail, c.url) for c in registered.find(context).items]
++
++    def test_a_flag_that_reaches_half_the_people_is_a_risk_even_when_removal_is_blocked(self) -> None:
++        found = self._find(TUESDAY, [created("checkout", 60, flag_id=7, blocked=True)], {"checkout": calls(10, 40)})
++
++        self.assertEqual(
++            found,
++            [
++                (
++                    "Flag ‘checkout’ reached 75% fewer users in the last 7 days",
++                    "40 → 10 · Check the code that calls it",
++                    "/feature_flags/7",
++                )
++            ],
++        )
++
++    @parameterized.expand(
++        [
++            ("unused", created("old-banner", 30), {}, {}, "Flag ‘old-banner’ had no evaluations in the last 14 days"),
++            (
++                "same value",
++                created("old-banner", 30),
++                {"old-banner": SAME},
++                {},
++                "Flag ‘old-banner’ is true for everyone",
++            ),
++            ("unused but the call list is cut", created("old-banner", 30), {}, {"complete": False}, None),
++            (
++                "unused in one of several environments",
++                created("old-banner", 30),
++                {},
++                {"covers_all_environments": False},
++                None,
++            ),
++            (
++                "same value in one of several environments",
++                created("old-banner", 30),
++                {"old-banner": SAME},
++                {"covers_all_environments": False},
++                None,
++            ),
++            ("too new", created("old-banner", 13), {}, {}, None),
++            ("blocked by an experiment or a reference", created("old-banner", 30, blocked=True), {}, {}, None),
++            ("a remote configuration", created("old-banner", 30, remote_configuration=True), {}, {}, None),
++            ("risky to remove", created("kill-switch", 30), {}, {}, None),
++            ("a survey flag", created("survey-targeting-abc", 30), {}, {}, None),
++        ]
++    )
++    def test_monday_cleanup_names_an_unused_or_same_value_flag(
++        self,
++        _name: str,
++        flag: CreatedFlag,
++        by_key: dict[str, FlagCalls],
++        evidence: dict[str, bool],
++        title: str | None,
++    ) -> None:
++        found = self._find(MONDAY, [flag], by_key, **evidence)
++
++        self.assertEqual([t for t, _, _ in found], [title] if title else [])
++
++    @parameterized.expand(
++        [
++            ("monday list", MONDAY, 4, "flag_0, flag_1, flag_2 and 1 more"),
++            ("costly list", TUESDAY, 4, "Same value for everyone: flag_0, flag_1, flag_2 and 1 more"),
++        ]
++    )
++    def test_cleanup_detail_names_the_first_flags(self, _name: str, today: date, count: int, expected: str) -> None:
++        created_flags = [created(f"flag_{i}", 100 - i, flag_id=i) for i in range(count)]
++
++        found = self._find(today, created_flags, {flag.key: SAME for flag in created_flags})
++
++        self.assertEqual([d for _, d, _ in found], [expected])
++
++    def test_same_value_flags_called_less_than_the_cost_floor_stay_hidden_outside_monday(self) -> None:
++        cheap = calls(people=50, calls_this_week=99_999, values=1)
++
++        self.assertEqual(self._find(TUESDAY, [created("old-banner", 60)], {"old-banner": cheap}), [])
+diff --git a/tach.toml b/tach.toml
+index e123a291ebfff..5133936669683 100644
+--- a/tach.toml
++++ b/tach.toml
+@@ -1650,6 +1650,7 @@ depends_on = [
+     "products.customer_analytics",
+     "products.dashboards",
+     "products.error_tracking",
++    "products.feature_flags",
+     "products.product_analytics",
+     "products.signals",
+     "products.tasks",

@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "expected_findings": [
+    {
+      "id": "continuity-under-device-id",
+      "description": "With device ID bucketing and a person condition below 100%, turning experience continuity on or off reads as BUCKETING_CHANGED and RAISES, though the flag service does not read continuity under device ID bucketing; count continuity only for distinct_id.",
+      "area": "maintainability",
+      "severity": "suggestion",
+      "weight": 6,
+      "file": "products/feature_flags/backend/exposure_change.py",
+      "line_start": 210,
+      "line_end": 218,
+      "keywords": [
+        "continuity",
+        "device_id",
+        "device ID",
+        "distinct_id",
+        "_person_hash_inputs",
+        "BUCKETING_CHANGED",
+        "bucketing identifier"
+      ]
+    },
+    {
+      "id": "aggregation-none-when-mixed",
+      "description": "aggregation is also None when conditions mix person and group aggregation, so a caller that follows the field's comment counts only persons; return the group types of the conditions that serve somebody, or drop the field until it is needed.",
+      "area": "maintainability",
+      "severity": "suggestion",
+      "weight": 5,
+      "file": "products/feature_flags/backend/exposure_change.py",
+      "line_start": 96,
+      "line_end": 106,
+      "keywords": [
+        "aggregation",
+        "None",
+        "mix",
+        "mixed",
+        "group types",
+        "frozenset",
+        "persons",
+        "drop the field"
+      ]
+    }
+  ],
+  "false_positive_traps": [],
+  "clean_areas": []
+}

@@ -1,0 +1,461 @@
+diff --git a/frontend/src/lib/components/TaxonomicFilter/types.ts b/frontend/src/lib/components/TaxonomicFilter/types.ts
+index 03b5ee92041f6..749c22f6dd594 100644
+--- a/frontend/src/lib/components/TaxonomicFilter/types.ts
++++ b/frontend/src/lib/components/TaxonomicFilter/types.ts
+@@ -10,6 +10,7 @@ import { AnyDataNode, DatabaseSchemaField, DatabaseSerializedFieldType } from '~
+ import {
+     ActionFilter,
+     ActionType,
++    AnyPropertyFilter,
+     CohortType,
+     EntityFilter,
+     EventDefinition,
+@@ -69,10 +70,9 @@ export type SelectedProperties = TaxonomicFilterGroupValueMap
+ export type AllowedProperties = TaxonomicFilterGroupValueMap
+ 
+ /**
+- * Per-group-type **denylist of property-filter operators** the host cannot represent.
+- * Acts only on the **Recent tab** — items whose stored operator is denylisted for
+- * their source group are hidden so the picker never surfaces a value the
+- * surrounding UI can't reproduce.
++ * Per-group rule for hiding property filters the host cannot represent.
++ * Acts only on the Recent tab. A list checks operators; a callback can also
++ * check the saved property's key and type.
+  *
+  * Pairs with `selectingKeyOnly` when a host wants both (a) no operator/value
+  * slot in the row *and* (b) impossible recents kept out of the picker — the two
+@@ -87,7 +87,9 @@ export type AllowedProperties = TaxonomicFilterGroupValueMap
+  * filter (e.g. survey trigger surfaces only `=` / `contains` regardless of
+  * filter type).
+  */
+-export type ExcludedOperators = { [key in TaxonomicFilterGroupType]?: PropertyOperator[] }
++export type ExcludedOperators = {
++    [key in TaxonomicFilterGroupType]?: PropertyOperator[] | ((filter: AnyPropertyFilter) => boolean)
++}
+ 
+ /**
+  * Tells `TaxonomicPropertyFilter` to render a row as key-only — the picked
+diff --git a/frontend/src/lib/components/TaxonomicFilter/utils/suggestedContextFilters.test.ts b/frontend/src/lib/components/TaxonomicFilter/utils/suggestedContextFilters.test.ts
+index 284c69d1f9327..c1dfcd2d27cb6 100644
+--- a/frontend/src/lib/components/TaxonomicFilter/utils/suggestedContextFilters.test.ts
++++ b/frontend/src/lib/components/TaxonomicFilter/utils/suggestedContextFilters.test.ts
+@@ -50,6 +50,21 @@ describe('suggestedContextFilters', () => {
+             ).toHaveLength(1)
+         })
+ 
++        it('checks the whole filter when excluding a recent', () => {
++            const items = [
++                recent(EventProperties, 'date', {
++                    propertyFilter: { key: 'date', operator: PropertyOperator.IsSet, value: null },
++                }),
++                recent(EventProperties, 'name', {
++                    propertyFilter: { key: 'name', operator: PropertyOperator.IsSet, value: null },
++                }),
++            ]
++            const out = filterRecentsForContext(items, [EventProperties], {
++                [EventProperties]: (filter) => filter.key === 'date',
++            })
++            expect(names(out)).toEqual(['name', 'name'])
++        })
++
+         it('drops a recent whose value is excluded for its group, keeping others', () => {
+             const items = [recent(EventProperties, 'message'), recent(EventProperties, 'plan')]
+             const out = filterRecentsForContext(items, [EventProperties], undefined, undefined, {
+diff --git a/frontend/src/lib/components/TaxonomicFilter/utils/suggestedContextFilters.ts b/frontend/src/lib/components/TaxonomicFilter/utils/suggestedContextFilters.ts
+index 4ad9eb19cb90a..d3474f189ab35 100644
+--- a/frontend/src/lib/components/TaxonomicFilter/utils/suggestedContextFilters.ts
++++ b/frontend/src/lib/components/TaxonomicFilter/utils/suggestedContextFilters.ts
+@@ -40,10 +40,13 @@ export function filterRecentsForContext(
+             return false
+         }
+         const excludedForGroup = excludedOperators?.[item._recentContext.sourceGroupType]
+-        if (excludedForGroup?.length) {
++        if (excludedForGroup) {
+             const propertyFilter = item._recentContext.propertyFilter
+             const operator = propertyFilter && 'operator' in propertyFilter ? propertyFilter.operator : undefined
+-            if (operator && excludedForGroup.includes(operator)) {
++            if (typeof excludedForGroup === 'function' && propertyFilter && excludedForGroup(propertyFilter)) {
++                return false
++            }
++            if (Array.isArray(excludedForGroup) && operator && excludedForGroup.includes(operator)) {
+                 return false
+             }
+         }
+diff --git a/frontend/src/lib/components/TaxonomicPopover/TaxonomicPopover.tsx b/frontend/src/lib/components/TaxonomicPopover/TaxonomicPopover.tsx
+index c7f61e92e6d8b..9652d0a907248 100644
+--- a/frontend/src/lib/components/TaxonomicPopover/TaxonomicPopover.tsx
++++ b/frontend/src/lib/components/TaxonomicPopover/TaxonomicPopover.tsx
+@@ -10,6 +10,7 @@ import { TaxonomicFilter } from 'lib/components/TaxonomicFilter/TaxonomicFilter'
+ import {
+     DataWarehousePopoverField,
+     DefinitionPopoverRenderer,
++    ExcludedOperators,
+     ExcludedProperties,
+     SelectedProperties,
+     TaxonomicFilterGroupType,
+@@ -49,6 +50,7 @@ export interface TaxonomicPopoverProps<ValueType extends TaxonomicFilterValue =
+     style?: React.CSSProperties
+     closeOnChange?: boolean
+     excludedProperties?: ExcludedProperties
++    excludedOperators?: ExcludedOperators
+     includeHiddenEvents?: boolean
+     selectedProperties?: SelectedProperties
+     metadataSource?: AnyDataNode
+@@ -95,6 +97,7 @@ export const TaxonomicPopover = forwardRef(function TaxonomicPopover_<
+         allowClear = false,
+         closeOnChange = true,
+         excludedProperties,
++        excludedOperators,
+         includeHiddenEvents,
+         selectedProperties,
+         metadataSource,
+@@ -171,6 +174,7 @@ export const TaxonomicPopover = forwardRef(function TaxonomicPopover_<
+                     schemaColumns={schemaColumns}
+                     metadataSource={metadataSource}
+                     excludedProperties={excludedProperties}
++                    excludedOperators={excludedOperators}
+                     includeHiddenEvents={includeHiddenEvents}
+                     selectedProperties={selectedProperties}
+                     showNumericalPropsOnly={showNumericalPropsOnly}
+@@ -255,6 +259,7 @@ export const TaxonomicPopover = forwardRef(function TaxonomicPopover_<
+                 schemaColumns={schemaColumns}
+                 metadataSource={metadataSource}
+                 excludedProperties={excludedProperties}
++                excludedOperators={excludedOperators}
+                 includeHiddenEvents={includeHiddenEvents}
+                 selectedProperties={selectedProperties}
+                 showNumericalPropsOnly={showNumericalPropsOnly}
+diff --git a/frontend/src/lib/components/TaxonomicPopover/TaxonomicPopoverMenu.tsx b/frontend/src/lib/components/TaxonomicPopover/TaxonomicPopoverMenu.tsx
+index 9c88a7b1904ae..8497b2e4d0d33 100644
+--- a/frontend/src/lib/components/TaxonomicPopover/TaxonomicPopoverMenu.tsx
++++ b/frontend/src/lib/components/TaxonomicPopover/TaxonomicPopoverMenu.tsx
+@@ -31,6 +31,7 @@ import { taxonomicTriggerWrapperClassName } from 'lib/components/TaxonomicFilter
+ import {
+     AllowedProperties,
+     DataWarehousePopoverField,
++    ExcludedOperators,
+     ExcludedProperties,
+     SelectedProperties,
+     SimpleOption,
+@@ -81,6 +82,7 @@ export interface TaxonomicPopoverMenuProps<ValueType extends TaxonomicFilterValu
+     schemaColumns?: DatabaseSchemaField[]
+     metadataSource?: AnyDataNode
+     excludedProperties?: ExcludedProperties
++    excludedOperators?: ExcludedOperators
+     includeHiddenEvents?: boolean
+     selectedProperties?: SelectedProperties
+     propertyAllowList?: AllowedProperties
+@@ -233,6 +235,7 @@ function ArmedTaxonomicPopoverMenu<ValueType extends TaxonomicFilterValue = Taxo
+     schemaColumns,
+     metadataSource,
+     excludedProperties,
++    excludedOperators,
+     includeHiddenEvents,
+     selectedProperties,
+     propertyAllowList,
+@@ -327,6 +330,7 @@ function ArmedTaxonomicPopoverMenu<ValueType extends TaxonomicFilterValue = Taxo
+             schemaColumns={schemaColumns}
+             metadataSource={metadataSource}
+             excludedProperties={excludedProperties}
++            excludedOperators={excludedOperators}
+             includeHiddenEvents={includeHiddenEvents}
+             selectedProperties={selectedProperties}
+             propertyAllowList={propertyAllowList}
+diff --git a/frontend/src/scenes/cohorts/CohortEdit.test.tsx b/frontend/src/scenes/cohorts/CohortEdit.test.tsx
+index 7403914d75e2e..6e44ebd908498 100644
+--- a/frontend/src/scenes/cohorts/CohortEdit.test.tsx
++++ b/frontend/src/scenes/cohorts/CohortEdit.test.tsx
+@@ -4,20 +4,36 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
+ import userEvent from '@testing-library/user-event'
+ import { expectLogic, partial } from 'kea-test-utils'
+ 
++import { recentTaxonomicFiltersLogic } from 'lib/components/TaxonomicFilter/recentTaxonomicFiltersLogic'
++import { TaxonomicFilterGroupType } from 'lib/components/TaxonomicFilter/types'
+ import { cohortEditLogic } from 'scenes/cohorts/cohortEditLogic'
+-import { NEW_COHORT } from 'scenes/cohorts/CohortFilters/constants'
++import { NEW_COHORT, NEW_CRITERIA_GROUP } from 'scenes/cohorts/CohortFilters/constants'
+ import { BehavioralFilterKey } from 'scenes/cohorts/CohortFilters/types'
+ import { urls } from 'scenes/urls'
+ 
+ import { sceneLayoutLogic } from '~/layout/scenes/sceneLayoutLogic'
+ import { toPaginatedResponse } from '~/mocks/handlers'
+ import { useMocks } from '~/mocks/jest'
++import { propertyDefinitionsModel } from '~/models/propertyDefinitionsModel'
+ import { initKeaTests } from '~/test/init'
+ import { mockCohort } from '~/test/mocks'
+-import { AnyCohortCriteriaType, BehavioralEventType, FilterLogicalOperator, InsightShortId } from '~/types'
++import {
++    AnyCohortCriteriaType,
++    BehavioralEventType,
++    FilterLogicalOperator,
++    InsightShortId,
++    PropertyFilterType,
++    PropertyOperator,
++    PropertyType,
++} from '~/types'
+ 
+ import { CohortEdit } from './CohortEdit'
+ 
++jest.mock('lib/components/AutoSizer', () => ({
++    AutoSizer: ({ renderProp }: { renderProp: (size: { height: number; width: number }) => React.ReactNode }) =>
++        renderProp({ height: 400, width: 400 }),
++}))
++
+ describe('cohortEditLogic', () => {
+     let logic: ReturnType<typeof cohortEditLogic.build>
+ 
+@@ -805,6 +821,102 @@ describe('cohortEditLogic', () => {
+         )
+     })
+ 
++    it('prefills a complete recent person filter during cohort creation', async () => {
++        const definitions = propertyDefinitionsModel.build()
++        definitions.mount()
++        definitions.actions.updatePropertyDefinitions({
++            'person/$browser': { id: '$browser', name: '$browser', property_type: PropertyType.String },
++        })
++        const recentFilters = recentTaxonomicFiltersLogic.build()
++        recentFilters.mount()
++        recentFilters.actions.clearRecentFilters()
++        recentFilters.actions.recordRecentFilter({
++            groupType: TaxonomicFilterGroupType.PersonProperties,
++            groupName: 'Person properties',
++            value: '$os',
++            item: { name: '$os' },
++            propertyFilter: {
++                type: PropertyFilterType.Person,
++                key: '$os',
++                operator: PropertyOperator.StartsWith,
++                value: 'Mac',
++            },
++        })
++        recentFilters.actions.recordRecentFilter({
++            groupType: TaxonomicFilterGroupType.PersonProperties,
++            groupName: 'Person properties',
++            value: 'birth_date',
++            item: { name: 'birth_date' },
++            propertyFilter: {
++                type: PropertyFilterType.Person,
++                key: 'birth_date',
++                operator: PropertyOperator.IsSet,
++                value: null,
++            },
++        })
++        recentFilters.actions.recordRecentFilter({
++            groupType: TaxonomicFilterGroupType.PersonProperties,
++            groupName: 'Person properties',
++            value: '$browser',
++            item: { name: '$browser' },
++            propertyFilter: {
++                type: PropertyFilterType.Person,
++                key: '$browser',
++                operator: PropertyOperator.IContains,
++                value: 'Chrome',
++            },
++        })
++        logic = cohortEditLogic({ id: 'new' })
++        logic.mount()
++        logic.actions.setCohort({
++            ...NEW_COHORT,
++            filters: {
++                properties: {
++                    ...NEW_COHORT.filters.properties,
++                    values: [
++                        {
++                            ...NEW_CRITERIA_GROUP,
++                            values: [
++                                {
++                                    type: BehavioralFilterKey.Person,
++                                    value: BehavioralEventType.HaveProperty,
++                                    event_type: TaxonomicFilterGroupType.PersonProperties,
++                                },
++                            ],
++                        },
++                    ],
++                },
++            },
++        })
++
++        render(<CohortEdit id="new" />)
++        await userEvent.click(await screen.findByText('Choose person property'))
++        await userEvent.click(await screen.findByTestId('taxonomic-category-dropdown-trigger-pill'))
++        await userEvent.click(await screen.findByTestId('taxonomic-category-dropdown-item-recent_filters'))
++        await waitFor(() => expect(screen.getAllByTestId(/^prop-filter-recent_filters-/)).toHaveLength(2))
++        definitions.actions.updatePropertyDefinitions({
++            'person/birth_date': { id: 'birth_date', name: 'birth_date', property_type: PropertyType.DateTime },
++        })
++        expect(screen.getAllByTestId(/^prop-filter-recent_filters-/)).toHaveLength(2)
++        await userEvent.click(await screen.findByTestId('prop-filter-recent_filters-1'))
++
++        await waitFor(() => {
++            const group = logic.values.cohort.filters.properties.values[0] as { values: AnyCohortCriteriaType[] }
++            expect(group.values[0]).toEqual(
++                expect.objectContaining({
++                    key: '$browser',
++                    operator: PropertyOperator.IContains,
++                    value_property: 'Chrome',
++                })
++            )
++            expect(document.querySelector('[data-attr="cohort-selector-field-operator"]')).toHaveTextContent('contains')
++            expect(screen.getByText('Chrome')).toBeInTheDocument()
++        })
++        recentFilters.unmount()
++        definitions.unmount()
++        cleanup()
++    })
++
+     describe('locked type and populate-from controls on existing cohorts', () => {
+         afterEach(() => {
+             cleanup()
+diff --git a/frontend/src/scenes/cohorts/CohortFilters/CohortField.tsx b/frontend/src/scenes/cohorts/CohortFilters/CohortField.tsx
+index 98993d5cfd5cd..4490cbad27c2c 100644
+--- a/frontend/src/scenes/cohorts/CohortFilters/CohortField.tsx
++++ b/frontend/src/scenes/cohorts/CohortFilters/CohortField.tsx
+@@ -2,13 +2,13 @@ import './CohortField.scss'
+ 
+ import clsx from 'clsx'
+ import { useActions, useMountedLogic, useValues } from 'kea'
+-import { useEffect, useId, useRef } from 'react'
++import { useCallback, useEffect, useId, useMemo, useRef } from 'react'
+ 
+ import { DateFilter } from 'lib/components/DateFilter/DateFilter'
+ import { PropertyValue } from 'lib/components/PropertyFilters/components/PropertyValue'
+ import { PropertyFilters } from 'lib/components/PropertyFilters/PropertyFilters'
+ import { PropertyKeyInfo } from 'lib/components/PropertyKeyInfo'
+-import { TaxonomicFilterGroupType, TaxonomicFilterValue } from 'lib/components/TaxonomicFilter/types'
++import { ExcludedOperators, TaxonomicFilterGroupType, TaxonomicFilterValue } from 'lib/components/TaxonomicFilter/types'
+ import { TaxonomicPopover } from 'lib/components/TaxonomicPopover/TaxonomicPopover'
+ import { dayjs } from 'lib/dayjs'
+ import { LemonButton, LemonButtonWithDropdown } from 'lib/lemon-ui/LemonButton'
+@@ -36,6 +36,7 @@ import { propertyDefinitionsModel } from '~/models/propertyDefinitionsModel'
+ import {
+     AnyCohortCriteriaType,
+     AnyPropertyFilter,
++    BehavioralEventType,
+     PropertyDefinitionType,
+     PropertyFilterType,
+     PropertyFilterValue,
+@@ -158,6 +159,7 @@ export function CohortTaxonomicField({
+     cohortFilterLogicKey,
+     criteria,
+     taxonomicGroupTypes = [TaxonomicFilterGroupType.Events, TaxonomicFilterGroupType.Actions],
++    allowedRecentOperators,
+     placeholder = 'Choose event',
+     onChange: _onChange,
+ }: CohortTaxonomicFieldProps): JSX.Element {
+@@ -172,7 +174,53 @@ export function CohortTaxonomicField({
+ 
+     const { calculatedValue, calculatedValueLoading } = useValues(logic)
+     const { onChange } = useActions(logic)
++    const { getPropertyDefinition } = useValues(propertyDefinitionsModel)
+     const groupType = (criteria[groupTypeFieldKey] as TaxonomicFilterGroupType) ?? taxonomicGroupTypes[0]
++    const excludeUnsupportedRecent = useCallback(
++        (filter: AnyPropertyFilter): boolean => {
++            if (!allowedRecentOperators) {
++                return false
++            }
++            if (
++                (filter.type !== PropertyFilterType.Person && filter.type !== PropertyFilterType.PersonMetadata) ||
++                !('operator' in filter) ||
++                !filter.operator
++            ) {
++                return true
++            }
++            const key = 'key' in filter ? filter.key : undefined
++            if (typeof key !== 'string') {
++                return true
++            }
++            const definitionType =
++                filter.type === PropertyFilterType.PersonMetadata
++                    ? PropertyDefinitionType.PersonMetadata
++                    : PropertyDefinitionType.Person
++            const definition = getPropertyDefinition(key, definitionType)
++            if (!definition) {
++                return !(
++                    allowedRecentOperators.date.has(filter.operator) &&
++                    allowedRecentOperators.other.has(filter.operator)
++                )
++            }
++            const operators =
++                definition.property_type === PropertyType.DateTime
++                    ? allowedRecentOperators.date
++                    : allowedRecentOperators.other
++            return !operators.has(filter.operator)
++        },
++        [allowedRecentOperators, getPropertyDefinition]
++    )
++    const excludedOperators = useMemo<ExcludedOperators | undefined>(
++        () =>
++            allowedRecentOperators
++                ? {
++                      [TaxonomicFilterGroupType.PersonProperties]: excludeUnsupportedRecent,
++                      [TaxonomicFilterGroupType.PersonMetadata]: excludeUnsupportedRecent,
++                  }
++                : undefined,
++        [allowedRecentOperators, excludeUnsupportedRecent]
++    )
+ 
+     return (
+         <TaxonomicPopover
+@@ -180,12 +228,23 @@ export function CohortTaxonomicField({
+             groupType={groupType}
+             loading={calculatedValueLoading(groupType)}
+             value={calculatedValue(groupType) as TaxonomicFilterValue}
+-            onChange={(v, g) => {
+-                onChange({ [fieldKey]: v, [groupTypeFieldKey]: g })
++            onChange={(v, g, item) => {
++                const recentFilter = item?._recentContext?.propertyFilter as AnyPropertyFilter | undefined
++                const selectedGroupType = item?._recentContext?.sourceGroupType ?? g
++                const recentPersonFilter =
++                    fieldKey === 'key' &&
++                    criteria.value === BehavioralEventType.HaveProperty &&
++                    recentFilter?.key === v &&
++                    (recentFilter.type === PropertyFilterType.Person ||
++                        recentFilter.type === PropertyFilterType.PersonMetadata)
++                        ? { operator: recentFilter.operator, value_property: recentFilter.value }
++                        : {}
++                onChange({ [fieldKey]: v, [groupTypeFieldKey]: selectedGroupType, ...recentPersonFilter })
+             }}
+             excludedProperties={{
+                 [TaxonomicFilterGroupType.Events]: [null], // "All events" isn't supported by Cohorts currently
+             }}
++            excludedOperators={excludedOperators}
+             groupTypes={taxonomicGroupTypes}
+             placeholder={placeholder}
+             data-attr={`cohort-taxonomic-field-${fieldKey}`}
+diff --git a/frontend/src/scenes/cohorts/CohortFilters/constants.tsx b/frontend/src/scenes/cohorts/CohortFilters/constants.tsx
+index f4e8a711f89a1..fbcdb1834d6cd 100644
+--- a/frontend/src/scenes/cohorts/CohortFilters/constants.tsx
++++ b/frontend/src/scenes/cohorts/CohortFilters/constants.tsx
+@@ -366,6 +366,11 @@ export const FIELD_VALUES: Record<FieldOptionsType, FieldValues> = {
+     },
+ }
+ 
++const COHORT_PERSON_RECENT_OPERATORS = {
++    date: new Set(Object.keys(FIELD_VALUES[FieldOptionsType.SingleFieldDateOperators].values)),
++    other: new Set(Object.keys(FIELD_VALUES[FieldOptionsType.CohortMathOperators].values)),
++}
++
+ export const SCALE_FIELD_VALUES = {
+     [FieldOptionsType.EventBehavioral]: {
+         label: 'Behavioral',
+@@ -976,6 +981,7 @@ export const renderField: Record<FilterType, (props: CohortFieldProps) => JSX.El
+         return (
+             <CohortTaxonomicField
+                 {...(p as CohortTaxonomicFieldProps)}
++                allowedRecentOperators={COHORT_PERSON_RECENT_OPERATORS}
+                 taxonomicGroupTypes={[
+                     TaxonomicFilterGroupType.PersonProperties,
+                     TaxonomicFilterGroupType.PersonMetadata,
+diff --git a/frontend/src/scenes/cohorts/CohortFilters/types.ts b/frontend/src/scenes/cohorts/CohortFilters/types.ts
+index ae2bf19f24135..7dae8dd96ccff 100644
+--- a/frontend/src/scenes/cohorts/CohortFilters/types.ts
++++ b/frontend/src/scenes/cohorts/CohortFilters/types.ts
+@@ -103,6 +103,7 @@ export interface CohortTaxonomicFieldProps extends Omit<CohortFieldBaseProps, 'f
+     groupTypeFieldKey?: keyof AnyCohortCriteriaType
+     placeholder?: string
+     taxonomicGroupTypes?: TaxonomicFilterGroupType[]
++    allowedRecentOperators?: { date: ReadonlySet<string>; other: ReadonlySet<string> }
+     fieldOptionGroupTypes: never
+ }
+ 
