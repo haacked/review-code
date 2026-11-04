@@ -66,7 +66,7 @@ Both methods will:
 /review-code
 ```
 
-Reviews all uncommitted changes (staged and unstaged) with all 6 agents.
+Reviews all uncommitted changes (staged and unstaged) with every review agent.
 
 #### Review a Pull Request
 

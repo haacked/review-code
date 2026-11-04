@@ -47,7 +47,7 @@ Is this code required to solve the stated problem? Is the amount of supporting c
 - Premature optimization without evidence
 - Infrastructure-to-logic ratio: supporting code (types, helpers, configuration, registries, factories, base classes) that outnumbers the business logic by 3:1 or more in lines
 - Indirection depth: three or more pass-through layers between a user action and the logic (e.g., handler → service → repository → adapter), each adding little beyond a delegating call
-- Complexity the use case doesn't need, where a simpler product decision would remove the code. Ask about it as a `question`.
+- Complexity the use case doesn't need, where a simpler product decision would remove the code. Ask about it as a `question` that names the simpler decision.
 
 **Before flagging, check for justifications:**
 
@@ -57,7 +57,7 @@ Is this code required to solve the stated problem? Is the amount of supporting c
 
 With a strong justification (explicit extension plans, codebase precedent), downgrade to a `question` that cites it, or skip the finding. With a weak or absent one, file it as `blocking` or `suggestion` with concrete evidence.
 
-**Required to file a finding:** specific code evidence (line counts, class counts, or a measurable indirection depth) and a concrete simpler alternative with actual code, specific enough to use as a starting point. If you can only say the implementation "feels heavy" or "could be simpler," do not file.
+**Required to file a finding:** a concrete simpler alternative with actual code, specific enough to use as a starting point. A ratio or indirection-depth finding also needs the measurement behind it: line counts, class counts, or the number of pass-through layers. If you can only say the implementation "feels heavy" or "could be simpler," do not file.
 
 **Example findings:**
 

@@ -228,3 +228,27 @@ assert '--reviewed-agents' in carry
 PY
     [ "$status" -eq 0 ]
 }
+
+@test "every review area list matches and each area has a reviewer agent" {
+    run python3 - "$PROJECT_ROOT" <<'PY'
+import ast, pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+scripts = root / "skills/review-code/scripts"
+
+def python_areas(name):
+    for node in ast.parse((scripts / name).read_text()).body:
+        if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "AREAS":
+            return set(ast.literal_eval(node.value))
+    raise SystemExit(f"{name} defines no AREAS")
+
+keywords = re.search(r"^AREA_KEYWORDS=\(([^)]*)\)", (scripts / "parse-review-arg.sh").read_text(), re.M).group(1)
+lists = {name: python_areas(name) for name in ("classify-review-scope.py", "prepare-chunk-artifacts.py", "review-dispatch-plan.py")}
+lists["parse-review-arg.sh"] = set(keywords.replace('"', "").split())
+if len({frozenset(areas) for areas in lists.values()}) != 1:
+    raise SystemExit(f"area lists differ: {lists}")
+missing = [area for area in lists["parse-review-arg.sh"] if not (root / f"agents/code-reviewer-{area}.md").is_file()]
+if missing:
+    raise SystemExit(f"no agent definition for: {missing}")
+PY
+    [ "$status" -eq 0 ]
+}
