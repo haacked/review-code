@@ -72,6 +72,16 @@ record() {
     grep -Fq 'Second gap' "$REVIEW"
     [ "$(grep -c 'First gap' "$REVIEW")" -eq 0 ]
 
+    printf '\n## Lint notes\n\n- keep me\n' >> "$REVIEW"
+    write_coverage code-reviewer-correctness '["Third gap"]'
+    record
+
+    [ "$status" -eq 0 ]
+    grep -Fxq '## Lint notes' "$REVIEW"
+    grep -Fxq -- '- keep me' "$REVIEW"
+    grep -Fq 'Third gap' "$REVIEW"
+    [ "$(grep -c 'Second gap' "$REVIEW")" -eq 0 ]
+
     write_coverage code-reviewer-correctness '[]'
     record
 
