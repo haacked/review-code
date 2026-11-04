@@ -2,8 +2,8 @@
 """Write every reviewer coverage gap into a review as a "Not verified" section.
 
 A gap is work a reviewer could not finish, such as a run against the real
-database. Each gap is copied verbatim from the retained coverage files, so no
-gap depends on the orchestrator restating it.
+database. The script copies each gap verbatim from the retained coverage
+files. No gap depends on the orchestrator restating it.
 
 The section carries a marker naming the session whose coverage it lists.
 Re-running for the same session replaces that section. Sections from other
