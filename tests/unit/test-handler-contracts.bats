@@ -211,8 +211,9 @@ custom: keep
 
 # Appended full review
 EOF
+    mkdir -p "${review_file}.artifacts/session-123/coverage"
     extract_documented_block "$SKILL/handlers/review-compose.md" bash metadata_args \
-        | sed 's/<REVIEW_FIELDS.reviewers joined with commas, or empty>//' > "$ARTIFACTS/metadata.sh"
+        | sed -e 's/<REVIEW_FIELDS.reviewers joined with commas, or empty>//' -e 's/<SESSION_ID>/session-123/g' > "$ARTIFACTS/metadata.sh"
 
     run env review_file="$review_file" review_commit=new-head bash -e "$ARTIFACTS/metadata.sh"
 
@@ -230,8 +231,9 @@ EOF
 @test "handler contracts: a full review records the caller's reviewer list in its metadata" {
     review_file="$ARTIFACTS/review.md"
     printf '# Review\n' > "$review_file"
+    mkdir -p "${review_file}.artifacts/session-123/coverage"
     extract_documented_block "$SKILL/handlers/review-compose.md" bash metadata_args \
-        | sed 's/<REVIEW_FIELDS.reviewers joined with commas, or empty>/correctness,testing/' > "$ARTIFACTS/metadata.sh"
+        | sed -e 's/<REVIEW_FIELDS.reviewers joined with commas, or empty>/correctness,testing/' -e 's/<SESSION_ID>/session-123/g' > "$ARTIFACTS/metadata.sh"
 
     run env review_file="$review_file" review_commit=new-head bash -e "$ARTIFACTS/metadata.sh"
 
@@ -285,6 +287,21 @@ PY
     [ "$(cat "${review_file}.artifacts/session-123/investigations/security.md")" = "Evidence" ]
     jq -e '.gaps == ["Cannot verify b.py"]' "${review_file}.artifacts/session-123/coverage/security.json"
     [ "$(jq -c '.' "${review_file}.artifacts/session-123/open-from-others/security.json")" = '[]' ]
+}
+
+@test "handler contracts: documented compose step records every retained coverage gap in the review" {
+    review_file="$BATS_TEST_TMPDIR/saved review.md"
+    mkdir -p "${review_file}.artifacts/session-123/coverage"
+    jq -n '{files_read: ["a.py"], gaps: ["Did not run _fold at a.py:3 against ClickHouse: no services"]}' \
+        > "${review_file}.artifacts/session-123/coverage/code-reviewer-correctness.json"
+    printf '# Range Review: a..b\n\n## Open, for the author\n\n- Nothing else.\n' > "$review_file"
+    extract_documented_block "$SKILL/handlers/review-compose.md" bash record-coverage-gaps.py \
+        | sed -e 's/<REVIEW_FIELDS.reviewers joined with commas, or empty>//' -e 's/<SESSION_ID>/session-123/g' > "$ARTIFACTS/gaps.sh"
+
+    run env review_file="$review_file" review_commit=new-head bash -e "$ARTIFACTS/gaps.sh"
+
+    [ "$status" -eq 0 ]
+    grep -Fxq -- '- `code-reviewer-correctness`: Did not run _fold at a.py:3 against ClickHouse: no services' "$review_file"
 }
 
 @test "handler contracts: documented synthesis merge groups open problems by link, location, and commenter" {

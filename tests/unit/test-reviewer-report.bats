@@ -69,7 +69,7 @@ valid_open_entry() {
     [ "$(jq -r '.findings_path' <<< "$output")" = "$ARTIFACTS/findings/$NAME.md" ]
     [ "$(jq -r '.coverage_path' <<< "$output")" = "$ARTIFACTS/coverage/$NAME.json" ]
     [ "$(jq '.files_read_count' <<< "$output")" -eq 2 ]
-    [ "$(jq -c '.gaps' <<< "$output")" = '[]' ]
+    [ "$(jq '.gaps_count' <<< "$output")" -eq 0 ]
     [ "$(jq '.finding_bytes' <<< "$output")" -eq 0 ]
     [ -f "$ARTIFACTS/findings/$NAME.md" ]
     [ ! -s "$ARTIFACTS/findings/$NAME.md" ]
@@ -155,7 +155,7 @@ PY
     cmp "$TEST_DIR/expected.md" "$ARTIFACTS/investigations/$NAME.md"
 }
 
-@test "reviewer report: preserves every coverage gap in the artifact and stdout" {
+@test "reviewer report: preserves every coverage gap in the artifact and only counts them on stdout" {
     python3 - "$INPUT" << 'PY'
 import json
 import sys
@@ -170,7 +170,8 @@ PY
     run publish_report
     [ "$status" -eq 0 ]
 
-    [ "$(jq -c '.gaps' <<< "$output")" = "$(jq -c '.coverage.gaps' "$INPUT")" ]
+    [ "$(jq '.gaps_count' <<< "$output")" -eq 30 ]
+    [ "$(jq 'has("gaps")' <<< "$output")" = false ]
     [ "$(jq -S -c '.' "$ARTIFACTS/coverage/$NAME.json")" = "$(jq -S -c '.coverage' "$INPUT")" ]
 }
 

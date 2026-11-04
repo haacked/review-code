@@ -126,7 +126,7 @@ For each place, check that the delete or rewrite reaches the data the request ta
 **Reproduce it with seeded data, but only when all of these hold:**
 - The briefing's last line, **Local test runs**, says the run is permitted and names the checkout to run in.
 - Every data store the run touches resolves to localhost or a local container. Read the harness's settings and environment (such as `DATABASE_URL` or `CLICKHOUSE_HOST`) before you run anything. Never run anything against a shared, staging, or production store.
-- No other reviewer runs the same harness at the same time. In a chunked review, run it only from the chunk whose diff contains the delete or rewrite statement.
+- No other reviewer runs the harness at the same time. Chunk reviewers run in parallel, so claim it first with `mkdir harness.lock` in the briefing's directory. If `mkdir` fails, another reviewer holds it: don't run, and add the coverage gap below. Remove the directory when your run ends, even when it fails.
 
 Then use the project's own test harness in that checkout. Don't start services or run migrations to make the test possible.
 1. Write a throwaway test beside the existing tests for this path. Seed rows that the request targets and rows that it excludes, in every place listed above. This test file is the only write the Local test runs line permits.
@@ -144,7 +144,27 @@ When you cannot run it, add a coverage gap: `Did not run <path> against seeded d
 
 Location: `deletion.py:88` | Confidence: 90%
 
-### 4. Basic Logic Correctness (Critical)
+### 4. Database Semantics Re-implemented in Application Code (Critical)
+
+**When application code decides what a query would return, compare it with the real database.**
+
+This applies when the diff folds constants in a query, copies or pushes a predicate into another query, generates aliases or mangles names, coerces types, handles NULL itself, or otherwise computes a result the database also defines. Reading that code checks only the host language's rules, and the bugs sit where the database's rules differ. Parsing or printing the generated SQL checks its shape, not its result.
+
+1. Build inputs where the host language and the database can disagree: comparisons across types (`1 IN ('1', '2')` is false in Python and true in ClickHouse), NULL in comparisons and in `IN` lists, empty strings, case and collation, and separators or quote characters inside identifiers. Users and callers write the queries, so an input is reachable when the query language accepts it, even if no caller builds it today.
+2. For names the code generates, look for two distinct inputs that produce the same name, such as `a.b` and `a___b` when the code joins name parts with `___`. A collision is a finding, and finding it needs no database.
+3. For everything else, run the query with and without the transform against the real database, on rows that each input matches, and compare the results. The run conditions, the rule against starting services or running migrations, the throwaway test, and its cleanup are the same as in Destructive Data Paths. A difference in the results is a finding. Cite the input and both results.
+
+When you cannot run it, add a coverage gap that names what stays unverified: `Did not run <function at path:line> against <database>: <reason>. Unverified inputs: <inputs>`. When the database's documentation or source shows that one of those inputs gives a different result, report a finding too, and say in it that you did not reproduce it.
+
+**Example finding:**
+
+```text
+`blocking`: Adding `AND 1 IN ('1', '2')` to a query that mixes flag calls and other events drops every flag call. `_fold` at `flag_calls_union.py:320` evaluates the comparison with Python equality, which is false, so the flag-evaluations branch compiles to `WHERE 0`. ClickHouse converts the types and evaluates it as true. Against local ClickHouse, the query counted 2 rows without the union and 1 with it. Leave comparisons between different types unfolded.
+```
+
+Location: `flag_calls_union.py:320` | Confidence: 90%
+
+### 5. Basic Logic Correctness (Critical)
 
 **Does the code do what it's supposed to do within its own scope?**
 
@@ -177,7 +197,7 @@ Location: `deletion.py:88` | Confidence: 90%
 
 Location: `cache.rs:45` | Confidence: 95%
 
-### 5. Cross-Function Correctness (Critical)
+### 6. Cross-Function Correctness (Critical)
 
 **A function may be locally correct but break invariants expected by other code.**
 
@@ -231,7 +251,7 @@ Location: `flag_matching.rs:262-274` | Confidence: 85%
 
 Location: `cache_service.py:89` | Confidence: 90%
 
-### 6. Behavioral Change Analysis (Critical)
+### 7. Behavioral Change Analysis (Critical)
 
 **Every removed or modified line had a reason to exist. Verify the old behavior wasn't lost by accident.**
 
@@ -260,7 +280,7 @@ Deleting or changing stored data that the request excludes is the exception. Rep
 
 Location: `cache_service.py:45` | Confidence: 85%
 
-### 7. Utility Adoption (Important)
+### 8. Utility Adoption (Important)
 
 **When helpers exist, verify they're actually used.**
 
