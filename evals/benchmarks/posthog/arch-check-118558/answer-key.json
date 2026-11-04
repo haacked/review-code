@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "expected_findings": [
+    {
+      "id": "group-type-override-always-g",
+      "description": "selectedGroupType always equals g because both pickers resolve a recent row to its source group before calling onChange, and the handler also serves the event, action and cohort pickers; drop the override and pass g as before to keep the change scoped to the person field.",
+      "area": "maintainability",
+      "severity": "suggestion",
+      "weight": 5,
+      "file": "frontend/src/scenes/cohorts/CohortFilters/CohortField.tsx",
+      "line_start": 231,
+      "line_end": 235,
+      "keywords": [
+        "selectedGroupType",
+        "sourceGroupType",
+        "always equals",
+        "override",
+        "scoped",
+        "getItemGroup",
+        "resolveShortcutGroup"
+      ]
+    },
+    {
+      "id": "operator-split-in-two-places",
+      "description": "The operator dropdown (CohortMathOperatorField) and excludeUnsupportedRecent each decide separately which operator list a person property gets (date vs non-date), so the picker can show recents the editor cannot display. Extract a shared helper and read the operator lists from FIELD_VALUES, which lets allowedRecentOperators become a boolean and COHORT_PERSON_RECENT_OPERATORS go away.",
+      "area": "maintainability",
+      "severity": "suggestion",
+      "weight": 6,
+      "file": "frontend/src/scenes/cohorts/CohortFilters/CohortField.tsx",
+      "line_start": 204,
+      "line_end": 208,
+      "keywords": [
+        "two places",
+        "operator",
+        "FIELD_VALUES",
+        "COHORT_PERSON_RECENT_OPERATORS",
+        "allowedRecentOperators",
+        "helper",
+        "DateTime",
+        "split"
+      ]
+    },
+    {
+      "id": "has-recent-context-and-rename",
+      "description": "hasRecentContext(item) gives a typed propertyFilter without the cast, the person-filter guards from PropertyFilters/utils.ts can replace the type comparisons, and recentPersonFilter holds an operator and value rather than a filter, so rename it.",
+      "area": "maintainability",
+      "severity": "nit",
+      "weight": 3,
+      "file": "frontend/src/scenes/cohorts/CohortFilters/CohortField.tsx",
+      "line_start": 230,
+      "line_end": 234,
+      "keywords": [
+        "hasRecentContext",
+        "recentPersonFilter",
+        "rename",
+        "cast",
+        "isPersonPropertyFilter",
+        "type guard"
+      ]
+    }
+  ],
+  "false_positive_traps": [],
+  "clean_areas": []
+}

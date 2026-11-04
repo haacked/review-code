@@ -271,7 +271,7 @@ PY
     ' <<< "$output"
     jq -e '
         .scope == "chunks" and
-        (.agents | length) == 9 and
+        (.agents | length) == 8 and
         .skipped_agents == [] and
         (.chunks | length) == 4 and
         .agent_decisions.correctness.decision == "run"
@@ -290,7 +290,7 @@ PY
     run python3 "$SCRIPT" "$SESSION" --classify
 
     [ "$status" -eq 0 ]
-    jq -e '(.chunks[0].classification.agents | length) == 9 and .chunks[0].classification.skipped_agents == []' <<< "$output"
+    jq -e '(.chunks[0].classification.agents | length) == 8 and .chunks[0].classification.skipped_agents == []' <<< "$output"
 }
 
 @test "explicit area keeps correctness in every chunk" {

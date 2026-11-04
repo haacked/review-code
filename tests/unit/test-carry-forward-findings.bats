@@ -469,6 +469,24 @@ EOF
     grep -q "Typo in the heading" "$TEST_DIR/review.md"
 }
 
+@test "carry-forward-findings.sh: a maintainability rerun prunes an architecture finding from an older review" {
+    cat >> "$TEST_DIR/review.md" <<'EOF'
+
+## Architecture Review
+
+#### `src/auth.py:48`
+
+The token factory has a single implementation.
+EOF
+
+    run "$SCRIPT" --review-file "$TEST_DIR/review.md" --delta-diff "$TEST_DIR/delta.patch" \
+        --reviewed-agents maintainability
+    [ "$status" -eq 0 ]
+    jq -e '.pruned == true and .dropped == 1 and .carried == 3' <<< "$output"
+    ! grep -q "The token factory has a single implementation" "$TEST_DIR/review.md"
+    grep -q "Token comparison is not constant time" "$TEST_DIR/review.md"
+}
+
 @test "carry-forward-findings.sh: rerun reviewer still preserves its untouched findings" {
     run "$SCRIPT" --review-file "$TEST_DIR/review.md" --delta-diff "$TEST_DIR/delta.patch" \
         --reviewed-agents security

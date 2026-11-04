@@ -111,7 +111,7 @@ EOF
     [ "$status" -eq 0 ]
     jq -e '
         (.agents | sort) == ["correctness", "security"] and
-        (.skipped_agents | length) == 7 and
+        (.skipped_agents | length) == 6 and
         (.reasoning | ascii_downcase | contains("explicit user scope override")) and
         .agent_decisions.correctness.decision == "run" and
         (.agent_decisions.correctness.reason | ascii_downcase | contains("correctness always runs")) and
@@ -141,7 +141,7 @@ EOF
     [ "$status" -eq 0 ]
     jq -e '
         .exploration_depth == "minimal" and
-        (.agents | length) == 8 and
+        (.agents | length) == 7 and
         (.agents | index("correctness")) != null and
         .skipped_agents == ["security"] and
         .agent_decisions.correctness.decision == "run" and

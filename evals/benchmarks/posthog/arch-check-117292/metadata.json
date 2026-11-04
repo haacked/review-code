@@ -1,0 +1,21 @@
+{
+  "id": "arch-check-117292",
+  "name": "Today cleanup item for unused feature flags",
+  "description": "Python facade and highlight source for unused feature flags: a 14-day unused rule against the 30-day stale definition, a filter applied after a 500-flag limit, and a guard for multi-environment projects that production does not have",
+  "source": "posthog/posthog#117292",
+  "source_url": "https://github.com/PostHog/posthog/pull/117292",
+  "source_sha": "72fbd8e3003a2d0270cca48413590c5c55228324",
+  "languages": [
+    "python"
+  ],
+  "frameworks": [
+    "django"
+  ],
+  "areas": [
+    "maintainability"
+  ],
+  "difficulty": "hard",
+  "expected_finding_count": 4,
+  "false_positive_trap_count": 0,
+  "frozen_diff": true
+}

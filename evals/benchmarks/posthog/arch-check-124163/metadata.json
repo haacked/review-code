@@ -1,0 +1,21 @@
+{
+  "id": "arch-check-124163",
+  "name": "Exposure change classifier for flag edits",
+  "description": "Python classifier that decides whether a flag edit raises, lowers or keeps exposure, with continuity counted under device ID bucketing and an aggregation field that is None for mixed conditions",
+  "source": "posthog/posthog#124163",
+  "source_url": "https://github.com/PostHog/posthog/pull/124163",
+  "source_sha": "d117e4f3019a36274b650fb2d3c0815aab4b8211",
+  "languages": [
+    "python"
+  ],
+  "frameworks": [
+    "django"
+  ],
+  "areas": [
+    "maintainability"
+  ],
+  "difficulty": "hard",
+  "expected_finding_count": 2,
+  "false_positive_trap_count": 0,
+  "frozen_diff": true
+}

@@ -92,14 +92,16 @@ teardown() {
     [ -f "$TEST_HOME/.claude/agents/code-review-context-explorer.md" ]
 }
 
-@test "setup: install_agents_to removes the retired voice agent" {
+@test "setup: install_agents_to removes the retired voice and architecture agents" {
     mkdir -p "$TEST_HOME/.claude/agents"
     echo "retired" > "$TEST_HOME/.claude/agents/code-reviewer-voice.md"
+    echo "retired" > "$TEST_HOME/.claude/agents/code-reviewer-architecture.md"
 
     run bin/setup
 
     [ "$status" -eq 0 ]
     [ ! -e "$TEST_HOME/.claude/agents/code-reviewer-voice.md" ]
+    [ ! -e "$TEST_HOME/.claude/agents/code-reviewer-architecture.md" ]
     [ -f "$TEST_HOME/.claude/agents/code-reviewer-comment.md" ]
 }
 

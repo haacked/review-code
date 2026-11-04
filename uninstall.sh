@@ -188,11 +188,11 @@ remove_agents() {
         "code-reviewer-maintainability"
         "code-reviewer-testing"
         "code-reviewer-compatibility"
-        "code-reviewer-architecture"
         "code-reviewer-frontend"
         "code-reviewer-infra-config"
         "code-reviewer-comment"
-        # Setup does not install it. Older installs still have a copy.
+        # Setup does not install these two. Older installs still have a copy.
+        "code-reviewer-architecture"
         "code-reviewer-voice"
         "comprehension-gate"
         "finding-validator"

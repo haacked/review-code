@@ -159,10 +159,13 @@ DELTA_FILES_JSON=$(jq -R -s 'split("\n") | map(select(length > 0))' < "${DELTA_F
 CLASSIFIED=$("${SCRIPT_DIR}/parse-review-findings.sh" --with-spans "${REVIEW_FILE}" \
     | jq -c --argjson touched "${DELTA_FILES_JSON}" --argjson reviewed "${REVIEWED_AGENTS_JSON}" '
         ($touched | map(split("/") | last)) as $bases
-        | [ .[] as $f
+        # Reviews written before architecture was folded into maintainability have Architecture findings.
+        # A maintainability rerun replaces them.
+        | def reviewer: if . == "architecture" then "maintainability" else . end;
+        [ .[] as $f
             | $f + { touched: (
                 $f.file != ""
-                and ($reviewed == null or ($reviewed | index($f.agent)) != null)
+                and ($reviewed == null or ($reviewed | index($f.agent | reviewer)) != null)
                 and (
                     ($touched | index($f.file)) != null
                     or (($f.file | contains("/") | not) and ($bases | index($f.file)) != null)

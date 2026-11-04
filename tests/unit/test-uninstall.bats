@@ -71,7 +71,7 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
-@test "uninstall.sh: removes architecture agent" {
+@test "uninstall.sh: removes the retired architecture agent left by older installs" {
     run bash -c "grep -A50 'remove_agents()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'code-reviewer-architecture'"
     [ "$status" -eq 0 ]
 }

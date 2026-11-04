@@ -5,7 +5,7 @@ setup() {
     SCRIPT="$PROJECT_ROOT/skills/review-code/scripts/classify-review-scope.sh"
     SESSION="$BATS_TEST_TMPDIR/session.json"
     CONTEXT="$BATS_TEST_TMPDIR/explorer.md"
-    ALL_AREAS='["security","performance","correctness","maintainability","testing","compatibility","architecture","frontend","infra-config"]'
+    ALL_AREAS='["security","performance","correctness","maintainability","testing","compatibility","frontend","infra-config"]'
 }
 
 create_session() {
@@ -188,7 +188,6 @@ assert_area_override() {
     assert_complete_decisions
     printf '%s' "$output" | jq -e '
         .agents == ["correctness"] and
-        (.skipped_agents | length) == 8 and
         (.agent_decisions.correctness.reason | ascii_downcase | contains("correctness always runs"))
     '
 }
@@ -241,12 +240,12 @@ assert_area_override() {
         '{"status":"not_applicable","evidence":[{"check":1,"result":"No query changed."}]}' \
         '{"status":"not_applicable","evidence":[{"check":"Read all changed files","result":false}]}' \
         '{"status":"not_applicable","evidence":[{"check":"Read all changed files","result":"No query changed."},{}]}'; do
-        routing=$(jq -nc --argjson entry "$entry" '{scope:"full",areas:{performance:$entry,architecture:{status:"not_applicable",evidence:[{check:"Read all changed files and their imports",result:"The diff introduces no components or dependencies."}]}}}')
+        routing=$(jq -nc --argjson entry "$entry" '{scope:"full",areas:{performance:$entry,compatibility:{status:"not_applicable",evidence:[{check:"Read all changed files and their callers",result:"The diff changes no public interface, schema, or stored format."}]}}}')
         write_routing "$routing"
         run "$SCRIPT" "$SESSION" --explorer-context "$CONTEXT"
         [ "$status" -eq 0 ]
         assert_complete_decisions
-        printf '%s' "$output" | jq -e '.skipped_agents == ["architecture"] and .agent_decisions.performance.decision == "run"'
+        printf '%s' "$output" | jq -e '.skipped_agents == ["compatibility"] and .agent_decisions.performance.decision == "run"'
     done
 }
 
@@ -386,7 +385,6 @@ EOF
     assert_complete_decisions
     printf '%s' "$output" | jq -e '
         .agents == ["correctness", "testing"] and
-        (.skipped_agents | length) == 7 and
         .exploration_depth == "thorough" and
         (.agent_decisions.testing.reason | contains("Requested by the caller")) and
         ([.skipped_agents[] as $area |
@@ -403,7 +401,8 @@ EOF
     run "$SCRIPT" "$SESSION"
 
     [ "$status" -eq 0 ]
-    printf '%s' "$output" | jq -e '.agents == ["correctness", "security"] and (.skipped_agents | length) == 7'
+    assert_complete_decisions
+    printf '%s' "$output" | jq -e '.agents == ["correctness", "security"]'
 }
 
 @test "caller reviewers without correctness still run correctness" {

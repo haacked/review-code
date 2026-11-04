@@ -14,7 +14,6 @@ AREAS = (
     "maintainability",
     "testing",
     "compatibility",
-    "architecture",
     "infra-config",
     "frontend",
 )

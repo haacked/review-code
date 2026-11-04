@@ -7,11 +7,11 @@ setup() {
     printf '%s\n' '{}' > "$FIELDS"
 }
 
-@test "unchunked review maps all nine areas in order and removes duplicates" {
+@test "unchunked review maps all eight areas in order and removes duplicates" {
     printf '%s\n' '{"chunk_metadata":{"chunked":false}}' > "$FIELDS"
-    run python3 "$SCRIPT" --fields "$FIELDS" --agents 'security correctness performance architecture maintainability compatibility testing frontend infra-config security'
+    run python3 "$SCRIPT" --fields "$FIELDS" --agents 'security correctness performance maintainability compatibility testing frontend infra-config security'
     [ "$status" -eq 0 ]
-    expected='{"handler":null,"agents":[{"area":"security","subagent_type":"code-reviewer-security"},{"area":"correctness","subagent_type":"code-reviewer-correctness"},{"area":"performance","subagent_type":"code-reviewer-performance"},{"area":"architecture","subagent_type":"code-reviewer-architecture"},{"area":"maintainability","subagent_type":"code-reviewer-maintainability"},{"area":"compatibility","subagent_type":"code-reviewer-compatibility"},{"area":"testing","subagent_type":"code-reviewer-testing"},{"area":"frontend","subagent_type":"code-reviewer-frontend"},{"area":"infra-config","subagent_type":"code-reviewer-infra-config"}]}'
+    expected='{"handler":null,"agents":[{"area":"security","subagent_type":"code-reviewer-security"},{"area":"correctness","subagent_type":"code-reviewer-correctness"},{"area":"performance","subagent_type":"code-reviewer-performance"},{"area":"maintainability","subagent_type":"code-reviewer-maintainability"},{"area":"compatibility","subagent_type":"code-reviewer-compatibility"},{"area":"testing","subagent_type":"code-reviewer-testing"},{"area":"frontend","subagent_type":"code-reviewer-frontend"},{"area":"infra-config","subagent_type":"code-reviewer-infra-config"}]}'
     [ "$(printf '%s' "$output" | jq -cS .)" = "$(printf '%s' "$expected" | jq -cS .)" ]
 }
 
@@ -186,7 +186,7 @@ PY
     [ "$status" -eq 0 ]
     printf '%s' "$output" | jq -e '
         .handler == null and
-        ([.agents[].area] | sort) == (["security","performance","correctness","maintainability","testing","compatibility","architecture","frontend","infra-config"] | sort)
+        ([.agents[].area] | sort) == (["security","performance","correctness","maintainability","testing","compatibility","frontend","infra-config"] | sort)
     '
 }
 
@@ -205,7 +205,7 @@ MARKDOWN
     [ "$status" -eq 0 ]
     printf '%s' "$output" | jq -e '
         .handler == null and
-        ([.agents[].area] | sort) == (["security","correctness","maintainability","testing","compatibility","architecture","frontend","infra-config"] | sort) and
+        ([.agents[].area] | sort) == (["security","correctness","maintainability","testing","compatibility","frontend","infra-config"] | sort) and
         all(.agents[]; .subagent_type == ("code-reviewer-" + .area))
     '
 }
@@ -225,6 +225,30 @@ assert 'for each agent in `$chunk.classification.agents`' in dispatch
 assert '$chunk.classification.skipped_agents' in chunks
 assert '--area' in chunks
 assert '--reviewed-agents' in carry
+PY
+    [ "$status" -eq 0 ]
+}
+
+@test "every review area list matches and each area has a reviewer agent" {
+    run python3 - "$PROJECT_ROOT" <<'PY'
+import ast, pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+scripts = root / "skills/review-code/scripts"
+
+def python_areas(name):
+    for node in ast.parse((scripts / name).read_text()).body:
+        if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "AREAS":
+            return set(ast.literal_eval(node.value))
+    raise SystemExit(f"{name} defines no AREAS")
+
+keywords = re.search(r"^AREA_KEYWORDS=\(([^)]*)\)", (scripts / "parse-review-arg.sh").read_text(), re.M).group(1)
+lists = {name: python_areas(name) for name in ("classify-review-scope.py", "prepare-chunk-artifacts.py", "review-dispatch-plan.py")}
+lists["parse-review-arg.sh"] = set(keywords.replace('"', "").split())
+if len({frozenset(areas) for areas in lists.values()}) != 1:
+    raise SystemExit(f"area lists differ: {lists}")
+missing = [area for area in lists["parse-review-arg.sh"] if not (root / f"agents/code-reviewer-{area}.md").is_file()]
+if missing:
+    raise SystemExit(f"no agent definition for: {missing}")
 PY
     [ "$status" -eq 0 ]
 }

@@ -153,6 +153,36 @@
       "languages": ["typescript"],
       "areas": ["frontend"],
       "difficulty": "medium"
+    },
+    {
+      "id": "arch-check-117292",
+      "category": "posthog",
+      "name": "Today cleanup item for unused feature flags",
+      "description": "Python facade and highlight source for unused feature flags: a 14-day unused rule against the 30-day stale definition, a filter applied after a 500-flag limit, and a guard for multi-environment projects that production does not have",
+      "source": "posthog/posthog#117292",
+      "languages": ["python"],
+      "areas": ["maintainability"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "arch-check-118558",
+      "category": "posthog",
+      "name": "Recent person filters in the cohort editor",
+      "description": "TypeScript/React cohort editor change that widens ExcludedOperators for recent person filters, with a no-op group-type override and the operator-list choice made in two places",
+      "source": "posthog/posthog#118558",
+      "languages": ["typescript"],
+      "areas": ["maintainability"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "arch-check-124163",
+      "category": "posthog",
+      "name": "Exposure change classifier for flag edits",
+      "description": "Python classifier that decides whether a flag edit raises, lowers or keeps exposure, with continuity counted under device ID bucketing and an aggregation field that is None for mixed conditions",
+      "source": "posthog/posthog#124163",
+      "languages": ["python"],
+      "areas": ["maintainability"],
+      "difficulty": "hard"
     }
   ]
 }

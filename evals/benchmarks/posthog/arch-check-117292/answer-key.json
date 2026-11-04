@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "expected_findings": [
+    {
+      "id": "unused-rule-vs-stale-threshold",
+      "description": "Today's unused-flag rule fires after 14 days without calls, but the flag list's Stale tag and the stale flag health check wait 30 days (STALE_FLAG_THRESHOLD_DAYS), so a flag called 20 days ago shows in the cleanup item while the flag page does not mark it stale. Reuse the stale definition via the facade.",
+      "area": "maintainability",
+      "severity": "suggestion",
+      "weight": 6,
+      "file": "products/today/backend/logic/highlight_sources/flags.py",
+      "line_start": 58,
+      "line_end": 64,
+      "keywords": [
+        "stale",
+        "30 days",
+        "14 days",
+        "threshold",
+        "filter_stale_flags",
+        "STALE_FLAG_THRESHOLD_DAYS",
+        "disagree"
+      ]
+    },
+    {
+      "id": "filter-after-limit",
+      "description": "The remote-configuration and survey/tour key filter runs after list_flags_created_by applies its 500-flag limit, so excluded flags use up slots first. Exclude them in the facade query before the slice, which also drops remote_configuration from CreatedFlag.",
+      "area": "maintainability",
+      "severity": "suggestion",
+      "weight": 5,
+      "file": "products/today/backend/logic/highlight_sources/flags.py",
+      "line_start": 42,
+      "line_end": 46,
+      "keywords": [
+        "500",
+        "limit",
+        "slice",
+        "remote configuration",
+        "remote_configuration",
+        "exclude",
+        "before the limit",
+        "slots"
+      ]
+    },
+    {
+      "id": "covers-all-environments-dead-guard",
+      "description": "covers_all_environments guards a case production does not have (every project has exactly one team), so the facade field, its query per summary, the branch in find and three tests exist for an always-true condition.",
+      "area": "maintainability",
+      "severity": "suggestion",
+      "weight": 5,
+      "file": "products/feature_flags/backend/facade/usage.py",
+      "line_start": 107,
+      "line_end": 111,
+      "keywords": [
+        "covers_all_environments",
+        "environment",
+        "one team",
+        "always true",
+        "drop",
+        "remove",
+        "deprecated"
+      ]
+    },
+    {
+      "id": "read-flag-evaluations-list",
+      "description": "The new flag call reader picks its table via get_flag_evaluations_read_mode but is not added to the READ_FLAG_EVALUATIONS comment in facade/enums.py that lists the readers, so a later change to the read mode will not account for it.",
+      "area": "maintainability",
+      "severity": "nit",
+      "weight": 2,
+      "file": "products/feature_flags/backend/facade/usage.py",
+      "line_start": 94,
+      "line_end": 98,
+      "keywords": [
+        "READ_FLAG_EVALUATIONS",
+        "enums.py",
+        "list",
+        "comment",
+        "read mode",
+        "get_flag_evaluations_read_mode"
+      ]
+    }
+  ],
+  "false_positive_traps": [],
+  "clean_areas": []
+}

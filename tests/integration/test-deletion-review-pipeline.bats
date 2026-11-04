@@ -88,7 +88,7 @@ write_real_rename_diff() {
     prepare_session false
 
     result=$("$SCRIPTS/classify-review-scope.sh" "$SESSION_FILE" --diff-file "$ARTIFACTS/diff.patch")
-    jq -e '(.agents | length) == 9 and .skipped_agents == []' <<< "$result"
+    jq -e '(.agents | length) == 8 and .skipped_agents == []' <<< "$result"
 }
 
 @test "pure rename with b slash in the old path retains the complete scoped patch" {
@@ -106,7 +106,7 @@ write_real_rename_diff() {
     jq -e '.file_metadata.modified_files | map(.path) == ["café.tf"]' "$SESSION_FILE"
     build_selected_briefing
 
-    jq -e '.agents | contains(["correctness", "infra-config"]) and length == 9' "$BATS_TEST_TMPDIR/classification.json"
+    jq -e '.agents | contains(["correctness", "infra-config"]) and length == 8' "$BATS_TEST_TMPDIR/classification.json"
     cmp "$ARTIFACTS/diff.patch" "$ARTIFACTS/diff-infra-config.patch"
 }
 
@@ -141,7 +141,7 @@ write_real_rename_diff() {
 
     build_selected_briefing
 
-    jq -e '.agents | contains(["correctness", "infra-config"]) and length == 9' "$BATS_TEST_TMPDIR/classification.json"
+    jq -e '.agents | contains(["correctness", "infra-config"]) and length == 8' "$BATS_TEST_TMPDIR/classification.json"
     [ -s "$ARTIFACTS/diff-infra-config.patch" ]
     cmp "$ARTIFACTS/diff.patch" "$ARTIFACTS/diff-infra-config.patch"
     echo "$output" | jq -e '.scoped_diffs["diff-infra-config.patch"] > 0'
@@ -179,7 +179,7 @@ DIFF
 
     build_selected_briefing --diff-file "$delta"
 
-    jq -e '(.agents | length) == 9 and .skipped_agents == []' "$BATS_TEST_TMPDIR/classification.json"
+    jq -e '(.agents | length) == 8 and .skipped_agents == []' "$BATS_TEST_TMPDIR/classification.json"
     cmp "$delta" "$ARTIFACTS/diff-infra-config.patch"
     echo "$output" | jq -e --arg delta "$delta" '.diff_path == $delta and .scoped_diffs["diff-infra-config.patch"] > 0'
 }
@@ -237,7 +237,7 @@ DIFF
     jq -e '.file_metadata.modified_files | all(.deleted == true and .is_infra_config == true and .type == "config")' "$SESSION_FILE"
     build_selected_briefing
 
-    jq -e '.agents | contains(["correctness", "infra-config"]) and length == 9' "$BATS_TEST_TMPDIR/classification.json"
+    jq -e '.agents | contains(["correctness", "infra-config"]) and length == 8' "$BATS_TEST_TMPDIR/classification.json"
     cmp "$ARTIFACTS/diff.patch" "$ARTIFACTS/diff-infra-config.patch"
     echo "$output" | jq -e '.scoped_diffs["diff-infra-config.patch"] > 0'
 }
@@ -255,7 +255,7 @@ DIFF
     jq -e --arg path "$path" '.file_metadata.modified_files == [{path: $path, deleted: true, type: "config", language: "unknown", is_test: false, is_infra_config: true, likely_test_path: ""}]' "$SESSION_FILE"
     build_selected_briefing
 
-    jq -e '.agents | contains(["correctness", "infra-config"]) and length == 9' "$BATS_TEST_TMPDIR/classification.json"
+    jq -e '.agents | contains(["correctness", "infra-config"]) and length == 8' "$BATS_TEST_TMPDIR/classification.json"
     cmp "$ARTIFACTS/diff.patch" "$ARTIFACTS/diff-infra-config.patch"
 }
 
@@ -272,6 +272,6 @@ DIFF
     jq -e --arg path "$path" '.file_metadata.modified_files | map(.path) == [$path]' "$SESSION_FILE"
     build_selected_briefing
 
-    jq -e '.agents | contains(["correctness", "infra-config"]) and length == 9' "$BATS_TEST_TMPDIR/classification.json"
+    jq -e '.agents | contains(["correctness", "infra-config"]) and length == 8' "$BATS_TEST_TMPDIR/classification.json"
     cmp "$ARTIFACTS/diff.patch" "$ARTIFACTS/diff-infra-config.patch"
 }

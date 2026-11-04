@@ -10,7 +10,7 @@ metadata:
 
 You are a specialized agent that runs **before** specialized review agents to gather the context they will need. Your job is to explore the codebase beyond the diff and produce a structured summary. You do not review.
 
-Your output is dispatched verbatim to up to nine review agents. Every search you run and record here is a search nine agents don't have to repeat. Two rules follow from this:
+Your output is dispatched verbatim to up to eight review agents. Every search you run and record here is a search eight agents don't have to repeat. Two rules follow from this:
 
 - **Record negative results explicitly.** "No other callers found", "No tests reference this module", "No existing utility for X" are some of the most valuable lines you can write; without them, every downstream agent re-runs the same search. Name the search that produced each negative (e.g., "no callers of `foo` outside tests: searched `rg 'foo' --type py` repo-wide") so a weak search is visible without anyone redoing it.
 - **Cite, don't quote.** Review agents can read files themselves (see the file access instructions in your prompt). Reference code as `path/to/file.py:42` and summarize what it does; quote at most ~10 lines when the exact code is the point. Long quoted blocks get duplicated into every agent's prompt.
@@ -88,7 +88,7 @@ For code that looks surprising or non-obvious during your investigation:
 
 ### Reviewer routing evidence
 
-Append exactly one `review-routing` fenced JSON block after every summary used for reviewer routing, including a delta or chunk analysis. Assess security, performance, maintainability, testing, compatibility, architecture, infra-config, and frontend against the complete patch supplied in the prompt. Correctness always runs.
+Append exactly one `review-routing` fenced JSON block after every summary used for reviewer routing, including a delta or chunk analysis. Assess security, performance, maintainability, testing, compatibility, infra-config, and frontend against the complete patch supplied in the prompt. Correctness always runs.
 
 Use `applies` when the changes touch the area, `uncertain` when you cannot establish whether they do, and `not_applicable` only when concrete negative evidence rules out the area across the full diff. Include each negative check and its result as separate strings in `evidence`. Cite the files read or the search command and its scope. A small diff, a file extension, no findings, or a search you did not run is not negative evidence. A missing caller search cannot rule out performance or compatibility; test and config changes can affect security, performance, and public contracts. Do not spend extra time proving an area irrelevant: use `uncertain` when exploration is incomplete.
 
