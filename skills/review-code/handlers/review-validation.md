@@ -47,7 +47,7 @@ Where `targets` contains `{"path": "<file>", "line": <number>, "side": "LEFT"|"R
   ````
 
   Dispatch all blocking finding validations **in parallel**. Extract usage metadata from each validator's response and record in `$token_usage` as `validator-{N}` (numbered sequentially). For each result:
-  - **DISMISSED**: downgrade to `suggestion:`. If the validator's reasoning sharpens the technical content (a missing condition, a corrected line number), fold that into the body as if it were original analysis. Do not embed validator attribution like "*Downgraded from blocking: …*"; the body must stay free of pipeline metadata (see "Comment Body Hygiene").
+  - **DISMISSED**: downgrade to `suggestion:`, except for a reproduced domain-review finding, which `review-domain.md` covers. If the validator's reasoning sharpens the technical content (a missing condition, a corrected line number), fold that into the body as if it were original analysis. Do not embed validator attribution like "*Downgraded from blocking: …*"; the body must stay free of pipeline metadata (see "Comment Body Hygiene").
   - **CONFIRMED**: keep as `blocking:`.
   - **Unreachable or errors**: keep the finding as-is.
 

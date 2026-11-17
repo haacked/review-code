@@ -213,6 +213,7 @@ case "${ACTION}" in
             chunks: (if .chunks then [.chunks[] | {id, label, files, size_kb, diff_path}] else null end),
             commit_messages_present: (has("commit_messages")),
             adversary: (.adversary // null),
+            domain_reviews: (.domain_reviews // null),
             comment_style: (.comment_style // "concise"),
             comment_gates: (.comment_gates // "run")
         }
