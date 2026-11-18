@@ -43,6 +43,8 @@ source "${SCRIPT_DIR}/helpers/json-helpers.sh"
 source "${SCRIPT_DIR}/helpers/gh-wrapper.sh"
 # shellcheck source=lib/helpers/git-diff-paths.sh
 source "${SCRIPT_DIR}/helpers/git-diff-paths.sh"
+# shellcheck source=helpers/pr-diff.sh
+source "${SCRIPT_DIR}/helpers/pr-diff.sh"
 
 # Fetch the current HEAD commit SHA for a PR
 # Args: $1 = owner, $2 = repo, $3 = pr_number
@@ -53,17 +55,6 @@ get_current_pr_head() {
     local pr_number="$3"
 
     gh api "repos/${owner}/${repo}/pulls/${pr_number}" --jq '.head.sha'
-}
-
-# Fetch the current diff for a PR
-# Args: $1 = owner, $2 = repo, $3 = pr_number
-# Output: unified diff content
-fetch_current_diff() {
-    local owner="$1"
-    local repo="$2"
-    local pr_number="$3"
-
-    gh pr diff "${pr_number}" --repo "${owner}/${repo}"
 }
 
 # Extract the line content at a given file path and line number from a diff.
@@ -452,8 +443,8 @@ main() {
 
     # Drift detected: fetch the current diff
     local current_diff
-    if ! current_diff=$(fetch_current_diff "${owner}" "${repo}" "${pr_number}" 2>&1); then
-        warning "Failed to fetch current diff: ${current_diff}"
+    if ! current_diff=$(fetch_pr_diff "${pr_number}" "${owner}/${repo}"); then
+        warning "Failed to fetch current diff"
         emit_drift_result true "${review_commit}" "${current_commit}" "${comments}" "[]" "drift detected but remap failed (could not fetch current diff)"
         return 0
     fi

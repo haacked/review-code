@@ -75,11 +75,6 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
-@test "pr-context.sh: fetch_pr_diff uses array for command" {
-    run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh' && declare -f fetch_pr_diff | grep -q 'gh_cmd=('"
-    [ "$status" -eq 0 ]
-}
-
 @test "pr-context.sh: fetch_reviews uses array for command" {
     run bash -c "source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh' && declare -f fetch_reviews | grep -q 'gh_cmd=('"
     [ "$status" -eq 0 ]
@@ -505,4 +500,37 @@ setup() {
     "
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.comments.inline[0].resolved == false and .comments.inline[0].outdated == false'
+}
+
+@test "pr-context.sh: main rebuilds a too-large diff for a bare PR number and keeps warnings out of it" {
+    local stderr_file
+    stderr_file=$(mktemp)
+    run bash -c "
+        source '$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh'
+        gh() {
+            args=\"\$*\"
+            if [[ \"\$args\" == 'pr diff 9 --repo owner/repo' ]]; then
+                echo 'HTTP 406: Sorry, the diff exceeded the maximum number of files (300).'
+                echo 'PullRequest.diff too_large'
+                return 1
+            elif [[ \"\$args\" == *'pulls/9/files'* ]]; then
+                echo '[{\"filename\":\"f.py\",\"status\":\"modified\",\"additions\":1,\"deletions\":0,\"patch\":\"@@ -1 +1,2 @@\\n a\\n+b\"}]'
+            elif [[ \"\$args\" == *'.changed_files'* ]]; then
+                echo 1
+            elif [[ \"\$args\" == *'--json reviews'* ]]; then
+                echo '{\"reviews\":[]}'
+            elif [[ \"\$args\" == 'pr view 9 --json'* ]]; then
+                echo '{\"number\":9,\"title\":\"t\",\"body\":\"b\",\"url\":\"https://github.com/Owner/Repo/pull/9\",\"author\":{\"login\":\"a\"},\"headRefName\":\"h\",\"headRefOid\":\"sha\",\"baseRefName\":\"main\",\"state\":\"OPEN\",\"isCrossRepository\":false}'
+            else
+                echo '[]'
+            fi
+        }
+        main 9 2> '$stderr_file'
+    "
+    local stderr_content
+    stderr_content=$(cat "$stderr_file")
+    rm -f "$stderr_file"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.diff == "diff --git a/f.py b/f.py\n--- a/f.py\n+++ b/f.py\n@@ -1 +1,2 @@\n a\n+b\n"'
+    [[ "$stderr_content" == *"building the diff from the PR files API"* ]]
 }
