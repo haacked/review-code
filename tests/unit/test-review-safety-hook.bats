@@ -275,3 +275,69 @@ query {
 }'"'"'' | bash "$SCRIPT")
     [ -z "$result" ]
 }
+
+# The GraphQL check used to list mutation names one by one, so a review mutation
+# missing from the list reached GitHub. deletePullRequestReview discards a whole
+# pending review, updatePullRequestReview rewrites any review's summary, and
+# dismissPullRequestReview dismisses a submitted one.
+@test "blocks deleting a review over GraphQL" {
+    result=$(make_input_raw 'gh api graphql -f query='"'"'mutation { deletePullRequestReview(input: {pullRequestReviewId: "PRR_x"}) { clientMutationId } }'"'"'' | bash "$SCRIPT")
+    decision=$(echo "$result" | jq -r '.hookSpecificOutput.permissionDecision')
+    [ "$decision" = "deny" ]
+}
+
+@test "blocks rewriting a review summary over GraphQL" {
+    result=$(make_input_raw 'gh api graphql -f query='"'"'mutation { updatePullRequestReview(input: {pullRequestReviewId: "PRR_x", body: "y"}) { clientMutationId } }'"'"'' | bash "$SCRIPT")
+    decision=$(echo "$result" | jq -r '.hookSpecificOutput.permissionDecision')
+    [ "$decision" = "deny" ]
+}
+
+@test "blocks dismissing a review over GraphQL" {
+    result=$(make_input_raw 'gh api graphql -f query='"'"'mutation { dismissPullRequestReview(input: {pullRequestReviewId: "PRR_x", message: "y"}) { clientMutationId } }'"'"'' | bash "$SCRIPT")
+    decision=$(echo "$result" | jq -r '.hookSpecificOutput.permissionDecision')
+    [ "$decision" = "deny" ]
+}
+
+@test "blocks a GraphQL review delete written across lines" {
+    result=$(make_input_raw 'gh api graphql -f query='"'"'
+mutation {
+  deletePullRequestReview(input: {pullRequestReviewId: "PRR_x"}) { clientMutationId }
+}'"'"'' | bash "$SCRIPT")
+    decision=$(echo "$result" | jq -r '.hookSpecificOutput.permissionDecision')
+    [ "$decision" = "deny" ]
+}
+
+# gh accepts flags before the endpoint, and a query can sit in a variable set
+# before the call, so the mutation name is not always after "graphql".
+@test "blocks a GraphQL review delete with the endpoint after the query" {
+    result=$(make_input_raw 'gh api -f query='"'"'mutation { deletePullRequestReview(input: {pullRequestReviewId: "x"}) { clientMutationId } }'"'"' graphql' | bash "$SCRIPT")
+    decision=$(echo "$result" | jq -r '.hookSpecificOutput.permissionDecision')
+    [ "$decision" = "deny" ]
+}
+
+@test "blocks a GraphQL review delete whose query is set before the call" {
+    result=$(make_input_raw 'Q='"'"'mutation { deletePullRequestReview(input: {pullRequestReviewId: "x"}) { clientMutationId } }'"'"'; gh api graphql -f query="$Q"' | bash "$SCRIPT")
+    decision=$(echo "$result" | jq -r '.hookSpecificOutput.permissionDecision')
+    [ "$decision" = "deny" ]
+}
+
+# The hook sees only the command text, so it cannot check a query in a file.
+@test "blocks a GraphQL query read from a file" {
+    result=$(make_input "gh api graphql -F query=@mutation.graphql" | bash "$SCRIPT")
+    decision=$(echo "$result" | jq -r '.hookSpecificOutput.permissionDecision')
+    [ "$decision" = "deny" ]
+}
+
+@test "blocks a GraphQL request body read with --input" {
+    result=$(make_input "gh api graphql --input body.json" | bash "$SCRIPT")
+    decision=$(echo "$result" | jq -r '.hookSpecificOutput.permissionDecision')
+    [ "$decision" = "deny" ]
+}
+
+# amend-pending-review.sh builds the review URL from a variable, and an agent
+# copying that line must not get past the hook.
+@test "blocks a review DELETE whose PR number is a variable" {
+    result=$(make_input 'gh api -X DELETE repos/o/r/pulls/$PR/reviews/$ID' | bash "$SCRIPT")
+    decision=$(echo "$result" | jq -r '.hookSpecificOutput.permissionDecision')
+    [ "$decision" = "deny" ]
+}

@@ -10,7 +10,7 @@
 #   - gh pr review                          (submits/creates reviews directly)
 #   - gh api on a PR's reviews endpoints    (bypasses create-draft-review.sh)
 #   - gh api on a single review comment     (can delete a published comment)
-#   - GraphQL review-comment mutations      (the other transport for the same)
+#   - GraphQL review and comment mutations  (the other transport for the same)
 #
 # Input: JSON on stdin (Claude Code PreToolUse hook format)
 # Output: JSON with permissionDecision (deny or allow)
@@ -48,7 +48,8 @@ if echo "$command" | grep -qE '\bgh\s+pr\s+review\b'; then
 fi
 
 # Block direct gh api calls to review endpoints
-if echo "$command" | grep -qE '\bgh\s+api\b.*\brepos/[^/]+/[^/]+/pulls/[0-9]+/reviews\b'; then
+# The PR segment is [^/]+ rather than a number, so pulls/$PR/reviews is caught.
+if echo "$command" | grep -qE '\bgh\s+api\b.*\brepos/[^/]+/[^/]+/pulls/[^/]+/reviews\b'; then
     deny "Direct GitHub API calls to review endpoints are blocked during code review. Use create-draft-review.sh instead."
 fi
 
@@ -70,10 +71,26 @@ fi
 # at once and cannot be undone; the REST pattern above already denies the same
 # action on /pulls/<n>/reviews, so leaving them out here enforced "never submit
 # on the user's behalf" on one transport only.
+# The pattern matches every add, update, delete, submit, or dismiss mutation
+# whose name continues with PullRequestReview, which takes in the Comment and
+# Thread variants. A list of exact names let deletePullRequestReview,
+# updatePullRequestReview, and dismissPullRequestReview through.
+# The three parts are separate matches because their order varies: gh accepts
+# flags before the endpoint, and the query can sit in a variable set first.
 # resolveReviewThread is deliberately absent: resolve-review-threads.sh is the
 # sanctioned path for that and agents are not the ones calling it directly.
-if echo "$command" | grep -qE '\bgh\s+api\b.*\bgraphql\b.*(updatePullRequestReviewComment|addPullRequestReviewThread|deletePullRequestReviewComment|submitPullRequestReview|addPullRequestReview)'; then
-    deny "Direct GraphQL mutations on reviews and review comments are blocked during code review. Use amend-pending-review.sh to reword or drop comments in your pending review. Never submit a review; that is the user's call."
+is_graphql_call=false
+if echo "$command" | grep -qE '\bgh\s+api\b' && echo "$command" | grep -qE '\bgraphql\b'; then
+    is_graphql_call=true
+fi
+if [[ "$is_graphql_call" == true ]] && echo "$command" | grep -qE '(add|update|delete|submit|dismiss)PullRequestReview'; then
+    deny "Direct GraphQL mutations on reviews and review comments are blocked during code review. Use amend-pending-review.sh to reword or drop comments in your pending review, or to discard it. Never submit a review; that is the user's call."
+fi
+
+# The hook sees only the command text, so it cannot check a query that gh reads
+# from a file with query=@path or --input.
+if [[ "$is_graphql_call" == true ]] && echo "$command" | grep -qE '(query=@|--input\b)'; then
+    deny "GraphQL calls that read the query from a file are blocked during code review, because this hook cannot check them. Put the query in the command, or use the review-code scripts."
 fi
 
 # Allow everything else
