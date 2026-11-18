@@ -51,7 +51,7 @@ GHEOF
     run bash -c "source '$SCRIPT' && declare -f get_current_pr_head > /dev/null"
     [ "$status" -eq 0 ]
 
-    run bash -c "source '$SCRIPT' && declare -f fetch_current_diff > /dev/null"
+    run bash -c "source '$SCRIPT' && declare -f fetch_pr_diff > /dev/null"
     [ "$status" -eq 0 ]
 
     run bash -c "source '$SCRIPT' && declare -f extract_line_content_from_diff > /dev/null"
@@ -174,6 +174,44 @@ GHEOF
     echo "$output" | jq -e '.unmapped_comments | length == 0'
     echo "$output" | jq -e '.comments[0].line == 18'
     echo "$output" | jq -e '.comments[0].original_line == 10'
+    echo "$output" | jq -e '.comments[0].remapped == true'
+}
+
+@test "detect-comment-drift: remaps against a diff rebuilt from the files API when the PR diff is too large" {
+    local patch files_json
+    patch=$(sed -n '/^@@/,/^diff --git/p' "$FIXTURES_DIR/drift-updated.diff" | sed '$d')
+    files_json=$(jq -n --arg patch "$patch" '[{filename: "src/auth.ts", status: "modified", additions: 13, deletions: 1, patch: $patch}]')
+    echo "$files_json" > "$MOCK_DIR/files.json"
+    cat > "$MOCK_DIR/gh" << GHEOF
+#!/bin/bash
+if [[ "\$*" == *"--jq"*".head.sha"* ]]; then
+    echo 'def456'
+elif [[ "\$*" == *"pr diff"* ]]; then
+    echo 'PullRequest.diff too_large'
+    exit 1
+elif [[ "\$*" == *"/files"* ]]; then
+    cat '$MOCK_DIR/files.json'
+elif [[ "\$*" == *".changed_files"* ]]; then
+    echo 1
+else
+    echo '[]'
+fi
+GHEOF
+    chmod +x "$MOCK_DIR/gh"
+
+    local tmpinput
+    tmpinput=$(mktemp)
+    jq -n \
+        --rawfile diff "$FIXTURES_DIR/drift-original.diff" \
+        --arg lc "    return token.length > 10 && token.startsWith('sk_');" \
+        '{owner: "org", repo: "repo", pr_number: 42, review_commit: "abc123", original_diff: $diff,
+          comments: [{path: "src/auth.ts", line: 10, side: "RIGHT", body: "b", line_content: $lc}]}' > "$tmpinput"
+
+    run bash -c "cat '$tmpinput' | '$SCRIPT' 2>/dev/null"
+    rm -f "$tmpinput"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.unmapped_comments | length == 0'
+    echo "$output" | jq -e '.comments[0].line == 18'
     echo "$output" | jq -e '.comments[0].remapped == true'
 }
 

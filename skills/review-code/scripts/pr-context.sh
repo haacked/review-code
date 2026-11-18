@@ -45,6 +45,9 @@ source "${SCRIPT_DIR}/helpers/gh-wrapper.sh"
 # shellcheck source=helpers/gh-review-helpers.sh
 source "${SCRIPT_DIR}/helpers/gh-review-helpers.sh"
 
+# shellcheck source=helpers/pr-diff.sh
+source "${SCRIPT_DIR}/helpers/pr-diff.sh"
+
 # Check if gh is installed
 if ! command -v gh &> /dev/null; then
     error "gh CLI is not installed. Install it with: brew install gh"
@@ -110,20 +113,6 @@ fetch_pr_metadata() {
     fi
 
     "${gh_cmd[@]}" --json number,title,body,url,author,headRefName,headRefOid,baseRefName,state,isCrossRepository
-}
-
-# Fetch PR diff
-fetch_pr_diff() {
-    local pr_number="$1"
-    local repo_spec="${2:-}"
-
-    # Use array to prevent command injection
-    local gh_cmd=(gh pr diff "${pr_number}")
-    if [[ -n "${repo_spec}" ]]; then
-        gh_cmd+=(--repo "${repo_spec}")
-    fi
-
-    "${gh_cmd[@]}"
 }
 
 # Fetch PR conversation comments (main discussion thread)
@@ -309,12 +298,6 @@ main() {
         exit 1
     fi
 
-    local diff
-    if ! diff=$(fetch_pr_diff "${pr_number}" "${repo_spec}" 2>&1); then
-        error "Failed to fetch PR diff for #${pr_number}: ${diff}"
-        exit 1
-    fi
-
     # Extract fields from metadata JSON
     local title
     title=$(echo "${metadata}" | jq -r '.title')
@@ -354,6 +337,13 @@ main() {
     # Rebuild repo_spec now that we have org/repo
     if [[ -z "${repo_spec}" && -n "${org}" && -n "${repo}" ]]; then
         repo_spec="${org}/${repo}"
+    fi
+
+    # stderr is not captured because fetch_pr_diff writes its warnings there.
+    local diff
+    if ! diff=$(fetch_pr_diff "${pr_number}" "${repo_spec}"); then
+        error "Failed to fetch PR diff for #${pr_number}"
+        exit 1
     fi
 
     # Extract and fetch linked issues from PR body

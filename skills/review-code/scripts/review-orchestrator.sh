@@ -1370,7 +1370,7 @@ handle_branch_review() {
     # Fetch PR context if available
     local pr_context=""
     if [[ -n "${associated_pr}" ]]; then
-        pr_context=$("${SCRIPT_DIR}/pr-context.sh" "${associated_pr}" 2>&1 || true)
+        pr_context=$("${SCRIPT_DIR}/pr-context.sh" "${associated_pr}" || true)
         if [[ -z "${pr_context}" ]] || ! echo "${pr_context}" | jq empty 2> /dev/null; then
             echo "Warning: Failed to fetch PR context for PR #${associated_pr}" >&2
             pr_context=""
