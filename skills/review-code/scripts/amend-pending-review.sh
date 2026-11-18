@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# amend-pending-review.sh - Reword or drop single comments in your pending review
+# amend-pending-review.sh - Reword or drop comments in your pending review, or discard it
 #
 # Correcting one comment used to cost a whole re-review: create-draft-review.sh
 # replaces a pending review wholesale, and --draft only runs at the end of a
@@ -19,6 +19,8 @@
 #   --pull               Copy changed bodies from GitHub into the notes
 #   --push               Send changed bodies from the notes to GitHub
 #   --drop               Delete the named comments from the pending review
+#   --discard            Delete the pending review itself, once no inline
+#                        comments remain in it (drop them first)
 #   --comment-id ID      Restrict --push or --drop to this comment (repeatable)
 #   --reason TEXT        Why a dropped finding was withdrawn, recorded in the notes
 #   --reviewer LOGIN     Whose pending review to amend (default: gh api user)
@@ -26,7 +28,7 @@
 #   --json               Output as JSON
 #   -h, --help           Show this help message
 #
-# With no --pull/--push/--drop, reports each recorded comment as in sync,
+# With no --pull/--push/--drop/--discard, reports each recorded comment as in sync,
 # changed on GitHub, changed in the notes, diverged, or missing.
 #
 # Rewording goes through the GraphQL updatePullRequestReviewComment mutation.
@@ -36,7 +38,8 @@
 #
 # This script cannot submit a review. It never calls POST .../reviews or
 # .../events, and every comment it touches must already belong to the caller's
-# own pending review.
+# own pending review. --discard deletes only the review that
+# get_existing_pending_review finds for the caller in the PENDING state.
 
 # shellcheck disable=SC2016  # jq and GraphQL documents throughout; the $vars
 # in single quotes are bound by --argjson/--arg/-f, not shell expansions.
@@ -52,7 +55,7 @@ source "${SCRIPT_DIR}/helpers/gh-review-helpers.sh"
 source "${SCRIPT_DIR}/helpers/pr-target.sh"
 
 usage() {
-    sed -n '2,39p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,43p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 resolve_reviewer() {
@@ -176,6 +179,12 @@ drop_comment() {
     gh api --method DELETE "repos/${OWNER}/${REPO_NAME}/pulls/comments/${id}" > /dev/null
 }
 
+# GitHub deletes a review on this endpoint only while it is pending, so a
+# review that someone submitted in the meantime fails here instead of vanishing.
+discard_review() {
+    gh api --method DELETE "repos/${OWNER}/${REPO_NAME}/pulls/${PR_NUMBER}/reviews/${REVIEW_ID}" > /dev/null
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 main() {
@@ -222,9 +231,9 @@ main() {
                 COMMENT_IDS+=("$2")
                 shift 2
                 ;;
-            --pull | --push | --drop)
+            --pull | --push | --drop | --discard)
                 if [[ "${mode}" != "status" ]]; then
-                    log_error "Choose one of --pull, --push, or --drop; they are separate runs."
+                    log_error "Choose one of --pull, --push, --drop, or --discard; they are separate runs."
                     exit 1
                 fi
                 mode="${1#--}"
@@ -269,6 +278,10 @@ main() {
     fi
     if [[ "${mode}" == "pull" && ${#COMMENT_IDS[@]} -gt 0 ]]; then
         log_error "--comment-id does not apply to --pull, which reconciles the whole review."
+        exit 1
+    fi
+    if [[ "${mode}" == "discard" && ${#COMMENT_IDS[@]} -gt 0 ]]; then
+        log_error "--comment-id does not apply to --discard, which deletes the whole review. Use --drop for single comments."
         exit 1
     fi
 
@@ -320,6 +333,7 @@ main() {
         pull) do_pull "${status_json}" ;;
         push) do_push "${status_json}" ;;
         drop) do_drop "${pending}" ;;
+        discard) do_discard "${pending}" ;;
         *)
             log_error "Unhandled mode '${mode}'."
             exit 1
@@ -497,7 +511,7 @@ do_drop() {
     remaining=$(pending_comments | jq 'length' 2> /dev/null || echo "?")
     log_info "${remaining} comment(s) remain in the pending review."
     if [[ "${remaining}" == "0" ]]; then
-        log_warn "That was the last inline comment. The pending review still exists with its summary body."
+        log_warn "That was the last inline comment. The pending review still exists with its summary body. Run --discard to delete it."
     fi
 
     emit_json -n --argjson dropped "${dropped}" --argjson failed "${failed}" \
@@ -506,6 +520,61 @@ do_drop() {
     if [[ "${failed}" -gt 0 ]]; then
         return 1
     fi
+    return 0
+}
+
+do_discard() {
+    local pending="$1"
+    local count
+    count=$(echo "${pending}" | jq '.comments | length')
+
+    # Discarding a review that still holds comments would delete them without
+    # withdrawing their findings in the notes, and a later re-review would then
+    # post them again. --drop records a reason for each one, so it goes first.
+    if [[ "${count}" -gt 0 ]]; then
+        log_error "Your pending review on ${REPO}#${PR_NUMBER} still holds ${count} inline comment(s)."
+        log_error "Drop them first with --drop --comment-id <id> --reason <text>, then run --discard."
+        exit 1
+    fi
+
+    {
+        echo
+        echo "Discarding pending review ${REVIEW_ID} on ${REPO}#${PR_NUMBER}. Its summary body:"
+        echo "────────────────────────────────────────────────────────────────────────"
+        echo "${pending}" | jq -r '.body // ""'
+        echo "────────────────────────────────────────────────────────────────────────"
+    } >&2
+
+    if [[ "${DRY_RUN}" == "true" ]]; then
+        log_info "Dry run: would discard pending review ${REVIEW_ID} on ${REPO}#${PR_NUMBER}."
+        emit_json -n --argjson id "${REVIEW_ID}" '{discarded: false, review_id: $id, dryRun: true}'
+        return 0
+    fi
+
+    # Read the comments again right before the delete. Someone can add one in
+    # the GitHub UI after main read the review, and the delete cannot be undone.
+    # --paginate prints one array per page, so jq slurps them all. Any output
+    # that is not one or more arrays with zero comments in total stops the
+    # delete, including empty output and output jq cannot parse.
+    local fresh fresh_count
+    if ! fresh=$(gh api "repos/${OWNER}/${REPO_NAME}/pulls/${PR_NUMBER}/reviews/${REVIEW_ID}/comments" \
+        --paginate 2> /dev/null); then
+        log_error "Could not re-read the pending review's comments. Nothing was deleted."
+        exit 1
+    fi
+    fresh_count=$(jq -rs 'if length > 0 and all(.[]; type == "array")
+        then (map(length) | add) else "unreadable" end' <<< "${fresh}" 2> /dev/null || echo "unreadable")
+    if [[ "${fresh_count}" != "0" ]]; then
+        log_error "Could not confirm that the pending review has no comments (re-read found: ${fresh_count}). Nothing was deleted."
+        exit 1
+    fi
+
+    if ! discard_review; then
+        log_error "GitHub refused to delete review ${REVIEW_ID}. It may have been submitted since this run read it."
+        exit 1
+    fi
+    log_success "Discarded pending review ${REVIEW_ID} on ${REPO}#${PR_NUMBER}."
+    emit_json -n --argjson id "${REVIEW_ID}" '{discarded: true, review_id: $id, dryRun: false}'
     return 0
 }
 

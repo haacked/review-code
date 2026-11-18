@@ -64,6 +64,17 @@ Deletion is irreversible and the body is not recoverable from GitHub afterwards,
 
 This marks the finding withdrawn in the review file rather than deleting it. The block stays, so the argument that retired it stays on the record, and a later `--append` re-review will neither carry it forward nor repost it. Write a real reason: it is what a reader, and the learning pass, use to tell a false positive from a fix that landed.
 
+### Discarding the pending review
+
+When every inline comment is gone and the review should not go out at all, delete the pending review itself:
+
+```bash
+~/.agents/skills/review-code/scripts/amend-pending-review.sh <pr> --discard --dry-run
+~/.agents/skills/review-code/scripts/amend-pending-review.sh <pr> --discard
+```
+
+The script refuses while the review still holds inline comments, so drop each one first with a reason. It reads the comments again just before the delete and refuses if one appeared. GitHub deletes a review only while it is pending, so a review that someone submitted in the meantime fails instead of disappearing.
+
 ### What this cannot do
 
 - **A finding in the review body.** Comments that could not be mapped to a diff position are folded into the pending review's summary under `**Additional Notes:**` and have no comment id. Change those in the GitHub UI.

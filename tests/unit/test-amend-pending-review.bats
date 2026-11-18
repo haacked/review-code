@@ -90,6 +90,12 @@ if [[ "$args" == *"graphql"* ]]; then
     echo '{"data":{"updatePullRequestReviewComment":{"pullRequestReviewComment":{"databaseId":777}}}}'
     exit 0
 fi
+# GitHub refuses to delete a review that is no longer pending.
+if [[ "$args" == *"--method DELETE"*"pulls/1/reviews/99"* && -n "${DELETE_REVIEW_FAILS:-}" ]]; then
+    echo "REFUSED $args" >> "$MUTATIONS"
+    echo '{"message":"Can not delete a non-pending pull request review"}'
+    exit 1
+fi
 if [[ "$args" == *"--method DELETE"* ]]; then
     echo "DELETE $args" >> "$MUTATIONS"; exit 0
 fi
@@ -99,6 +105,29 @@ fi
 # Match the real endpoint shapes exactly. A permissive *"/comments"* match
 # would answer a malformed URL just as happily as a correct one, which is how
 # a missing PR number reached a live run once already.
+if [[ "$args" == *"repos/org/test/pulls/1/reviews/99/comments"* && -n "${EMPTY_REVIEW:-}" ]]; then
+    # LATE_COMMENT adds a comment from the second read on, as when someone
+    # comments in the GitHub UI between the first read and a discard.
+    reads=$(( $(cat "$MUTATIONS.reads" 2> /dev/null || echo 0) + 1 ))
+    echo "$reads" > "$MUTATIONS.reads"
+    # REREAD replaces the second read with a failure or with output the guard
+    # cannot count, so a test can check that the delete refuses each one.
+    if [[ "$reads" -gt 1 ]]; then
+        case "${REREAD:-}" in
+            fail) exit 1 ;;
+            empty) exit 0 ;;
+            null) echo 'null'; exit 0 ;;
+            garbage) echo 'not json'; exit 0 ;;
+            pages) printf '[]\n[{"id":999}]\n'; exit 0 ;;
+        esac
+    fi
+    if [[ -n "${LATE_COMMENT:-}" && "$reads" -gt 1 ]]; then
+        echo '[{"id":999,"node_id":"PRRC_ccc","path":"src/new.ts","line":null,"position":2,"body":"Added in the UI."}]'
+    else
+        echo '[]'
+    fi
+    exit 0
+fi
 if [[ "$args" == *"repos/org/test/pulls/1/reviews/99/comments"* ]]; then
     # Comments already deleted this run really are gone, so the mock reads its
     # own mutation log rather than taking a hint from the test. A stateless
@@ -112,7 +141,7 @@ if [[ "$args" == *"repos/org/test/pulls/1/reviews/99/comments"* ]]; then
     exit 0
 fi
 if [[ "$args" == *"repos/org/test/pulls/1/reviews"* ]]; then
-    echo '[{"id":99,"state":"PENDING","user":{"login":"testuser"},"body":"summary"}]'
+    echo '[{"id":99,"state":"PENDING","user":{"login":"testuser"},"body":"Thanks, a few notes inline."}]'
     exit 0
 fi
 echo "UNEXPECTED-URL $args" >> "$MUTATIONS"
@@ -530,4 +559,108 @@ EOF
     amend --push
     run amend --json
     [ "$(echo "$output" | jq -r '.comments[] | select(.id == 777) | .state')" = "in_sync" ]
+}
+
+# =============================================================================
+# discard
+# =============================================================================
+
+@test "amend: discard refuses while inline comments remain, and names --drop" {
+    annotate
+    run amend --discard
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"--drop"* ]]
+    [ ! -s "$MUTATIONS" ]
+}
+
+@test "amend: discard deletes exactly the caller's pending review" {
+    EMPTY_REVIEW=1 run amend --discard
+    [ "$status" -eq 0 ]
+    [ "$(grep -c DELETE "$MUTATIONS")" -eq 1 ]
+    grep -q "repos/org/test/pulls/1/reviews/99" "$MUTATIONS"
+}
+
+@test "amend: discard echoes the summary body before deleting" {
+    EMPTY_REVIEW=1 run amend --discard
+    [[ "$output" == *"Thanks, a few notes inline."* ]]
+}
+
+@test "amend: discard --dry-run deletes nothing" {
+    EMPTY_REVIEW=1 run amend --discard --dry-run
+    [ "$status" -eq 0 ]
+    [ ! -s "$MUTATIONS" ]
+}
+
+@test "amend: discard refuses a comment that appears before the delete" {
+    EMPTY_REVIEW=1 LATE_COMMENT=1 run amend --discard
+    [ "$status" -eq 1 ]
+    ! grep -q DELETE "$MUTATIONS"
+}
+
+@test "amend: discard refuses --comment-id" {
+    run amend --discard --comment-id 777
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"--comment-id does not apply to --discard"* ]]
+    [ ! -s "$MUTATIONS" ]
+}
+
+@test "amend: discard refuses --reason" {
+    run amend --discard --reason "x"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"only applies to --drop"* ]]
+}
+
+@test "amend: discard cannot be combined with another mode" {
+    run amend --drop --discard
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"separate runs"* ]]
+}
+
+@test "amend: discard with no pending review fails without a delete" {
+    cat > "$MOCK_DIR/gh" << 'MOCK'
+#!/usr/bin/env bash
+args="$*"
+if [[ "$args" == *"repo view"* ]]; then echo "org/test"; exit 0; fi
+if [[ "$args" == *"api user"* ]]; then echo "testuser"; exit 0; fi
+if [[ "$args" == *"--method DELETE"* ]]; then echo "DELETE $args" >> "$MUTATIONS"; exit 0; fi
+if [[ "$args" == *"repos/org/test/pulls/1/reviews"* ]]; then echo '[]'; exit 0; fi
+exit 1
+MOCK
+    chmod +x "$MOCK_DIR/gh"
+    run amend --discard
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"No pending review"* ]]
+    [ ! -s "$MUTATIONS" ]
+}
+
+@test "amend: discard never posts a review or an event" {
+    EMPTY_REVIEW=1 amend --discard > /dev/null
+    ! grep -q "POST" "$MUTATIONS"
+    ! grep -q "events" "$MUTATIONS"
+    ! grep -q "UNEXPECTED-URL" "$MUTATIONS"
+}
+
+@test "amend: the last drop points at --discard" {
+    annotate
+    run amend --drop --comment-id 777 --comment-id 888 --reason "x"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"--discard"* ]]
+}
+
+# The re-read is the last check before a delete that cannot be undone, so any
+# answer it cannot count as exactly zero comments must stop the delete.
+@test "amend: discard refuses when the re-read fails, is empty, null, not JSON, or has a comment on a later page" {
+    for mode in fail empty null garbage pages; do
+        : > "$MUTATIONS"
+        rm -f "$MUTATIONS.reads"
+        EMPTY_REVIEW=1 REREAD="$mode" run amend --discard
+        [ "$status" -eq 1 ] || { echo "REREAD=$mode exited $status"; return 1; }
+        ! grep -q "pulls/1/reviews/99" "$MUTATIONS" || { echo "REREAD=$mode deleted"; return 1; }
+    done
+}
+
+@test "amend: discard reports GitHub refusing the delete" {
+    EMPTY_REVIEW=1 DELETE_REVIEW_FAILS=1 run amend --discard
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"may have been submitted"* ]]
 }

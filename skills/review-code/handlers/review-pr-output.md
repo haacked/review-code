@@ -283,7 +283,7 @@ The review is in PENDING state. Visit GitHub to:
 - Add additional comments
 - Submit with Approve/Request Changes/Comment
 
-To reword or drop a comment later, read
+To reword or drop a comment later, or discard the review, read
 ~/.agents/skills/review-code/handlers/amend-pending-review.md.
 ```
 
