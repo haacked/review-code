@@ -1370,11 +1370,17 @@ handle_branch_review() {
     # Fetch PR context if available
     local pr_context=""
     if [[ -n "${associated_pr}" ]]; then
-        pr_context=$("${SCRIPT_DIR}/pr-context.sh" "${associated_pr}" 2>&1 || true)
+        # pr-context.sh passes gh's hints and its own non-fatal warnings
+        # through on stderr. Only stdout is JSON. The stderr text appears in
+        # the warning only when the fetch fails.
+        local pr_context_stderr
+        pr_context_stderr=$(mktemp)
+        pr_context=$("${SCRIPT_DIR}/pr-context.sh" "${associated_pr}" 2> "${pr_context_stderr}" || true)
         if [[ -z "${pr_context}" ]] || ! echo "${pr_context}" | jq empty 2> /dev/null; then
-            echo "Warning: Failed to fetch PR context for PR #${associated_pr}" >&2
+            echo "Warning: Failed to fetch PR context for PR #${associated_pr}: $(< "${pr_context_stderr}")" >&2
             pr_context=""
         fi
+        rm -f "${pr_context_stderr}"
     fi
 
     # Get diff for branch

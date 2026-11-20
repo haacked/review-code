@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 # Tests for review-orchestrator.sh
 
+bats_require_minimum_version 1.5.0
+
 setup() {
     PROJECT_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
     export PROJECT_ROOT
@@ -1106,4 +1108,55 @@ benchmark_pr_data() {
     run "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.comment_gates == "run" and (has("reviewers") | not) and (has("max_fraction") | not)'
+}
+
+# =============================================================================
+# Branch review keeps PR context when pr-context.sh writes to stderr
+# =============================================================================
+
+# Answer the calls pr-context.sh makes for PR 7, so branch review runs the
+# real pr-context.sh. parse-review-arg.sh sets associated_pr only for a
+# no-argument review of the checked-out branch, so the test checks out
+# child-branch and passes no target. pr-context.sh adds a trailing newline to
+# .title, so the test trims it.
+install_pr_context_gh_stub() {
+    GH_STUB_HINT_FILE="$PROJECT_ROOT/tests/fixtures/gh-hint.txt"
+    export GH_STUB_HINT_FILE
+    cat > "${GH_STUB_DIR}/gh-extra" << 'STUB_EOF'
+#!/usr/bin/env bash
+case "$*" in
+    "pr view 7 --json reviews"*)
+        echo '{"reviews":[]}'
+        ;;
+    "pr view 7 --json number,"*)
+        echo '{"number":7,"title":"Stacked child change","body":"Child of parent-branch.","url":"https://github.com/testorg/testrepo/pull/7","author":{"login":"alice"},"headRefName":"child-branch","headRefOid":"0123456789abcdef0123456789abcdef01234567","baseRefName":"parent-branch","state":"OPEN","isCrossRepository":false}'
+        ;;
+    "pr diff 7"*)
+        printf '%s\n' 'diff --git a/c.txt b/c.txt' 'new file mode 100644' '--- /dev/null' '+++ b/c.txt' '@@ -0,0 +1 @@' '+c'
+        ;;
+    "api user"*)
+        exit 1
+        ;;
+    "api "*)
+        echo '[]'
+        cat "${GH_STUB_HINT_FILE}" >&2
+        ;;
+    *)
+        exit 1
+        ;;
+esac
+STUB_EOF
+    chmod +x "${GH_STUB_DIR}/gh-extra"
+}
+
+@test "review-orchestrator.sh: branch review keeps PR context when gh prints a hint through pr-context.sh" {
+    make_parent_child_branches
+    stub_gh_pr_list '[{"number":7,"baseRefName":"parent-branch"}]'
+    install_pr_context_gh_stub
+    git checkout -q child-branch
+
+    run --separate-stderr "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.associated_pr == "7" and .pr.number == 7 and (.pr.title | rtrimstr("\n")) == "Stacked child change"'
 }
