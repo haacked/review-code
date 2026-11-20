@@ -15,8 +15,9 @@
 #   remove_gh_stub_dir
 
 # Install a stub `gh` executable ahead of the real one on PATH.
-# `gh pr list ...` prints "[]" (exit 0); every other subcommand exits 1.
-# Every invocation is logged as one line ("$*") to $GH_STUB_CALLS.
+# `gh pr list ...` prints "[]" (exit 0). Every other subcommand runs
+# $GH_STUB_DIR/gh-extra when a test has written that executable, and exits 1
+# otherwise. Every invocation is logged as one line ("$*") to $GH_STUB_CALLS.
 install_default_gh_stub() {
     GH_STUB_DIR="$(mktemp -d)"
     export GH_STUB_DIR
@@ -41,6 +42,10 @@ if [[ "$1" == "pr" && "$2" == "list" ]]; then
     exit_code="$(cat "${GH_STUB_PR_LIST_EXIT_FILE}" 2>/dev/null || echo 0)"
     cat "${GH_STUB_PR_LIST_PAYLOAD_FILE}" 2>/dev/null || echo "[]"
     exit "${exit_code}"
+fi
+
+if [[ -x "${GH_STUB_DIR}/gh-extra" ]]; then
+    exec "${GH_STUB_DIR}/gh-extra" "$@"
 fi
 
 exit 1

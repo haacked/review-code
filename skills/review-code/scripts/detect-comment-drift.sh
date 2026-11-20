@@ -436,10 +436,18 @@ main() {
     require_field "${repo}" "repo" || exit 1
     require_field "${pr_number}" "pr_number" || exit 1
 
+    # gh prints hints on stderr even when a command succeeds. Stderr goes to a
+    # file so that only stdout is compared and parsed. gh's text reaches the
+    # warning only when the command fails.
+    local gh_stderr
+    gh_stderr=$(mktemp)
+    # shellcheck disable=SC2064  # expand gh_stderr now, while it is in scope
+    trap "rm -f '${gh_stderr}'" EXIT
+
     # Fetch the current PR HEAD
     local current_commit
-    if ! current_commit=$(get_current_pr_head "${owner}" "${repo}" "${pr_number}" 2>&1); then
-        warning "Failed to fetch current PR HEAD: ${current_commit}"
+    if ! current_commit=$(get_current_pr_head "${owner}" "${repo}" "${pr_number}" 2> "${gh_stderr}"); then
+        warning "Failed to fetch current PR HEAD: $(< "${gh_stderr}")"
         emit_drift_result false "${review_commit}" "" "${comments}" "[]" "skipped (failed to fetch current HEAD)"
         return 0
     fi
@@ -452,8 +460,8 @@ main() {
 
     # Drift detected: fetch the current diff
     local current_diff
-    if ! current_diff=$(fetch_current_diff "${owner}" "${repo}" "${pr_number}" 2>&1); then
-        warning "Failed to fetch current diff: ${current_diff}"
+    if ! current_diff=$(fetch_current_diff "${owner}" "${repo}" "${pr_number}" 2> "${gh_stderr}"); then
+        warning "Failed to fetch current diff: $(< "${gh_stderr}")"
         emit_drift_result true "${review_commit}" "${current_commit}" "${comments}" "[]" "drift detected but remap failed (could not fetch current diff)"
         return 0
     fi

@@ -302,16 +302,23 @@ main() {
         repo_spec="${org}/${repo}"
     fi
 
-    # Fetch PR data with error handling
+    # gh prints hints on stderr even when a command succeeds. Stderr goes to a
+    # file so that only stdout is parsed. gh's text reaches the error message
+    # only when the command fails.
+    local gh_stderr
+    gh_stderr=$(mktemp)
+    # shellcheck disable=SC2064  # expand gh_stderr now, while it is in scope
+    trap "rm -f '${gh_stderr}'" EXIT
+
     local metadata
-    if ! metadata=$(fetch_pr_metadata "${pr_number}" "${repo_spec}" 2>&1); then
-        error "Failed to fetch PR metadata for #${pr_number}: ${metadata}"
+    if ! metadata=$(fetch_pr_metadata "${pr_number}" "${repo_spec}" 2> "${gh_stderr}"); then
+        error "Failed to fetch PR metadata for #${pr_number}: $(< "${gh_stderr}")"
         exit 1
     fi
 
     local diff
-    if ! diff=$(fetch_pr_diff "${pr_number}" "${repo_spec}" 2>&1); then
-        error "Failed to fetch PR diff for #${pr_number}: ${diff}"
+    if ! diff=$(fetch_pr_diff "${pr_number}" "${repo_spec}" 2> "${gh_stderr}"); then
+        error "Failed to fetch PR diff for #${pr_number}: $(< "${gh_stderr}")"
         exit 1
     fi
 

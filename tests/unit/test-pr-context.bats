@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 # Tests for pr-context.sh
 
+bats_require_minimum_version 1.5.0
+
 setup() {
     PROJECT_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
     export PROJECT_ROOT
@@ -505,4 +507,122 @@ setup() {
     "
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.comments.inline[0].resolved == false and .comments.inline[0].outdated == false'
+}
+
+# =============================================================================
+# gh writes to stderr while succeeding
+# =============================================================================
+
+# Put a gh executable on PATH that answers every call main makes for PR 9.
+# When GH_STUB_HINT is set, every call that succeeds also prints gh 2.105.0's
+# polling hint on stderr. GH_STUB_FAIL_SITES lists the calls that print
+# GH_STUB_FAIL_TEXT on stderr and exit 1 instead.
+# Sites: metadata, diff, reviews, conversation, inline, threads, other.
+install_pr_context_gh_stub() {
+    GH_STUB_HINT_FILE="$PROJECT_ROOT/tests/fixtures/gh-hint.txt"
+    export GH_STUB_HINT_FILE
+    local bin_dir="$BATS_TEST_TMPDIR/bin"
+    mkdir -p "$bin_dir"
+    cat > "$bin_dir/gh" << 'STUB_EOF'
+#!/usr/bin/env bash
+args="$*"
+case "$args" in
+    *graphql*) site=threads ;;
+    *"--json reviews"*) site=reviews ;;
+    *"pr view 9"*) site=metadata ;;
+    *"pr diff 9"*) site=diff ;;
+    *"issues/9/comments"*) site=conversation ;;
+    *"pulls/9/comments"*) site=inline ;;
+    *) site=other ;;
+esac
+
+if [[ " ${GH_STUB_FAIL_SITES:-} " == *" ${site} "* ]]; then
+    echo "${GH_STUB_FAIL_TEXT:-gh failed}" >&2
+    exit 1
+fi
+
+case "$site" in
+    metadata)
+        echo '{"number":9,"title":"Add widget","body":"Adds a widget.","url":"https://github.com/owner/repo/pull/9","author":{"login":"alice"},"headRefName":"widget","headRefOid":"0123456789abcdef0123456789abcdef01234567","baseRefName":"main","state":"OPEN","isCrossRepository":false}'
+        ;;
+    diff)
+        printf '%s\n' 'diff --git a/f.py b/f.py' '--- a/f.py' '+++ b/f.py' '@@ -1 +1 @@' '-old' '+new'
+        ;;
+    reviews)
+        echo '{"reviews":[]}'
+        ;;
+    *)
+        echo '[]'
+        ;;
+esac
+
+if [[ -n "${GH_STUB_HINT:-}" ]]; then
+    cat "${GH_STUB_HINT_FILE}" >&2
+fi
+STUB_EOF
+    chmod +x "$bin_dir/gh"
+    PATH="$bin_dir:$PATH"
+    export PATH
+}
+
+# main passes .title and .body through `echo | jq -Rs`, which adds a trailing
+# newline, so the assertions below compare them with that newline trimmed.
+PR_CONTEXT_STUB_DIFF=$'diff --git a/f.py b/f.py\n--- a/f.py\n+++ b/f.py\n@@ -1 +1 @@\n-old\n+new\n'
+
+@test "pr-context.sh: main prints clean JSON when gh prints a hint on stderr for every call" {
+    install_pr_context_gh_stub
+    export GH_STUB_HINT=1
+
+    run --separate-stderr "$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh" 'https://github.com/owner/repo/pull/9'
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e --arg diff "$PR_CONTEXT_STUB_DIFF" '
+        .number == 9
+        and (.title | rtrimstr("\n")) == "Add widget"
+        and (.body | rtrimstr("\n")) == "Adds a widget."
+        and .author == "alice"
+        and .head_ref == "widget"
+        and .head_sha == "0123456789abcdef0123456789abcdef01234567"
+        and .base_ref == "main"
+        and .state == "OPEN"
+        and .is_fork == false
+        and .diff == $diff
+        and .comments == {conversation: [], reviews: [], inline: []}
+    '
+}
+
+@test "pr-context.sh: main keeps the hint out of the JSON when the PR is given by number" {
+    # A bare number fetches metadata and the diff without --repo. main then
+    # takes owner/repo from the metadata URL for the later fetches.
+    install_pr_context_gh_stub
+    export GH_STUB_HINT=1
+
+    run --separate-stderr "$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh" 9
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e --arg diff "$PR_CONTEXT_STUB_DIFF" '(.title | rtrimstr("\n")) == "Add widget" and .diff == $diff and .org == "owner" and .repo == "repo"'
+}
+
+@test "pr-context.sh: main reports gh's error text when the metadata fetch fails" {
+    install_pr_context_gh_stub
+    export GH_STUB_FAIL_SITES="metadata"
+    export GH_STUB_FAIL_TEXT="GraphQL: Could not resolve to a PullRequest with the number of 9. (repository.pullRequest)"
+
+    run --separate-stderr "$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh" 'https://github.com/owner/repo/pull/9'
+
+    [ "$status" -eq 1 ]
+    [[ "$stderr" == *"Failed to fetch PR metadata for #9"* ]]
+    [[ "$stderr" == *"Could not resolve to a PullRequest with the number of 9"* ]]
+}
+
+@test "pr-context.sh: main reports gh's error text when the diff fetch fails" {
+    install_pr_context_gh_stub
+    export GH_STUB_FAIL_SITES="diff"
+    export GH_STUB_FAIL_TEXT="HTTP 406: Sorry, the diff exceeded the maximum number of lines (20000)"
+
+    run --separate-stderr "$PROJECT_ROOT/skills/review-code/scripts/pr-context.sh" 'https://github.com/owner/repo/pull/9'
+
+    [ "$status" -eq 1 ]
+    [[ "$stderr" == *"Failed to fetch PR diff for #9"* ]]
+    [[ "$stderr" == *"the diff exceeded the maximum number of lines"* ]]
 }

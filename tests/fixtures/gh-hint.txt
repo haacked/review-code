@@ -1,0 +1,3 @@
+hint: if you need to wait for this pull request to be reviewed, merged, or closed before continuing, use this instead of polling:
+    gh event listen --resource https://github.com/owner/repo/pull/9 --event com.github.pull_request.review.submitted.v1,com.github.pull_request.state.changed.v1
+  - It prints the first event as a JSON line on stdout and exits; run it again to wait for the next one.

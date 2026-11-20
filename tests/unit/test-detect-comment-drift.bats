@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 # Tests for detect-comment-drift.sh
 
+bats_require_minimum_version 1.5.0
+
 setup() {
     PROJECT_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
     export PROJECT_ROOT
@@ -16,18 +18,27 @@ teardown() {
     rm -rf "$MOCK_DIR"
 }
 
-# Helper to create a mock gh command
+# Helper to create a mock gh command. The calls named in $3 ("head" for the
+# pulls/<n> lookup, "diff" for gh pr diff) also print gh 2.105.0's polling
+# hint on stderr after their stdout. The real gh uses the same order.
 create_mock_gh() {
     local head_sha="$1"
     local diff_file="${2:-}"
+    local hint_sites="${3:-}"
     cat > "$MOCK_DIR/gh" << GHEOF
 #!/bin/bash
 if [[ "\$*" == *"--jq"*".head.sha"* ]]; then
+    site=head
     echo '${head_sha}'
 elif [[ "\$*" == *"pr diff"* ]]; then
+    site=diff
     cat '${diff_file}'
 else
+    site=other
     echo '[]'
+fi
+if [[ " ${hint_sites} " == *" \${site} "* ]]; then
+    cat '$PROJECT_ROOT/tests/fixtures/gh-hint.txt' >&2
 fi
 GHEOF
     chmod +x "$MOCK_DIR/gh"
@@ -846,4 +857,88 @@ EOF_DIFF
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.unmapped_comments == [] and (.comments | length == 1)'
     echo "$output" | jq -e '.comments[0] | .path == "src/target.py" and .side == "LEFT" and .line == 100 and .original_line == 10 and .remapped'
+}
+
+# =============================================================================
+# gh writes to stderr while succeeding
+# =============================================================================
+
+@test "detect-comment-drift: reports no drift when the head lookup prints a hint on stderr" {
+    create_mock_gh "abc123" "" "head"
+    local input='{"owner": "org", "repo": "repo", "pr_number": 42, "review_commit": "abc123", "comments": [{"path": "src/auth.ts", "line": 10, "body": "Consider..."}]}'
+
+    run --separate-stderr bash -c "echo '$input' | '$SCRIPT'"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.drift_detected == false and .current_commit == "abc123" and .drift_summary == "no drift (same commit)"'
+}
+
+@test "detect-comment-drift: keeps a blank-line comment on an unchanged file when the diff fetch prints a hint" {
+    # src/utils.ts is the last file in both fixtures, so hint text appended to
+    # the current diff would land in its final hunk and make its hunks differ.
+    create_mock_gh "def456" "$FIXTURES_DIR/drift-updated.diff" "diff"
+    local tmpinput="$BATS_TEST_TMPDIR/input.json"
+    jq -n \
+        --arg diff "$(cat "$FIXTURES_DIR/drift-original.diff")" \
+        '{
+            owner: "org",
+            repo: "repo",
+            pr_number: 42,
+            review_commit: "abc123",
+            original_diff: $diff,
+            comments: [{
+                path: "src/utils.ts",
+                line: 4,
+                side: "RIGHT",
+                body: "Anchored on a blank line"
+            }]
+        }' > "$tmpinput"
+
+    run --separate-stderr bash -c "'$SCRIPT' < '$tmpinput'"
+
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '
+        .unmapped_comments == []
+        and (.comments | length) == 1
+        and .comments[0].line == 4
+        and .comments[0].remapped == false
+    '
+}
+
+@test "detect-comment-drift: includes gh's error text in the warning when the head lookup fails" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+echo "HTTP 404: Not Found (https://api.github.com/repos/org/repo/pulls/42)" >&2
+exit 1
+EOF
+    chmod +x "$MOCK_DIR/gh"
+    local input='{"owner": "org", "repo": "repo", "pr_number": 42, "review_commit": "abc123", "comments": [{"path": "test.ts", "line": 1, "body": "hi"}]}'
+
+    run --separate-stderr bash -c "echo '$input' | '$SCRIPT'"
+
+    [ "$status" -eq 0 ]
+    [[ "$stderr" == *"Failed to fetch current PR HEAD"* ]]
+    [[ "$stderr" == *"HTTP 404: Not Found"* ]]
+    echo "$output" | jq -e '.drift_summary == "skipped (failed to fetch current HEAD)"'
+}
+
+@test "detect-comment-drift: includes gh's error text in the warning when the diff fetch fails" {
+    cat > "$MOCK_DIR/gh" << 'EOF'
+#!/bin/bash
+if [[ "$*" == *"--jq"*".head.sha"* ]]; then
+    echo 'def456'
+    exit 0
+fi
+echo "HTTP 406: Sorry, the diff exceeded the maximum number of lines (20000)" >&2
+exit 1
+EOF
+    chmod +x "$MOCK_DIR/gh"
+    local input='{"owner": "org", "repo": "repo", "pr_number": 42, "review_commit": "abc123", "comments": [{"path": "test.ts", "line": 1, "body": "hi"}]}'
+
+    run --separate-stderr bash -c "echo '$input' | '$SCRIPT'"
+
+    [ "$status" -eq 0 ]
+    [[ "$stderr" == *"Failed to fetch current diff"* ]]
+    [[ "$stderr" == *"the diff exceeded the maximum number of lines"* ]]
+    echo "$output" | jq -e '.current_commit == "def456" and .drift_summary == "drift detected but remap failed (could not fetch current diff)"'
 }
