@@ -1160,3 +1160,22 @@ STUB_EOF
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.associated_pr == "7" and .pr.number == 7 and (.pr.title | rtrimstr("\n")) == "Stacked child change"'
 }
+
+@test "review-orchestrator.sh: branch review reports pr-context.sh's error and continues without PR context" {
+    make_parent_child_branches
+    stub_gh_pr_list '[{"number":7,"baseRefName":"parent-branch"}]'
+    cat > "${GH_STUB_DIR}/gh-extra" << 'STUB_EOF'
+#!/usr/bin/env bash
+echo "HTTP 502: Bad Gateway" >&2
+exit 1
+STUB_EOF
+    chmod +x "${GH_STUB_DIR}/gh-extra"
+    git checkout -q child-branch
+
+    run --separate-stderr "$PROJECT_ROOT/skills/review-code/scripts/review-orchestrator.sh"
+
+    [ "$status" -eq 0 ]
+    [[ "$stderr" == *"Failed to fetch PR context for PR #7"* ]]
+    [[ "$stderr" == *"HTTP 502: Bad Gateway"* ]]
+    echo "$output" | jq -e '.associated_pr == "7" and (.pr == null)'
+}

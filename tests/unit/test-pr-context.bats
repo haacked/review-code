@@ -592,8 +592,8 @@ PR_CONTEXT_STUB_DIFF=$'diff --git a/f.py b/f.py\n--- a/f.py\n+++ b/f.py\n@@ -1 +
 }
 
 @test "pr-context.sh: main keeps the hint out of the JSON when the PR is given by number" {
-    # A bare number takes the path with no repo_spec, so the comment fetches
-    # are skipped and only metadata, diff, and reviews call gh.
+    # A bare number fetches metadata and the diff without --repo. main then
+    # takes owner/repo from the metadata URL for the later fetches.
     install_pr_context_gh_stub
     export GH_STUB_HINT=1
 
