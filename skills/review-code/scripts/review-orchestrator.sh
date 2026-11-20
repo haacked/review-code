@@ -584,6 +584,13 @@ build_review_data() {
     jq_args+=(--arg adversary_engine "${adversary_mode}")
     jq_args+=(--arg adversary_available "${adversary_is_available}")
 
+    # Domain reviews run Codex in a scratch checkout when the diff matches a
+    # domain-reviews/*.md trigger. A planning failure only skips them.
+    local domain_reviews
+    domain_reviews=$(python3 "${SCRIPT_DIR}/domain-review.py" plan \
+        --org "${org}" --repo "${repo}" --diff-file "${diff_path}") || domain_reviews="[]"
+    jq_args+=(--argjson domain_reviews "${domain_reviews:-[]}")
+
     # Single jq invocation with conditional pr field and chunk data
     final_output=$(jq -c "${jq_args[@]}" \
         '{
@@ -617,6 +624,7 @@ build_review_data() {
         + (if $debug_session_dir != "" then {debug_session_dir: $debug_session_dir} else {} end)
         + (if $commit_messages != "" then {commit_messages: $commit_messages} else {} end)
         + (if $adversary_engine != "" then {adversary: {engine: $adversary_engine, available: ($adversary_available == "true")}} else {} end)
+        + (if ($domain_reviews | length) > 0 then {domain_reviews: $domain_reviews} else {} end)
         + ($ARGS.named | with_entries(select(.key | startswith("mode_"))) | with_entries(.key |= sub("^mode_"; "")) | with_entries(select(.value != "")))')
     debug_save_json "07-final-output" "output.json" <<< "${final_output}"
     debug_time "07-final-output" "end"

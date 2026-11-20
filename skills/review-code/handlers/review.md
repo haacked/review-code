@@ -75,6 +75,7 @@ From `REVIEW_FIELDS`, extract these fields for building agent context:
 - `chunks`: (optional) array of `{id, label, files, size_kb, diff_path}`, present only when the diff was split. Each chunk's diff is on disk, so the array itself is small.
 - `debug_session_dir`: (optional) path to debug session directory when debug mode is enabled
 - `adversary`: (optional) object `{engine: "copilot"|"codex", available: boolean}`, present only when `--adversary:copilot` or `--adversary:codex` was specified. `available` reflects whether that engine's CLI is actually installed.
+- `domain_reviews`: (optional) array of `{name, reason, available}`, present only when a `domain-reviews/*.md` trigger matched this diff.
 
 Mode-specific fields:
 - **PR mode:** `pr`: identity only — `number`, `title`, `author`, `url`, `base`, `head`, `head_sha`. The body and comments are deliberately absent; they are in `briefing.md`. `head_sha` is what the re-review step below needs. `file_ref`: git ref for file access (present when reviewing from a different branch or via a provisioned worktree). When the review runs outside the PR's repo and a local clone is mapped in `repos.conf`, `git.working_dir` points at a detached worktree checked out to the PR. Otherwise (no mapping, provisioning failed, or the PR ref could not be fetched into an in-repo clone), `working_dir` is null and only the diff is available.
@@ -92,6 +93,7 @@ Some steps apply only to certain sessions, and their instructions live in separa
 | `debug_session_dir` is a non-empty string | `~/.agents/skills/review-code/handlers/review-debug.md` |
 | `chunk_metadata.chunked` is `true` | `~/.agents/skills/review-code/handlers/review-chunked.md` |
 | `adversary` is present | `~/.agents/skills/review-code/handlers/review-adversary.md` |
+| `domain_reviews` is a non-empty array | `~/.agents/skills/review-code/handlers/review-domain.md` |
 | always, after finding validation | `~/.agents/skills/review-code/handlers/review-finding-quality.md` (Read it then, not now) |
 | always, at the compose step | `~/.agents/skills/review-code/handlers/review-compose.md` (Read it then, not now) |
 
@@ -380,6 +382,8 @@ It writes `briefing.md` and — when those agents run — `diff-frontend.patch` 
 
 It prints JSON: `artifacts_dir`, `diff_path`, `briefing_lines`, `diff_lines`, and a `scoped_diffs` map of line counts. Keep those — the agent prompt needs them.
 
+If you loaded `review-domain.md`, start its domain reviews now, before any reviewer dispatch on either route.
+
 For the unchunked route only, invoke every entry in `$dispatch_plan.agents`. Each entry supplies the `area` and `subagent_type`; do not derive either value again.
 
 **The prompt for each agent** is then short. Substitute the agent's own diff file: `diff-frontend.patch` for frontend and `diff-infra-config.patch` for infra-config when `scoped_diffs` lists them, otherwise the `diff_path` the script returned. Use the returned `diff_path` rather than the literal `diff.patch`: on a delta re-review it points at the delta, and naming `diff.patch` there would hand every unscoped agent the whole PR while the run reports itself as incremental.
@@ -425,6 +429,10 @@ You did not read all of `<artifacts_dir>/<agent-diff-file>`. These line ranges a
 Use a distinct coverage-retry report under the same output contract. Split the report before merging its findings into the pool. One re-dispatch per agent; take what you get. Record each resume's usage in `$token_usage` as `coverage-bounce-{N}`.
 
 If the script errors (no transcripts yet, unreadable directory), say so in the review and continue. A missing coverage check is worth a line in the output; it is not worth blocking a completed review.
+
+### Collect Domain Reviews
+
+If you loaded `review-domain.md`, collect its domain reviews now. Their findings join the pool below.
 
 ### Collect and Synthesize Results
 
