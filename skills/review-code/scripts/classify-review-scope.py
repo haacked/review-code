@@ -201,7 +201,7 @@ def spec_decision(paths):
     }
 
 
-def apply_spec_track(decisions, session, reviewed):
+def apply_spec_track(decisions, session, reviewed, assessments):
     paths = changed_paths(session)
     evidence = [
         {
@@ -221,7 +221,10 @@ def apply_spec_track(decisions, session, reviewed):
             + ", ".join(hits[:5]),
             "evidence": [],
         }
-    elif decisions["security"]["reason"] != "Explorer identified applicable changes":
+    elif not (
+        isinstance(assessments.get("security"), dict)
+        and assessments["security"].get("status") == "applies"
+    ):
         decisions["security"] = deepcopy(skip)
         decisions["security"]["evidence"] = evidence + [
             {
@@ -246,7 +249,7 @@ def classify(session, assessments, fallback_reason, whole_session, reviewed_patc
     blockers, reviewed = decide_track(whole_session, session, reviewed_patch_path)
     track = "code" if blockers else "spec"
     if track == "spec":
-        apply_spec_track(decisions, session, reviewed)
+        apply_spec_track(decisions, session, reviewed, assessments)
     agents = [area for area in AREAS if decisions[area]["decision"] == "run"]
     skipped = [area for area in AREAS if decisions[area]["decision"] == "skip"]
     track_reason = (

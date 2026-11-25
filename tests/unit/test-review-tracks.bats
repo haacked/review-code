@@ -654,6 +654,15 @@ HcmV?d00001
     assert_code_track_full_review
 }
 
+@test "an infra-config spec path elsewhere in the whole review keeps a clean delta on the code track" {
+    { modify_hunk docs/a.md; modify_hunk deploy/events.examples.yaml; } | use_patch
+    modify_hunk docs/a.md 'newer value' 'new value' > "$BATS_TEST_TMPDIR/delta.patch"
+
+    classify --diff-file "$BATS_TEST_TMPDIR/delta.patch"
+
+    assert_code_track_full_review
+}
+
 @test "a Markdown-only chunk of a mixed PR stays on the code track" {
     { modify_hunk src/app.py; modify_hunk docs/guide.md; } | use_patch
     modify_hunk docs/guide.md > "$BATS_TEST_TMPDIR/chunk.patch"
@@ -890,6 +899,30 @@ assert_security_skipped_on_spec_track() {
     classify
 
     assert_security_skipped_on_spec_track
+}
+
+@test "a security term only in a removed line runs security" {
+    modify_hunk docs/guide.md 'Flags load lazily.' 'The SDK MUST NOT log the password.' | use_patch
+
+    classify
+
+    assert_security_runs_for "password"
+}
+
+@test "a security term with a digit suffix or mixed case runs security" {
+    modify_hunk docs/guide.md 'Clients MUST use OAuth2 and MUST NOT cache JWTs.' | use_patch
+
+    classify
+
+    assert_security_runs_for "oauth2"
+}
+
+@test "agent tool instruction files take the code track" {
+    modify_hunk .gemini/styleguide.md | use_patch
+
+    classify
+
+    assert_json '.track == "code"'
 }
 
 @test "explorer security applies runs security on the spec track without a term" {

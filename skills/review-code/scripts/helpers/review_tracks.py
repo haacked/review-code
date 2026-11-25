@@ -14,12 +14,13 @@ PATH_RULES = (
     (
         "code",
         r"(^|/)(\.claude|\.agents|\.codex|\.cursor|\.github|\.windsurf|\.clinerules|\.kiro|\.roo|\.junie"
-        r"|agents|skills|commands|prompts|handlers)/",
+        r"|\.gemini|\.opencode|\.continue|\.amazonq|\.augment|\.trae"
+        r"|agents?|skills|commands?|prompts|handlers)/",
         "agent prompts and repo automation are executed",
     ),
     (
         "code",
-        r"(^|/)(SKILL|CLAUDE|AGENTS|GEMINI)(\.local)?\.md$",
+        r"(^|/)(SKILL|CLAUDE|AGENTS?|GEMINI)(\.local)?\.md$",
         "agent instruction file",
     ),
     ("code", r"(^|/)values\.schema\.json$", "Helm chart values schema"),
@@ -41,10 +42,11 @@ PATH_RULES = (
 SPEC_TRACK_AREAS = ("correctness", "spec", "compatibility", "maintainability")
 
 # Underscores, hyphens, and case changes separate words here, so `user_auth`
-# and `requiresAuth` match `auth`, and `SSOConfig` matches `sso`.
+# and `requiresAuth` match `auth`, and `SSOConfig` matches `sso`. A digit after a
+# term does not end it, so `OAuth2` and `password1` match.
 _CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 _EDGE_BEFORE = r"(?<![a-z0-9])"
-_EDGE_AFTER = r"(?![a-z0-9])"
+_EDGE_AFTER = r"(?![a-z])"
 _SEP = r"[\s_-]?"
 SECURITY_TERMS = re.compile(
     _EDGE_BEFORE
@@ -188,7 +190,8 @@ def security_hits(parsed, paths):
     hits = {}
     texts = [(path, path) for path in dict.fromkeys([*paths, *parsed["paths"]])]
     for path, text in [*texts, *parsed["changed"]]:
-        text = _CAMEL_BOUNDARY.sub(" ", text)
+        # The raw text keeps `JWTs` and `OAuth2` whole. The split text finds `clientSecret`.
+        text = text + "\n" + _CAMEL_BOUNDARY.sub(" ", text)
         patterns = [SECURITY_TERMS]
         if path is None or not BARE_TOKEN_EXEMPT.search(path):
             patterns.append(BARE_TOKEN)

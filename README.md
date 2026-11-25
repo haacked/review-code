@@ -14,7 +14,7 @@ This system was built with three core objectives:
 
 Specialized agents each focus on a distinct aspect of code quality, ensuring nothing falls through the cracks:
 
-Correctness always runs. Other reviewers run unless the context explorer supplies concrete negative evidence that their area does not apply.
+Correctness always runs. Other reviewers run unless the context explorer supplies concrete negative evidence that their area does not apply. Two rules do not depend on the explorer: the spec reviewer runs only when a changed file is spec content, and a review whose changed files are all spec content skips the reviewers listed under [Review Tracks](#review-tracks).
 
 **Core Review Agents:**
 - **Security**: Vulnerabilities, OWASP Top 10, secret management
@@ -64,7 +64,7 @@ A review's cost is dominated by the orchestrating conversation, not by the size 
 - **The diff stays on disk**: The session record holds a path, not the diff bytes. The orchestrator never loads the diff into its own context, and agents, the position mapper, and the adversary pass all read it from the file.
 - **Diff Compression**: Minimal context lines (1 vs 3) - agents can read full files when needed
 - **Smart Context Loading**: Only loads guidelines for detected languages/frameworks
-- **Scope classification**: `classify-review-scope.sh` picks exploration depth from diff size and file types. Correctness always runs; specialists run unless the explorer records concrete negative evidence that their area does not apply. The review retains each routing decision and its evidence.
+- **Scope classification**: `classify-review-scope.sh` picks exploration depth from diff size and file types. Correctness always runs; specialists run unless the explorer records concrete negative evidence that their area does not apply, or the file table in `helpers/review_tracks.py` rules them out (see Review Tracks). The review retains each routing decision and its evidence.
 - **Incremental re-review**: With `--append`, a re-review covers only what changed since the last one, using the commit recorded in the previous review's metadata. Force-pushes, rebases, a moved base, or a delta covering most of the PR fall back to a full review and say why.
 - **Bash Scripts for Heavy Lifting**: Uses shell scripts for diff generation, file detection, and context preparation instead of consuming tokens
 
@@ -441,7 +441,7 @@ Focuses on:
 
 ### Review Tracks
 
-When every changed file is spec content, the review takes the spec track: it runs correctness, spec, compatibility, and maintainability, and skips performance, testing, frontend, and infra-config. Security runs on the spec track only when a changed line or path names an auth, credential, token, or personal-data term, or the explorer reports that security applies. Any code file, rename from a code file, pure rename or copy (whose header hides the file mode), MDX file (MDX compiles to JavaScript), mode change, symlink, submodule, or binary keeps the review on the code track, where every reviewer runs as before and the spec agent reads only the spec-content files. `skills/review-code/scripts/helpers/review_tracks.py` holds the file table and the security terms.
+When every changed file is spec content, the review takes the spec track: it runs correctness, spec, compatibility, and maintainability, and skips performance, testing, frontend, and infra-config. Security runs on the spec track only when a changed line or path names an auth, credential, token, or personal-data term, or the explorer reports that security applies. A bare "token" in a Gherkin `.feature` file does not count, because every sdk-specs scenario initializes the SDK with a project token; qualified terms such as "access token" or "API token" still do. Any code file, rename from a code file, pure rename or copy (whose header hides the file mode), MDX file (MDX compiles to JavaScript), mode change, symlink, submodule, or binary keeps the review on the code track, where every reviewer runs as before and the spec agent reads only the spec-content files. `skills/review-code/scripts/helpers/review_tracks.py` holds the file table and the security terms.
 
 ### Supporting Agents
 
