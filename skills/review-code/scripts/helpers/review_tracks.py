@@ -93,7 +93,8 @@ def _header_path(line):
     if match:
         return match.group(1)
     if line.startswith(("--- ", "+++ ")):
-        path = line[4:]
+        # Git appends a tab to a path that contains a space.
+        path = line[4:].removesuffix("\t")
         if path == "/dev/null":
             return None
         return path[2:] if path.startswith(("a/", "b/")) else path
@@ -104,8 +105,9 @@ def parse_patch(text):
     """Split a unified git patch into header paths, blockers, and changed lines.
 
     Blockers are the shapes whose paths cannot prove the change is prose:
-    quoted paths, mode changes, symlinks, submodules, binaries, and renames
-    or copies from a path that is not spec content.
+    quoted paths, mode changes, symlinks, submodules, binaries, renames or
+    copies from a path that is not spec content, and pure renames or copies,
+    whose headers do not show the file mode.
     """
     paths = []
     blockers = []
@@ -113,10 +115,16 @@ def parse_patch(text):
     header_paths = []
     current = None
     in_hunk = False
-    for line in text.splitlines():
+    moved = None
+    mode_seen = False
+    for line in [*text.splitlines(), "diff --git "]:
         if line.startswith("diff --git "):
+            if moved is not None and not mode_seen:
+                blockers.append(f"the file mode of {moved} is not shown")
             in_hunk = False
             current = None
+            moved = None
+            mode_seen = False
             if '"' in line:
                 blockers.append(f"quoted path in {line!r}")
                 continue
@@ -136,6 +144,7 @@ def parse_patch(text):
             in_hunk = True
             continue
         mode = _MODE_LINE.match(line)
+        mode_seen = mode_seen or mode is not None
         if mode and mode.group(1) != "100644":
             blockers.append(f"executable, symlink, or submodule: {line}")
         elif line.startswith(("Binary files", "GIT binary patch")):
@@ -147,6 +156,8 @@ def parse_patch(text):
             blockers.append(f"quoted path: {line}")
             continue
         paths.append(path)
+        if line.startswith(("rename from", "copy from")):
+            moved = path
         if line.startswith(("+++ ", "rename to", "copy to")):
             current = path
         elif current is None:
@@ -179,7 +190,7 @@ def main():
     metadata = json.load(sys.stdin)
     paths = [item["path"] for item in metadata.get("modified_files") or []]
     for path in spec_paths(paths):
-        print(json.dumps(path))
+        print(json.dumps(path, ensure_ascii=False))
 
 
 if __name__ == "__main__":

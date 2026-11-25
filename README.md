@@ -441,7 +441,7 @@ Focuses on:
 
 ### Review Tracks
 
-When every changed file is spec content, the review takes the spec track: it runs correctness, spec, compatibility, and maintainability, and skips performance, testing, frontend, and infra-config. Security runs on the spec track only when a changed line or path names an auth, credential, token, or personal-data term, or the explorer reports that security applies. Any code file, rename from a code file, mode change, symlink, submodule, or binary keeps the review on the code track, where every reviewer runs as before and the spec agent reads only the spec-content files. `skills/review-code/scripts/helpers/review_tracks.py` holds the file table and the security terms.
+When every changed file is spec content, the review takes the spec track: it runs correctness, spec, compatibility, and maintainability, and skips performance, testing, frontend, and infra-config. Security runs on the spec track only when a changed line or path names an auth, credential, token, or personal-data term, or the explorer reports that security applies. Any code file, rename from a code file, pure rename or copy (whose header hides the file mode), mode change, symlink, submodule, or binary keeps the review on the code track, where every reviewer runs as before and the spec agent reads only the spec-content files. `skills/review-code/scripts/helpers/review_tracks.py` holds the file table and the security terms.
 
 ### Supporting Agents
 

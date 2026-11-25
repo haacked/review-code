@@ -843,8 +843,10 @@ assert_security_skipped_on_spec_track() {
 
 @test "a security term only in a rename-from path runs security" {
     printf '%s\n' 'diff --git a/openspec/specs/authentication/spec.md b/openspec/specs/login/spec.md' \
-        'similarity index 100%' 'rename from openspec/specs/authentication/spec.md' \
-        'rename to openspec/specs/login/spec.md' | use_patch
+        'similarity index 90%' 'rename from openspec/specs/authentication/spec.md' \
+        'rename to openspec/specs/login/spec.md' 'index 1111111..2222222 100644' \
+        '--- a/openspec/specs/authentication/spec.md' '+++ b/openspec/specs/login/spec.md' \
+        '@@ -1 +1 @@' '-The flag list is cached.' '+The flag list is cached for one minute.' | use_patch
 
     classify
 
@@ -931,4 +933,37 @@ assert_security_skipped_on_spec_track() {
 
     assert_spec_track
     assert_security_skipped_on_spec_track
+}
+
+
+@test "a pure rename between Markdown paths takes the code track because the file mode is not shown" {
+    guard_case 'diff --git a/docs/run.md b/docs/new.md
+similarity index 100%
+rename from docs/run.md
+rename to docs/new.md
+'
+}
+
+@test "a pure copy between Markdown paths takes the code track because the file mode is not shown" {
+    guard_case 'diff --git a/docs/run.md b/docs/copy.md
+similarity index 100%
+copy from docs/run.md
+copy to docs/copy.md
+'
+}
+
+@test "a Markdown path with a space keeps the spec track despite git's trailing tab" {
+    printf 'diff --git a/docs/user guide.md b/docs/user guide.md\nindex 1111111..2222222 100644\n--- a/docs/user guide.md\t\n+++ b/docs/user guide.md\t\n@@ -1 +1 @@\n-old\n+new\n' | use_patch
+    classify
+    assert_json '.track == "spec"'
+}
+
+@test "briefing keeps a non-ASCII spec path in the spec diff" {
+    { modify_hunk src/app.py 'python_value = 2' 'python_value = 1'; modify_hunk docs/guide.md; modify_hunk 'docs/café.md'; } | use_patch
+
+    run env -u GIT_CONFIG_GLOBAL "$SCRIPTS/build-agent-briefing.sh" "$SESSION" --agents "correctness spec"
+
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^diff --git' "$ARTIFACTS/diff-spec.patch")" -eq 2 ]
+    grep -q '^diff --git a/docs/café.md b/docs/café.md$' "$ARTIFACTS/diff-spec.patch"
 }

@@ -35,17 +35,6 @@
       "keywords": ["lowercase", "rfc 2119", "testable", "makes sense", "vague", "normative"]
     },
     {
-      "id": "empty-string-type-gap",
-      "description": "The rule names a missing type field and lists the recognized values, but never says whether an empty-string type counts as omitted (person filter) or unknown (inconclusive), so SDKs can split",
-      "area": "spec",
-      "severity": "suggestion",
-      "weight": 6,
-      "file": "openspec/changes/2026-11-20-defer-unknown-filter-types/specs/local-flag-evaluator/spec.md",
-      "line_start": 5,
-      "line_end": 7,
-      "keywords": ["empty string", "empty", "\"\"", "null", "blank"]
-    },
-    {
       "id": "undetermined-synonym",
       "description": "The scenario calls the flag 'undetermined' while every requirement calls the same state 'inconclusive'",
       "area": "spec",
