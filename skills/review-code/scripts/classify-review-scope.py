@@ -87,6 +87,10 @@ def valid_evidence(evidence):
     )
 
 
+def explorer_status(assessment):
+    return assessment.get("status") if isinstance(assessment, dict) else None
+
+
 def decide(area, assessment, fallback_reason):
     evidence = assessment.get("evidence") if isinstance(assessment, dict) else None
     evidence = evidence if valid_evidence(evidence) else []
@@ -96,16 +100,16 @@ def decide(area, assessment, fallback_reason):
         reason = fallback_reason
     elif not isinstance(assessment, dict):
         reason = "Missing or invalid explorer assessment; reviewer required"
-    elif assessment.get("status") == "not_applicable" and evidence:
+    elif explorer_status(assessment) == "not_applicable" and evidence:
         return {
             "decision": "skip",
             "reason": "Explorer ruled out this area: "
             + "; ".join(item["result"] for item in evidence),
             "evidence": evidence,
         }
-    elif assessment.get("status") == "applies":
+    elif explorer_status(assessment) == "applies":
         reason = "Explorer identified applicable changes"
-    elif assessment.get("status") == "uncertain":
+    elif explorer_status(assessment) == "uncertain":
         reason = "Explorer is uncertain; reviewer required"
     else:
         reason = "No valid negative evidence; reviewer required"
@@ -221,10 +225,7 @@ def apply_spec_track(decisions, session, reviewed, assessments):
             + ", ".join(hits[:5]),
             "evidence": [],
         }
-    elif not (
-        isinstance(assessments.get("security"), dict)
-        and assessments["security"].get("status") == "applies"
-    ):
+    elif explorer_status(assessments.get("security")) != "applies":
         decisions["security"] = deepcopy(skip)
         decisions["security"]["evidence"] = evidence + [
             {

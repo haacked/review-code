@@ -428,7 +428,7 @@ Focuses on:
 
 #### Spec (`code-reviewer-spec`)
 
-**Runs when:** At least one changed file is spec content, such as prose, Gherkin `.feature` scenarios, or schema and example payloads. Markdown that agents execute, such as agent prompts, skills, and `SKILL.md` or `CLAUDE.md` files, counts as code. `skills/review-code/scripts/helpers/review_tracks.py` holds the full table.
+**Runs when:** At least one changed file is spec content, such as prose, Gherkin `.feature` scenarios, or schema and example payloads. Markdown that agents execute, such as agent prompts, skills, `SKILL.md` or `CLAUDE.md` files, and anything under a dot-directory, counts as code. `skills/review-code/scripts/helpers/review_tracks.py` holds the full table.
 
 Focuses on:
 

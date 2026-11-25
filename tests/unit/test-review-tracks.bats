@@ -153,7 +153,7 @@ guard_case() {
         schemas/user.json .github/PULL_REQUEST_TEMPLATE.md agents/code-reviewer-security.md
         skills/review-code/handlers/review.md CLAUDE.md docs/AGENTS.md .claude Makefile src/app.py
         .windsurf/rules/flags.md .clinerules/style.md .kiro/steering/product.md .roo/rules.md
-        .junie/guidelines.md CLAUDE.local.md charts/posthog/values.schema.json docs/guide.mdx x.MDX)
+        .junie/guidelines.md .gemini/styleguide.md .changeset/brave-owls.md CLAUDE.local.md charts/posthog/values.schema.json docs/guide.mdx x.MDX)
 
     run path_kinds "${paths[@]}"
 
@@ -917,14 +917,6 @@ assert_security_skipped_on_spec_track() {
     assert_security_runs_for "oauth2"
 }
 
-@test "agent tool instruction files take the code track" {
-    modify_hunk .gemini/styleguide.md | use_patch
-
-    classify
-
-    assert_json '.track == "code"'
-}
-
 @test "explorer security applies runs security on the spec track without a term" {
     modify_hunk docs/guide.md 'Flags load lazily.' | use_patch
     write_routing '{"scope":"full","areas":{"security":{"status":"applies"}}}'
@@ -1003,14 +995,15 @@ copy to docs/copy.md
     grep -q '^diff --git a/docs/café.md b/docs/café.md$' "$ARTIFACTS/diff-spec.patch"
 }
 
-
 @test "a prose-only MDX change takes the code track" {
     guard_case "$(modify_hunk docs/guide.mdx 'The SDK MUST retry once.')
 "
 }
 
 @test "a security term after a Unicode line separator in a changed line runs security" {
-    printf 'diff --git a/docs/a.md b/docs/a.md\nindex 1111111..2222222 100644\n--- a/docs/a.md\n+++ b/docs/a.md\n@@ -1 +1 @@\n-old\n+Hello\xe2\x80\xa8the password field\n' | use_patch
+    modify_hunk docs/a.md $'Hello\xe2\x80\xa8the password field' | use_patch
+
     classify
-    assert_json '.track == "spec" and .agent_decisions.security.decision == "run"'
+
+    assert_security_runs_for "password"
 }
