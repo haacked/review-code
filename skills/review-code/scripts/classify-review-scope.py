@@ -116,7 +116,8 @@ def read_patch(path):
     if not isinstance(path, str) or not path:
         return None
     try:
-        return Path(path).read_text()
+        with open(path, newline="") as source:
+            return source.read()
     except (OSError, UnicodeError):
         return None
 

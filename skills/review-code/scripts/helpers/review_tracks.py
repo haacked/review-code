@@ -13,11 +13,20 @@ import sys
 PATH_RULES = (
     (
         "code",
-        r"(^|/)(\.claude|\.agents|\.codex|\.cursor|\.github|agents|skills|commands|prompts|handlers)/",
+        r"(^|/)(\.claude|\.agents|\.codex|\.cursor|\.github|\.windsurf|\.clinerules|\.kiro|\.roo|\.junie"
+        r"|agents|skills|commands|prompts|handlers)/",
         "agent prompts and repo automation are executed",
     ),
-    ("code", r"(^|/)(SKILL|CLAUDE|AGENTS|GEMINI)\.md$", "agent instruction file"),
-    ("spec", r"\.(md|mdx|markdown|rst)$", "prose"),
+    (
+        "code",
+        r"(^|/)(SKILL|CLAUDE|AGENTS|GEMINI)(\.local)?\.md$",
+        "agent instruction file",
+    ),
+    ("code", r"(^|/)values\.schema\.json$", "Helm chart values schema"),
+    # MDX compiles to JavaScript. Whether a line runs depends on fences and
+    # blocks outside the hunk, so a diff cannot show that an MDX change is prose.
+    ("code", r"\.mdx$", "MDX compiles to JavaScript"),
+    ("spec", r"\.(md|markdown|rst)$", "prose"),
     ("spec", r"\.feature$", "Gherkin acceptance scenarios"),
     ("spec", r"\.(schema|examples)\.(json|ya?ml)$", "schema or example payloads"),
     (
@@ -117,7 +126,12 @@ def parse_patch(text):
     in_hunk = False
     moved = None
     mode_seen = False
-    for line in [*text.splitlines(), "diff --git "]:
+    # Git ends lines only with \n. splitlines() also splits on characters such as
+    # U+2028, which would drop the rest of a changed line from the term search.
+    for line in [
+        *(line.removesuffix("\r") for line in text.split("\n")),
+        "diff --git ",
+    ]:
         if line.startswith("diff --git "):
             if moved is not None and not mode_seen:
                 blockers.append(f"the file mode of {moved} is not shown")

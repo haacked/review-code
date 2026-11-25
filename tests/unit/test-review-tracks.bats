@@ -135,7 +135,7 @@ guard_case() {
 }
 
 @test "table marks prose, Gherkin, schema, example, and OpenSpec metadata paths as spec" {
-    paths=(docs/a.md x.MDX notes.rst acceptance/private/x.feature api/event.schema.json
+    paths=(docs/a.md docs/b.MARKDOWN notes.rst acceptance/private/x.feature api/event.schema.json
         acceptance/private/exception-event-metadata.examples.json
         openspec/changes/archive/2026-x/.openspec.yaml)
 
@@ -151,7 +151,9 @@ guard_case() {
 @test "table marks config, prompt, instruction, and source paths as code" {
     paths=(openspec/config.yaml config.example.yaml package.json examples/node/package.json
         schemas/user.json .github/PULL_REQUEST_TEMPLATE.md agents/code-reviewer-security.md
-        skills/review-code/handlers/review.md CLAUDE.md docs/AGENTS.md .claude Makefile src/app.py)
+        skills/review-code/handlers/review.md CLAUDE.md docs/AGENTS.md .claude Makefile src/app.py
+        .windsurf/rules/flags.md .clinerules/style.md .kiro/steering/product.md .roo/rules.md
+        .junie/guidelines.md CLAUDE.local.md charts/posthog/values.schema.json docs/guide.mdx x.MDX)
 
     run path_kinds "${paths[@]}"
 
@@ -966,4 +968,16 @@ copy to docs/copy.md
     [ "$status" -eq 0 ]
     [ "$(grep -c '^diff --git' "$ARTIFACTS/diff-spec.patch")" -eq 2 ]
     grep -q '^diff --git a/docs/café.md b/docs/café.md$' "$ARTIFACTS/diff-spec.patch"
+}
+
+
+@test "a prose-only MDX change takes the code track" {
+    guard_case "$(modify_hunk docs/guide.mdx 'The SDK MUST retry once.')
+"
+}
+
+@test "a security term after a Unicode line separator in a changed line runs security" {
+    printf 'diff --git a/docs/a.md b/docs/a.md\nindex 1111111..2222222 100644\n--- a/docs/a.md\n+++ b/docs/a.md\n@@ -1 +1 @@\n-old\n+Hello\xe2\x80\xa8the password field\n' | use_patch
+    classify
+    assert_json '.track == "spec" and .agent_decisions.security.decision == "run"'
 }
