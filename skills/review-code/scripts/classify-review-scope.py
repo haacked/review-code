@@ -165,7 +165,12 @@ def decide_track(whole_session, session, reviewed_patch_path):
     reviewed patch to be spec content. A chunk or delta that holds only prose
     therefore stays on the code track when the rest of the review changed code.
     The patches are read only when the file metadata allows the spec track.
+    Only a PR review's diff keeps deleted files. Commit, branch, range, and
+    local reviews drop them, so a deleted code file would be invisible there.
     """
+    mode = whole_session.get("mode")
+    if mode != "pr":
+        return [f"a {mode or 'unknown'} review's diff omits deleted files"], None
     blockers = metadata_blockers(whole_session, session)
     if blockers:
         return list(dict.fromkeys(blockers)), None

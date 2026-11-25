@@ -18,7 +18,7 @@ PATH_RULES = (
     ),
     (
         "code",
-        r"(^|/)(SKILL|CLAUDE|AGENTS?|GEMINI)(\.local)?\.md$",
+        r"(^|/)(SKILL|CLAUDE|AGENTS?|GEMINI)(\.[^/]+)?\.md$",
         "agent instruction file",
     ),
     ("code", r"(^|/)values\.schema\.json$", "Helm chart values schema"),

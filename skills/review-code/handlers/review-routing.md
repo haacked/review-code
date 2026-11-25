@@ -21,7 +21,7 @@ Use this selection for an unchunked review, including a delta dispatch. Its expl
 
 For a chunked review, this selection describes the whole patch and controls only the shared exploration. Each chunk analysis produces its own routing evidence, and the chunk handler runs this classifier again against that chunk's patch and analysis. A chunk may skip a specialist only when its own explorer supplied concrete negative evidence, or when the spec-track table skips it. Correctness always runs in every chunk.
 
-The classifier's output has a `track`. It is `spec` when every changed file is spec content, both in the whole review and in the patch being reviewed. Otherwise it is `code`. `helpers/review_tracks.py` holds the table of spec paths and security terms.
+The classifier's output has a `track`. It is `spec` only on a PR review where every changed file is spec content, both in the whole review and in the patch being reviewed. Otherwise it is `code`. `helpers/review_tracks.py` holds the table of spec paths and security terms.
 
 On the spec track, the classifier skips performance, testing, frontend, and infra-config, and cites the table as the evidence. It runs security only when a changed line or path contains a security term from the table, or when the explorer reports security as `applies`.
 

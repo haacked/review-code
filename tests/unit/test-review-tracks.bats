@@ -153,7 +153,7 @@ guard_case() {
         schemas/user.json .github/PULL_REQUEST_TEMPLATE.md agents/code-reviewer-security.md
         skills/review-code/handlers/review.md CLAUDE.md docs/AGENTS.md .claude Makefile src/app.py
         .windsurf/rules/flags.md .clinerules/style.md .kiro/steering/product.md .roo/rules.md
-        .junie/guidelines.md .gemini/styleguide.md .changeset/brave-owls.md CLAUDE.local.md charts/posthog/values.schema.json docs/guide.mdx x.MDX)
+        .junie/guidelines.md .gemini/styleguide.md .changeset/brave-owls.md CLAUDE.local.md AGENTS.override.md backend/AGENTS.override.md charts/posthog/values.schema.json docs/guide.mdx x.MDX)
 
     run path_kinds "${paths[@]}"
 
@@ -1006,4 +1006,15 @@ copy to docs/copy.md
     classify
 
     assert_security_runs_for "password"
+}
+
+@test "a spec-only change outside a PR review takes the code track because its diff omits deleted files" {
+    modify_hunk docs/guide.md | use_patch
+    for mode in commit branch range local; do
+        jq --arg mode "$mode" '.mode = $mode' "$SESSION" > "$SESSION.tmp" && mv "$SESSION.tmp" "$SESSION"
+
+        classify
+
+        assert_code_track_full_review
+    done
 }
