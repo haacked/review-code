@@ -27,12 +27,13 @@ PATH_RULES = (
     ),
 )
 
-# Areas that run on the spec track. Security joins them when a changed line or
-# path matches SECURITY_TERMS, or when the explorer reports that security
-# applies. The classifier skips every other area.
+# Areas that run on the spec track. Security joins them under the rules in
+# apply_spec_track in classify-review-scope.py. The classifier skips every other area.
 SPEC_TRACK_AREAS = ("correctness", "spec", "compatibility", "maintainability")
 
-# Underscores and hyphens separate words here, so `user_auth` matches `auth`.
+# Underscores, hyphens, and case changes separate words here, so `user_auth`
+# and `requiresAuth` match `auth`, and `SSOConfig` matches `sso`.
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 _EDGE_BEFORE = r"(?<![a-z0-9])"
 _EDGE_AFTER = r"(?![a-z0-9])"
 _SEP = r"[\s_-]?"
@@ -62,12 +63,15 @@ SECURITY_TERMS = re.compile(
 # A bare "token" does not count in Gherkin files, because every sdk-specs
 # scenario initializes the SDK with a project token.
 BARE_TOKEN = re.compile(_EDGE_BEFORE + r"tokens?" + _EDGE_AFTER, re.IGNORECASE)
-_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 BARE_TOKEN_EXEMPT = re.compile(r"\.feature$", re.IGNORECASE)
 
 _RULES = tuple(
     (kind, re.compile(pattern, re.IGNORECASE), reason)
     for kind, pattern, reason in PATH_RULES
+)
+# Every header line that carries a file mode. Only 100644 is a regular, non-executable file.
+_MODE_LINE = re.compile(
+    r"^(?:old mode|new mode|new file mode|deleted file mode|index \S+) (\d{6})$"
 )
 _HEADER_PATH = re.compile(r"^(?:rename from|rename to|copy from|copy to) (.*)$")
 
@@ -131,17 +135,8 @@ def parse_patch(text):
         if line.startswith("@@"):
             in_hunk = True
             continue
-        if line.startswith(("old mode", "new mode")):
-            blockers.append(f"mode change: {line}")
-        elif line.startswith(
-            ("new file mode", "deleted file mode")
-        ) and not line.endswith(" 100644"):
-            blockers.append(f"executable, symlink, or submodule: {line}")
-        elif (
-            line.startswith("index ")
-            and re.search(r" \d{6}$", line)
-            and not line.endswith(" 100644")
-        ):
+        mode = _MODE_LINE.match(line)
+        if mode and mode.group(1) != "100644":
             blockers.append(f"executable, symlink, or submodule: {line}")
         elif line.startswith(("Binary files", "GIT binary patch")):
             blockers.append(f"binary content: {line}")
