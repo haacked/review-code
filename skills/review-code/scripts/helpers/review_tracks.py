@@ -27,8 +27,9 @@ PATH_RULES = (
     ),
 )
 
-# Areas that run on the spec track. Security joins them when a security signal
-# fires. The classifier skips every other area.
+# Areas that run on the spec track. Security joins them when a changed line or
+# path matches SECURITY_TERMS, or when the explorer reports that security
+# applies. The classifier skips every other area.
 SPEC_TRACK_AREAS = ("correctness", "spec", "compatibility", "maintainability")
 
 # Underscores and hyphens separate words here, so `user_auth` matches `auth`.
@@ -61,6 +62,7 @@ SECURITY_TERMS = re.compile(
 # A bare "token" does not count in Gherkin files, because every sdk-specs
 # scenario initializes the SDK with a project token.
 BARE_TOKEN = re.compile(_EDGE_BEFORE + r"tokens?" + _EDGE_AFTER, re.IGNORECASE)
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 BARE_TOKEN_EXEMPT = re.compile(r"\.feature$", re.IGNORECASE)
 
 _RULES = tuple(
@@ -135,8 +137,12 @@ def parse_patch(text):
             ("new file mode", "deleted file mode")
         ) and not line.endswith(" 100644"):
             blockers.append(f"executable, symlink, or submodule: {line}")
-        elif line.startswith("index ") and re.search(r" (120000|160000)$", line):
-            blockers.append(f"symlink or submodule: {line}")
+        elif (
+            line.startswith("index ")
+            and re.search(r" \d{6}$", line)
+            and not line.endswith(" 100644")
+        ):
+            blockers.append(f"executable, symlink, or submodule: {line}")
         elif line.startswith(("Binary files", "GIT binary patch")):
             blockers.append(f"binary content: {line}")
         path = _header_path(line)
@@ -162,6 +168,7 @@ def security_hits(parsed, paths):
     hits = {}
     texts = [(path, path) for path in dict.fromkeys([*paths, *parsed["paths"]])]
     for path, text in [*texts, *parsed["changed"]]:
+        text = _CAMEL_BOUNDARY.sub(" ", text)
         patterns = [SECURITY_TERMS]
         if path is None or not BARE_TOKEN_EXEMPT.search(path):
             patterns.append(BARE_TOKEN)

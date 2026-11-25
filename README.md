@@ -329,7 +329,7 @@ This eliminates confusion about what's being reviewed and lets you cancel if the
 
 ## Review Agents
 
-The system includes nine reviewers and four supporting agents for context, validation, semantic composition, and comprehension. Correctness always runs. The explorer can exclude another reviewer only with concrete negative evidence; uncertainty keeps it enabled. An explicit area request runs that specialist and correctness.
+The system includes nine reviewers and four supporting agents for context, validation, semantic composition, and comprehension. Correctness always runs. The explorer can exclude another reviewer only with concrete negative evidence; uncertainty keeps it enabled. Two exceptions do not depend on the explorer: the spec reviewer runs only when a changed file is spec content, and the spec track skips the reviewers listed under Review Tracks. An explicit area request runs that specialist and correctness.
 
 ### Core Agents
 
@@ -428,7 +428,7 @@ Focuses on:
 
 #### Spec (`code-reviewer-spec`)
 
-**Runs when:** At least one changed file is spec content: prose (`.md`, `.mdx`, `.rst`), Gherkin `.feature` scenarios, or `*.schema.*` and `*.examples.*` payloads. Markdown that agents execute, such as files under `agents/`, `skills/`, or `.claude/` and files named `SKILL.md` or `CLAUDE.md`, counts as code.
+**Runs when:** At least one changed file is spec content, such as prose, Gherkin `.feature` scenarios, or schema and example payloads. Markdown that agents execute, such as agent prompts, skills, and `SKILL.md` or `CLAUDE.md` files, counts as code. `skills/review-code/scripts/helpers/review_tracks.py` holds the full table.
 
 Focuses on:
 

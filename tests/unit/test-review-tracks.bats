@@ -521,6 +521,17 @@ index 0000000..2222222
 '
 }
 
+@test "an edited executable file with a Markdown name takes the code track" {
+    guard_case 'diff --git a/docs/run.md b/docs/run.md
+index 1111111..2222222 100755
+--- a/docs/run.md
++++ b/docs/run.md
+@@ -1 +1 @@
+-old
++new
+'
+}
+
 @test "a new symlink with a Markdown name takes the code track" {
     guard_case 'diff --git a/docs/link.md b/docs/link.md
 new file mode 120000
@@ -630,6 +641,15 @@ HcmV?d00001
     classify --diff-file "$BATS_TEST_TMPDIR/delta.patch"
 
     assert_json '.track == "code" and .agent_decisions.security.decision == "run"'
+}
+
+@test "a patch blocker elsewhere in the whole review keeps a clean delta on the code track" {
+    { modify_hunk docs/a.md; printf '%s\n' 'diff --git a/docs/run.md b/docs/run.md' 'old mode 100644' 'new mode 100755'; } | use_patch
+    modify_hunk docs/a.md 'newer value' 'new value' > "$BATS_TEST_TMPDIR/delta.patch"
+
+    classify --diff-file "$BATS_TEST_TMPDIR/delta.patch"
+
+    assert_code_track_full_review
 }
 
 @test "a Markdown-only chunk of a mixed PR stays on the code track" {
@@ -794,6 +814,9 @@ assert_security_skipped_on_spec_track() {
 @test "each security term class in a changed spec line runs security" {
     cases=(
         'credential|The SDK MUST NOT log credentials.'
+        'secret|The payload MUST NOT include `client_secret`.'
+        'secret|The schema adds a `clientSecret` field.'
+        'password|The schema adds a `userPassword` field.'
         'access token|The SDK MUST refresh the access token before it expires.'
         'email address|Events MUST NOT include the email address of the user.'
         'redact|The SDK MUST redact property values before sending them.'
