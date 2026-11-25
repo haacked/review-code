@@ -190,6 +190,7 @@ remove_agents() {
         "code-reviewer-compatibility"
         "code-reviewer-frontend"
         "code-reviewer-infra-config"
+        "code-reviewer-spec"
         "code-reviewer-comment"
         # Setup does not install these two. Older installs still have a copy.
         "code-reviewer-architecture"

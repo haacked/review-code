@@ -221,7 +221,7 @@ main() {
     local confidence_trailer_re='^Location:[[:space:]]+(.+)[[:space:]]+\|[[:space:]]+Confidence:[[:space:]]+(100|[0-9]{1,2})%[[:space:]]*$'
     local from_agent_re='^\*From:[[:space:]]+([[:alpha:]-]+)[[:space:]]+\([0-9]+%[[:space:]]+confidence\)\*[[:space:]]*$'
     # Architecture stays so that reviews written before it was folded into maintainability still parse.
-    local recognized_agent_re='(Security|Performance|Correctness|Maintainability|Testing|Compatibility|Architecture|Frontend|Infra-Config)'
+    local recognized_agent_re='(Security|Performance|Correctness|Maintainability|Testing|Compatibility|Architecture|Frontend|Infra-Config|Spec)'
     # Fenced code block delimiter, with the marker run and whatever follows it
     # captured separately. Nesting is counted rather than toggled: this repo's
     # own finding format puts a ```suggestion block inside a ```text body, which

@@ -48,6 +48,13 @@ Sample diffs demonstrating various languages and frameworks:
 - **Use Case**: Testing performance with large diffs
 - **Files**: 1 (package-lock.json)
 
+#### `sdk-specs-251.diff`
+- **Type**: Spec-only change, frozen from PostHog/sdk-specs#251 (base `6cf0374`, head `5c7fb59`)
+- **Features**: OpenSpec Markdown and a Gherkin `.feature` file, with the `initialized with token "test-token"` step
+- **Use Case**: Testing that a spec-only PR takes the spec review track without a security reviewer
+- **Lines**: 224 additions
+- **Files**: 6
+
 ### Edge Case Files (`files/`)
 
 Files for testing special character handling and edge cases:

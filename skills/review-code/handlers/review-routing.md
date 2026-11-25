@@ -17,8 +17,14 @@ For a user-requested `area`, the classifier selects the requested reviewer and c
 
 When the session has `reviewers`, the classifier reads that list from the session file and applies it on every call, including the chunk handler's calls and the retry without explorer evidence. It selects correctness and the listed reviewers, even ones the explorer marked not applicable, and records every other reviewer as excluded by the caller, with no negative evidence. The caller chose that scope; review-code does not derive one.
 
-Use this selection for an unchunked review, including a delta dispatch. Its explorer evidence must describe `$review_diff_path`, the same patch the reviewers receive. Do not derive another selection from diff size, file types, or missing scoped diffs.
+Use this selection for an unchunked review, including a delta dispatch. Its explorer evidence must describe `$review_diff_path`, the same patch the reviewers receive. Do not derive another selection from diff size, file types, or missing scoped diffs; the classifier's track table is the only file-type rule.
 
-For a chunked review, this selection describes the whole patch and controls only the shared exploration. Each chunk analysis produces its own routing evidence, and the chunk handler runs this classifier again against that chunk's patch and analysis. A chunk may skip a specialist only when its own explorer supplied concrete negative evidence. Correctness always runs in every chunk.
+For a chunked review, this selection describes the whole patch and controls only the shared exploration. Each chunk analysis produces its own routing evidence, and the chunk handler runs this classifier again against that chunk's patch and analysis. A chunk may skip a specialist only when its own explorer supplied concrete negative evidence, or when the spec-track table skips it. Correctness always runs in every chunk.
 
-Tell the user which reviewers were skipped and why. At composition, retain `review-routing.json` beside the reviewer coverage artifacts and include each skip reason and its evidence in the review's scope section. Link the saved artifact for the complete decision record. On append, report this run's decisions separately from earlier scope records.
+The classifier's output has a `track`. It is `spec` when every changed file is spec content, both in the whole review and in the patch being reviewed. Otherwise it is `code`. `helpers/review_tracks.py` holds the table of spec paths and security terms.
+
+On the spec track, the classifier skips performance, testing, frontend, and infra-config, and cites the table as the evidence. It runs security only when a changed line or path contains a security term from the table, or when the explorer reports security as `applies`.
+
+The table alone decides whether `spec` runs, on either track. It runs when any changed path is spec content. A caller's `--area` or `--reviewers` scope replaces this selection, and the track is then reported as `code`.
+
+Tell the user which reviewers were skipped and why, and which track the review took. At composition, retain `review-routing.json` beside the reviewer coverage artifacts and include each skip reason and its evidence in the review's scope section. Link the saved artifact for the complete decision record. On append, report this run's decisions separately from earlier scope records.

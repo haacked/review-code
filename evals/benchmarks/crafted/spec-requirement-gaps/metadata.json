@@ -1,0 +1,11 @@
+{
+  "id": "spec-requirement-gaps",
+  "name": "Unknown Filter Types in Local Evaluation",
+  "description": "Add an OpenSpec change that makes unknown property-filter types inconclusive in local flag evaluation, with acceptance scenarios and a logging requirement for inconclusive results.",
+  "languages": ["markdown", "gherkin"],
+  "frameworks": ["openspec"],
+  "areas": ["spec"],
+  "difficulty": "medium",
+  "expected_finding_count": 5,
+  "false_positive_trap_count": 1
+}

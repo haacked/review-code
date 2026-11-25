@@ -271,8 +271,9 @@ PY
     ' <<< "$output"
     jq -e '
         .scope == "chunks" and
+        .track == "code" and
         (.agents | length) == 8 and
-        .skipped_agents == [] and
+        .skipped_agents == ["spec"] and
         (.chunks | length) == 4 and
         .agent_decisions.correctness.decision == "run"
     ' "$ARTIFACTS/review-routing.json"
@@ -290,7 +291,7 @@ PY
     run python3 "$SCRIPT" "$SESSION" --classify
 
     [ "$status" -eq 0 ]
-    jq -e '(.chunks[0].classification.agents | length) == 8 and .chunks[0].classification.skipped_agents == []' <<< "$output"
+    jq -e '(.chunks[0].classification.agents | length) == 8 and .chunks[0].classification.skipped_agents == ["spec"]' <<< "$output"
 }
 
 @test "explicit area keeps correctness in every chunk" {

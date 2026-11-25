@@ -183,6 +183,15 @@
       "languages": ["python"],
       "areas": ["maintainability"],
       "difficulty": "hard"
+    },
+    {
+      "id": "spec-requirement-gaps",
+      "category": "crafted",
+      "name": "Unknown Filter Types in Local Evaluation",
+      "description": "OpenSpec change and acceptance scenarios with an untestable lowercase should, a scenario that contradicts its rule, a contradiction with another spec, two names for one state, and an undefined empty-string case",
+      "languages": ["markdown", "gherkin"],
+      "areas": ["spec"],
+      "difficulty": "medium"
     }
   ]
 }

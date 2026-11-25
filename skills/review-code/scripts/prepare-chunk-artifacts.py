@@ -16,6 +16,7 @@ AREAS = (
     "compatibility",
     "infra-config",
     "frontend",
+    "spec",
 )
 
 MANIFEST_FIELDS = (
@@ -60,6 +61,11 @@ def classify_chunk(session_path, record, area):
 
 
 def aggregate_routing(records, artifacts):
+    tracks = {record["classification"].get("track") for record in records}
+    if len(tracks) != 1:
+        raise ValueError(
+            f"Chunk classifications disagree on the review track: {tracks}"
+        )
     agents = [
         area
         for area in AREAS
@@ -91,6 +97,7 @@ def aggregate_routing(records, artifacts):
         }
     aggregate = {
         "scope": "chunks",
+        "track": tracks.pop(),
         "agents": agents,
         "skipped_agents": skipped,
         "reasoning": (

@@ -7,7 +7,7 @@ Used only when an agent replies `BRIEFING_UNAVAILABLE`, meaning it could not rea
 ## Re-dispatching
 
 1. Read `<artifacts_dir>/briefing.md`.
-2. Read the agent's diff file: `diff-frontend.patch` or `diff-infra-config.patch` when one exists for that agent, otherwise the `diff_path` the briefing script returned (the delta on a re-review, not necessarily `diff.patch`).
+2. Read the agent's diff file: `diff-frontend.patch`, `diff-infra-config.patch`, or `diff-spec.patch` when one exists for that agent, otherwise the `diff_path` the briefing script returned (the delta on a re-review, not necessarily `diff.patch`).
 3. Re-dispatch the same `subagent_type` with both pasted inline, under the headings the agent expects:
 
 ```markdown

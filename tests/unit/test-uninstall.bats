@@ -61,6 +61,11 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
+@test "uninstall.sh: removes spec agent" {
+    run bash -c "grep -A50 'remove_agents()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'code-reviewer-spec'"
+    [ "$status" -eq 0 ]
+}
+
 @test "uninstall.sh: removes testing agent" {
     run bash -c "grep -A50 'remove_agents()' '$PROJECT_ROOT/uninstall.sh' | grep -q 'code-reviewer-testing'"
     [ "$status" -eq 0 ]

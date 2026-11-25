@@ -44,6 +44,7 @@ Area arguments, each on local changes only; correctness also runs. To choose rev
 - `compatibility` - Backwards compatibility with shipped code
 - `infra-config` - Infrastructure config review: Helm, Terraform, K8s, ArgoCD, CI/CD
 - `frontend` - React components, state management, hooks, accessibility, and TypeScript types
+- `spec` - Specifications and acceptance scenarios: testable requirements, consistency, implementer gaps
 
 **Optional Flags:**
 

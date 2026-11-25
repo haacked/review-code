@@ -130,7 +130,7 @@ Read `mode` from the JSON it prints:
 
 ### Classify Review Scope
 
-Run the scope classifier to determine exploration depth from the patch this run will review. Before exploration, all eight reviewers remain selected. Reviewer selection happens after the explorer records evidence:
+Run the scope classifier to determine exploration depth from the patch this run will review. Before exploration, all nine reviewers remain selected. Reviewer selection happens after the explorer records evidence:
 
 ```bash
 ~/.agents/skills/review-code/scripts/classify-review-scope.sh "$SESSION_FILE" \
@@ -146,7 +146,7 @@ Parse the JSON output and store:
 **Override rules:**
 - If the user specified an `area`, set `$exploration_depth` to "standard". Apply the requested scope after exploration as described below.
 - If `REVIEW_FIELDS` has `reviewers`, the classifier applies that list on every call, including this one. Keep the depth it returns.
-- If the classifier errors, keep all eight reviewers and use "thorough" exploration. Correctness always runs.
+- If the classifier errors, keep all nine reviewers and use "thorough" exploration. Correctness always runs.
 
 ### Debug Mode Setup
 
@@ -376,15 +376,15 @@ Then build the briefing, passing the agents being dispatched so the area-scoped 
   --agents "<space-separated $selected_agents>"
 ```
 
-It writes `briefing.md` and — when those agents run — `diff-frontend.patch` and `diff-infra-config.patch`, each holding only that agent's file types plus a list of the paths left out. It exits non-zero if any output is missing or empty. **If it fails, stop and report the failure. Do not dispatch agents at an unreadable briefing**: an agent that cannot read its briefing finds nothing, which looks exactly like clean code.
+It writes `briefing.md` and — when those agents run — `diff-frontend.patch`, `diff-infra-config.patch`, and `diff-spec.patch`, each holding only that agent's file types plus a list of the paths left out. It exits non-zero if any output is missing or empty. **If it fails, stop and report the failure. Do not dispatch agents at an unreadable briefing**: an agent that cannot read its briefing finds nothing, which looks exactly like clean code.
 
 It prints JSON: `artifacts_dir`, `diff_path`, `briefing_lines`, `diff_lines`, and a `scoped_diffs` map of line counts. Keep those — the agent prompt needs them.
 
 For the unchunked route only, invoke every entry in `$dispatch_plan.agents`. Each entry supplies the `area` and `subagent_type`; do not derive either value again.
 
-**The prompt for each agent** is then short. Substitute the agent's own diff file: `diff-frontend.patch` for frontend and `diff-infra-config.patch` for infra-config when `scoped_diffs` lists them, otherwise the `diff_path` the script returned. Use the returned `diff_path` rather than the literal `diff.patch`: on a delta re-review it points at the delta, and naming `diff.patch` there would hand every unscoped agent the whole PR while the run reports itself as incremental.
+**The prompt for each agent** is then short. Substitute the agent's own diff file: `diff-frontend.patch` for frontend, `diff-infra-config.patch` for infra-config, and `diff-spec.patch` for spec when `scoped_diffs` lists them, otherwise the `diff_path` the script returned. Use the returned `diff_path` rather than the literal `diff.patch`: on a delta re-review it points at the delta, and naming `diff.patch` there would hand every unscoped agent the whole PR while the run reports itself as incremental.
 
-If `scoped_diffs` has no entry for a selected agent, dispatch it against the returned `diff_path` with `diff_lines`. A filename filter cannot establish that an area does not apply. Keep the selected agent and record this fallback in the coverage notes.
+If `scoped_diffs` has no entry for a selected agent, dispatch it against the returned `diff_path` with `diff_lines`. A missing scoped diff does not show that an area is irrelevant. Keep the selected agent and record this fallback in the coverage notes.
 
 The line count in the prompt is that agent's own file: its `scoped_diffs` entry when it has one, otherwise `diff_lines`. Quoting the unscoped count to a scoped agent sends it paging for lines that do not exist, and an agent that receives a fraction of what it was promised may decide the briefing is broken and reply `BRIEFING_UNAVAILABLE`.
 

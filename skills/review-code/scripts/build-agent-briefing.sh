@@ -27,6 +27,7 @@ set -euo pipefail
 #   diff.patch               the full diff (written earlier by the orchestrator)
 #   diff-frontend.patch      frontend hunks only, when that agent runs
 #   diff-infra-config.patch  infra-config hunks only, when that agent runs
+#   diff-spec.patch          spec-content hunks only, when that agent runs
 #
 # Prints a JSON object: the artifacts directory plus the line count of every
 # file written. Exits non-zero when a required output is missing or empty, so a
@@ -254,23 +255,25 @@ emit ""
 emit "**Local test runs:** ${LOCAL_TEST_RUNS}"
 
 # ------------------------------------------------------- area-scoped diffs
-rm -f "${ARTIFACTS_DIR}/diff-frontend.patch" "${ARTIFACTS_DIR}/diff-infra-config.patch"
+rm -f "${ARTIFACTS_DIR}/diff-frontend.patch" "${ARTIFACTS_DIR}/diff-infra-config.patch" "${ARTIFACTS_DIR}/diff-spec.patch"
 if [[ -n "${DIFF_OVERRIDE}" ]]; then
     SCOPE_METADATA=$("${SCRIPT_DIR}/pre-review-context.sh" < "${DIFF_PATH}" | jq '{file_metadata: .}')
 else
     SCOPE_METADATA=$(jq '{file_metadata}' "${SESSION_FILE}")
 fi
-# The frontend and infra-config agents review only their own file types, so they
-# get a diff holding just those hunks plus a list of the paths left out.
-write_scoped_diff() {
-    local name="$1" filter="$2"
-    local out="${ARTIFACTS_DIR}/diff-${name}.patch"
-    local paths
-    paths=$(jq -r "${filter} | @json" <<< "${SCOPE_METADATA}" | sort -u)
+# The frontend, infra-config, and spec agents review only their own file types,
+# so they get a diff holding just those hunks plus a list of the paths left out.
+write_paths_diff() {
+    local name="$1" paths="$2"
     if [[ -z "${paths}" ]]; then
         return 1
     fi
-    "${SCRIPT_DIR}/split-diff-by-path.sh" --json-paths "${DIFF_PATH}" "${out}" <<< "${paths}"
+    "${SCRIPT_DIR}/split-diff-by-path.sh" --json-paths "${DIFF_PATH}" "${ARTIFACTS_DIR}/diff-${name}.patch" <<< "${paths}"
+}
+
+write_scoped_diff() {
+    local name="$1" filter="$2"
+    write_paths_diff "${name}" "$(jq -r "${filter} | @json" <<< "${SCOPE_METADATA}" | sort -u)"
 }
 
 if [[ " ${AGENTS} " == *" frontend "* ]]; then
@@ -301,6 +304,10 @@ if [[ " ${AGENTS} " == *" infra-config "* ]]; then
         .file_metadata.modified_files[]?
         | select(.is_infra_config == true)
         | .path' || true
+fi
+
+if [[ " ${AGENTS} " == *" spec "* ]]; then
+    write_paths_diff spec "$(jq '.file_metadata' <<< "${SCOPE_METADATA}" | python3 "${SCRIPT_DIR}/helpers/review_tracks.py" spec-paths | sort -u)" || true
 fi
 
 # ------------------------------------------------------------------- validate

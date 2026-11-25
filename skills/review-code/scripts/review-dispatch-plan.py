@@ -14,6 +14,7 @@ AREAS = {
     "compatibility",
     "infra-config",
     "frontend",
+    "spec",
 }
 
 

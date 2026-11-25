@@ -8,7 +8,7 @@ source "${SCRIPT_DIR}/helpers/git-diff-paths.sh"
 
 # split-diff-by-path.sh - Extract the hunks for a set of paths from a unified diff.
 #
-# The frontend and infra-config reviewers only look at their own file types, so
+# The frontend, infra-config, and spec reviewers only look at their own file types, so
 # they get a diff holding just those files. The paths that were left out are
 # listed at the end, so the agent knows the PR is larger than what it sees and
 # does not read the omission as "nothing else changed".

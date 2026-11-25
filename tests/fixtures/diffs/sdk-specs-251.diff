@@ -1,0 +1,267 @@
+diff --git a/acceptance/private/local-feature-flag-evaluator.feature b/acceptance/private/local-feature-flag-evaluator.feature
+index 0feab894..8d89d0fd 100644
+--- a/acceptance/private/local-feature-flag-evaluator.feature
++++ b/acceptance/private/local-feature-flag-evaluator.feature
+@@ -1191,6 +1191,57 @@ Feature: Local Feature Flag Evaluator
+       | a known leaf type missing its required key |
+       | unknown group type "XOR"                   |
+ 
++  @server
++  Scenario Outline: A person_metadata cohort leaf is inconclusive regardless of caller properties
++    Given the SDK is initialized with token "test-token" and local evaluation enabled
++    And remote feature flag evaluation is enabled
++    And local feature flag "first-seen" requires membership in a dynamic cohort with one leaf of type "person_metadata", key "created_at", operator "is_date_after", and condition value "2025-01-01"
++    When local feature flag "first-seen" is evaluated <property_context>
++    Then local evaluation should be inconclusive for "first-seen"
++    And the unresolved reason should be "unsupported_definition"
++    And remote evaluation should remain eligible
++
++    Examples:
++      | property_context                                             |
++      | with person property "created_at" equal to "2026-06-01"      |
++      | with person property "created_at" equal to "2020-06-01"      |
++      | without person properties                                    |
++      | with person property key "created_at" listed as known absent |
++
++  @server
++  Scenario: A person filter on created_at still matches caller properties
++    Given the SDK is initialized with token "test-token" and local evaluation enabled
++    And local feature flag "created-person-prop" has a condition with a "person" filter on key "created_at", operator "is_date_after", and condition value "2025-01-01"
++    When local feature flag "created-person-prop" is evaluated with person property "created_at" equal to "2026-06-01"
++    Then the local evaluation result should be true
++
++  @server
++  Scenario: Negation does not turn an unsupported cohort leaf into a match
++    Given the SDK is initialized with token "test-token" and local evaluation enabled
++    And remote feature flag evaluation is enabled
++    And local feature flag "first-seen" requires membership in a dynamic cohort with one negated "person_metadata" leaf on key "created_at"
++    When local feature flag "first-seen" is evaluated with person property "created_at" equal to "2020-06-01"
++    Then local evaluation should be inconclusive for "first-seen"
++    And the negation should not turn it into a match
++
++  @server
++  Scenario: Another cohort leaf can still decide the group
++    Given the SDK is initialized with token "test-token" and local evaluation enabled
++    And local feature flag "first-seen-pro" requires membership in a dynamic cohort whose "AND" group has a "person_metadata" leaf on key "created_at" and a "person" leaf requiring "plan" to equal "pro"
++    When local feature flag "first-seen-pro" is evaluated with person property "plan" equal to "free"
++    Then the local evaluation result should be false
++    And the SDK should not require remote fallback
++
++  @server
++  Scenario: An unrecognized filter type in a flag condition defers only that flag
++    Given the SDK is initialized with token "test-token" and local evaluation enabled
++    And local feature flag "future-type" has a condition filter of type "future_type" on key "plan" with operator "exact" and condition value "pro"
++    And local feature flag definitions include a flag "beta-ui" rolled out to distinct id "user-123"
++    When local feature flag "future-type" is evaluated for distinct id "user-123" with person property "plan" equal to "pro"
++    And local feature flag "beta-ui" is evaluated for distinct id "user-123"
++    Then local evaluation should be inconclusive for "future-type"
++    And the local evaluation result for "beta-ui" should be true
++
+   @server
+   Scenario Outline: V2 preserves safe numeric ambiguity fallback
+     Given the SDK is initialized with token "test-token" and local evaluation enabled
+diff --git a/openspec/changes/archive/2026-11-25-defer-unsupported-filter-types/design.md b/openspec/changes/archive/2026-11-25-defer-unsupported-filter-types/design.md
+new file mode 100644
+index 00000000..76cd91f5
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-25-defer-unsupported-filter-types/design.md
+@@ -0,0 +1,24 @@
++## Context and sources
++
++- The flags service's property type enum is `PropertyType` in `rust/feature-flags/src/properties/property_models.rs` in PostHog/posthog: `person`, `person_metadata`, `cohort`, `group`, and `flag`.
++- `person_metadata` filters look up `__posthog_person_metadata__<key>` (`lookup_key_for` in `property_matching.rs`). The service writes that key from the persons-table column in `apply_person_cohort_to_state` (`flag_matching_utils.rs`), so a `created_at` person property never satisfies the filter.
++- The flag filter API accepts only `person`, `cohort`, `group`, and `flag` (`FEATURE_FLAG_PROPERTY_TYPES` in `products/feature_flags/backend/api/filters_schema.py`). `person_metadata` reaches SDKs through cohort definitions, which the definitions endpoint sends unchanged.
++- posthog-dotnet maps an unknown filter type to an unsupported filter and falls back (`src/PostHog/Json/FilterJsonConverter.cs`).
++
++## Decisions
++
++1. Defer, don't evaluate. An SDK has no persons-table value. The only local answer that can't contradict the flags service is inconclusive, so the flag falls back to `/flags`, or stays unresolved in local-only mode.
++2. Use an allowlist, not a `person_metadata` special case. A filter type added to the flags service later carries the same risk: the SDK doesn't know where the service reads it from. The unrecognized-operator requirement already handles new operators this way.
++3. Keep a filter without a `type` field as a person filter. Older stored definitions and SDK test fixtures omit it, every SDK already treats it that way, and changing it would turn conclusive flags inconclusive. Any present value outside the list, including an empty string, is unsupported.
++4. Report `unsupported_definition`. The cause comes from the definition, not from the call, so passing more context can't fix it. That matches how static cohorts and unrecognized operators are reported.
++5. Check the type before the known-absent table. Known absence describes caller-supplied person and group properties. The flags service ignores a listed key with the person-metadata prefix, so listing `created_at` doesn't hide the persons-table value. A known-absent listing therefore doesn't resolve an unsupported filter, as it doesn't resolve an unsupported operator.
++6. Keep the existing cohort composition rules. The inconclusive leaf is one input to three-valued AND/OR, so `false AND inconclusive` is still `false`. Negation and `not_in` don't invert it. Within a flag condition, a later filter that is definitively false still makes the condition a no-match.
++7. Don't copy the flags service's test override. The service accepts the prefixed key from caller overrides, and its source says that's for testing. An SDK that matched local filters on that key would again let a caller supply persons-table data.
++
++## Validation
++
++`openspec validate --specs --strict` passes, and the delta in this archive matches the canonical spec.
++
++## Risks
++
++A flag whose cohort uses `person_metadata` now needs `/flags` in every call where that leaf decides the result. In local-only mode it stays unresolved instead of returning a value that can be wrong.
+diff --git a/openspec/changes/archive/2026-11-25-defer-unsupported-filter-types/proposal.md b/openspec/changes/archive/2026-11-25-defer-unsupported-filter-types/proposal.md
+new file mode 100644
+index 00000000..6d4146f5
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-25-defer-unsupported-filter-types/proposal.md
+@@ -0,0 +1,26 @@
++## Why
++
++A cohort can filter on Person metadata > First seen: `{"type": "person_metadata", "key": "created_at", ...}`. The flags service reads that value from the persons table under a separate key and never compares it with a `created_at` person property. Local evaluators in most SDKs treat every filter type other than `cohort` and `flag` as a person filter, so a caller that passes its own `created_at` person property gets a local result that can disagree with `/flags` (PostHog/posthog#137503).
++
++The spec says unsupported cohort criteria are inconclusive and that unsupported behavior falls back to remote evaluation, but it doesn't say which filter types an SDK may match against caller-supplied properties. .NET already treats an unknown type as unsupported; the other SDKs don't.
++
++## What Changes
++
++- A new requirement lists the property-filter types a local evaluator matches: `person` and `group` against caller-supplied properties, `cohort` through cohort membership, and `flag` through dependency evaluation. A filter without a `type` field keeps its existing person-filter handling.
++- Any other type, including `person_metadata` and a type added after the SDK shipped, is inconclusive with the `unsupported_definition` cause. The SDK never matches it against a caller-supplied property with the same key, and known absence doesn't resolve it.
++- The rule applies to flag conditions and to dynamic-cohort leaves. Cohort negation and `not_in` don't turn the inconclusive leaf into a match, and three-valued composition still lets another leaf decide the group.
++- Acceptance scenarios cover a `person_metadata` cohort leaf with and without a same-named caller property, a negated leaf, an unknown type in a flag condition, and a group where another leaf decides the result.
++
++## Capabilities
++
++### Modified Capabilities
++
++- `local-feature-flag-evaluator`: adds the supported property-filter types requirement.
++
++## Impact
++
++A flag whose cohort uses a persons-table filter falls back to `/flags` instead of trusting a caller property. SDKs that treat any unrecognized type as a person filter need a small change: posthog-python, posthog-node, posthog-go, posthog-rs, posthog-ruby, posthog-php, posthog-elixir, and the JVM server SDK. .NET already conforms.
++
++## Non-goals
++
++Evaluating `person_metadata` locally. The SDK doesn't have the persons-table value, and accepting a caller-supplied value for it would reintroduce the bug.
+diff --git a/openspec/changes/archive/2026-11-25-defer-unsupported-filter-types/specs/local-feature-flag-evaluator/spec.md b/openspec/changes/archive/2026-11-25-defer-unsupported-filter-types/specs/local-feature-flag-evaluator/spec.md
+new file mode 100644
+index 00000000..0e6c663f
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-25-defer-unsupported-filter-types/specs/local-feature-flag-evaluator/spec.md
+@@ -0,0 +1,56 @@
++## ADDED Requirements
++
++### Requirement: Unsupported property-filter types are inconclusive
++
++The local evaluator SHALL handle a property filter by its `type` field:
++
++| `type` | Local handling |
++| --- | --- |
++| `person` | Match against caller-supplied person properties. |
++| `group` | Match against caller-supplied properties for the filter's group type. |
++| `cohort` | Evaluate cohort membership, as the specialized cohort matching requirement defines. |
++| `flag` | Evaluate the dependency, as the flag dependency filter requirement defines. |
++| field omitted | Match as a `person` filter, for older definitions that don't set it. |
++
++Any other value, including `person_metadata`, a type the flags service adds after the SDK shipped, and an empty string, SHALL make the filter inconclusive with the `unsupported_definition` cause. The SDK SHALL NOT match such a filter against a caller-supplied person or group property with the same key. The flags service reads a `person_metadata` filter from the persons table, not from person properties, so a caller's `created_at` person property doesn't satisfy a first-seen filter on the server and SHALL NOT satisfy it locally.
++
++The rule applies to flag condition filters and to dynamic-cohort leaves. An unsupported leaf SHALL follow the existing cohort composition rules: it is one inconclusive input to three-valued `AND`/`OR`, and neither leaf `negation` nor an outer `not_in` turns it into a match. Within a flag condition, another filter that is definitively false SHALL still make the condition a no-match.
++
++The SDK SHALL check the filter type before it applies the known-absent table. A known-absent listing SHALL NOT resolve an unsupported filter, even when its key is listed. The unsupported filter SHALL affect only the flags that use it; other flags keep evaluating locally.
++
++#### Scenario Outline: A person_metadata cohort leaf is inconclusive regardless of caller properties (@server)
++- **GIVEN** local feature flag "first-seen" requires membership in a dynamic cohort with one leaf of type `person_metadata`, key `created_at`, operator `is_date_after`, and condition value "2025-01-01"
++- **WHEN** local feature flag "first-seen" is evaluated <property-context>
++- **THEN** local evaluation should be inconclusive for "first-seen"
++- **AND** the unresolved reason should be `unsupported_definition`
++- **AND** remote evaluation should remain eligible
++
++  | property-context |
++  | with person property `created_at` equal to "2026-06-01" |
++  | with person property `created_at` equal to "2020-06-01" |
++  | without person properties |
++  | with person property key `created_at` listed as known absent |
++
++#### Scenario: A person filter on created_at still matches caller properties (@server)
++- **GIVEN** local feature flag "created-person-prop" has a condition with a `person` filter on key `created_at`, operator `is_date_after`, and condition value "2025-01-01"
++- **WHEN** local feature flag "created-person-prop" is evaluated with person property `created_at` equal to "2026-06-01"
++- **THEN** the local evaluation result should be true
++
++#### Scenario: Negation does not turn an unsupported cohort leaf into a match (@server)
++- **GIVEN** local feature flag "first-seen" requires membership in a dynamic cohort with one negated `person_metadata` leaf on key `created_at`
++- **WHEN** local feature flag "first-seen" is evaluated with person property `created_at` equal to "2020-06-01"
++- **THEN** local evaluation should be inconclusive for "first-seen"
++- **AND** the negation should not turn it into a match
++
++#### Scenario: Another cohort leaf can still decide the group (@server)
++- **GIVEN** local feature flag "first-seen-pro" requires membership in a dynamic cohort whose `AND` group has a `person_metadata` leaf on key `created_at` and a `person` leaf requiring `plan` to equal "pro"
++- **WHEN** local feature flag "first-seen-pro" is evaluated with person property `plan` equal to "free"
++- **THEN** the local evaluation result should be false
++- **AND** the SDK should not require remote fallback
++
++#### Scenario: An unrecognized filter type in a flag condition defers only that flag (@server)
++- **GIVEN** local feature flag "future-type" has a condition filter of type "future_type" on key `plan` with operator `exact` and condition value "pro"
++- **AND** local feature flag definitions include a flag "beta-ui" rolled out to distinct id "user-123"
++- **WHEN** both flags are evaluated for distinct id "user-123" with person property `plan` equal to "pro"
++- **THEN** local evaluation should be inconclusive for "future-type"
++- **AND** the local evaluation result for "beta-ui" should be true
+diff --git a/openspec/changes/archive/2026-11-25-defer-unsupported-filter-types/tasks.md b/openspec/changes/archive/2026-11-25-defer-unsupported-filter-types/tasks.md
+new file mode 100644
+index 00000000..1869392b
+--- /dev/null
++++ b/openspec/changes/archive/2026-11-25-defer-unsupported-filter-types/tasks.md
+@@ -0,0 +1,11 @@
++## 1. Define and apply the contract
++
++- [x] 1.1 Compare SDK filter-type handling with the flags service property types and the flag filter API.
++- [x] 1.2 Add the supported property-filter types requirement to `local-feature-flag-evaluator`.
++- [x] 1.3 Add matching Gherkin scenarios to the local evaluator acceptance feature.
++- [x] 1.4 Sync the delta into the canonical spec and archive the change.
++- [x] 1.5 Run `openspec validate --specs --strict`.
++
++## 2. Follow-up outside this change
++
++- [ ] 2.1 Update the local-evaluation SDKs that match an unrecognized filter type against caller-supplied properties.
+diff --git a/openspec/specs/local-feature-flag-evaluator/spec.md b/openspec/specs/local-feature-flag-evaluator/spec.md
+index 7e5a47b7..302ee49a 100644
+--- a/openspec/specs/local-feature-flag-evaluator/spec.md
++++ b/openspec/specs/local-feature-flag-evaluator/spec.md
+@@ -1449,3 +1449,59 @@ Examples:
+ - **AND** remote evaluation, if needed, returns false for the person
+ - **WHEN** the public flag getter evaluates the flag with both person and group context
+ - **THEN** the returned flag value should be false
++
++### Requirement: Unsupported property-filter types are inconclusive
++
++The local evaluator SHALL handle a property filter by its `type` field:
++
++| `type` | Local handling |
++| --- | --- |
++| `person` | Match against caller-supplied person properties. |
++| `group` | Match against caller-supplied properties for the filter's group type. |
++| `cohort` | Evaluate cohort membership, as the specialized cohort matching requirement defines. |
++| `flag` | Evaluate the dependency, as the flag dependency filter requirement defines. |
++| field omitted | Match as a `person` filter, for older definitions that don't set it. |
++
++Any other value, including `person_metadata`, a type the flags service adds after the SDK shipped, and an empty string, SHALL make the filter inconclusive with the `unsupported_definition` cause. The SDK SHALL NOT match such a filter against a caller-supplied person or group property with the same key. The flags service reads a `person_metadata` filter from the persons table, not from person properties, so a caller's `created_at` person property doesn't satisfy a first-seen filter on the server and SHALL NOT satisfy it locally.
++
++The rule applies to flag condition filters and to dynamic-cohort leaves. An unsupported leaf SHALL follow the existing cohort composition rules: it is one inconclusive input to three-valued `AND`/`OR`, and neither leaf `negation` nor an outer `not_in` turns it into a match. Within a flag condition, another filter that is definitively false SHALL still make the condition a no-match.
++
++The SDK SHALL check the filter type before it applies the known-absent table. A known-absent listing SHALL NOT resolve an unsupported filter, even when its key is listed. The unsupported filter SHALL affect only the flags that use it; other flags keep evaluating locally.
++
++#### Scenario Outline: A person_metadata cohort leaf is inconclusive regardless of caller properties (@server)
++- **GIVEN** local feature flag "first-seen" requires membership in a dynamic cohort with one leaf of type `person_metadata`, key `created_at`, operator `is_date_after`, and condition value "2025-01-01"
++- **WHEN** local feature flag "first-seen" is evaluated <property-context>
++- **THEN** local evaluation should be inconclusive for "first-seen"
++- **AND** the unresolved reason should be `unsupported_definition`
++- **AND** remote evaluation should remain eligible
++
++  | property-context |
++  | with person property `created_at` equal to "2026-06-01" |
++  | with person property `created_at` equal to "2020-06-01" |
++  | without person properties |
++  | with person property key `created_at` listed as known absent |
++
++#### Scenario: A person filter on created_at still matches caller properties (@server)
++- **GIVEN** local feature flag "created-person-prop" has a condition with a `person` filter on key `created_at`, operator `is_date_after`, and condition value "2025-01-01"
++- **WHEN** local feature flag "created-person-prop" is evaluated with person property `created_at` equal to "2026-06-01"
++- **THEN** the local evaluation result should be true
++
++#### Scenario: Negation does not turn an unsupported cohort leaf into a match (@server)
++- **GIVEN** local feature flag "first-seen" requires membership in a dynamic cohort with one negated `person_metadata` leaf on key `created_at`
++- **WHEN** local feature flag "first-seen" is evaluated with person property `created_at` equal to "2020-06-01"
++- **THEN** local evaluation should be inconclusive for "first-seen"
++- **AND** the negation should not turn it into a match
++
++#### Scenario: Another cohort leaf can still decide the group (@server)
++- **GIVEN** local feature flag "first-seen-pro" requires membership in a dynamic cohort whose `AND` group has a `person_metadata` leaf on key `created_at` and a `person` leaf requiring `plan` to equal "pro"
++- **WHEN** local feature flag "first-seen-pro" is evaluated with person property `plan` equal to "free"
++- **THEN** the local evaluation result should be false
++- **AND** the SDK should not require remote fallback
++
++#### Scenario: An unrecognized filter type in a flag condition defers only that flag (@server)
++- **GIVEN** local feature flag "future-type" has a condition filter of type "future_type" on key `plan` with operator `exact` and condition value "pro"
++- **AND** local feature flag definitions include a flag "beta-ui" rolled out to distinct id "user-123"
++- **WHEN** both flags are evaluated for distinct id "user-123" with person property `plan` equal to "pro"
++- **THEN** local evaluation should be inconclusive for "future-type"
++- **AND** the local evaluation result for "beta-ui" should be true
++
