@@ -195,7 +195,7 @@ PY
 }
 
 @test "only helpers/review_tracks.py holds the path patterns" {
-    run bash -c 'grep -rnE "openspec|\\.feature" "$1" | grep -v "review_tracks"' _ "$SCRIPTS"
+    run git -C "$SCRIPTS" grep -nE 'openspec|\.feature' -- . ':!helpers/review_tracks.py'
 
     [ "$output" = "" ]
 }
