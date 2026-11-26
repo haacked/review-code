@@ -1,0 +1,150 @@
+diff --git a/acceptance/private/local-flag-evaluator.feature b/acceptance/private/local-flag-evaluator.feature
+new file mode 100644
+index 0000000..0650344
+--- /dev/null
++++ b/acceptance/private/local-flag-evaluator.feature
+@@ -0,0 +1,23 @@
++Feature: Local Flag Evaluator
++
++  @server
++  Scenario: A filter type added after the SDK shipped is inconclusive
++    Given the SDK is initialized with token "test-token" and local evaluation enabled
++    And local feature flag "beta" has a condition filter of type "future_type" on key "plan" with operator "exact" and condition value "pro"
++    When local feature flag "beta" is evaluated with person property "plan" equal to "pro"
++    Then local evaluation should be inconclusive for "beta"
++    And the unresolved reason should be "unsupported_definition"
++
++  @server
++  Scenario: A filter without a type field matches as a person filter
++    Given the SDK is initialized with token "test-token" and local evaluation enabled
++    And local feature flag "beta" has a condition filter with no type on key "plan" with operator "exact" and condition value "pro"
++    When local feature flag "beta" is evaluated with person property "plan" equal to "pro"
++    Then the local evaluation result should be true
++
++  @server
++  Scenario: A person_metadata filter with a same-named caller property
++    Given the SDK is initialized with token "test-token" and local evaluation enabled
++    And local feature flag "first-seen" has a condition filter of type "person_metadata" on key "created_at" with operator "is_date_after" and condition value "2025-01-01"
++    When local feature flag "first-seen" is evaluated with person property "created_at" equal to "2026-06-01"
++    Then the local evaluation result should be true
+diff --git a/openspec/changes/2026-11-20-defer-unknown-filter-types/.openspec.yaml b/openspec/changes/2026-11-20-defer-unknown-filter-types/.openspec.yaml
+new file mode 100644
+index 0000000..4ee7b3f
+--- /dev/null
++++ b/openspec/changes/2026-11-20-defer-unknown-filter-types/.openspec.yaml
+@@ -0,0 +1,2 @@
++schema: spec-driven
++created: 2026-11-20
+diff --git a/openspec/changes/2026-11-20-defer-unknown-filter-types/proposal.md b/openspec/changes/2026-11-20-defer-unknown-filter-types/proposal.md
+new file mode 100644
+index 0000000..b30b216
+--- /dev/null
++++ b/openspec/changes/2026-11-20-defer-unknown-filter-types/proposal.md
+@@ -0,0 +1,21 @@
++## Why
++
++Local evaluators in most server SDKs treat a property filter with an unrecognized `type` as a person filter. When the flags service adds a filter type, such as `person_metadata`, an SDK that shipped before it compares the filter with a caller-supplied property of the same key and can return a result that disagrees with `/flags`.
++
++## What Changes
++
++- Lists the filter types a local evaluator matches, and makes a flag condition with any other type inconclusive with the `unsupported_definition` cause.
++- Leaves a flag with an unknown filter type unresolved instead of requesting it from `/flags`.
++- Keeps every other flag evaluating locally when one flag uses an unknown type.
++- Adds a logging requirement for inconclusive results to the `local-flag-evaluator` spec.
++- Adds acceptance scenarios to `acceptance/private/local-flag-evaluator.feature`.
++
++## Capabilities
++
++### Modified Capabilities
++
++- `local-flag-evaluator`: adds the unknown filter type requirements.
++
++## Impact
++
++posthog-python, posthog-node, and posthog-go treat an unknown filter type as a person filter today and need a change. SDKs that already treat an unknown type as unsupported conform.
+diff --git a/openspec/changes/2026-11-20-defer-unknown-filter-types/specs/local-flag-evaluator/spec.md b/openspec/changes/2026-11-20-defer-unknown-filter-types/specs/local-flag-evaluator/spec.md
+new file mode 100644
+index 0000000..6dbf2ab
+--- /dev/null
++++ b/openspec/changes/2026-11-20-defer-unknown-filter-types/specs/local-flag-evaluator/spec.md
+@@ -0,0 +1,43 @@
++## ADDED Requirements
++
++### Requirement: Unknown filter types are inconclusive
++
++The local evaluator MUST match these property-filter `type` values: `person` and `group` against caller-supplied properties, `cohort` through cohort membership, and `flag` through dependency evaluation. A filter without a `type` field MUST be matched as a `person` filter, because older definitions omit the field.
++
++Any other `type` value is an unknown filter type. A flag condition that contains an unknown filter type MUST be inconclusive with the `unsupported_definition` cause, and the SDK MUST NOT match that filter against a caller-supplied property with the same key.
++
++#### Scenario: A filter type added after the SDK shipped
++
++- **WHEN** flag `beta` has a condition filter of type `future_type` on key `plan`
++- **AND** the caller supplies person property `plan` equal to `pro`
++- **THEN** the local result for `beta` is inconclusive with the `unsupported_definition` cause
++
++#### Scenario: A filter without a type field
++
++- **WHEN** flag `beta` has a condition filter on key `plan` with no `type` field
++- **AND** the caller supplies person property `plan` equal to `pro`
++- **THEN** the filter matches as a `person` filter and the local result for `beta` is `true`
++
++### Requirement: Warnings for unknown filter types
++
++The SDK should log a warning about an unknown filter type when it makes sense to do so.
++
++### Requirement: Flags with unknown filter types stay unresolved
++
++When a flag is inconclusive because of an unknown filter type, the SDK MUST return the flag as unresolved and MUST NOT request it from the `/flags` endpoint, even when local-only mode is off. An unknown filter type means the definitions are newer than the SDK, so the SDK leaves the flag unresolved until a later definitions refresh.
++
++#### Scenario: Unknown filter type with local-only mode off
++
++- **WHEN** local evaluation of flag `beta` is inconclusive because of filter type `future_type`
++- **AND** local-only mode is off
++- **THEN** the SDK returns `beta` as unresolved and sends no request to `/flags`
++
++### Requirement: Other flags keep evaluating locally
++
++An unknown filter type MUST affect only the flags whose conditions use it. Every other flag in the same definitions MUST keep its local result.
++
++#### Scenario: One flag with an unknown type among several
++
++- **WHEN** flag `beta` has a condition filter of type `future_type`
++- **AND** flag `gamma` is rolled out to every user
++- **THEN** `beta` is undetermined and the local result for `gamma` is `true`
+diff --git a/openspec/changes/2026-11-20-defer-unknown-filter-types/tasks.md b/openspec/changes/2026-11-20-defer-unknown-filter-types/tasks.md
+new file mode 100644
+index 0000000..de976bb
+--- /dev/null
++++ b/openspec/changes/2026-11-20-defer-unknown-filter-types/tasks.md
+@@ -0,0 +1,11 @@
++## 1. Spec
++
++- [x] 1.1 Add the unknown filter type requirements to the `local-flag-evaluator` delta
++- [x] 1.2 Add the logging requirement to `openspec/specs/local-flag-evaluator/spec.md`
++- [x] 1.3 Add acceptance scenarios to `acceptance/private/local-flag-evaluator.feature`
++
++## 2. SDKs
++
++- [ ] 2.1 Treat unknown filter types as inconclusive in posthog-python
++- [ ] 2.2 Treat unknown filter types as inconclusive in posthog-node
++- [ ] 2.3 Treat unknown filter types as inconclusive in posthog-go
+diff --git a/openspec/specs/local-flag-evaluator/spec.md b/openspec/specs/local-flag-evaluator/spec.md
+index 3fd97dc..f1f1ac6 100644
+--- a/openspec/specs/local-flag-evaluator/spec.md
++++ b/openspec/specs/local-flag-evaluator/spec.md
+@@ -24,6 +24,15 @@ The local evaluator MUST treat a filter whose `operator` it does not recognize a
+ - **WHEN** flag `beta` has a filter with operator `matches_soundex`
+ - **THEN** the local result for `beta` is inconclusive with the `unsupported_definition` cause
+ 
++### Requirement: Inconclusive results are logged once per flag
++
++The SDK SHOULD write one debug log message the first time a local evaluation of a flag is inconclusive, naming the flag key and the cause, and SHOULD NOT log again for that flag until the next definitions refresh. A flag that is evaluated on every request would otherwise write one log line per request.
++
++#### Scenario: Repeated inconclusive evaluations between refreshes
++
++- **WHEN** flag `beta` is inconclusive with the `unsupported_definition` cause on three evaluations between two definitions refreshes
++- **THEN** the SDK writes exactly one debug log message, and it names `beta` and `unsupported_definition`
++
+ ### Requirement: Definitions refresh on an interval
+ 
+ The SDK MUST poll for new flag definitions every 30 seconds unless the caller configures another interval.

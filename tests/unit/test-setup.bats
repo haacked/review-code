@@ -77,6 +77,11 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
+@test "setup: installs spec agent" {
+    run bash -c "grep -A50 'install_agents()' '$PROJECT_ROOT/bin/setup' | grep -q 'code-reviewer-spec'"
+    [ "$status" -eq 0 ]
+}
+
 @test "setup: installs testing agent" {
     run bash -c "grep -A50 'install_agents()' '$PROJECT_ROOT/bin/setup' | grep -q 'code-reviewer-testing'"
     [ "$status" -eq 0 ]

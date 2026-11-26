@@ -1,0 +1,71 @@
+diff --git a/openspec/specs/flags-fallback/spec.md b/openspec/specs/flags-fallback/spec.md
+new file mode 100644
+index 0000000..5efe87b
+--- /dev/null
++++ b/openspec/specs/flags-fallback/spec.md
+@@ -0,0 +1,30 @@
++# Flags Fallback
++
++## Purpose
++
++Defines what a server SDK does when a local evaluation cannot produce a conclusive result.
++
++## Requirements
++
++### Requirement: Inconclusive local results fall back to the remote endpoint
++
++When a local evaluation is inconclusive for any cause, the SDK MUST request that flag from the `/flags` endpoint and return the remote result, unless the caller enabled local-only mode. In local-only mode the SDK MUST return the flag as unresolved.
++
++#### Scenario: Fallback after an inconclusive local result
++
++- **WHEN** local evaluation of flag `beta` is inconclusive and local-only mode is off
++- **THEN** the SDK requests `beta` from `/flags` and returns the remote value
++
++#### Scenario: Local-only mode
++
++- **WHEN** local evaluation of flag `beta` is inconclusive and local-only mode is on
++- **THEN** the SDK returns `beta` as unresolved and sends no request to `/flags`
++
++### Requirement: One remote request per evaluation call
++
++When several flags in one evaluation call fall back, the SDK MUST request them together in a single `/flags` request.
++
++#### Scenario: Two flags fall back together
++
++- **WHEN** flags `beta` and `gamma` are both inconclusive in one call to evaluate all flags
++- **THEN** the SDK sends one `/flags` request that covers both flags
+diff --git a/openspec/specs/local-flag-evaluator/spec.md b/openspec/specs/local-flag-evaluator/spec.md
+new file mode 100644
+index 0000000..3fd97dc
+--- /dev/null
++++ b/openspec/specs/local-flag-evaluator/spec.md
+@@ -0,0 +1,29 @@
++# Local Flag Evaluator
++
++## Purpose
++
++Defines how a server SDK evaluates feature flags from the flag definitions it has downloaded.
++
++## Requirements
++
++### Requirement: Local results are conclusive or inconclusive
++
++Each local evaluation MUST produce either a conclusive result (`true`, `false`, or a variant key) or an inconclusive result. An inconclusive result MUST carry a cause: `missing_properties` when the caller did not supply a property that a filter needs, or `unsupported_definition` when the definition uses something the SDK cannot evaluate.
++
++#### Scenario: Missing property
++
++- **WHEN** flag `beta` filters on person property `plan` and the caller supplies no `plan`
++- **THEN** the local result for `beta` is inconclusive with the `missing_properties` cause
++
++### Requirement: Unrecognized operators are inconclusive
++
++The local evaluator MUST treat a filter whose `operator` it does not recognize as inconclusive with the `unsupported_definition` cause. It MUST NOT treat the filter as a match or as a no-match.
++
++#### Scenario: Unknown operator
++
++- **WHEN** flag `beta` has a filter with operator `matches_soundex`
++- **THEN** the local result for `beta` is inconclusive with the `unsupported_definition` cause
++
++### Requirement: Definitions refresh on an interval
++
++The SDK MUST poll for new flag definitions every 30 seconds unless the caller configures another interval.

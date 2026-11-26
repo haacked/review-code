@@ -88,6 +88,25 @@ EOF
     done
 }
 
+@test "parse-review-findings.sh: a Spec Review section yields spec findings" {
+    cat > "$TEST_DIR/review.md" << 'EOF'
+## Spec Review
+
+### 1. Untestable retry requirement
+
+```text
+suggestion: "The SDK should retry" names no condition a conformance test can check.
+```suggestion
+The SDK MUST retry a failed flags request at most 3 times.
+```
+```
+Location: `openspec/specs/flags/spec.md:12` | Confidence: 80%
+EOF
+    run "$PROJECT_ROOT/skills/review-code/scripts/parse-review-findings.sh" "$TEST_DIR/review.md"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e 'map([.agent, .file, .line, .confidence]) == [["spec", "openspec/specs/flags/spec.md", 12, 80]]' > /dev/null
+}
+
 # =============================================================================
 # File:line pattern tests
 # =============================================================================

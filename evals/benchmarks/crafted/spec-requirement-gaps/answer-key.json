@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "expected_findings": [
+    {
+      "id": "scenario-contradicts-rule",
+      "description": "The person_metadata scenario expects the flag to evaluate to true from a same-named caller property, but the new requirement makes any type outside person, group, cohort, and flag inconclusive and forbids matching it against a caller-supplied property with the same key",
+      "area": "spec",
+      "severity": "blocking",
+      "weight": 10,
+      "file": "acceptance/private/local-flag-evaluator.feature",
+      "line_start": 18,
+      "line_end": 23,
+      "keywords": ["person_metadata", "contradict", "inconclusive", "same key", "same-named", "expects true", "should be true"]
+    },
+    {
+      "id": "contradicts-fallback-spec",
+      "description": "Flags with unknown filter types stay unresolved and never request /flags even when local-only mode is off, which contradicts flags-fallback/spec.md: an inconclusive result for any cause MUST fall back to the remote endpoint unless local-only mode is on",
+      "area": "spec",
+      "severity": "blocking",
+      "weight": 10,
+      "file": "openspec/changes/2026-11-20-defer-unknown-filter-types/specs/local-flag-evaluator/spec.md",
+      "line_start": 25,
+      "line_end": 33,
+      "keywords": ["flags-fallback", "fallback", "fall back", "/flags", "remote"]
+    },
+    {
+      "id": "lowercase-untestable-should",
+      "description": "The warning requirement uses a lowercase 'should' and the condition 'when it makes sense', so an SDK cannot be tested against it",
+      "area": "spec",
+      "severity": "suggestion",
+      "weight": 6,
+      "file": "openspec/changes/2026-11-20-defer-unknown-filter-types/specs/local-flag-evaluator/spec.md",
+      "line_start": 21,
+      "line_end": 23,
+      "keywords": ["lowercase", "rfc 2119", "testable", "makes sense", "vague", "normative"]
+    },
+    {
+      "id": "undetermined-synonym",
+      "description": "The scenario calls the flag 'undetermined' while every requirement calls the same state 'inconclusive'",
+      "area": "spec",
+      "severity": "nit",
+      "weight": 3,
+      "file": "openspec/changes/2026-11-20-defer-unknown-filter-types/specs/local-flag-evaluator/spec.md",
+      "line_start": 43,
+      "line_end": 43,
+      "keywords": ["undetermined", "terminology", "two names", "synonym"]
+    }
+  ],
+  "false_positive_traps": [
+    {
+      "id": "logging-should-with-rationale",
+      "description": "The logging SHOULD states its rationale (one log line per request otherwise) and a scenario with a countable result, so it is testable and correctly not a MUST",
+      "area": "spec",
+      "file": "openspec/specs/local-flag-evaluator/spec.md",
+      "line_start": 27,
+      "line_end": 34,
+      "trap_keywords": ["untestable", "not testable", "ambiguous", "vague", "should be must", "upgrade to must", "rfc 2119"]
+    }
+  ],
+  "clean_areas": ["performance", "security", "testing", "frontend", "infra-config"]
+}

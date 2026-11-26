@@ -14,7 +14,7 @@ This system was built with three core objectives:
 
 Specialized agents each focus on a distinct aspect of code quality, ensuring nothing falls through the cracks:
 
-Correctness always runs. Other reviewers run unless the context explorer supplies concrete negative evidence that their area does not apply.
+Correctness always runs. Other reviewers run unless the context explorer supplies concrete negative evidence that their area does not apply. Two rules do not depend on the explorer: the spec reviewer runs only when a changed file is spec content, and a review whose changed files are all spec content skips the reviewers listed under [Review Tracks](#review-tracks).
 
 **Core Review Agents:**
 - **Security**: Vulnerabilities, OWASP Top 10, secret management
@@ -27,6 +27,7 @@ Correctness always runs. Other reviewers run unless the context explorer supplie
 **Domain-Specific Agents:**
 - **Frontend**: React, Kea state management, accessibility, hooks
 - **Infra-Config**: Helm values, Kubernetes manifests, Terraform, ArgoCD, CI/CD pipelines
+- **Spec**: Testable requirements, consistency with other specs, implementer gaps, and scenarios that match their rules
 
 **Supporting Agents:**
 - **Context Explorer**: Pre-review pass that gathers architectural context for the specialized reviewers
@@ -63,7 +64,7 @@ A review's cost is dominated by the orchestrating conversation, not by the size 
 - **The diff stays on disk**: The session record holds a path, not the diff bytes. The orchestrator never loads the diff into its own context, and agents, the position mapper, and the adversary pass all read it from the file.
 - **Diff Compression**: Minimal context lines (1 vs 3) - agents can read full files when needed
 - **Smart Context Loading**: Only loads guidelines for detected languages/frameworks
-- **Scope classification**: `classify-review-scope.sh` picks exploration depth from diff size and file types. Correctness always runs; specialists run unless the explorer records concrete negative evidence that their area does not apply. The review retains each routing decision and its evidence.
+- **Scope classification**: `classify-review-scope.sh` picks exploration depth from diff size and file types. Correctness always runs; specialists run unless the explorer records concrete negative evidence that their area does not apply, or the file table in `helpers/review_tracks.py` rules them out (see Review Tracks). The review retains each routing decision and its evidence.
 - **Incremental re-review**: With `--append`, a re-review covers only what changed since the last one, using the commit recorded in the previous review's metadata. Force-pushes, rebases, a moved base, or a delta covering most of the PR fall back to a full review and say why.
 - **Bash Scripts for Heavy Lifting**: Uses shell scripts for diff generation, file detection, and context preparation instead of consuming tokens
 
@@ -87,7 +88,7 @@ This creates a virtuous cycle where reviews get better as you identify new patte
 
 - **Specialized Review Agents**: Each agent focuses on a specific aspect of code quality
   - **Core Agents (6)**: Security, Performance, Correctness, Maintainability, Testing, Compatibility
-  - **Domain-Specific Agents (2)**: Frontend (React/TypeScript files), Infra-Config (Helm/Terraform/K8s/CI-CD files)
+  - **Domain-Specific Agents (3)**: Frontend (React/TypeScript files), Infra-Config (Helm/Terraform/K8s/CI-CD files), Spec (specifications, acceptance scenarios, and schema payloads)
   - **Supporting Agents**: Context Explorer (pre-review), Finding Validator (adversarial pass), Comment Composer (code-aware composition and wording), Comprehension Gate (final semantic check)
 - **Hierarchical Context Loading**: Automatically loads language, framework, org, and repo-specific guidelines
 - **PR and Local Review Modes**: Review pull requests, branches, commits, ranges, or uncommitted changes
@@ -241,6 +242,7 @@ Without a mapping for the PR's repo, the review falls back to diff-only (with a 
 /review-code compatibility   # Compatibility review only
 /review-code frontend        # Frontend review only (React/TypeScript)
 /review-code infra-config    # Infrastructure config review only (Helm/Terraform/K8s/CI-CD)
+/review-code spec            # Spec review only (requirements, scenarios, schemas)
 ```
 
 ### Find Existing Reviews
@@ -327,7 +329,7 @@ This eliminates confusion about what's being reviewed and lets you cancel if the
 
 ## Review Agents
 
-The system includes eight reviewers and four supporting agents for context, validation, semantic composition, and comprehension. Correctness always runs. The explorer can exclude another reviewer only with concrete negative evidence; uncertainty keeps it enabled. An explicit area request runs that specialist and correctness.
+The system includes nine reviewers and four supporting agents for context, validation, semantic composition, and comprehension. Correctness always runs. The explorer can exclude another reviewer only with concrete negative evidence; uncertainty keeps it enabled. Two exceptions do not depend on the explorer: the spec reviewer runs only when a changed file is spec content, and the spec track skips the reviewers listed under Review Tracks. An explicit area request runs that specialist and correctness.
 
 ### Core Agents
 
@@ -423,6 +425,23 @@ Focuses on:
 - Operational safety (resource limits, probes, rollout strategy)
 - Config validation and drift
 - Secret handling and reference correctness
+
+#### Spec (`code-reviewer-spec`)
+
+**Runs when:** At least one changed file is spec content, such as prose, Gherkin `.feature` scenarios, or schema and example payloads. Markdown that agents execute, such as agent prompts, skills, `SKILL.md` or `CLAUDE.md` files, and anything under a dot-directory, counts as code. `skills/review-code/scripts/helpers/review_tracks.py` holds the full table.
+
+Focuses on:
+
+- Requirements that are unambiguous and testable, with MUST, SHOULD, and MAY used deliberately
+- Internal consistency and terminology
+- Contradictions with other specs in the repo
+- Gaps an SDK implementer would trip over
+- Examples and scenarios that match the stated rules
+- Changes that break SDKs that already conform
+
+### Review Tracks
+
+When every changed file in a PR is spec content, the review takes the spec track: it runs correctness, spec, compatibility, and maintainability, and skips performance, testing, frontend, and infra-config. Security runs on the spec track only when a changed line or path names an auth, credential, token, or personal-data term, or the explorer reports that security applies. A bare "token" in a Gherkin `.feature` file does not count, because every sdk-specs scenario initializes the SDK with a project token; qualified terms such as "access token" or "API token" still do. Any code file, rename from a code file, pure rename or copy (whose header hides the file mode), MDX file (MDX compiles to JavaScript), mode change, symlink, submodule, or binary keeps the review on the code track, where every reviewer runs as before and the spec agent reads only the spec-content files. `skills/review-code/scripts/helpers/review_tracks.py` holds the file table and the security terms.
 
 ### Supporting Agents
 

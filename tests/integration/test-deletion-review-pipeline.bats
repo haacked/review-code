@@ -88,7 +88,7 @@ write_real_rename_diff() {
     prepare_session false
 
     result=$("$SCRIPTS/classify-review-scope.sh" "$SESSION_FILE" --diff-file "$ARTIFACTS/diff.patch")
-    jq -e '(.agents | length) == 8 and .skipped_agents == []' <<< "$result"
+    jq -e '.track == "code" and (.agents | length) == 8 and .skipped_agents == ["spec"]' <<< "$result"
 }
 
 @test "pure rename with b slash in the old path retains the complete scoped patch" {
@@ -179,7 +179,7 @@ DIFF
 
     build_selected_briefing --diff-file "$delta"
 
-    jq -e '(.agents | length) == 8 and .skipped_agents == []' "$BATS_TEST_TMPDIR/classification.json"
+    jq -e '.track == "code" and (.agents | length) == 8 and .skipped_agents == ["spec"]' "$BATS_TEST_TMPDIR/classification.json"
     cmp "$delta" "$ARTIFACTS/diff-infra-config.patch"
     echo "$output" | jq -e --arg delta "$delta" '.diff_path == $delta and .scoped_diffs["diff-infra-config.patch"] > 0'
 }

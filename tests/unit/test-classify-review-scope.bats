@@ -5,7 +5,8 @@ setup() {
     SCRIPT="$PROJECT_ROOT/skills/review-code/scripts/classify-review-scope.sh"
     SESSION="$BATS_TEST_TMPDIR/session.json"
     CONTEXT="$BATS_TEST_TMPDIR/explorer.md"
-    ALL_AREAS='["security","performance","correctness","maintainability","testing","compatibility","frontend","infra-config"]'
+    ALL_AREAS='["security","performance","correctness","maintainability","testing","compatibility","frontend","infra-config","spec"]'
+    CODE_AREAS='["security","performance","correctness","maintainability","testing","compatibility","frontend","infra-config"]'
 }
 
 create_session() {
@@ -53,11 +54,14 @@ assert_complete_decisions() {
     '
 }
 
+# The path table, not explorer evidence, decides spec. A fixture with no spec paths skips it.
 assert_all_run() {
     [ "$status" -eq 0 ]
     assert_complete_decisions
-    printf '%s' "$output" | jq -e --argjson areas "$ALL_AREAS" '
-        (.agents | sort) == ($areas | sort) and .skipped_agents == []
+    printf '%s' "$output" | jq -e --argjson areas "$CODE_AREAS" '
+        .track == "code" and
+        (.agents | sort) == ($areas | sort) and .skipped_agents == ["spec"] and
+        .agent_decisions.spec.evidence == [{check:"Classified every changed path with helpers/review_tracks.py",result:"No changed path is spec content"}]
     '
 }
 
@@ -155,7 +159,7 @@ assert_area_override() {
     [ "$status" -eq 0 ]
     assert_complete_decisions
     printf '%s' "$output" | jq -e '
-        .skipped_agents == ["performance"] and
+        .skipped_agents == ["performance", "spec"] and
         .agent_decisions.security.decision == "run" and
         .agent_decisions.frontend.decision == "run" and
         .agent_decisions.compatibility.decision == "run" and
@@ -175,7 +179,7 @@ assert_area_override() {
         .agent_decisions.security.decision == "skip" and
         .agent_decisions.security.evidence == [{check:"Read every changed file and searched authentication and authorization call sites",result:"The diff changes only static response text and does not touch an authentication boundary."}] and
         (.agents | index("security")) == null and
-        .skipped_agents == ["security"]
+        .skipped_agents == ["security", "spec"]
     '
 }
 
@@ -245,7 +249,7 @@ assert_area_override() {
         run "$SCRIPT" "$SESSION" --explorer-context "$CONTEXT"
         [ "$status" -eq 0 ]
         assert_complete_decisions
-        printf '%s' "$output" | jq -e '.skipped_agents == ["compatibility"] and .agent_decisions.performance.decision == "run"'
+        printf '%s' "$output" | jq -e '.skipped_agents == ["compatibility", "spec"] and .agent_decisions.performance.decision == "run"'
     done
 }
 
@@ -367,7 +371,8 @@ EOF
     assert_complete_decisions
     printf '%s' "$output" | jq -e '
         .exploration_depth == "minimal" and
-        .skipped_agents == ["frontend"] and
+        .track == "code" and
+        .skipped_agents == ["frontend", "spec"] and
         (.agents | index("correctness")) != null and
         .agent_decisions.frontend.evidence[0].result == "The delta changes one backend test and has no UI consumer."
     '

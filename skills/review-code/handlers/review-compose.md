@@ -24,6 +24,7 @@ its text is not carried through every earlier turn of the run.
 - Compatibility Review (if "compatibility" in `$selected_agents`)
 - Infra-Config Review (if "infra-config" in `$selected_agents`)
 - Frontend Review (if "frontend" in `$selected_agents`)
+- Spec Review (if "spec" in `$selected_agents`)
 
 **For area-specific reviews** and reviews with a `reviewers` list, include correctness and the requested areas' findings.
 
@@ -54,7 +55,7 @@ Retain the routing decisions with this run's coverage artifacts:
 cp "<artifacts_dir>/review-routing.json" "${review_file}.artifacts/<SESSION_ID>/review-routing.json"
 ```
 
-Require the copy to succeed. Include a scope section listing the reviewers run and skipped, each skip's reason and negative evidence (or explicit user scope override), and a link to the retained JSON. When the session has `reviewers`, the section names every area the caller's list excluded and says that those areas were not reviewed. A skipped reviewer did not review the code; do not report its area as clean. Preserve this section on both full and delta append reviews.
+Require the copy to succeed. Include a scope section that names the routing `track` (spec or code) and lists the reviewers run and skipped, each skip's reason and negative evidence (or explicit user scope override), and a link to the retained JSON. When the session has `reviewers`, the section names every area the caller's list excluded and says that those areas were not reviewed. A skipped reviewer did not review the code; do not report its area as clean. Preserve this section on both full and delta append reviews.
 
 For a chunked review, also copy every `$chunk.routing_path` into `${review_file}.artifacts/<SESSION_ID>/` and require every copy to succeed. Link each retained chunk routing file from the chunk scope table. The top-level routing artifact describes the whole patch; each chunk artifact is the decision record for the patch that chunk's reviewers received.
 

@@ -54,7 +54,7 @@ EOF
     extract_documented_block "$SKILL/handlers/review-routing.md" bash classify-review-scope.sh > "$ARTIFACTS/route.sh"
     run env SESSION_FILE="$SESSION_FILE" review_diff_path="$REVIEW_DIFF" architectural_context_path="$architectural_context_path" bash -e "$ARTIFACTS/route.sh"
     [ "$status" -eq 0 ]
-    jq -e '.skipped_agents == ["frontend"] and (.agents | contains(["correctness", "security"]))' "$ARTIFACTS/review-routing.json"
+    jq -e '.track == "code" and .skipped_agents == ["frontend", "spec"] and (.agents | contains(["correctness", "security"]))' "$ARTIFACTS/review-routing.json"
     agents=$(jq -r '.agents | join(" ")' "$ARTIFACTS/review-routing.json")
     run python3 "$SKILL/scripts/review-dispatch-plan.py" --fields "$SESSION_FILE" --agents "$agents"
     [ "$status" -eq 0 ]
@@ -111,7 +111,7 @@ EOF
     [ "$status" -eq 0 ]
     jq -e '
         (.agents | sort) == ["correctness", "security"] and
-        (.skipped_agents | length) == 6 and
+        (.skipped_agents | length) == 7 and
         (.reasoning | ascii_downcase | contains("explicit user scope override")) and
         .agent_decisions.correctness.decision == "run" and
         (.agent_decisions.correctness.reason | ascii_downcase | contains("correctness always runs")) and
@@ -143,7 +143,7 @@ EOF
         .exploration_depth == "minimal" and
         (.agents | length) == 7 and
         (.agents | index("correctness")) != null and
-        .skipped_agents == ["security"] and
+        .skipped_agents == ["security", "spec"] and
         .agent_decisions.correctness.decision == "run" and
         (.agent_decisions.correctness.reason | ascii_downcase | contains("correctness always runs")) and
         .agent_decisions.security.decision == "skip" and
